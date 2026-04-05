@@ -11,20 +11,45 @@ describe("session serialization", () => {
     const dir = mkdtempSync(join(tmpdir(), "athena-session-"));
     const manager = SessionManager.create("test:channel", dir, "gpt-4.1");
 
-    manager.appendCustomMessageEntry("channel_message", "[alice]: hi", false);
-    manager.appendMessage({
-      role: "assistant",
-      content: [{ type: "text", text: "hello" }],
+    manager.appendTimelineRecord({
+      id: "message-1",
+      kind: "channel_message",
       timestamp: 1,
-      provider: "openai",
-      model: "gpt-4.1",
+      stage: "ingress",
+      visibility: "model",
+      materialization: "default",
+      message: {
+        kind: "channel_message",
+        platform: "test",
+        channelId: "channel",
+        messageId: "msg-1",
+        timestamp: 1,
+        content: "hi",
+        sender: {
+          userId: "user-1",
+          username: "alice",
+        },
+        isDirect: true,
+        atSelf: false,
+        isReplyToBot: false,
+      },
+    });
+    manager.appendTimelineRecord({
+      id: "assistant-1",
+      kind: "assistant_message",
+      timestamp: 2,
+      stage: "runtime",
+      visibility: "model",
+      materialization: "default",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "hello" }],
+      },
     });
 
     const file = manager.getSessionFile();
     const lines = readFileSync(file!, "utf8").trim().split("\n");
-    expect(lines[1]).toMatch(
-      /^\{"type":"custom_message","customType":"channel_message","content":"\[alice\]: hi","display":false,/,
-    );
-    expect(lines[2]).toMatch(/^\{"type":"message","id":"/);
+    expect(lines[1]).toMatch(/^\{"type":"timeline","record":\{"id":"message-1","kind":"channel_message"/);
+    expect(lines[2]).toMatch(/^\{"type":"timeline","record":\{"id":"assistant-1","kind":"assistant_message"/);
   });
 });

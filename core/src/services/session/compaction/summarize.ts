@@ -1,8 +1,8 @@
 import type { LanguageModel } from "ai";
 import { generateText } from "ai";
 
-import type { AgentMessage } from "../session-manager";
-import { serializeConversation } from "./serialize";
+import type { TimelineRecord } from "../contracts";
+import { serializeTimelineForCompaction } from "./serialize";
 
 export const SUMMARIZATION_SYSTEM_PROMPT = `You are a context summarization assistant for a group chat with an AI participant. Do NOT continue the conversation. ONLY output the structured summary.`;
 
@@ -74,14 +74,14 @@ Use this EXACT format:
 Be concise.`;
 
 export async function generateSummary(
-  messages: AgentMessage[],
+  records: readonly TimelineRecord[],
   model: LanguageModel,
   reserveTokens: number,
   signal?: AbortSignal,
   previousSummary?: string,
 ): Promise<string> {
   const maxOutputTokens = Math.floor(0.8 * reserveTokens);
-  const conversationText = serializeConversation(messages);
+  const conversationText = serializeTimelineForCompaction(records);
   const prompt = previousSummary ? CHAT_UPDATE_SUMMARIZATION_PROMPT : CHAT_SUMMARIZATION_PROMPT;
 
   let userContent = `<conversation>\n${conversationText}\n</conversation>\n\n`;
@@ -102,13 +102,13 @@ export async function generateSummary(
 }
 
 export async function generateTurnPrefixSummary(
-  messages: AgentMessage[],
+  records: readonly TimelineRecord[],
   model: LanguageModel,
   reserveTokens: number,
   signal?: AbortSignal,
 ): Promise<string> {
   const maxOutputTokens = Math.floor(0.5 * reserveTokens);
-  const conversationText = serializeConversation(messages);
+  const conversationText = serializeTimelineForCompaction(records);
   const userContent = `<conversation>\n${conversationText}\n</conversation>\n\n${TURN_PREFIX_SUMMARIZATION_PROMPT}`;
 
   const result = await generateText({

@@ -1,30 +1,28 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import {
-  buildSessionContext,
-  convertAgentMessagesToModelMessages,
-  loadEntriesFromFile,
-  SessionManager,
-} from "../../src/services/session/session-manager";
+import { SessionManager } from "../../src/services/session/session-manager";
 
 describe("session restore", () => {
-  it("restores custom messages as custom agent messages and preserves assistant metadata", () => {
-    const entries = loadEntriesFromFile("tests/session/fixtures/sample-session.jsonl");
-    const ctx = buildSessionContext(entries.filter((entry) => entry.type !== "session"));
+  it("restores canonical projections from persisted session data", () => {
+    const fixture = readFileSync("tests/session/fixtures/sample-session.jsonl", "utf8");
+    const restored = SessionManager.open("tests/session/fixtures/sample-session.jsonl", "discord:test");
 
-    expect(ctx.agentMessages.some((msg) => msg.role === "custom")).toBe(true);
-    expect(ctx.agentMessages.find((msg) => msg.role === "assistant")).toMatchObject({
-      provider: expect.any(String),
-      model: expect.any(String),
-    });
-
-    const modelMessages = convertAgentMessagesToModelMessages(ctx.agentMessages);
-    expect(modelMessages.some((msg) => msg.role === "user")).toBe(true);
-    expect(modelMessages.some((msg) => msg.role === "assistant")).toBe(true);
+    expect(fixture).toContain('"type":"timeline"');
+    expect(fixture).not.toContain('"type":"custom_message"');
+    expect(restored.getTimeline()).toEqual([
+      expect.objectContaining({ kind: "channel_message" }),
+      expect.objectContaining({ kind: "assistant_message" }),
+      expect.objectContaining({ kind: "tool_message" }),
+    ]);
+    expect(restored.getModelMessages()).toEqual([
+      expect.objectContaining({ role: "user" }),
+      expect.objectContaining({ role: "assistant" }),
+      expect.objectContaining({ role: "tool" }),
+    ]);
   });
 
   describe("repairs orphan tool calls", () => {
@@ -55,24 +53,27 @@ describe("session restore", () => {
       const entries = restored.getEntries();
       const lastEntry = entries[entries.length - 1];
 
-      expect(lastEntry.type).toBe("message");
-      if (lastEntry.type !== "message") {
-        throw new Error("expected message entry");
+      expect(lastEntry.type).toBe("timeline");
+      if (lastEntry.type !== "timeline") {
+        throw new Error("expected timeline entry");
       }
 
-      expect(lastEntry.message.role).toBe("tool");
-      if (lastEntry.message.role !== "tool") {
-        throw new Error("expected tool message");
+      expect(lastEntry.record.kind).toBe("tool_message");
+      if (lastEntry.record.kind !== "tool_message") {
+        throw new Error("expected tool message record");
       }
 
-      expect(lastEntry.message.content).toEqual(
+      expect(lastEntry.record.message.content).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             type: "tool-result",
             toolCallId: "tc-001",
             toolName: "test_tool",
             isError: true,
-            result: expect.stringContaining("Session interrupted"),
+            output: {
+              type: "json",
+              value: expect.stringContaining("Session interrupted"),
+            },
           }),
         ]),
       );

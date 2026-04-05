@@ -1,7 +1,8 @@
 import type { LanguageModel } from "ai";
 
-import type { AgentMessage, SessionEntry } from "../session-manager";
-import { findCutPoint } from "./cut-point";
+import type { TimelineRecord } from "../contracts";
+import { materializeTimeline } from "../materialize";
+import { findCutPoint, isCompactionRecordVisible } from "./cut-point";
 import { estimateContextTokens } from "./estimate";
 import { generateSummary, generateTurnPrefixSummary } from "./summarize";
 import type { CompactionPreparation, CompactionResult, CompactionSettings } from "./types";
@@ -14,114 +15,59 @@ export function shouldCompact(
   return settings.enabled && contextTokens > contextWindow - settings.reserveTokens;
 }
 
-function getMessageFromEntry(entry: SessionEntry): AgentMessage | undefined {
-  if (entry.type === "message") {
-    return entry.message;
+function estimateSummaryTokens(summary: string | undefined): number {
+  if (!summary) {
+    return 0;
   }
-  if (entry.type === "custom_message") {
-    if (
-      entry.customType === "protocol_guidance" ||
-      entry.customType.startsWith("protocol_") ||
-      entry.customType.startsWith("control_")
-    ) {
-      return undefined;
-    }
 
-    return {
-      role: "custom",
-      customType: entry.customType,
-      content: entry.content,
-      details: entry.details,
-      display: entry.display,
-      timestamp: Date.parse(entry.timestamp),
-    };
-  }
-  return undefined;
+  return Math.ceil(summary.length / 4);
+}
+
+function filterSummarizableRecords(records: readonly TimelineRecord[]): TimelineRecord[] {
+  return records.filter((record) => isCompactionRecordVisible(record));
 }
 
 export function prepareCompaction(
-  entries: SessionEntry[],
+  records: readonly TimelineRecord[],
   settings: CompactionSettings,
+  previousSummary?: string,
   contextTokens?: number,
 ): CompactionPreparation | undefined {
-  if (entries.length === 0) {
-    return undefined;
-  }
-  if (entries[entries.length - 1].type === "compaction") {
+  if (records.length === 0) {
     return undefined;
   }
 
-  let previousCompactionIndex = -1;
-  for (let i = entries.length - 1; i >= 0; i--) {
-    if (entries[i].type === "compaction") {
-      previousCompactionIndex = i;
-      break;
-    }
-  }
-
-  const boundaryStart = previousCompactionIndex + 1;
-  const boundaryEnd = entries.length;
-
-  const usageStart = previousCompactionIndex >= 0 ? previousCompactionIndex : 0;
-  const usageMessages: AgentMessage[] = [];
-  for (let i = usageStart; i < boundaryEnd; i++) {
-    const message = getMessageFromEntry(entries[i]);
-    if (message) {
-      usageMessages.push(message);
-    }
-  }
-  const tokensBefore = estimateContextTokens(usageMessages);
+  const visibleRecords = filterSummarizableRecords(records);
+  const tokensBefore =
+    estimateContextTokens(materializeTimeline(visibleRecords)) + estimateSummaryTokens(previousSummary);
   const ratio =
     contextTokens !== undefined && tokensBefore > 0 ? Math.max(1, contextTokens / tokensBefore) : 1;
   const effectiveKeepRecentTokens = Math.max(1, Math.floor(settings.keepRecentTokens / ratio));
+  const cutPoint = findCutPoint(records, 0, records.length, effectiveKeepRecentTokens);
+  const firstKeptRecord = records[cutPoint.firstKeptRecordIndex];
 
-  const cutPoint = findCutPoint(entries, boundaryStart, boundaryEnd, effectiveKeepRecentTokens);
-
-  const firstKeptEntry = entries[cutPoint.firstKeptEntryIndex];
-  if (!firstKeptEntry?.id) {
+  if (!firstKeptRecord?.id) {
     return undefined;
   }
 
-  const historyEnd = cutPoint.isSplitTurn ? cutPoint.turnStartIndex : cutPoint.firstKeptEntryIndex;
-
-  const messagesToSummarize: AgentMessage[] = [];
-  for (let i = boundaryStart; i < historyEnd; i++) {
-    const message = getMessageFromEntry(entries[i]);
-    if (message) {
-      messagesToSummarize.push(message);
-    }
-  }
-
-  const turnPrefixMessages: AgentMessage[] = [];
-  if (cutPoint.isSplitTurn) {
-    for (let i = cutPoint.turnStartIndex; i < cutPoint.firstKeptEntryIndex; i++) {
-      const message = getMessageFromEntry(entries[i]);
-      if (message) {
-        turnPrefixMessages.push(message);
-      }
-    }
-  }
-
-  let previousSummary: string | undefined;
-  if (previousCompactionIndex >= 0) {
-    const previousCompaction = entries[previousCompactionIndex];
-    if (previousCompaction.type === "compaction") {
-      previousSummary = previousCompaction.summary;
-    }
-  }
+  const historyEnd = cutPoint.isSplitTurn ? cutPoint.turnStartIndex : cutPoint.firstKeptRecordIndex;
+  const recordsToSummarize = filterSummarizableRecords(records.slice(0, Math.max(historyEnd, 0)));
+  const turnPrefixRecords = cutPoint.isSplitTurn
+    ? filterSummarizableRecords(records.slice(cutPoint.turnStartIndex, cutPoint.firstKeptRecordIndex))
+    : [];
 
   if (
-    messagesToSummarize.length === 0 &&
-    turnPrefixMessages.length === 0 &&
+    recordsToSummarize.length === 0 &&
+    turnPrefixRecords.length === 0 &&
     previousSummary === undefined
   ) {
     return undefined;
   }
 
   return {
-    firstKeptEntryId: firstKeptEntry.id,
-    messagesToSummarize,
-    turnPrefixMessages,
+    firstKeptEntryId: firstKeptRecord.id,
+    recordsToSummarize,
+    turnPrefixRecords,
     isSplitTurn: cutPoint.isSplitTurn,
     tokensBefore,
     previousSummary,
@@ -136,8 +82,8 @@ export async function compact(
 ): Promise<CompactionResult> {
   const {
     firstKeptEntryId,
-    messagesToSummarize,
-    turnPrefixMessages,
+    recordsToSummarize,
+    turnPrefixRecords,
     isSplitTurn,
     tokensBefore,
     previousSummary,
@@ -146,24 +92,18 @@ export async function compact(
 
   let summary: string;
 
-  if (isSplitTurn && turnPrefixMessages.length > 0) {
+  if (isSplitTurn && turnPrefixRecords.length > 0) {
     const [historySummary, turnPrefixSummary] = await Promise.all([
-      messagesToSummarize.length > 0
-        ? generateSummary(
-            messagesToSummarize,
-            model,
-            settings.reserveTokens,
-            signal,
-            previousSummary,
-          )
-        : Promise.resolve("No prior history."),
-      generateTurnPrefixSummary(turnPrefixMessages, model, settings.reserveTokens, signal),
+      recordsToSummarize.length > 0
+        ? generateSummary(recordsToSummarize, model, settings.reserveTokens, signal, previousSummary)
+        : Promise.resolve(previousSummary ?? "No prior history."),
+      generateTurnPrefixSummary(turnPrefixRecords, model, settings.reserveTokens, signal),
     ]);
 
     summary = `${historySummary}\n\n---\n\n**Turn Context (split turn):**\n\n${turnPrefixSummary}`;
   } else {
     summary = await generateSummary(
-      messagesToSummarize,
+      recordsToSummarize,
       model,
       settings.reserveTokens,
       signal,

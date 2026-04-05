@@ -7,11 +7,10 @@ import type {
   AgentToolMessage,
   AgentUserMessage,
   ChannelMessageDetails,
-  SessionContext,
 } from "../../src/services/session/session-manager";
 
 describe("session message types", () => {
-  it("defines AgentMessage as the runtime session source of truth", () => {
+  it("defines AgentMessage as a legacy persistable compatibility shape", () => {
     const user: AgentUserMessage = { role: "user", content: "hi", timestamp: 1 };
     const custom: AgentCustomMessage = {
       role: "custom",
@@ -34,13 +33,9 @@ describe("session message types", () => {
     };
 
     const messages: AgentMessage[] = [user, custom, assistant, tool];
-    const ctx: SessionContext = {
-      agentMessages: messages,
-      model: null,
-      entryCount: messages.length,
-    };
 
-    expect(ctx.agentMessages).toHaveLength(4);
+    expect(messages).toHaveLength(4);
+    expect(messages[1]).toMatchObject({ role: "custom", customType: "channel_message" });
   });
 
   it("supports channel message details", () => {

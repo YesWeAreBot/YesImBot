@@ -13,12 +13,7 @@ import {
 } from "node:fs";
 import { join, resolve } from "node:path";
 
-import type {
-  AssistantModelMessage,
-  ModelMessage,
-  ToolModelMessage,
-  UserModelMessage,
-} from "@ai-sdk/provider-utils";
+import type { AssistantModelMessage, ModelMessage, ToolModelMessage } from "@ai-sdk/provider-utils";
 import { JSONValue } from "ai";
 
 import type {
@@ -246,16 +241,6 @@ export interface ChannelMessageDetails {
   atSelf: boolean;
   isReplyToBot: boolean;
   replyTo?: ReplyReference;
-}
-
-// ============================================================================
-// Session Context — output of buildSessionContext()
-// ============================================================================
-
-export interface SessionContext {
-  agentMessages: AgentMessage[];
-  model: { provider: string; modelId: string } | null;
-  entryCount: number;
 }
 
 // ============================================================================
@@ -573,8 +558,8 @@ function entryToTimelineRecord(entry: SessionEntry): TimelineRecord | null {
  * pointer tracks the most recent entry. Appending creates a new entry
  * whose parentId is the current leaf, then advances the leaf.
  *
- * Use buildSessionContext() (from context-builder.ts) to get the resolved
- * ModelMessage[] for the LLM.
+ * Canonical timeline records remain the durable truth, while read-side callers
+ * should use `getTimeline()` or `getModelMessages()` for derived projections.
  */
 export class SessionManager {
   private sessionId = "";
@@ -728,11 +713,33 @@ export class SessionManager {
     const pendingToolCalls = new Map<string, { toolCallId: string; toolName: string }>();
 
     for (const entry of this.fileEntries) {
-      if (entry.type !== "message") continue;
-      const msg = (entry as SessionMessageEntry).message;
+      if (entry.type === "message") {
+        const msg = entry.message;
 
-      if (msg.role === "assistant" && Array.isArray(msg.content)) {
-        for (const part of msg.content) {
+        if (msg.role === "assistant" && Array.isArray(msg.content)) {
+          for (const part of msg.content) {
+            if (part.type === "tool-call") {
+              pendingToolCalls.set(part.toolCallId, {
+                toolCallId: part.toolCallId,
+                toolName: part.toolName,
+              });
+            }
+          }
+        }
+
+        if (msg.role === "tool") {
+          for (const part of msg.content) {
+            pendingToolCalls.delete(part.toolCallId);
+          }
+        }
+
+        continue;
+      }
+
+      if (entry.type !== "timeline") continue;
+
+      if (entry.record.kind === "assistant_message" && Array.isArray(entry.record.message.content)) {
+        for (const part of entry.record.message.content) {
           if (part.type === "tool-call") {
             pendingToolCalls.set(part.toolCallId, {
               toolCallId: part.toolCallId,
@@ -742,9 +749,11 @@ export class SessionManager {
         }
       }
 
-      if (msg.role === "tool") {
-        for (const part of msg.content) {
-          pendingToolCalls.delete(part.toolCallId);
+      if (entry.record.kind === "tool_message") {
+        for (const part of entry.record.message.content) {
+          if (part.type === "tool-result") {
+            pendingToolCalls.delete(part.toolCallId);
+          }
         }
       }
     }
@@ -952,23 +961,6 @@ export class SessionManager {
 // AgentMessage → AI SDK ModelMessage conversion
 // ============================================================================
 
-function userToModelMessage(msg: AgentUserMessage): UserModelMessage {
-  if (typeof msg.content === "string") {
-    return { role: "user", content: msg.content };
-  }
-  return {
-    role: "user",
-    content: msg.content.map((part) => {
-      if (part.type === "text") return { type: "text" as const, text: part.text };
-      return {
-        type: "image" as const,
-        image: part.image,
-        mimeType: part.mimeType,
-      };
-    }),
-  };
-}
-
 function assistantToModelMessage(msg: AgentAssistantMessage): AssistantModelMessage {
   if (typeof msg.content === "string") {
     return { role: "assistant", content: msg.content };
@@ -1002,150 +994,6 @@ function toolToModelMessage(msg: AgentToolMessage): ToolModelMessage {
       isError: part.isError,
     })),
   };
-}
-
-/** Convert an AgentMessage to an AI SDK ModelMessage. */
-function agentMessageToModelMessage(msg: Exclude<AgentMessage, { role: "custom" }>): ModelMessage {
-  switch (msg.role) {
-    case "user":
-      return userToModelMessage(msg);
-    case "assistant":
-      return assistantToModelMessage(msg);
-    case "tool":
-      return toolToModelMessage(msg);
-  }
-}
-
-// ============================================================================
-// buildSessionContext
-// ============================================================================
-
-function modelMessagesToAgentMessages(messages: readonly ModelMessage[]): AgentMessage[] {
-  return messages.flatMap((message): AgentMessage[] => {
-    switch (message.role) {
-      case "user":
-        return [
-          {
-            role: "user",
-            content:
-              typeof message.content === "string" ? message.content : JSON.stringify(message.content),
-            timestamp: Date.now(),
-          },
-        ];
-      case "assistant":
-        return [
-          {
-            role: "assistant",
-            content:
-              typeof message.content === "string" ? message.content : JSON.stringify(message.content),
-            timestamp: Date.now(),
-            provider: "derived",
-            model: "materialized-timeline",
-          },
-        ];
-      case "tool":
-        return [
-          {
-            role: "tool",
-            timestamp: Date.now(),
-            content: message.content
-              .filter((part) => part.type === "tool-result")
-              .map((part) => ({
-                type: "tool-result" as const,
-                toolCallId: part.toolCallId,
-                toolName: part.toolName,
-                result: (part as { output?: { value?: JSONValue } }).output?.value ?? null,
-                isError:
-                  "isError" in part && typeof part.isError === "boolean" ? part.isError : undefined,
-              })) as AgentToolResultPart[],
-          },
-        ];
-      case "system":
-        return [];
-    }
-  });
-}
-
-/**
- * Build the LLM context from session entries.
- *
- * Walks entries linearly, converting them to AI SDK ModelMessage[].
- * Handles compaction: when a CompactionEntry is found, all previously
- * accumulated messages are replaced by the compaction summary.
- *
- * Entry type handling:
- * - SessionMessageEntry → preserve as AgentMessage runtime state
- * - CustomMessageEntry  → preserve as AgentCustomMessage runtime state
- * - CompactionEntry     → reset context, insert summary AgentUserMessage
- * - ModelChangeEntry    → track model, skip from runtime messages
- * - CustomEntry         → skip (not in runtime/model context)
- */
-export function buildSessionContext(entries: readonly SessionEntry[]): SessionContext {
-  let agentMessages: AgentMessage[] = [];
-  let model: { provider: string; modelId: string } | null = null;
-  let compaction: CompactionEntry | null = null;
-  let firstKeptIndex = 0;
-
-  // First pass: find the latest compaction and determine the "kept" range
-  for (let i = 0; i < entries.length; i++) {
-    const entry = entries[i];
-    if (entry.type === "compaction") {
-      compaction = entry;
-      // Find the index of firstKeptEntryId
-      for (let j = 0; j < entries.length; j++) {
-        if (entries[j].id === entry.firstKeptEntryId) {
-          firstKeptIndex = j;
-          break;
-        }
-      }
-    }
-  }
-
-  // If there's a compaction, start with the summary
-  if (compaction) {
-    agentMessages.push({
-      role: "user",
-      content: `[Context Summary]\n${compaction.summary}`,
-      timestamp: Date.now(),
-    });
-  }
-
-  // Determine which entries to process
-  const startIndex = compaction ? firstKeptIndex : 0;
-  const slicedEntries = entries.slice(startIndex);
-  const timeline = slicedEntries
-    .map((entry) => {
-      if (entry.type === "model_change") {
-        model = { provider: entry.provider, modelId: entry.modelId };
-      }
-      return entryToTimelineRecord(entry);
-    })
-    .filter((entry): entry is TimelineRecord => entry !== null);
-
-  agentMessages = [
-    ...agentMessages,
-    ...modelMessagesToAgentMessages(materializeTimeline(timeline)),
-  ];
-
-  const entryCount = slicedEntries.length;
-  return { agentMessages, model, entryCount };
-}
-
-export function convertAgentMessagesToModelMessages(
-  messages: readonly AgentMessage[],
-): ModelMessage[] {
-  return messages
-    .map((message) => {
-      switch (message.role) {
-        case "custom":
-          return undefined;
-        case "user":
-        case "assistant":
-        case "tool":
-          return agentMessageToModelMessage(message);
-      }
-    })
-    .filter((message): message is ModelMessage => message !== undefined);
 }
 
 // ============================================================================

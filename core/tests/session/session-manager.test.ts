@@ -16,7 +16,29 @@ describe("SessionManager", () => {
 
       expect(existsSync(sessionDir)).toBe(true);
 
-      manager.appendCustomMessageEntry("channel_message", "[alice]: hello", false);
+      manager.appendTimelineRecord({
+        id: "message-1",
+        kind: "channel_message",
+        timestamp: 1,
+        stage: "ingress",
+        visibility: "model",
+        materialization: "default",
+        message: {
+          kind: "channel_message",
+          platform: "discord",
+          channelId: "12345",
+          messageId: "msg-1",
+          timestamp: 1,
+          content: "hello",
+          sender: {
+            userId: "user-1",
+            username: "alice",
+          },
+          isDirect: true,
+          atSelf: false,
+          isReplyToBot: false,
+        },
+      });
 
       const sessionFile = manager.getSessionFile();
       expect(sessionFile).toBeDefined();
@@ -24,7 +46,8 @@ describe("SessionManager", () => {
 
       const content = readFileSync(sessionFile!, "utf8");
       expect(content).toContain('"type":"session"');
-      expect(content).toContain('"type":"custom_message"');
+      expect(content).toContain('"type":"timeline"');
+      expect(content).toContain('"kind":"channel_message"');
     });
 
     it.todo("returns same session for same channel key");
@@ -36,7 +59,29 @@ describe("SessionManager", () => {
       const sessionDir = join(tempBase, "discord_12345", "session");
 
       const manager = SessionManager.create("discord:12345", sessionDir, "openai:gpt-4.1");
-      manager.appendCustomMessageEntry("channel_message", "[alice]: hello", false);
+      manager.appendTimelineRecord({
+        id: "message-1",
+        kind: "channel_message",
+        timestamp: 1,
+        stage: "ingress",
+        visibility: "model",
+        materialization: "default",
+        message: {
+          kind: "channel_message",
+          platform: "discord",
+          channelId: "12345",
+          messageId: "msg-1",
+          timestamp: 1,
+          content: "hello",
+          sender: {
+            userId: "user-1",
+            username: "alice",
+          },
+          isDirect: true,
+          atSelf: false,
+          isReplyToBot: false,
+        },
+      });
       manager.appendMessage({
         role: "assistant",
         content: [{ type: "text", text: "hi" }],
@@ -77,26 +122,38 @@ describe("SessionManager", () => {
   });
 
   describe("channel message records", () => {
-    it("persists channel messages as custom_message entries", () => {
+    it("persists channel messages as canonical timeline entries", () => {
       const manager = SessionManager.inMemory("discord:12345");
-      manager.appendCustomMessageEntry("channel_message", "[alice]: hello", false, {
-        timestamp: Date.now(),
-        userId: "user-1",
-        username: "alice",
-        nickname: "alice",
-        identity: "direct-user",
-        platform: "discord",
-        channelId: "12345",
-        messageId: "msg-1",
-        isDirect: true,
-        atSelf: false,
-        isReplyToBot: false,
+      manager.appendTimelineRecord({
+        id: "message-1",
+        kind: "channel_message",
+        timestamp: 1,
+        stage: "ingress",
+        visibility: "model",
+        materialization: "default",
+        message: {
+          kind: "channel_message",
+          platform: "discord",
+          channelId: "12345",
+          messageId: "msg-1",
+          timestamp: 1,
+          content: "hello",
+          sender: {
+            userId: "user-1",
+            username: "alice",
+            nickname: "alice",
+            identity: "direct-user",
+          },
+          isDirect: true,
+          atSelf: false,
+          isReplyToBot: false,
+        },
       });
 
       const entries = manager.getEntries();
 
       expect(entries).toHaveLength(1);
-      expect(entries[0]).toMatchObject({ type: "custom_message", customType: "channel_message" });
+      expect(entries[0]).toMatchObject({ type: "timeline" });
     });
   });
 });

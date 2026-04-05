@@ -10,7 +10,6 @@ import { compact, prepareCompaction, shouldCompact } from "../compaction";
 import { estimateContextTokens } from "../compaction/estimate";
 import { DefaultSessionResourceLoader } from "../resource-loader";
 import type { SessionManager } from "../session-manager";
-import { buildSessionContext } from "../session-manager";
 import type {
   CanonicalChannelInput,
   CanonicalChannelMessageInput,
@@ -615,10 +614,15 @@ export class ChannelRuntime {
         const pendingFollowUp = this.consumePendingFollowUp();
         if (pendingFollowUp) {
           const followUpReview = this.createFollowUpReviewRecord(pendingFollowUp);
-          this.sessionManager.appendCustomEntry<FollowUpReviewRecord>(
-            "follow_up_review",
-            followUpReview,
-          );
+          this.session.appendStateChange({
+            id: createRuntimeRecordId(),
+            timestamp: Date.now(),
+            stage: "runtime",
+            visibility: "internal",
+            materialization: "internal",
+            stateType: "follow_up_review",
+            data: { ...followUpReview },
+          });
           this.nextTurnFollowUpReview = followUpReview;
         }
         this.setResponseState("idle", "follow_up");
@@ -692,11 +696,7 @@ export class ChannelRuntime {
   private handleFinish(event: OnFinishEvent): void {
     const turnSettings = this.getActiveTurnSettings();
     const totalUsage = event.totalUsage ?? event.usage;
-    const contextTokens =
-      getReliableInputTokens(totalUsage) ??
-      estimateContextTokens(
-        buildSessionContext([...this.sessionManager.getEntries()]).agentMessages,
-      );
+    const contextTokens = getReliableInputTokens(totalUsage) ?? estimateContextTokens(this.session.getModelMessages());
 
     if (
       !shouldCompact(contextTokens, turnSettings.contextWindow, turnSettings.compactionSettings)
@@ -716,16 +716,21 @@ export class ChannelRuntime {
     contextTokens: number,
     turnSettings = this.createTurnSettingsSnapshot(),
   ): Promise<CompactionRunResult> {
-    const entries = [...this.sessionManager.getEntries()];
-    if (entries.length === 0) {
+    const records = [...this.session.getTimeline()];
+    if (records.length === 0) {
       return { compacted: false, reason: "empty-session" };
     }
 
-    if (entries[entries.length - 1]?.type === "compaction") {
+    if (this.getLatestCompactionSidecar() !== undefined) {
       return { compacted: false, reason: "already-compacted" };
     }
 
-    const preparation = prepareCompaction(entries, turnSettings.compactionSettings, contextTokens);
+    const preparation = prepareCompaction(
+      records,
+      turnSettings.compactionSettings,
+      this.getLatestCompactionSummary(),
+      contextTokens,
+    );
     if (!preparation) {
       return { compacted: false, reason: "nothing-to-compact" };
     }
@@ -752,6 +757,22 @@ export class ChannelRuntime {
       summaryLength: result.summary.length,
       tokensBefore: result.tokensBefore,
     };
+  }
+
+  private getLatestCompactionSummary(): string | undefined {
+    return this.getLatestCompactionSidecar()?.summary;
+  }
+
+  private getLatestCompactionSidecar(): { summary: string } | undefined {
+    const entries = this.sessionManager.getEntries();
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const entry = entries[i];
+      if (entry?.type === "compaction") {
+        return { summary: entry.summary };
+      }
+    }
+
+    return undefined;
   }
 }
 

@@ -32,7 +32,40 @@ export class AgentSession {
   }
 
   getModelMessages(): ModelMessage[] {
-    return materializeTimeline(this.timeline);
+    const entries = this.sessionManager.getEntries();
+    let latestCompaction:
+      | {
+          summary: string;
+          firstKeptEntryId: string;
+        }
+      | undefined;
+
+    for (const entry of entries) {
+      if (entry.type !== "compaction") {
+        continue;
+      }
+
+      latestCompaction = {
+        summary: entry.summary,
+        firstKeptEntryId: entry.firstKeptEntryId,
+      };
+    }
+
+    const timeline = latestCompaction
+      ? this.timeline.slice(
+          Math.max(
+            0,
+            this.timeline.findIndex((record) => record.id === latestCompaction.firstKeptEntryId),
+          ),
+        )
+      : this.timeline;
+    const messages = materializeTimeline(timeline);
+
+    if (!latestCompaction) {
+      return messages;
+    }
+
+    return [{ role: "user", content: `[Context Summary]\n${latestCompaction.summary}` }, ...messages];
   }
 
   getInternalRecords(): TimelineRecord[] {

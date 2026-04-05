@@ -1,80 +1,120 @@
-import type { SessionEntry } from "../session-manager";
-import { estimateTokens } from "./estimate";
+import type { TimelineRecord } from "../contracts";
 import type { CutPointResult } from "./types";
 
-function isValidCutPoint(entry: SessionEntry): boolean {
-  if (entry.type === "custom_message") {
-    return true;
-  }
-  if (entry.type === "message") {
-    return entry.message.role === "user" || entry.message.role === "assistant";
-  }
-  return false;
+function charsToTokens(chars: number): number {
+  return Math.ceil(chars / 4);
 }
 
-function isTurnStartEntry(entry: SessionEntry): boolean {
-  if (entry.type === "custom_message") {
-    return true;
+function isRecordVisibleForCompaction(record: TimelineRecord): boolean {
+  if (record.visibility !== "model") {
+    return false;
   }
-  if (entry.type === "message") {
-    return entry.message.role === "user";
+
+  if (record.materialization === "hidden" || record.materialization === "internal") {
+    return false;
   }
-  return false;
+
+  return record.kind !== "state_change";
 }
 
-function estimateEntryTokens(entry: SessionEntry): number {
-  if (entry.type === "message") {
-    return estimateTokens(entry.message);
+function isValidCutPoint(record: TimelineRecord): boolean {
+  if (!isRecordVisibleForCompaction(record)) {
+    return false;
   }
-  if (entry.type === "custom_message") {
-    if (typeof entry.content === "string") {
-      return Math.ceil(entry.content.length / 4);
-    }
-    let chars = 0;
-    for (const part of entry.content) {
-      if (part.type === "text") {
-        chars += part.text.length;
-      } else {
-        chars += 256;
+
+  return (
+    record.kind === "channel_message" ||
+    record.kind === "channel_event" ||
+    record.kind === "assistant_message" ||
+    record.kind === "tool_message"
+  );
+}
+
+function isTurnStartRecord(record: TimelineRecord): boolean {
+  return isRecordVisibleForCompaction(record) && record.kind === "channel_message";
+}
+
+function estimateRecordTokens(record: TimelineRecord): number {
+  if (!isRecordVisibleForCompaction(record)) {
+    return 0;
+  }
+
+  switch (record.kind) {
+    case "channel_message":
+      return charsToTokens(record.message.content.length);
+    case "channel_event":
+      return charsToTokens(
+        record.event.eventType.length +
+          record.event.platform.length +
+          record.event.channelId.length +
+          (record.event.sourceUserId?.length ?? 0),
+      );
+    case "assistant_message": {
+      const { content } = record.message;
+      if (typeof content === "string") {
+        return charsToTokens(content.length);
       }
+
+      let chars = 0;
+      for (const part of content) {
+        if (part.type === "text" || part.type === "reasoning") {
+          if (typeof part.text === "string") {
+            chars += part.text.length;
+          }
+          continue;
+        }
+
+        if (part.type === "tool-call") {
+          chars += part.toolName.length + JSON.stringify("input" in part ? part.input : {}).length;
+        }
+      }
+
+      return charsToTokens(chars);
     }
-    return Math.ceil(chars / 4);
+    case "tool_message": {
+      let chars = 0;
+      for (const part of record.message.content) {
+        chars += JSON.stringify("output" in part ? part.output : part).length;
+      }
+      return charsToTokens(chars);
+    }
+    case "system_notice":
+      return charsToTokens(record.notice.length);
+    case "state_change":
+      return 0;
   }
-  if (entry.type === "compaction") {
-    return Math.ceil(entry.summary.length / 4);
-  }
-  return 0;
 }
 
 export function findTurnStartIndex(
-  entries: SessionEntry[],
-  entryIndex: number,
+  records: readonly TimelineRecord[],
+  recordIndex: number,
   startIndex: number,
 ): number {
-  for (let i = entryIndex; i >= startIndex; i--) {
-    if (isTurnStartEntry(entries[i])) {
+  for (let i = recordIndex; i >= startIndex; i--) {
+    if (isTurnStartRecord(records[i])) {
       return i;
     }
   }
+
   return -1;
 }
 
 export function findCutPoint(
-  entries: SessionEntry[],
+  records: readonly TimelineRecord[],
   startIndex: number,
   endIndex: number,
   keepRecentTokens: number,
 ): CutPointResult {
   const validCutPoints: number[] = [];
   for (let i = startIndex; i < endIndex; i++) {
-    if (isValidCutPoint(entries[i])) {
+    if (isValidCutPoint(records[i])) {
       validCutPoints.push(i);
     }
   }
 
   if (validCutPoints.length === 0) {
     return {
-      firstKeptEntryIndex: startIndex,
+      firstKeptRecordIndex: startIndex,
       turnStartIndex: -1,
       isSplitTurn: false,
     };
@@ -84,38 +124,41 @@ export function findCutPoint(
   let cutIndex = validCutPoints[0];
 
   for (let i = endIndex - 1; i >= startIndex; i--) {
-    accumulatedTokens += estimateEntryTokens(entries[i]);
+    accumulatedTokens += estimateRecordTokens(records[i]);
     if (accumulatedTokens >= keepRecentTokens) {
+      let fallbackCutPoint = cutIndex;
       for (const cutPoint of validCutPoints) {
-        if (cutPoint >= i) {
+        if (cutPoint < i) {
+          continue;
+        }
+
+        fallbackCutPoint = cutPoint;
+        if (records[cutPoint].kind !== "tool_message") {
           cutIndex = cutPoint;
           break;
         }
       }
+
+      if (records[cutIndex].kind === "tool_message") {
+        cutIndex = fallbackCutPoint;
+      }
+
       break;
     }
   }
 
-  while (cutIndex > startIndex) {
-    const prev = entries[cutIndex - 1];
-    if (prev.type === "compaction") {
-      break;
-    }
-    if (prev.type === "message" || prev.type === "custom_message") {
-      break;
-    }
-    cutIndex--;
-  }
-
-  const cutEntry = entries[cutIndex];
-  const isUserOrCustomStart = isTurnStartEntry(cutEntry);
-  const turnStartIndex = isUserOrCustomStart
+  const cutRecord = records[cutIndex];
+  const turnStartIndex = isTurnStartRecord(cutRecord)
     ? -1
-    : findTurnStartIndex(entries, cutIndex, startIndex);
+    : findTurnStartIndex(records, cutIndex, startIndex);
 
   return {
-    firstKeptEntryIndex: cutIndex,
+    firstKeptRecordIndex: cutIndex,
     turnStartIndex,
-    isSplitTurn: !isUserOrCustomStart && turnStartIndex !== -1,
+    isSplitTurn: turnStartIndex !== -1,
   };
+}
+
+export function isCompactionRecordVisible(record: TimelineRecord): boolean {
+  return isRecordVisibleForCompaction(record);
 }

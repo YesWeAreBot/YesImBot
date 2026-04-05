@@ -5,15 +5,17 @@ import {
   prepareCompaction,
   serializeConversation,
   shouldCompact,
-} from "core/src/services/session/compaction";
+} from "../../src/services/session/compaction/index.ts";
+import { serializeTimelineForCompaction } from "../../src/services/session/compaction/serialize";
 import {
   AgentAssistantMessage,
   AgentCustomMessage,
   AgentMessage,
   AgentToolMessage,
   AgentUserMessage,
-  SessionEntry,
-} from "core/src/services/session/session-manager";
+} from "../../src/services/session/session-manager";
+import type { TimelineRecord } from "../../src/services/session/contracts";
+import type { ModelMessage } from "@ai-sdk/provider-utils";
 import { describe, expect, it } from "vitest";
 
 const DEFAULT_COMPACTION_SETTINGS = {
@@ -61,68 +63,129 @@ function custom(content: string): AgentCustomMessage {
   };
 }
 
-function messageEntry(id: string, message: AgentMessage): SessionEntry {
+function channelMessageRecord(id: string, content: string): TimelineRecord {
   return {
-    type: "message",
     id,
-    parentId: null,
-    timestamp: new Date().toISOString(),
-    message,
+    kind: "channel_message",
+    timestamp: Date.now(),
+    stage: "persisted",
+    visibility: "model",
+    materialization: "default",
+    message: {
+      kind: "channel_message",
+      platform: "test",
+      channelId: "c1",
+      messageId: id,
+      timestamp: Date.now(),
+      content,
+      sender: {
+        userId: "u1",
+        username: "alice",
+        nickname: "Alice",
+      },
+      isDirect: false,
+      atSelf: false,
+      isReplyToBot: false,
+    },
   };
 }
 
-function channelMessageEntry(id: string, content: string): SessionEntry {
+function assistantRecord(id: string, content: AgentAssistantMessage["content"]): TimelineRecord {
   return {
-    type: "custom_message",
     id,
-    parentId: null,
-    timestamp: new Date().toISOString(),
-    customType: "channel_message",
-    content,
-    display: false,
-  };
-}
-
-function protocolGuidanceEntry(id: string, content: string): SessionEntry {
-  return {
-    type: "custom_message",
-    id,
-    parentId: null,
-    timestamp: new Date().toISOString(),
-    customType: "protocol_guidance",
-    content,
-    display: false,
-  };
-}
-
-function controlStateEntry(id: string, content: string): SessionEntry {
-  return {
-    type: "custom_message",
-    id,
-    parentId: null,
-    timestamp: new Date().toISOString(),
-    customType: "control_state",
-    content,
-    display: false,
-  };
-}
-
-function protocolDraftEntry(id: string, text: string): SessionEntry {
-  return {
-    type: "custom",
-    id,
-    parentId: null,
-    timestamp: new Date().toISOString(),
-    customType: "protocol_assistant_draft",
-    data: {
-      text,
+    kind: "assistant_message",
+    timestamp: Date.now(),
+    stage: "runtime",
+    visibility: "model",
+    materialization: "default",
+    message: {
+      role: "assistant",
+      content,
+      timestamp: Date.now(),
       provider: "test",
       model: "test-model",
     },
   };
 }
 
+function toolRecord(id: string, result: unknown): TimelineRecord {
+  return {
+    id,
+    kind: "tool_message",
+    timestamp: Date.now(),
+    stage: "runtime",
+    visibility: "model",
+    materialization: "default",
+    message: {
+      role: "tool",
+      timestamp: Date.now(),
+      content: [
+        {
+          type: "tool-result",
+          toolCallId: `${id}-tool-call`,
+          toolName: "search",
+          result,
+        },
+      ],
+    },
+  };
+}
+
+function hiddenSystemNoticeRecord(id: string, notice: string): TimelineRecord {
+  return {
+    id,
+    kind: "system_notice",
+    timestamp: Date.now(),
+    stage: "runtime",
+    visibility: "hidden",
+    materialization: "hidden",
+    subType: "protocol_guidance",
+    materializationKey: "protocol_guidance",
+    notice,
+  };
+}
+
+function internalStateRecord(id: string, stateType: string): TimelineRecord {
+  return {
+    id,
+    kind: "state_change",
+    timestamp: Date.now(),
+    stage: "runtime",
+    visibility: "internal",
+    materialization: "internal",
+    stateType,
+    data: { source: "test" },
+  };
+}
+
 describe("compaction estimate", () => {
+  it("estimates canonical materialized model messages across system user assistant and tool roles", () => {
+    const messages: ModelMessage[] = [
+      { role: "system", content: "system context" },
+      { role: "user", content: "hello world" },
+      { role: "assistant", content: "assistant reply" },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "tc-1",
+            toolName: "search",
+            result: { ok: true },
+          },
+        ],
+      },
+    ];
+
+    const expectedTokens =
+      Math.ceil("system context".length / 4) +
+      Math.ceil("hello world".length / 4) +
+      Math.ceil("assistant reply".length / 4) +
+      Math.ceil(JSON.stringify({ ok: true }).length / 4);
+
+    expect(estimateContextTokens(messages as never)).toBe(expectedTokens);
+  });
+
   it("estimates user string message tokens", () => {
     expect(estimateTokens(user("hello world"))).toBe(3);
   });
@@ -219,48 +282,82 @@ describe("compaction trigger", () => {
 
 describe("cut point detection", () => {
   it("never returns a cut point that starts at a tool message", () => {
-    const entries: SessionEntry[] = [
-      messageEntry("m1", user("u1")),
-      messageEntry("m2", assistant([{ type: "text", text: "a1" }])),
-      messageEntry("m3", toolResult("result-1")),
-      messageEntry("m4", assistant([{ type: "text", text: "a2" }])),
-      messageEntry("m5", toolResult("result-2")),
+    const records: TimelineRecord[] = [
+      channelMessageRecord("m1", "u1"),
+      assistantRecord("m2", [{ type: "text", text: "a1" }]),
+      toolRecord("m3", "result-1"),
+      assistantRecord("m4", [{ type: "text", text: "a2" }]),
+      toolRecord("m5", "result-2"),
     ];
 
-    const result = findCutPoint(entries, 0, entries.length, 3);
-    const cutEntry = entries[result.firstKeptEntryIndex];
-    expect(cutEntry.type).toBe("message");
-    if (cutEntry.type === "message") {
-      expect(cutEntry.message.role).not.toBe("tool");
-    }
+    const result = findCutPoint(records, 0, records.length, 3);
+    expect(records[result.firstKeptRecordIndex]?.kind).not.toBe("tool_message");
   });
 
-  it("treats custom_message as a valid cut point", () => {
-    const entries: SessionEntry[] = [
-      messageEntry("m1", user("hello")),
-      channelMessageEntry("c1", "alice: update"),
-      messageEntry("m2", assistant([{ type: "text", text: "ack" }])),
+  it("treats channel_message as a valid cut point", () => {
+    const records: TimelineRecord[] = [
+      channelMessageRecord("m1", "hello"),
+      channelMessageRecord("c1", "alice: update"),
+      assistantRecord("m2", [{ type: "text", text: "ack" }]),
     ];
 
-    const result = findCutPoint(entries, 0, entries.length, 2);
-    expect(entries[result.firstKeptEntryIndex]?.id).toBe("c1");
+    const result = findCutPoint(records, 0, records.length, 2);
+    expect(records[result.firstKeptRecordIndex]?.id).toBe("c1");
   });
 
   it("detects split turn when one large turn exceeds keepRecentTokens", () => {
-    const entries: SessionEntry[] = [
-      messageEntry("u1", user("request")),
-      messageEntry("a1", assistant([{ type: "text", text: "x".repeat(120) }])),
-      messageEntry("t1", toolResult("y".repeat(120))),
-      messageEntry("a2", assistant([{ type: "text", text: "z".repeat(120) }])),
+    const records: TimelineRecord[] = [
+      channelMessageRecord("u1", "request"),
+      assistantRecord("a1", [{ type: "text", text: "x".repeat(120) }]),
+      toolRecord("t1", "y".repeat(120)),
+      assistantRecord("a2", [{ type: "text", text: "z".repeat(120) }]),
     ];
 
-    const result = findCutPoint(entries, 0, entries.length, 40);
+    const result = findCutPoint(records, 0, records.length, 40);
     expect(result.isSplitTurn).toBe(true);
     expect(result.turnStartIndex).toBe(0);
   });
 });
 
 describe("conversation serialization", () => {
+  it("serializes canonical timeline records using materialization visibility rules", () => {
+    const visibleNotice: TimelineRecord = {
+      id: "notice-1",
+      kind: "system_notice",
+      timestamp: Date.now(),
+      stage: "runtime",
+      visibility: "model",
+      materialization: "subtype",
+      subType: "visible_notice",
+      materializationKey: "visible_notice",
+      notice: "Visible notice",
+    };
+
+    const text = serializeTimelineForCompaction(
+      [
+        channelMessageRecord("u1", "hello"),
+        hiddenSystemNoticeRecord("n1", "hidden guidance"),
+        internalStateRecord("s1", "follow_up_review"),
+        visibleNotice,
+        assistantRecord("a1", [{ type: "text", text: "response" }]),
+        toolRecord("t1", { answer: 42 }),
+      ],
+      {
+        systemNoticeStrategies: {
+          visible_notice: (record) => ({ role: "system", content: record.notice }),
+        },
+      },
+    );
+
+    expect(text).toContain("[User]:");
+    expect(text).toContain("hello");
+    expect(text).toContain("[System]: Visible notice");
+    expect(text).toContain("[Assistant]: response");
+    expect(text).toContain("[Tool]:");
+    expect(text).not.toContain("hidden guidance");
+    expect(text).not.toContain("follow_up_review");
+  });
+
   it("serializes message types with required labels", () => {
     const toolLong = "x".repeat(2200);
     const messages: AgentMessage[] = [
@@ -321,89 +418,123 @@ describe("conversation serialization", () => {
 });
 
 describe("prepareCompaction", () => {
-  it("returns undefined when the last entry is already a compaction", () => {
-    const entries: SessionEntry[] = [
-      messageEntry("u1", user("hello")),
-      {
-        type: "compaction",
-        id: "cmp1",
-        parentId: "u1",
-        timestamp: new Date().toISOString(),
-        summary: "s",
-        firstKeptEntryId: "u1",
-        tokensBefore: 10,
-      },
+  it("prepareCompaction only accepts canonical timeline records and keeps previous summary boundary", () => {
+    const records: TimelineRecord[] = [
+      channelMessageRecord("k1", "old recent message"),
+      assistantRecord("k2", [{ type: "text", text: "old assistant" }]),
+      channelMessageRecord("k3", "x".repeat(400)),
+      assistantRecord("k4", [{ type: "text", text: "newest" }]),
     ];
 
-    expect(prepareCompaction(entries, DEFAULT_COMPACTION_SETTINGS)).toBeUndefined();
-  });
-
-  it("splits messagesToSummarize and carries previousSummary", () => {
-    const entries: SessionEntry[] = [
-      messageEntry("u1", user("before compaction")),
+    const preparation = prepareCompaction(
+      records,
       {
-        type: "compaction",
-        id: "cmp1",
-        parentId: "u1",
-        timestamp: new Date().toISOString(),
-        summary: "previous summary",
-        firstKeptEntryId: "k1",
-        tokensBefore: 20,
+        ...DEFAULT_COMPACTION_SETTINGS,
+        keepRecentTokens: 30,
       },
-      messageEntry("k1", user("old recent message")),
-      messageEntry("k2", assistant([{ type: "text", text: "old assistant" }])),
-      messageEntry("k3", user("x".repeat(400))),
-      messageEntry("k4", assistant([{ type: "text", text: "newest" }])),
-    ];
-
-    const preparation = prepareCompaction(entries, {
-      ...DEFAULT_COMPACTION_SETTINGS,
-      keepRecentTokens: 30,
-    });
+      "previous summary",
+    );
 
     expect(preparation).toBeDefined();
     expect(preparation?.previousSummary).toBe("previous summary");
-    expect(preparation?.messagesToSummarize.length).toBeGreaterThan(0);
     expect(preparation?.firstKeptEntryId).toBe("k3");
+    expect(preparation).toHaveProperty("recordsToSummarize");
+    expect(preparation).toHaveProperty("turnPrefixRecords");
+  });
+
+  it("prepareCompaction only keeps model-visible canonical records in summarize and split-turn slices", () => {
+    const records: TimelineRecord[] = [
+      channelMessageRecord("u1", "request"),
+      hiddenSystemNoticeRecord("n1", "hidden guidance"),
+      internalStateRecord("s1", "follow_up_review"),
+      assistantRecord("a1", [{ type: "text", text: "x".repeat(120) }]),
+      toolRecord("t1", "y".repeat(120)),
+      assistantRecord("a2", [{ type: "text", text: "z".repeat(120) }]),
+    ];
+
+    const preparation = prepareCompaction(
+      records,
+      {
+        ...DEFAULT_COMPACTION_SETTINGS,
+        keepRecentTokens: 40,
+      },
+      undefined,
+      120,
+    );
+
+    expect(preparation).toBeDefined();
+    expect(preparation?.isSplitTurn).toBe(true);
+    expect(preparation?.turnPrefixRecords.map((record) => record.id)).toEqual(["u1", "a1", "t1"]);
+    expect(preparation?.recordsToSummarize.map((record) => record.id)).not.toContain("n1");
+    expect(preparation?.recordsToSummarize.map((record) => record.id)).not.toContain("s1");
+  });
+
+  it("splits messagesToSummarize and carries previousSummary", () => {
+    const records: TimelineRecord[] = [
+      channelMessageRecord("k1", "old recent message"),
+      assistantRecord("k2", [{ type: "text", text: "old assistant" }]),
+      channelMessageRecord("k3", "x".repeat(400)),
+      assistantRecord("k4", [{ type: "text", text: "newest" }]),
+    ];
+
+    const preparation = prepareCompaction(
+      records,
+      {
+        ...DEFAULT_COMPACTION_SETTINGS,
+        keepRecentTokens: 30,
+      },
+      "previous summary",
+    );
+
+    expect(preparation).toBeDefined();
+    expect(preparation?.previousSummary).toBe("previous summary");
+    expect(preparation?.recordsToSummarize.length).toBeGreaterThan(0);
+    expect(preparation?.firstKeptEntryId).toBe("k3");
+
+    const summaryText = serializeTimelineForCompaction(preparation?.recordsToSummarize ?? []);
+    expect(summaryText).toContain("[User]:");
+    expect(summaryText).toContain("old recent message");
+    expect(summaryText).toContain("[Assistant]: old assistant");
   });
 
   it("scales keepRecentTokens using larger real contextTokens", () => {
-    const entries: SessionEntry[] = [
-      messageEntry("u1", user("u".repeat(4000))),
-      messageEntry("a1", assistant([{ type: "text", text: "a".repeat(4000) }])),
-      messageEntry("u2", user("u".repeat(4000))),
-      messageEntry("a2", assistant([{ type: "text", text: "a".repeat(4000) }])),
-      messageEntry("u3", user("u".repeat(4000))),
-      messageEntry("a3", assistant([{ type: "text", text: "a".repeat(4000) }])),
+    const records: TimelineRecord[] = [
+      channelMessageRecord("u1", "u".repeat(4000)),
+      assistantRecord("a1", [{ type: "text", text: "a".repeat(4000) }]),
+      channelMessageRecord("u2", "u".repeat(4000)),
+      assistantRecord("a2", [{ type: "text", text: "a".repeat(4000) }]),
+      channelMessageRecord("u3", "u".repeat(4000)),
+      assistantRecord("a3", [{ type: "text", text: "a".repeat(4000) }]),
     ];
 
-    const withoutScaling = prepareCompaction(entries, {
+    const withoutScaling = prepareCompaction(records, {
       ...DEFAULT_COMPACTION_SETTINGS,
       keepRecentTokens: 20000,
     });
-    expect(withoutScaling?.messagesToSummarize.length ?? 0).toBe(0);
+    expect(withoutScaling?.recordsToSummarize.length ?? 0).toBe(0);
 
     const withScaling = prepareCompaction(
-      entries,
+      records,
       {
         ...DEFAULT_COMPACTION_SETTINGS,
         keepRecentTokens: 20000,
       },
+      undefined,
       120000,
     );
 
     expect(withScaling).toBeDefined();
-    expect(withScaling?.messagesToSummarize.length).toBeGreaterThan(0);
-    expect(withScaling?.firstKeptEntryId).not.toBe(entries[0].id);
+    expect(withScaling?.recordsToSummarize.length).toBeGreaterThan(0);
+    expect(withScaling?.firstKeptEntryId).not.toBe(records[0].id);
   });
 
   it("returns undefined when no summarizable history and no previous summary", () => {
-    const entries: SessionEntry[] = [
-      messageEntry("u1", user("hello")),
-      messageEntry("a1", assistant([{ type: "text", text: "world" }])),
+    const records: TimelineRecord[] = [
+      channelMessageRecord("u1", "hello"),
+      assistantRecord("a1", [{ type: "text", text: "world" }]),
     ];
 
-    const preparation = prepareCompaction(entries, {
+    const preparation = prepareCompaction(records, {
       ...DEFAULT_COMPACTION_SETTINGS,
       keepRecentTokens: 20000,
     });
@@ -411,72 +542,39 @@ describe("prepareCompaction", () => {
     expect(preparation).toBeUndefined();
   });
 
-  it("excludes protocol_guidance from compaction input", () => {
-    const entries: SessionEntry[] = [
-      messageEntry("u1", user("hello")),
-      protocolGuidanceEntry("p1", "Visible IM replies must be sent with the send_message tool"),
-      messageEntry("a1", assistant([{ type: "text", text: "world" }])),
-      messageEntry("u2", user("x".repeat(400))),
-      messageEntry("a2", assistant([{ type: "text", text: "newest" }])),
+  it("excludes hidden protocol guidance from compaction input", () => {
+    const records: TimelineRecord[] = [
+      channelMessageRecord("u1", "hello"),
+      hiddenSystemNoticeRecord("p1", "Visible IM replies must be sent with the send_message tool"),
+      assistantRecord("a1", [{ type: "text", text: "world" }]),
+      channelMessageRecord("u2", "x".repeat(400)),
+      assistantRecord("a2", [{ type: "text", text: "newest" }]),
     ];
 
-    const preparation = prepareCompaction(entries, {
+    const preparation = prepareCompaction(records, {
       ...DEFAULT_COMPACTION_SETTINGS,
       keepRecentTokens: 30,
     });
 
     expect(preparation).toBeDefined();
-    expect(preparation?.messagesToSummarize).toEqual([
-      expect.objectContaining({ role: "user", content: "hello" }),
-      expect.objectContaining({ role: "assistant" }),
-    ]);
-    expect(
-      preparation?.messagesToSummarize.some(
-        (message) => message.role === "custom" && message.customType === "protocol_guidance",
-      ),
-    ).toBe(false);
+    expect(preparation?.recordsToSummarize.map((record) => record.id)).toEqual(["u1", "a1"]);
   });
 
-  it("excludes control_state from compaction input", () => {
-    const entries: SessionEntry[] = [
-      messageEntry("u1", user("hello")),
-      controlStateEntry("c1", "internal"),
-      messageEntry("a1", assistant([{ type: "text", text: "world" }])),
-      messageEntry("u2", user("x".repeat(400))),
-      messageEntry("a2", assistant([{ type: "text", text: "newest" }])),
+  it("excludes internal state changes from compaction input", () => {
+    const records: TimelineRecord[] = [
+      channelMessageRecord("u1", "hello"),
+      internalStateRecord("c1", "control_state"),
+      assistantRecord("a1", [{ type: "text", text: "world" }]),
+      channelMessageRecord("u2", "x".repeat(400)),
+      assistantRecord("a2", [{ type: "text", text: "newest" }]),
     ];
 
-    const preparation = prepareCompaction(entries, {
+    const preparation = prepareCompaction(records, {
       ...DEFAULT_COMPACTION_SETTINGS,
       keepRecentTokens: 30,
     });
 
     expect(preparation).toBeDefined();
-    expect(
-      preparation?.messagesToSummarize.some(
-        (message) => message.role === "custom" && message.customType === "control_state",
-      ),
-    ).toBe(false);
-  });
-
-  it("excludes protocol assistant drafts from compaction input", () => {
-    const entries: SessionEntry[] = [
-      messageEntry("u1", user("hello")),
-      protocolDraftEntry("d1", "undelivered plain text"),
-      messageEntry("a1", assistant([{ type: "text", text: "world" }])),
-      messageEntry("u2", user("x".repeat(400))),
-      messageEntry("a2", assistant([{ type: "text", text: "newest" }])),
-    ];
-
-    const preparation = prepareCompaction(entries, {
-      ...DEFAULT_COMPACTION_SETTINGS,
-      keepRecentTokens: 30,
-    });
-
-    expect(preparation).toBeDefined();
-    expect(preparation?.messagesToSummarize).toEqual([
-      expect.objectContaining({ role: "user", content: "hello" }),
-      expect.objectContaining({ role: "assistant" }),
-    ]);
+    expect(preparation?.recordsToSummarize.map((record) => record.id)).toEqual(["u1", "a1"]);
   });
 });

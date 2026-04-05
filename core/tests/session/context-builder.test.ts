@@ -1,66 +1,57 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  buildSessionContext,
-  convertAgentMessagesToModelMessages,
-  type SessionEntry,
-} from "../../src/services/session/session-manager";
+import { SessionManager } from "../../src/services/session/session-manager";
+import * as sessionManagerModule from "../../src/services/session/session-manager";
 
-describe("buildSessionContext", () => {
-  it("projects inbound channel_message to user role", () => {
-    const entries: SessionEntry[] = [
-      {
-        type: "custom_message",
-        id: "aaaa1111",
-        parentId: null,
-        timestamp: new Date().toISOString(),
-        customType: "channel_message",
-        content: "[alice]: hi",
-        display: false,
-        details: {
-          userId: "alice",
-          username: "alice",
-          platform: "discord",
-          channelId: "channel-1",
-          messageId: "msg-1",
-          isDirect: true,
-          atSelf: false,
-          isReplyToBot: false,
-        },
-      },
-    ];
-
-    const ctx = buildSessionContext(entries);
-    expect(ctx.agentMessages[0]).toMatchObject({ role: "custom", customType: "channel_message" });
-
-    const modelMessages = convertAgentMessagesToModelMessages(ctx.agentMessages);
-    expect(modelMessages[0]).toMatchObject({ role: "user" });
+describe("SessionManager canonical materialization", () => {
+  it("does not expose legacy read-side context builders", () => {
+    expect(sessionManagerModule.buildSessionContext).toBeUndefined();
+    expect(sessionManagerModule.convertAgentMessagesToModelMessages).toBeUndefined();
   });
 
-  it("excludes protocol_guidance and other control custom_message from model context", () => {
-    const entries: SessionEntry[] = [
-      {
-        type: "custom_message",
-        id: "cccc3333",
-        parentId: null,
-        timestamp: new Date().toISOString(),
-        customType: "protocol_guidance",
-        content: "Visible IM replies must be sent with the send_message tool",
-        display: false,
-      },
-      {
-        type: "custom_message",
-        id: "dddd4444",
-        parentId: "cccc3333",
-        timestamp: new Date().toISOString(),
-        customType: "control_state",
-        content: "internal",
-        display: false,
-      },
-    ];
+  it("materializes canonical timeline records through getModelMessages", () => {
+    const manager = SessionManager.inMemory("discord:channel-1");
 
-    const ctx = buildSessionContext(entries);
-    const modelMessages = convertAgentMessagesToModelMessages(ctx.agentMessages);
-    expect(modelMessages).toHaveLength(0);
+    manager.appendTimelineRecord({
+      id: "msg-1",
+      kind: "channel_message",
+      timestamp: 1,
+      stage: "ingress",
+      visibility: "model",
+      materialization: "default",
+      message: {
+        kind: "channel_message",
+        platform: "discord",
+        channelId: "channel-1",
+        messageId: "msg-1",
+        timestamp: 1,
+        content: "hi",
+        sender: {
+          userId: "alice",
+          username: "alice",
+        },
+        isDirect: true,
+        atSelf: false,
+        isReplyToBot: false,
+      },
+    });
+    manager.appendTimelineRecord({
+      id: "notice-1",
+      kind: "system_notice",
+      timestamp: 2,
+      stage: "runtime",
+      visibility: "hidden",
+      materialization: "hidden",
+      subType: "protocol_guidance",
+      materializationKey: "hidden",
+      notice: "hidden guidance",
+    });
+
+    expect(manager.getModelMessages()).toEqual([
+      expect.objectContaining({
+        role: "user",
+        content: expect.stringContaining("hi"),
+      }),
+    ]);
   });
 });

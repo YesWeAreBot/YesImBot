@@ -1,4 +1,4 @@
-import type { AgentMessage } from "../session-manager";
+import type { TimelineRecord } from "../contracts";
 
 export interface CompactionSettings {
   enabled: boolean;
@@ -7,15 +7,15 @@ export interface CompactionSettings {
 }
 
 export interface CutPointResult {
-  firstKeptEntryIndex: number;
+  firstKeptRecordIndex: number;
   turnStartIndex: number;
   isSplitTurn: boolean;
 }
 
 export interface CompactionPreparation {
   firstKeptEntryId: string;
-  messagesToSummarize: AgentMessage[];
-  turnPrefixMessages: AgentMessage[];
+  recordsToSummarize: TimelineRecord[];
+  turnPrefixRecords: TimelineRecord[];
   isSplitTurn: boolean;
   tokensBefore: number;
   previousSummary?: string;

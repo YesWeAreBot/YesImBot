@@ -106,6 +106,16 @@ function getLatestToolLoopAgentOptions(): Record<string, unknown> | undefined {
   return firstArg as Record<string, unknown>;
 }
 
+function listTimelineStates(sessionManager: SessionManager, stateType: string) {
+  return sessionManager
+    .getTimeline()
+    .filter((record) => record.kind === "state_change" && record.stateType === stateType);
+}
+
+function findTimelineState(sessionManager: SessionManager, stateType: string) {
+  return listTimelineStates(sessionManager, stateType)[0];
+}
+
 interface MutableSettingsManager extends ChannelRuntimeSettingsManager {
   setResponseSettings(
     settings: NonNullable<ReturnType<ChannelRuntimeSettingsManager["getResponseSettings"]>>,
@@ -280,6 +290,7 @@ describe("ChannelRuntime state machine", () => {
 
       await vi.waitFor(() => {
         expect(generateMock).toHaveBeenCalledTimes(2);
+        expect(agent.getResponseState()).toBe("idle");
       });
 
       expect(refreshedMessages).toEqual(
@@ -416,8 +427,8 @@ describe("ChannelRuntime state machine", () => {
 
       expect(
         sessionManager
-          .getEntries()
-          .some((entry) => entry.type === "message" && entry.message.role === "assistant"),
+          .getTimeline()
+          .some((record) => record.kind === "assistant_message"),
       ).toBe(true);
     });
 
@@ -442,17 +453,10 @@ describe("ChannelRuntime state machine", () => {
       await vi.waitFor(() => {
         expect(agent.getResponseState()).toBe("idle");
       });
-      const responseEnd = sessionManager
-        .getEntries()
-        .find((entry) => entry.type === "custom" && entry.customType === "response_end");
+      const responseEnd = findTimelineState(sessionManager, "response_end");
       expect(responseEnd).toBeTruthy();
-      const responseEndData = responseEnd?.type === "custom" ? responseEnd.data : undefined;
-      if (
-        typeof responseEndData === "object" &&
-        responseEndData !== null &&
-        "endReason" in responseEndData
-      ) {
-        expect(responseEndData.endReason).toBe("abort");
+      if (responseEnd?.kind === "state_change") {
+        expect(responseEnd.data).toMatchObject({ endReason: "abort" });
       }
     });
 
@@ -487,17 +491,10 @@ describe("ChannelRuntime state machine", () => {
       await vi.waitFor(() => {
         expect(timeoutAgent.getResponseState()).toBe("idle");
       });
-      const responseEnd = sessionManager
-        .getEntries()
-        .find((entry) => entry.type === "custom" && entry.customType === "response_end");
+      const responseEnd = findTimelineState(sessionManager, "response_end");
       expect(responseEnd).toBeTruthy();
-      const responseEndData = responseEnd?.type === "custom" ? responseEnd.data : undefined;
-      if (
-        typeof responseEndData === "object" &&
-        responseEndData !== null &&
-        "endReason" in responseEndData
-      ) {
-        expect(responseEndData.endReason).toBe("timeout");
+      if (responseEnd?.kind === "state_change") {
+        expect(responseEnd.data).toMatchObject({ endReason: "timeout" });
       }
     });
     it.todo("transitions idle -> responding -> ended on error");
@@ -551,7 +548,7 @@ describe("ChannelRuntime state machine", () => {
 
     it.todo("processes queued trigger after first completes");
 
-    it("merges burst input into one follow-up turn", async () => {
+    it("records follow-up review state through the session timeline", async () => {
       const { agent, sessionManager } = createAgent();
       let releaseFirst!: () => void;
       const firstTurn = new Promise<void>((resolve) => {
@@ -588,22 +585,18 @@ describe("ChannelRuntime state machine", () => {
 
       const secondTurnInput = generateMock.mock.calls[1]?.[0];
 
-      const responseEndRecords = sessionManager
-        .getEntries()
-        .filter((entry) => entry.type === "custom" && entry.customType === "response_end");
-      const followUpReviewRecords = sessionManager
-        .getEntries()
-        .filter((entry) => entry.type === "custom" && entry.customType === "follow_up_review");
+      const responseEndRecords = listTimelineStates(sessionManager, "response_end");
+      const followUpReviewRecords = listTimelineStates(sessionManager, "follow_up_review");
 
       expect(responseEndRecords).toHaveLength(2);
       expect(followUpReviewRecords).toHaveLength(1);
-      if (responseEndRecords[0]?.type === "custom") {
+      if (responseEndRecords[0]?.kind === "state_change") {
         expect(responseEndRecords[0].data).toMatchObject({ nextOutcome: "follow_up" });
       }
-      if (responseEndRecords[1]?.type === "custom") {
+      if (responseEndRecords[1]?.kind === "state_change") {
         expect(responseEndRecords[1].data).toMatchObject({ nextOutcome: "idle" });
       }
-      if (followUpReviewRecords[0]?.type === "custom") {
+      if (followUpReviewRecords[0]?.kind === "state_change") {
         expect(followUpReviewRecords[0].data).toMatchObject({
           messageCount: 2,
           messageIds: ["msg-burst-2", "msg-burst-3"],
@@ -660,10 +653,8 @@ describe("ChannelRuntime state machine", () => {
       expect(toolLoopAgentCtorMock).toHaveBeenCalledTimes(1);
 
       const guidanceEntries = sessionManager
-        .getEntries()
-        .filter(
-          (entry) => entry.type === "custom_message" && entry.customType === "protocol_guidance",
-        );
+        .getTimeline()
+        .filter((entry) => entry.kind === "system_notice" && entry.subType === "protocol_guidance");
       expect(guidanceEntries).toHaveLength(1);
     });
   });
@@ -690,11 +681,9 @@ describe("ChannelRuntime state machine", () => {
       await vi.waitFor(() => {
         expect(agent.getResponseState()).toBe("idle");
       });
-      const responseEnd = sessionManager
-        .getEntries()
-        .find((entry) => entry.type === "custom" && entry.customType === "response_end");
+      const responseEnd = findTimelineState(sessionManager, "response_end");
       expect(responseEnd).toBeTruthy();
-      if (responseEnd && responseEnd.type === "custom") {
+      if (responseEnd?.kind === "state_change") {
         expect(responseEnd.data).toMatchObject({ endReason: "exception" });
       }
     });

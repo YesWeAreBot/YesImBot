@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { AgentSession } from "../../src/services/session/agent-session";
 import {
   buildGenerateInputForTest,
   ChannelRuntime,
@@ -115,6 +116,18 @@ function createSendResult(overrides: Partial<SendMessageResult> = {}): SendMessa
     ],
     ...overrides,
   };
+}
+
+function findTimelineState(sessionManager: SessionManager, stateType: string) {
+  return sessionManager
+    .getTimeline()
+    .find((record) => record.kind === "state_change" && record.stateType === stateType);
+}
+
+function listTimelineStates(sessionManager: SessionManager, stateType: string) {
+  return sessionManager
+    .getTimeline()
+    .filter((record) => record.kind === "state_change" && record.stateType === stateType);
 }
 
 function getStopWhen(): StopWhen {
@@ -245,32 +258,20 @@ describe("ChannelRuntime protocol", () => {
     expect(toolLoopAgentCtorMock).toHaveBeenCalledTimes(1);
 
     const guidance = sessionManager
-      .getEntries()
-      .find((entry) => entry.type === "custom_message" && entry.customType === "protocol_guidance");
+      .getTimeline()
+      .find((record) => record.kind === "system_notice" && record.subType === "protocol_guidance");
     expect(guidance).toBeTruthy();
-    expect(
-      sessionManager
-        .getEntries()
-        .filter((entry) => entry.type === "message" && entry.message.role === "assistant"),
-    ).toHaveLength(0);
-    const responseEnd = sessionManager
-      .getEntries()
-      .find((entry) => entry.type === "custom" && entry.customType === "response_end");
+    expect(sessionManager.getTimeline().filter((record) => record.kind === "assistant_message")).toHaveLength(
+      0,
+    );
+    const responseEnd = findTimelineState(sessionManager, "response_end");
     expect(responseEnd).toBeTruthy();
-    if (responseEnd && responseEnd.type === "custom") {
+    if (responseEnd?.kind === "state_change") {
       expect(responseEnd.data).toMatchObject({ endReason: "protocol_error" });
     }
-    expect(
-      sessionManager
-        .getEntries()
-        .some((entry) => entry.type === "custom" && entry.customType === "protocol_violation"),
-    ).toBe(false);
+    expect(findTimelineState(sessionManager, "protocol_violation")).toBeUndefined();
 
-    const draftEntries = sessionManager
-      .getEntries()
-      .filter(
-        (entry) => entry.type === "custom" && entry.customType === "protocol_assistant_draft",
-      );
+    const draftEntries = listTimelineStates(sessionManager, "protocol_assistant_draft");
     expect(draftEntries).toHaveLength(2);
     expect(draftEntries).toEqual(
       expect.arrayContaining([
@@ -283,9 +284,28 @@ describe("ChannelRuntime protocol", () => {
       ]),
     );
 
+    const session = new AgentSession(sessionManager);
+    const sessionMessages = session.getModelMessages();
+    expect(
+      sessionMessages.some(
+        (msg) =>
+          msg.role === "user" &&
+          typeof msg.content === "string" &&
+          msg.content.includes("Visible IM replies must be sent with the send_message tool"),
+      ),
+    ).toBe(false);
+    expect(
+      sessionMessages.some(
+        (msg) =>
+          msg.role === "assistant" &&
+          typeof msg.content === "string" &&
+          (msg.content.includes("visible text") || msg.content.includes("still plain")),
+      ),
+    ).toBe(false);
+
     const rebuilt = buildGenerateInputForTest({
       instructions: "next run",
-      sessionEntries: [...sessionManager.getEntries()],
+      session,
     });
     expect(
       rebuilt.messages.some(
@@ -374,11 +394,9 @@ describe("ChannelRuntime protocol", () => {
     );
 
     await vi.waitFor(() => {
-      const responseEnd = sessionManager
-        .getEntries()
-        .find((entry) => entry.type === "custom" && entry.customType === "response_end");
+      const responseEnd = findTimelineState(sessionManager, "response_end");
       expect(responseEnd).toBeTruthy();
-      if (responseEnd && responseEnd.type === "custom") {
+      if (responseEnd?.kind === "state_change") {
         expect(responseEnd.data).toMatchObject({ endReason: "normal" });
       }
     });
@@ -497,11 +515,9 @@ describe("ChannelRuntime protocol", () => {
     await agent.receive(createEvent({ messageId: "msg-heartbeat-after-send" }));
 
     await vi.waitFor(() => {
-      const responseEnd = sessionManager
-        .getEntries()
-        .find((entry) => entry.type === "custom" && entry.customType === "response_end");
+      const responseEnd = findTimelineState(sessionManager, "response_end");
       expect(responseEnd).toBeTruthy();
-      if (responseEnd && responseEnd.type === "custom") {
+      if (responseEnd?.kind === "state_change") {
         expect(responseEnd.data).toMatchObject({ endReason: "heartbeat_continuation" });
       }
     });
@@ -531,11 +547,9 @@ describe("ChannelRuntime protocol", () => {
     await agent.receive(createEvent({ messageId: "msg-reserved" }));
 
     await vi.waitFor(() => {
-      const responseEnd = sessionManager
-        .getEntries()
-        .find((entry) => entry.type === "custom" && entry.customType === "response_end");
+      const responseEnd = findTimelineState(sessionManager, "response_end");
       expect(responseEnd).toBeTruthy();
-      if (responseEnd && responseEnd.type === "custom") {
+      if (responseEnd?.kind === "state_change") {
         expect(responseEnd.data).toMatchObject({ endReason: "exception" });
         expect((responseEnd.data as { error?: string }).error).toContain(
           "Tool name reserved: send_message",
@@ -590,28 +604,26 @@ describe("ChannelRuntime protocol", () => {
 
     await vi.waitFor(() => {
       const channelMessages = sessionManager
-        .getEntries()
-        .filter(
-          (entry) => entry.type === "custom_message" && entry.customType === "channel_message",
-        );
+        .getTimeline()
+        .filter((record) => record.kind === "channel_message");
       expect(channelMessages).toHaveLength(1);
     });
 
     const toolMessage = sessionManager
-      .getEntries()
+      .getTimeline()
       .find(
-        (entry) =>
-          entry.type === "message" &&
-          entry.message.role === "tool" &&
-          entry.message.content[0]?.type === "tool-result",
+        (record) =>
+          record.kind === "tool_message" && record.message.content[0]?.type === "tool-result",
       );
     expect(toolMessage).toBeTruthy();
-    if (toolMessage && toolMessage.type === "message" && toolMessage.message.role === "tool") {
-      expect(toolMessage.message.content[0]?.result).toMatchObject({
-        utteranceId: "utt-1",
-        requestHeartbeat: true,
+    if (toolMessage?.kind === "tool_message") {
+      expect(toolMessage.message.content[0]?.output).toMatchObject({
+        type: "json",
+        value: expect.objectContaining({
+          utteranceId: "utt-1",
+          requestHeartbeat: true,
+        }),
       });
-      expect(toolMessage.message.content[0]?.result).not.toHaveProperty("type", "json");
     }
   });
 
@@ -687,22 +699,16 @@ describe("ChannelRuntime protocol", () => {
 
     await vi.waitFor(() => {
       const toolMessages = sessionManager
-        .getEntries()
-        .filter((entry) => entry.type === "message" && entry.message.role === "tool");
+        .getTimeline()
+        .filter((record) => record.kind === "tool_message");
       expect(toolMessages).toHaveLength(1);
     });
 
+    expect(sessionManager.getTimeline().filter((record) => record.kind === "channel_message")).toHaveLength(
+      1,
+    );
     expect(
-      sessionManager
-        .getEntries()
-        .filter(
-          (entry) => entry.type === "custom_message" && entry.customType === "channel_message",
-        ),
-    ).toHaveLength(1);
-    expect(
-      sessionManager
-        .getEntries()
-        .filter((entry) => entry.type === "message" && entry.message.role === "assistant"),
+      sessionManager.getTimeline().filter((record) => record.kind === "assistant_message"),
     ).toHaveLength(1);
   });
 
@@ -757,15 +763,21 @@ describe("ChannelRuntime protocol", () => {
       expect(generateMock).toHaveBeenCalledTimes(2);
     });
 
-    const responseEndRecords = sessionManager
-      .getEntries()
-      .filter((entry) => entry.type === "custom" && entry.customType === "response_end");
+    const responseEndRecords = listTimelineStates(sessionManager, "response_end");
+    const followUpReviewRecords = listTimelineStates(sessionManager, "follow_up_review");
 
     expect(responseEndRecords).toHaveLength(2);
-    if (responseEndRecords[0]?.type === "custom") {
+    expect(followUpReviewRecords).toHaveLength(1);
+    if (followUpReviewRecords[0]?.kind === "state_change") {
+      expect(followUpReviewRecords[0].data).toMatchObject({
+        messageCount: 2,
+        messageIds: ["msg-protocol-burst-2", "msg-protocol-burst-3"],
+      });
+    }
+    if (responseEndRecords[0]?.kind === "state_change") {
       expect(responseEndRecords[0].data).toMatchObject({ nextOutcome: "follow_up" });
     }
-    if (responseEndRecords[1]?.type === "custom") {
+    if (responseEndRecords[1]?.kind === "state_change") {
       expect(responseEndRecords[1].data).toMatchObject({ nextOutcome: "idle" });
     }
   });

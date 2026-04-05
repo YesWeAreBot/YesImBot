@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { AgentSession } from "../../src/services/session/agent-session";
+import { estimateContextTokens } from "../../src/services/session/compaction/estimate";
+import { materializeTimeline } from "../../src/services/session/materialize";
 import { buildGenerateInputForTest, ChannelRuntime } from "../../src/services/session/runtime";
 import { SessionManager } from "../../src/services/session/session-manager";
 import type { AthenaSessionSettings } from "../../src/services/session/settings-manager";
@@ -208,9 +211,15 @@ describe("ChannelRuntime compaction integration", () => {
     await vi.waitFor(() => {
       expect(appendCompactionSpy).toHaveBeenCalledWith("summary text", "keep-1", 90000);
     });
+    expect(prepareCompactionMock.mock.calls[0]?.[0]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "channel_message" }),
+      ]),
+    );
     expect(prepareCompactionMock).toHaveBeenCalledWith(
       expect.any(Array),
       expect.any(Object),
+      undefined,
       90000,
     );
   });
@@ -306,8 +315,9 @@ describe("ChannelRuntime compaction integration", () => {
       expect(appendCompactionSpy).toHaveBeenCalledWith("summary text", "keep-1", 900);
     });
 
-    const contextTokens = prepareCompactionMock.mock.calls[0]?.[2];
-    expect(typeof contextTokens).toBe("number");
+    const compactionRecords = prepareCompactionMock.mock.calls[0]?.[0];
+    const contextTokens = prepareCompactionMock.mock.calls[0]?.[3];
+    expect(contextTokens).toBe(estimateContextTokens(materializeTimeline(compactionRecords)));
     expect(contextTokens).toBeGreaterThan(90);
   });
 
@@ -371,24 +381,31 @@ describe("ChannelRuntime compaction integration", () => {
 
   it("builds next response context from compaction summary and kept messages", async () => {
     const { agent, sessionManager } = createAgent();
+    sessionManager.appendCustomMessageEntry("channel_message", "legacy context that should compact", false, {
+      userId: "user-legacy",
+    });
 
-    prepareCompactionMock.mockReturnValue({
-      firstKeptEntryId: "keep-1",
-      messagesToSummarize: [],
-      turnPrefixMessages: [],
-      isSplitTurn: false,
-      tokensBefore: 90000,
-      settings: {
-        enabled: true,
-        reserveTokens: 16384,
-        keepRecentTokens: 20000,
-      },
+    let firstKeptEntryId = "keep-1";
+    prepareCompactionMock.mockImplementation((records: Array<{ id: string }>) => {
+      firstKeptEntryId = records[records.length - 1]?.id ?? "keep-1";
+      return {
+        firstKeptEntryId,
+        messagesToSummarize: [],
+        turnPrefixMessages: [],
+        isSplitTurn: false,
+        tokensBefore: 90000,
+        settings: {
+          enabled: true,
+          reserveTokens: 16384,
+          keepRecentTokens: 20000,
+        },
+      };
     });
-    compactMock.mockResolvedValue({
+    compactMock.mockImplementation(async () => ({
       summary: "summary text",
-      firstKeptEntryId: "keep-1",
+      firstKeptEntryId,
       tokensBefore: 90000,
-    });
+    }));
 
     setupGenerateToFinish(90000);
     await agent.receive(createEvent({ messageId: "msg-context" }));
@@ -397,14 +414,26 @@ describe("ChannelRuntime compaction integration", () => {
       expect(sessionManager.getEntries().some((entry) => entry.type === "compaction")).toBe(true);
     });
 
+    const session = new AgentSession(sessionManager);
+    expect(session.getModelMessages()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ role: "user", content: expect.stringContaining("summary text") }),
+      ]),
+    );
+
     const nextInput = buildGenerateInputForTest({
       instructions: "next run",
-      sessionEntries: [...sessionManager.getEntries()],
+      session,
     });
 
     expect(nextInput.messages).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ role: "user", content: expect.stringContaining("summary text") }),
+      ]),
+    );
+    expect(nextInput.messages).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ content: expect.stringContaining("legacy context that should compact") }),
       ]),
     );
   });

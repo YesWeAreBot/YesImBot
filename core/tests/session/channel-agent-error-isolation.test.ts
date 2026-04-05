@@ -24,6 +24,7 @@ vi.mock("ai", () => {
   };
 });
 
+import { AgentSession } from "../../src/services/session/agent-session";
 import {
   buildGenerateInputForTest,
   ChannelRuntime,
@@ -81,6 +82,11 @@ function createEvent(overrides: Partial<ChannelEvent> = {}): ChannelEvent {
   };
 }
 
+function createSession(): AgentSession {
+  const sessionManager = SessionManager.inMemory("discord:channel-1");
+  return new AgentSession(sessionManager);
+}
+
 describe("ChannelRuntime plugin safety helpers", () => {
   beforeEach(() => {
     generateMock.mockReset();
@@ -123,12 +129,25 @@ describe("ChannelRuntime plugin safety helpers", () => {
   });
 
   it("builds generation payload with system instruction boundary", () => {
+    const session = createSession();
+
     const { messages } = buildGenerateInputForTest({
       instructions: "test-instruction",
-      sessionEntries: [],
+      session,
     });
 
     expect(messages[0]).toEqual({ role: "system", content: "test-instruction" });
+  });
+
+  it("rejects legacy sessionEntries rebuild inputs", () => {
+    const legacyInput = {
+      instructions: "test-instruction",
+      ["sessionEntries"]: [],
+    };
+
+    expect(() =>
+      buildGenerateInputForTest(legacyInput as never),
+    ).toThrow();
   });
 
   it("preserves finish reason in assistant payload", () => {

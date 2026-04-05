@@ -1,133 +1,105 @@
-import type {
-  AgentAssistantMessage,
-  AgentAssistantContentPart,
-  AgentMessage,
-  ContentPart,
-} from "../session-manager";
+import type { ModelMessage } from "@ai-sdk/provider-utils";
 
-// ============================================================================
-// Token Estimation
-// ============================================================================
+type UsageCarrier = {
+  role: string;
+  usage?: {
+    inputTokens?: number;
+  };
+};
 
-/**
- * Rough token estimate: 1 token ≈ 4 characters.
- * Used when no real usage data is available.
- */
+type CompactionMessage =
+  | ModelMessage
+  | {
+      role: "custom";
+      content: string | readonly unknown[];
+      usage?: {
+        inputTokens?: number;
+      };
+    }
+  | {
+      role: "assistant";
+      content: unknown;
+      usage?: {
+        inputTokens?: number;
+      };
+    };
+
 function charsToTokens(chars: number): number {
   return Math.ceil(chars / 4);
 }
 
-function contentPartsLength(parts: ContentPart[]): number {
-  let len = 0;
-  for (const part of parts) {
-    if (part.type === "text") {
-      len += part.text.length;
-    } else {
-      // Image parts: approximate with a fixed overhead
-      len += 256;
-    }
-  }
-  return len;
-}
+function hasReliableContextUsage(message: CompactionMessage): message is CompactionMessage & UsageCarrier {
+  const usage = (message as UsageCarrier).usage;
 
-function assistantContentPartsLength(parts: AgentAssistantContentPart[]): number {
-  let len = 0;
-  for (const part of parts) {
-    switch (part.type) {
-      case "text":
-        len += part.text.length;
-        break;
-      case "tool-call":
-        len += part.toolName.length + JSON.stringify(part.args).length;
-        break;
-      case "thinking":
-        len += part.text.length;
-        break;
-    }
-  }
-  return len;
-}
-
-function hasReliableContextUsage(
-  msg: AgentMessage,
-): msg is AgentAssistantMessage & { usage: { inputTokens: number } } {
   return (
-    msg.role === "assistant" &&
-    typeof msg.usage?.inputTokens === "number" &&
-    Number.isFinite(msg.usage.inputTokens) &&
-    msg.usage.inputTokens > 0
+    message.role === "assistant" &&
+    typeof usage?.inputTokens === "number" &&
+    Number.isFinite(usage.inputTokens) &&
+    usage.inputTokens > 0
   );
 }
 
-/**
- * Estimate the token count for a single AgentMessage.
- * Uses the 4-chars-per-token heuristic.
- */
-export function estimateTokens(msg: AgentMessage): number {
-  switch (msg.role) {
-    case "user": {
-      const len =
-        typeof msg.content === "string" ? msg.content.length : contentPartsLength(msg.content);
-      return charsToTokens(len);
-    }
-    case "assistant": {
-      const len =
-        typeof msg.content === "string"
-          ? msg.content.length
-          : assistantContentPartsLength(msg.content);
-      return charsToTokens(len);
-    }
-    case "tool": {
-      let len = 0;
-      for (const part of msg.content) {
-        len += JSON.stringify(part.result).length;
-      }
-      return charsToTokens(len);
-    }
-    case "custom": {
-      const len =
-        typeof msg.content === "string" ? msg.content.length : contentPartsLength(msg.content);
-      return charsToTokens(len);
-    }
+function stringifyMessageContent(content: unknown): string {
+  if (typeof content === "string") {
+    return content;
   }
+
+  if (!Array.isArray(content)) {
+    return JSON.stringify(content ?? "");
+  }
+
+  return content
+    .map((part) => {
+      if (typeof part === "string") {
+        return part;
+      }
+
+      if (!part || typeof part !== "object") {
+        return JSON.stringify(part);
+      }
+
+      if ("type" in part) {
+        switch (part.type) {
+          case "text":
+          case "thinking":
+            return typeof part.text === "string" ? part.text : JSON.stringify(part);
+          case "tool-call": {
+            const toolName = typeof part.toolName === "string" ? part.toolName : "tool";
+            return `${toolName}${JSON.stringify(part.args ?? {})}`;
+          }
+          case "tool-result":
+            return JSON.stringify(part.result ?? null);
+          default:
+            return JSON.stringify(part);
+        }
+      }
+
+      return JSON.stringify(part);
+    })
+    .join("\n");
 }
 
-// ============================================================================
-// Context-Level Estimation
-// ============================================================================
+export function estimateTokens(message: CompactionMessage): number {
+  return charsToTokens(stringifyMessageContent(message.content).length);
+}
 
-/**
- * Estimate total context tokens across a list of AgentMessages.
- *
- * Prefers the last assistant usage record (which carries the actual
- * inputTokens count from the model), then adds rough estimates for any
- * messages that arrived after that usage record.
- */
-export function estimateContextTokens(messages: AgentMessage[]): number {
-  // Find the last assistant message that has real usage
-  let lastUsageIdx = -1;
+export function estimateContextTokens(messages: readonly CompactionMessage[]): number {
+  let lastUsageIndex = -1;
   for (let i = messages.length - 1; i >= 0; i--) {
-    const msg = messages[i];
-    if (hasReliableContextUsage(msg)) {
-      lastUsageIdx = i;
+    if (hasReliableContextUsage(messages[i])) {
+      lastUsageIndex = i;
       break;
     }
   }
 
-  if (lastUsageIdx === -1) {
-    // No usage data — estimate everything
-    let total = 0;
-    for (const msg of messages) total += estimateTokens(msg);
-    return total;
+  if (lastUsageIndex === -1) {
+    return messages.reduce((total, message) => total + estimateTokens(message), 0);
   }
 
-  const usageTokens = (messages[lastUsageIdx] as AgentAssistantMessage).usage!.inputTokens;
+  const usageTokens = (messages[lastUsageIndex] as UsageCarrier).usage?.inputTokens ?? 0;
+  const trailingTokens = messages
+    .slice(lastUsageIndex + 1)
+    .reduce((total, message) => total + estimateTokens(message), 0);
 
-  // Add estimates for messages after the last usage record
-  let trailing = 0;
-  for (let i = lastUsageIdx + 1; i < messages.length; i++) {
-    trailing += estimateTokens(messages[i]);
-  }
-
-  return usageTokens + trailing;
+  return usageTokens + trailingTokens;
 }

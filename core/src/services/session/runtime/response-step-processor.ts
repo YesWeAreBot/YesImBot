@@ -5,14 +5,11 @@ import type { Logger } from "koishi";
 
 import { AgentSession } from "../agent-session";
 import {
-  buildSessionContext,
-  convertAgentMessagesToModelMessages,
   type AgentAssistantMessage,
   type AgentAssistantThinkingPart,
   type AgentTextPart,
   type AgentToolCallPart,
   type AgentUsage,
-  type SessionEntry,
 } from "../session-manager";
 import { isSendMessageResult } from "./send-message-tool";
 
@@ -568,19 +565,13 @@ export function buildRuntimeModelMessages(
 
 export function buildGenerateInputForTest(input: {
   instructions: string;
-  session?: AgentSession;
-  sessionEntries?: SessionEntry[];
+  session: AgentSession;
 }): { messages: ModelMessage[] } {
-  if (input.session) {
-    return {
-      messages: buildRuntimeModelMessages(input.session, input.instructions),
-    };
+  if (!(input.session instanceof AgentSession)) {
+    throw new Error("buildGenerateInputForTest requires a live AgentSession");
   }
 
-  const sessionContext = buildSessionContext(input.sessionEntries ?? []);
-  const modelMessages = convertAgentMessagesToModelMessages(sessionContext.agentMessages);
-
   return {
-    messages: [{ role: "system", content: input.instructions }, ...modelMessages],
+    messages: buildRuntimeModelMessages(input.session, input.instructions),
   };
 }
