@@ -1,2 +1,2 @@
-export { PluginService, PluginServiceConfig } from "./service";
-export type { IPluginService } from "./types";
+export { PluginService } from "./service";
+export type { PluginServiceConfig } from "./service";

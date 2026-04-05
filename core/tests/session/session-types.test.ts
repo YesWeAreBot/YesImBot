@@ -6,8 +6,7 @@ import type {
   AgentMessage,
   AgentToolMessage,
   AgentUserMessage,
-  InboundChannelMessageDetails,
-  OutboundChannelMessageDetails,
+  ChannelMessageDetails,
   SessionContext,
 } from "../../src/services/session/session-manager";
 
@@ -44,11 +43,13 @@ describe("session message types", () => {
     expect(ctx.agentMessages).toHaveLength(4);
   });
 
-  it("supports inbound and outbound channel message details", () => {
-    const inbound: InboundChannelMessageDetails = {
-      direction: "inbound",
+  it("supports channel message details", () => {
+    const details: ChannelMessageDetails = {
+      timestamp: Date.now(),
       userId: "user-1",
       username: "alice",
+      nickname: "alice",
+      identity: "direct-user",
       platform: "discord",
       channelId: "123",
       messageId: "msg-1",
@@ -56,18 +57,8 @@ describe("session message types", () => {
       atSelf: false,
       isReplyToBot: false,
     };
-    const outbound: OutboundChannelMessageDetails = {
-      direction: "outbound",
-      platform: "discord",
-      channelId: "123",
-      toolCallId: "call-1",
-      utteranceId: "utt-1",
-      index: 0,
-      messageIds: ["m-1"],
-      requestHeartbeat: false,
-    };
 
-    expect(inbound.username).toBe("alice");
-    expect(outbound.toolCallId).toBe("call-1");
+    expect(details.username).toBe("alice");
+    expect(details.identity).toBe("direct-user");
   });
 });

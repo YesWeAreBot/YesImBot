@@ -7,13 +7,11 @@
   ],
   "type": "module",
   "main": "./dist/index.cjs",
-  "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "require": "./dist/index.cjs",
-      "import": "./dist/index.mjs"
+      "require": "./dist/index.cjs"
     },
     "./package.json": "./package.json"
   },
@@ -22,12 +20,12 @@
     "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
-    "build": "tsc --noEmit && pkgroll",
-    "clean": "rimraf dist && rimraf .turbo && rimraf tsconfig.tsbuildinfo",
+    "build": "pkgroll",
+    "clean": "rimraf dist && rimraf tsconfig.tsbuildinfo",
     "fmt": "oxfmt",
     "lint": "oxlint",
     "pub": "yarn npm publish --access public",
-    "typecheck": "tsc --noEmit && echo 'Type check passed!'"
+    "typecheck": "tsc --noEmit && echo 'TypeScript typecheck passed!'"
   },
   "devDependencies": {
     "@yesimbot/plugin-sdk": "workspace:^",

@@ -1,7 +1,7 @@
 import type { LanguageModel } from "ai";
 import { generateText } from "ai";
 
-import type { AgentMessage } from "../session-manager/types";
+import type { AgentMessage } from "../session-manager";
 import { serializeConversation } from "./serialize";
 
 export const SUMMARIZATION_SYSTEM_PROMPT = `You are a context summarization assistant for a group chat with an AI participant. Do NOT continue the conversation. ONLY output the structured summary.`;

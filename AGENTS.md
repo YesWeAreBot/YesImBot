@@ -2,7 +2,7 @@
 
 ## Project Snapshot
 
-- Athena is a Yarn 4 + Turbo TypeScript monorepo for Koishi-based LLM agents.
+- Athena is a Yarn 4 TypeScript monorepo for Koishi-based LLM agents.
 - This root guide covers only the active mainline workspaces: `core/`, `packages/shared-model/`, `packages/plugin-sdk/`, `providers/*`, and `plugins/*`.
 - Main package roles: `core/` is the primary runtime, `packages/shared-model/` holds shared contracts, `packages/plugin-sdk/` defines extension APIs, `providers/*` implement model providers, and `plugins/*` add optional integrations.
 - Root workspace aliases come from `tsconfig.json`: `koishi-plugin-yesimbot` -> `core/src`, `@yesimbot/*` -> `packages/*/src`.
@@ -12,32 +12,32 @@
 
 ### Root Commands
 
-- Build all workspaces: `yarn build`
-- Typecheck all workspaces: `yarn typecheck`
+- Build all workspaces: `yarn build` (artifact build only; run `yarn typecheck` separately for TypeScript validation)
+- Typecheck all workspaces: `yarn typecheck` (prebuilds required workspace artifacts, then runs `tsc --noEmit`)
 - Lint all workspaces: `yarn lint`
 - Lint with fixes where supported: `yarn lint:fix`
 - Format all workspaces: `yarn fmt`
 - Check formatting only: `yarn fmt:check`
-- Run package tests wired into Turbo: `yarn test`
+- Run the core package test suite: `yarn test`
 - Clean build outputs: `yarn clean`
 
 ### Preferred Targeted Commands
 
-- Prefer running targeted work from the repository root with Turbo filters.
-- Build one package: `yarn turbo run build --filter=<package-name>`
-- Typecheck one package: `yarn turbo run typecheck --filter=<package-name>`
-- Lint one package: `yarn turbo run lint --filter=<package-name>`
-- Test one package: `yarn turbo run test --filter=<package-name>`
-- Use `yarn workspace <package-name> <script>` only as a secondary fallback when a
-  root-level Turbo command is not practical.
-- The old README example `yarn test -p core` is stale; prefer Turbo filters from the root.
+- Prefer running targeted work from the repository root with `yarn workspace <package-name> <script>`.
+- Build one package: `yarn workspace <package-name> build`
+- Typecheck one package: `yarn workspace <package-name> typecheck`
+- Lint one package: `yarn workspace <package-name> lint`
+- Test one package: `yarn workspace <package-name> test`
+- Format one package: `yarn workspace <package-name> fmt`
+- Build commands emit dist artifacts via `pkgroll`; they do not replace explicit `typecheck` runs.
+- The old README example `yarn test -p core` is stale; prefer explicit workspace commands from the root.
 
 ### Important Workspace Names
 
 - Core: `koishi-plugin-yesimbot`
 - Shared model: `@yesimbot/shared-model`
 - Plugin SDK: `@yesimbot/plugin-sdk`
-- Plugins: `@yesimbot/koishi-plugin-search-service`, `@yesimbot/koishi-plugin-mcp-client`
+- Plugins: `koishi-plugin-yesimbot-search-service`, `koishi-plugin-yesimbot-mcp-client`
 - Providers: `@yesimbot/koishi-plugin-provider-openai`, `@yesimbot/koishi-plugin-provider-anthropic`, `@yesimbot/koishi-plugin-provider-google`, `@yesimbot/koishi-plugin-provider-deepseek`
 
 ### Package-Local Commands
@@ -51,10 +51,10 @@
 
 - Active package test suites currently live in `core/tests/**/*.test.ts`.
 - `packages/plugin-sdk/`, `packages/shared-model/`, `providers/*`, and `plugins/*` currently do not define package-level test scripts.
-- Run one core test file from the root: `yarn turbo run test --filter=koishi-plugin-yesimbot -- tests/session/session-restore.test.ts`
+- Run one core test file from the root: `yarn workspace koishi-plugin-yesimbot test tests/session/session-restore.test.ts`
 - From inside `core/`: `yarn test tests/session/session-restore.test.ts`
 - Run one exact core case: `yarn workspace koishi-plugin-yesimbot exec vitest run tests/session/channel-agent-step-finish.test.ts -t "normalizes assistant reasoning blocks and usage metadata into AgentMessage payloads"`
-- For `packages/plugin-sdk/`, use `yarn turbo run typecheck --filter=@yesimbot/plugin-sdk` and `yarn turbo run build --filter=@yesimbot/plugin-sdk` until a real test surface is added.
+- For `packages/plugin-sdk/`, use `yarn workspace @yesimbot/plugin-sdk typecheck` and `yarn workspace @yesimbot/plugin-sdk build` until a real test surface is added.
 - Use `yarn workspace <pkg> exec vitest run <file> -t "<case name>"` when you need exact case-level targeting.
 - While iterating, run the narrowest relevant test first, then broaden to package-level verification only as needed.
 
@@ -132,7 +132,7 @@
 
 - Add or update tests when changing service boundaries, runtime contracts, hooks, prompts, model routing, or plugin registration.
 - If you touch `core/src/services/`, consider whether related structure or debug-level tests need updates.
-- Finish exported contract changes with package-level `typecheck` and `build`.
+- Finish exported contract changes with package-level `typecheck` and `build`; do not treat `build` as a substitute for `typecheck`.
 
 ## Git And Workspace Hygiene
 
@@ -151,3 +151,30 @@
 - `references/pi-mono/packages/ai` for model abstraction and tool-call primitives.
 - `references/letta`, `references/openclaw/docs`, and `references/plast-mem` for agent orchestration and memory design references.
 - `references/vercel-chat/skills/chat/SKILL.md` and `references/vercel-chat/apps/docs/content/docs/concurrency.mdx` for best practices to build chat-bot via ai-sdk.
+
+<!-- GSD:profile-start -->
+## Developer Profile
+
+> Generated by GSD from hybrid. Run `/gsd-profile-user --refresh` to update.
+
+| Dimension | Rating | Confidence |
+|-----------|--------|------------|
+| Communication | detailed-structured | MEDIUM |
+| Decisions | deliberate-informed | MEDIUM |
+| Explanations | educational | MEDIUM |
+| Debugging | hypothesis-driven | MEDIUM |
+| UX Philosophy | backend-focused | MEDIUM |
+| Vendor Choices | opinionated | MEDIUM |
+| Frustrations | instruction-adherence | MEDIUM |
+| Learning | documentation-first | MEDIUM |
+
+**Directives:**
+- **Communication:** 简单修复保持直接，但在后续开发、长期维护和代码质量相关任务中，使用更完整的上下文、结构化讨论和明确决策点。
+- **Decisions:** 在需要选型或取舍时，先给结构化对比、利弊和建议结论，再让开发者拍板。
+- **Explanations:** 默认按教育型方式解释原理、机制和取舍；但对简单执行任务保持简洁，先给结果再补最少必要说明。
+- **Debugging:** 调试时先对齐现象和可能根因，优先回应开发者已有假设，再给修复方案。
+- **UX Philosophy:** 当前项目语境下优先关注运行时、接口和行为正确性；除非明确要求，否则不要主动扩展到视觉设计。
+- **Vendor Choices:** 默认尊重开发者已有的技术偏好；若要建议替代方案，先说明为什么，并给出依据和对照。
+- **Frustrations:** 严格按已给出的约束执行，不要擅自扩展范围；如果要偏离要求，先说明原因并征求确认。
+- **Learning:** 优先给官方文档、参考位置和关键段落；在合适时补一个最小可运行示例，帮助把文档落实到实际代码。
+<!-- GSD:profile-end -->

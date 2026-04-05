@@ -14,9 +14,7 @@ const BASE_TEST_SETTINGS: AthenaSessionSettings = {
   },
 };
 
-export function createTestSettingsManager(
-  overrides: AthenaSessionSettings = {},
-): SettingsManager {
+export function createTestSettingsManager(overrides: AthenaSessionSettings = {}): SettingsManager {
   return new SettingsManager({
     globalSettingsPath: "/tmp/athena-test-global-settings.json",
     workspaceSettingsPath: "/tmp/athena-test-workspace-settings.json",

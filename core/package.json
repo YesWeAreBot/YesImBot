@@ -22,13 +22,11 @@
   ],
   "type": "module",
   "main": "./dist/index.cjs",
-  "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "require": "./dist/index.cjs",
-      "import": "./dist/index.mjs"
+      "require": "./dist/index.cjs"
     },
     "./package.json": "./package.json"
   },
@@ -37,13 +35,13 @@
     "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
-    "build": "tsc --noEmit && pkgroll",
-    "clean": "rimraf dist && rimraf .turbo && rimraf tsconfig.tsbuildinfo",
+    "build": "pkgroll --sourcemap",
+    "clean": "rimraf dist && rimraf tsconfig.tsbuildinfo",
     "fmt": "oxfmt",
     "lint": "oxlint",
     "pub": "yarn npm publish --access public",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit && echo 'Type check passed!'"
+    "typecheck": "tsc --noEmit && echo 'TypeScript typecheck passed!'"
   },
   "dependencies": {
     "@ai-sdk/provider-utils": "^4.0.0",
@@ -54,6 +52,7 @@
   "devDependencies": {
     "@types/json-schema": "^7.0.15",
     "koishi": "^4.18.11",
+    "pkgroll": "^2.21.4",
     "vitest": "^4.0.18"
   },
   "peerDependencies": {

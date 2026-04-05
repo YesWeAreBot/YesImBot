@@ -154,7 +154,10 @@ function createExistingWorkspace(baseDir: string, channelId = "channel-1"): void
 
   rmSync(globalRoot, { recursive: true, force: true });
   mkdirSync(globalRoot, { recursive: true });
-  writeFileSync(join(globalRoot, "settings.json"), JSON.stringify({ model: "test:model" }, null, 2));
+  writeFileSync(
+    join(globalRoot, "settings.json"),
+    JSON.stringify({ model: "test:model" }, null, 2),
+  );
   mkdirSync(workspaceDir, { recursive: true });
   writeFileSync(join(channelDir, "settings.json"), JSON.stringify({ useGlobal: true }, null, 2));
 }
@@ -223,7 +226,9 @@ describe("AgentSessionService", () => {
         basePath: "/tmp/athena-test",
       });
 
-      await agent.receive(createEvent({ bot, isDirect: false, atSelf: false, isReplyToBot: false }));
+      await agent.receive(
+        createEvent({ bot, isDirect: false, atSelf: false, isReplyToBot: false }),
+      );
 
       expect(deferredJudge.judge).toHaveBeenCalledTimes(1);
       expect(sessionManager.getEntryCount()).toBeGreaterThan(0);

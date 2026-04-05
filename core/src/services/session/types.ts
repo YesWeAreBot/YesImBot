@@ -70,3 +70,11 @@ export interface ResponseEndRecord {
   error?: string;
   blockedReason?: string;
 }
+
+export interface FollowUpReviewRecord {
+  content: string;
+  firstObservedAt: number;
+  latestObservedAt: number;
+  messageCount: number;
+  messageIds: string[];
+}

@@ -1,12 +1,10 @@
-import type {
-  AgentAssistantContentPart,
-  AgentMessage,
-  ContentPart,
-} from "../session-manager/types";
-
 // ============================================================================
 // Serialization Helpers
 // ============================================================================
+
+import { TextPart } from "@ai-sdk/provider-utils";
+
+import { AgentAssistantContentPart, AgentMessage, ContentPart } from "../session-manager";
 
 const TOOL_RESULT_MAX_CHARS = 2000;
 
@@ -26,7 +24,7 @@ function truncateForSummary(text: string, maxChars: number): string {
 
 function contentPartsToText(parts: ContentPart[]): string {
   return parts
-    .filter((p): p is import("../session-manager/types").TextPart => p.type === "text")
+    .filter((p): p is TextPart => p.type === "text")
     .map((p) => p.text)
     .join("");
 }

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ChannelRuntime } from "../../src/services/session/runtime";
-import { TurnFinalizer } from "../../src/services/session/runtime/finalization/turn-finalizer";
+import type { ChannelRuntimeSettingsManager } from "../../src/services/session/runtime/types";
 import { SessionManager } from "../../src/services/session/session-manager";
 import type { AthenaSessionSettings } from "../../src/services/session/settings-manager";
 import type { ChannelEvent } from "../../src/services/session/types";
@@ -97,6 +97,66 @@ function createBurstEvents(messageIds: string[]): ChannelEvent[] {
   );
 }
 
+function getLatestToolLoopAgentOptions(): Record<string, unknown> | undefined {
+  const lastCall = toolLoopAgentCtorMock.mock.calls[toolLoopAgentCtorMock.mock.calls.length - 1];
+  const firstArg = lastCall?.[0];
+  if (typeof firstArg !== "object" || firstArg === null) {
+    return undefined;
+  }
+  return firstArg as Record<string, unknown>;
+}
+
+interface MutableSettingsManager extends ChannelRuntimeSettingsManager {
+  setResponseSettings(
+    settings: NonNullable<ReturnType<ChannelRuntimeSettingsManager["getResponseSettings"]>>,
+  ): void;
+}
+
+function createMutableSettingsManager(): MutableSettingsManager {
+  let modelId = "test:model";
+  let responseSettings: ReturnType<ChannelRuntimeSettingsManager["getResponseSettings"]> = {};
+
+  return {
+    reload(): never {
+      throw new Error("reload should not be called in this test");
+    },
+    getReloadMetadata(): never {
+      throw new Error("getReloadMetadata should not be called in this test");
+    },
+    getModel(): string {
+      return modelId;
+    },
+    getJudgeSettings() {
+      return undefined;
+    },
+    getCompactionSettings() {
+      return {
+        enabled: true,
+        reserveTokens: 16384,
+        keepRecentTokens: 20000,
+        contextWindow: 128000,
+      };
+    },
+    getResponseSettings() {
+      return responseSettings;
+    },
+    getWorkspaceSettings() {
+      return {
+        enableWorkspace: false,
+      };
+    },
+    getBuiltInInstructions(): string {
+      return "test instructions";
+    },
+    getPromptResourceFilenames() {
+      return undefined;
+    },
+    setResponseSettings(nextResponseSettings): void {
+      responseSettings = nextResponseSettings;
+    },
+  };
+}
+
 function createAgent() {
   const ctx = createContextMock();
   const bot = createBotMock();
@@ -130,6 +190,173 @@ describe("ChannelRuntime state machine", () => {
       await vi.waitFor(() => {
         expect(agent.getResponseState()).toBe("idle");
       });
+    });
+
+    it("exposes active tools to prepareStep before generation starts", async () => {
+      const { agent } = createAgent();
+      let initialActiveTools: unknown;
+      let prepareStepActiveTools: string[] | undefined;
+
+      generateMock.mockImplementationOnce(async () => {
+        const options = toolLoopAgentCtorMock.mock.calls[0]?.[0] as
+          | {
+              prepareStep?: (input: {
+                steps: unknown[];
+                stepNumber: number;
+                model: unknown;
+                messages: unknown[];
+              }) => { activeTools?: string[] };
+            }
+          | undefined;
+
+        initialActiveTools = Reflect.get(agent as object, "responseActiveTools");
+
+        const prepareStepResult = options?.prepareStep?.({
+          steps: [],
+          stepNumber: 0,
+          model: { provider: "test", modelId: "test:model" },
+          messages: [{ role: "system", content: "test instructions" }],
+        });
+
+        prepareStepActiveTools = prepareStepResult?.activeTools;
+      });
+
+      await agent.receive(createEvent({ messageId: "msg-active-tools" }));
+
+      await vi.waitFor(() => {
+        expect(generateMock).toHaveBeenCalledTimes(1);
+        expect(agent.getResponseState()).toBe("idle");
+      });
+
+      expect(initialActiveTools).toEqual(["send_message"]);
+      expect(prepareStepActiveTools).toEqual(["send_message"]);
+    });
+
+    it("refreshes prepareStep messages with inbound channel_message entries that arrive mid-response", async () => {
+      const { agent } = createAgent();
+      let releaseRefresh!: () => void;
+      const waitForRefresh = new Promise<void>((resolve) => {
+        releaseRefresh = resolve;
+      });
+      let refreshedMessages: unknown[] | undefined;
+
+      generateMock
+        .mockImplementationOnce(async (input) => {
+          const options = getLatestToolLoopAgentOptions() as
+            | {
+                prepareStep?: (input: {
+                  steps: unknown[];
+                  stepNumber: number;
+                  model: unknown;
+                  messages: unknown[];
+                }) => { activeTools?: string[]; messages?: unknown[] };
+              }
+            | undefined;
+
+          await waitForRefresh;
+          const prepareStepResult = options?.prepareStep?.({
+            steps: [{ id: "step-1" }],
+            stepNumber: 1,
+            model: { provider: "test", modelId: "test:model" },
+            messages: input.messages,
+          });
+          refreshedMessages = prepareStepResult?.messages;
+        })
+        .mockResolvedValueOnce();
+
+      const first = agent.receive(createEvent({ messageId: "msg-refresh-1", content: "first" }));
+
+      await vi.waitFor(() => {
+        expect(generateMock).toHaveBeenCalledTimes(1);
+        expect(agent.getResponseState()).toBe("responding");
+      });
+
+      const second = agent.receive(
+        createEvent({ messageId: "msg-refresh-2", content: "stop now" }),
+      );
+
+      releaseRefresh();
+      await Promise.all([first, second]);
+
+      await vi.waitFor(() => {
+        expect(generateMock).toHaveBeenCalledTimes(2);
+      });
+
+      expect(refreshedMessages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            role: "user",
+            content: expect.stringContaining("stop now"),
+          }),
+        ]),
+      );
+    });
+
+    it("reuses the cached ToolLoopAgent across turns when settings stay stable", async () => {
+      const ctx = createContextMock();
+      const bot = createBotMock();
+      const sessionManager = SessionManager.inMemory("discord:channel-1");
+      const agent = new ChannelRuntime(ctx as never, {
+        bot: bot as never,
+        sessionManager,
+        settingsManager: createMutableSettingsManager(),
+        platform: "discord",
+        channelId: "channel-1",
+        basePath: "/tmp/athena-test",
+      });
+
+      generateMock.mockResolvedValue(undefined);
+
+      await agent.receive(createEvent({ messageId: "msg-reuse-1" }));
+      await vi.waitFor(() => {
+        expect(generateMock).toHaveBeenCalledTimes(1);
+        expect(agent.getResponseState()).toBe("idle");
+      });
+
+      await agent.receive(createEvent({ messageId: "msg-reuse-2" }));
+      await vi.waitFor(() => {
+        expect(generateMock).toHaveBeenCalledTimes(2);
+        expect(agent.getResponseState()).toBe("idle");
+      });
+
+      expect(toolLoopAgentCtorMock).toHaveBeenCalledTimes(1);
+      expect(ctx["yesimbot.model"].resolve).toHaveBeenCalledTimes(1);
+    });
+
+    it("rebuilds the ToolLoopAgent when constructor-bound turn settings change", async () => {
+      const ctx = createContextMock();
+      const bot = createBotMock();
+      const sessionManager = SessionManager.inMemory("discord:channel-1");
+      const settingsManager = createMutableSettingsManager();
+      const agent = new ChannelRuntime(ctx as never, {
+        bot: bot as never,
+        sessionManager,
+        settingsManager,
+        platform: "discord",
+        channelId: "channel-1",
+        basePath: "/tmp/athena-test",
+      });
+
+      generateMock.mockResolvedValue(undefined);
+
+      await agent.receive(createEvent({ messageId: "msg-rebuild-1" }));
+      await vi.waitFor(() => {
+        expect(generateMock).toHaveBeenCalledTimes(1);
+        expect(agent.getResponseState()).toBe("idle");
+      });
+
+      settingsManager.setResponseSettings({
+        maxSteps: 1,
+      });
+
+      await agent.receive(createEvent({ messageId: "msg-rebuild-2" }));
+      await vi.waitFor(() => {
+        expect(generateMock).toHaveBeenCalledTimes(2);
+        expect(agent.getResponseState()).toBe("idle");
+      });
+
+      expect(toolLoopAgentCtorMock).toHaveBeenCalledTimes(2);
+      expect(ctx["yesimbot.model"].resolve).toHaveBeenCalledTimes(2);
     });
 
     it("consumes streaming results before completing response", async () => {
@@ -359,17 +586,37 @@ describe("ChannelRuntime state machine", () => {
         expect(generateMock).toHaveBeenCalledTimes(2);
       });
 
+      const secondTurnInput = generateMock.mock.calls[1]?.[0];
+
       const responseEndRecords = sessionManager
         .getEntries()
         .filter((entry) => entry.type === "custom" && entry.customType === "response_end");
+      const followUpReviewRecords = sessionManager
+        .getEntries()
+        .filter((entry) => entry.type === "custom" && entry.customType === "follow_up_review");
 
       expect(responseEndRecords).toHaveLength(2);
+      expect(followUpReviewRecords).toHaveLength(1);
       if (responseEndRecords[0]?.type === "custom") {
         expect(responseEndRecords[0].data).toMatchObject({ nextOutcome: "follow_up" });
       }
       if (responseEndRecords[1]?.type === "custom") {
         expect(responseEndRecords[1].data).toMatchObject({ nextOutcome: "idle" });
       }
+      if (followUpReviewRecords[0]?.type === "custom") {
+        expect(followUpReviewRecords[0].data).toMatchObject({
+          messageCount: 2,
+          messageIds: ["msg-burst-2", "msg-burst-3"],
+        });
+      }
+      expect(secondTurnInput?.messages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            role: "user",
+            content: expect.stringContaining("[Follow-up Review]"),
+          }),
+        ]),
+      );
     });
   });
 
@@ -378,7 +625,7 @@ describe("ChannelRuntime state machine", () => {
       const { agent, sessionManager } = createAgent();
       generateMock
         .mockImplementationOnce(async () => {
-          const options = toolLoopAgentCtorMock.mock.calls[0]?.[0] as
+          const options = getLatestToolLoopAgentOptions() as
             | { onStepFinish?: (event: unknown) => void }
             | undefined;
           options?.onStepFinish?.({
@@ -391,7 +638,7 @@ describe("ChannelRuntime state machine", () => {
           });
         })
         .mockImplementationOnce(async () => {
-          const options = toolLoopAgentCtorMock.mock.calls[1]?.[0] as
+          const options = getLatestToolLoopAgentOptions() as
             | { onStepFinish?: (event: unknown) => void }
             | undefined;
           options?.onStepFinish?.({
@@ -410,6 +657,7 @@ describe("ChannelRuntime state machine", () => {
         expect(agent.getResponseState()).toBe("idle");
         expect(generateMock).toHaveBeenCalledTimes(2);
       });
+      expect(toolLoopAgentCtorMock).toHaveBeenCalledTimes(1);
 
       const guidanceEntries = sessionManager
         .getEntries()
@@ -449,48 +697,6 @@ describe("ChannelRuntime state machine", () => {
       if (responseEnd && responseEnd.type === "custom") {
         expect(responseEnd.data).toMatchObject({ endReason: "exception" });
       }
-    });
-  });
-
-  describe("TurnFinalizer", () => {
-    it("selects one deterministic post-turn outcome", () => {
-      const finalizer = new TurnFinalizer();
-
-      expect(
-        finalizer.selectOutcome({
-          endReason: "normal",
-          hasPendingFollowUp: true,
-        }),
-      ).toEqual({ nextOutcome: "follow_up" });
-
-      expect(
-        finalizer.selectOutcome({
-          endReason: "exception",
-          hasPendingFollowUp: true,
-          thrownError: "transport failed",
-        }),
-      ).toEqual({
-        nextOutcome: "blocked",
-        blockedReason: "transport failed",
-      });
-
-      expect(
-        finalizer.selectOutcome({
-          endReason: "normal",
-          hasPendingFollowUp: false,
-        }),
-      ).toEqual({ nextOutcome: "idle" });
-    });
-
-    it("keeps heartbeat continuation on the same deterministic path", () => {
-      const finalizer = new TurnFinalizer();
-
-      expect(
-        finalizer.selectOutcome({
-          endReason: "heartbeat_continuation",
-          hasPendingFollowUp: false,
-        }),
-      ).toEqual({ nextOutcome: "idle" });
     });
   });
 });

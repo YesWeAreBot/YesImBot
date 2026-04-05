@@ -3,7 +3,7 @@ import type {
   AgentAssistantContentPart,
   AgentMessage,
   ContentPart,
-} from "../session-manager/types";
+} from "../session-manager";
 
 // ============================================================================
 // Token Estimation

@@ -1,9 +1,9 @@
-import { jsonSchema } from "@ai-sdk/provider-utils";
-import type { ToolSet } from "ai";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 
+import { jsonSchema } from "@ai-sdk/provider-utils";
+import type { ToolSet } from "ai";
 import type { Logger } from "koishi";
 
 import type { ChannelRuntimeOptions } from "./runtime";
@@ -140,20 +140,20 @@ async function resolveSkill(options: {
     channelDir: options.channelDir,
     filesystem: options.filesystem,
   });
-  const skill = skills.find((item) => item.name === options.name || item.rootPath === resolve(options.name));
+  const skill = skills.find(
+    (item) => item.name === options.name || item.rootPath === resolve(options.name),
+  );
   if (!skill) {
     throw new Error(`Skill not found: ${options.name}`);
   }
   return skill;
 }
 
-function buildSessionSkillTools(
-  options: {
-    settingsManager: ChannelRuntimeOptions["settingsManager"];
-    channelDir: string;
-    filesystem?: LocalFilesystem;
-  },
-): ToolSet {
+function buildSessionSkillTools(options: {
+  settingsManager: ChannelRuntimeOptions["settingsManager"];
+  channelDir: string;
+  filesystem?: LocalFilesystem;
+}): ToolSet {
   const configuredSkills = options.settingsManager.getWorkspaceSettings()?.skills;
   if (!configuredSkills || configuredSkills.length === 0) {
     return {};

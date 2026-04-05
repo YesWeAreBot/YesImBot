@@ -1,5 +1,5 @@
-# Created by https://www.toptal.com/developers/gitignore/api/node,yarn,turbo,vuejs
-# Edit at https://www.toptal.com/developers/gitignore?templates=node,yarn,turbo,vuejs
+# Created by https://www.toptal.com/developers/gitignore/api/node,yarn,vuejs
+# Edit at https://www.toptal.com/developers/gitignore?templates=node,yarn,vuejs
 
 ### Node ###
 # Logs
@@ -141,10 +141,6 @@ dist
 # SvelteKit build / generate output
 .svelte-kit
 
-### Turbo ###
-# Turborepo task cache
-.turbo
-
 ### Vuejs ###
 # Recommended template: Node.gitignore
 
@@ -169,7 +165,7 @@ yarn-error.log
 # and uncomment the following lines
 # .pnp.*
 
-# End of https://www.toptal.com/developers/gitignore/api/node,yarn,turbo,vuejs
+# End of https://www.toptal.com/developers/gitignore/api/node,yarn,vuejs
 
 # Add here any additional files/directories you want to ignore in your project
 .claude/

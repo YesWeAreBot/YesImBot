@@ -123,6 +123,15 @@ function getStopWhen(): StopWhen {
   return options!.stopWhen!;
 }
 
+function getLatestToolLoopAgentOptions(): Record<string, unknown> | undefined {
+  const lastCall = toolLoopAgentCtorMock.mock.calls[toolLoopAgentCtorMock.mock.calls.length - 1];
+  const firstArg = lastCall?.[0];
+  if (typeof firstArg !== "object" || firstArg === null) {
+    return undefined;
+  }
+  return firstArg as Record<string, unknown>;
+}
+
 describe("ChannelRuntime protocol", () => {
   beforeEach(() => {
     generateMock.mockReset();
@@ -191,7 +200,7 @@ describe("ChannelRuntime protocol", () => {
 
     generateMock
       .mockImplementationOnce(async () => {
-        const options = toolLoopAgentCtorMock.mock.calls[0]?.[0] as
+        const options = getLatestToolLoopAgentOptions() as
           | { onStepFinish?: (event: unknown) => void }
           | undefined;
         options?.onStepFinish?.({
@@ -215,7 +224,7 @@ describe("ChannelRuntime protocol", () => {
           ]),
         );
 
-        const options = toolLoopAgentCtorMock.mock.calls[1]?.[0] as
+        const options = getLatestToolLoopAgentOptions() as
           | { onStepFinish?: (event: unknown) => void }
           | undefined;
         options?.onStepFinish?.({
@@ -233,6 +242,7 @@ describe("ChannelRuntime protocol", () => {
     await vi.waitFor(() => {
       expect(generateMock).toHaveBeenCalledTimes(2);
     });
+    expect(toolLoopAgentCtorMock).toHaveBeenCalledTimes(1);
 
     const guidance = sessionManager
       .getEntries()
@@ -258,7 +268,9 @@ describe("ChannelRuntime protocol", () => {
 
     const draftEntries = sessionManager
       .getEntries()
-      .filter((entry) => entry.type === "custom" && entry.customType === "protocol_assistant_draft");
+      .filter(
+        (entry) => entry.type === "custom" && entry.customType === "protocol_assistant_draft",
+      );
     expect(draftEntries).toHaveLength(2);
     expect(draftEntries).toEqual(
       expect.arrayContaining([
@@ -374,6 +386,72 @@ describe("ChannelRuntime protocol", () => {
     expect(shouldStop).toBe(true);
   });
 
+  it("stopWhen also stops after a successful send_message without heartbeat when step toolResults are missing", async () => {
+    const sessionManager = SessionManager.inMemory("discord:channel-1");
+    const context = createContextMock();
+    const bot = createBotMock();
+    const agent = new ChannelRuntime(context as never, {
+      bot: bot as never,
+      sessionManager,
+      settingsManager: createTestSettingsManager(),
+      platform: "discord",
+      channelId: "channel-1",
+      basePath: "/tmp/athena-test",
+    });
+
+    generateMock.mockImplementationOnce(async () => {
+      const options = toolLoopAgentCtorMock.mock.calls[0]?.[0] as
+        | { onStepFinish?: (event: unknown) => void }
+        | undefined;
+      options?.onStepFinish?.({
+        model: { provider: "test", modelId: "test:model" },
+        usage: { inputTokens: 1, outputTokens: 1 },
+        finishReason: "tool-calls",
+        response: {
+          messages: [
+            {
+              role: "tool",
+              content: [
+                {
+                  type: "tool-result",
+                  toolCallId: "call-1",
+                  toolName: "send_message",
+                  output: {
+                    type: "json",
+                    value: createSendResult(),
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      });
+    });
+
+    await agent.receive(createEvent({ messageId: "msg-stop-after-send-missing-step-tool-results" }));
+
+    await vi.waitFor(() => {
+      expect(toolLoopAgentCtorMock).toHaveBeenCalledTimes(1);
+    });
+
+    const stopWhen = getStopWhen();
+    const stopConditions = (Array.isArray(stopWhen) ? stopWhen : [stopWhen]).filter(
+      (condition): condition is (options: { steps: Array<Record<string, unknown>> }) => boolean =>
+        typeof condition === "function",
+    );
+    const shouldStop = stopConditions.some((condition) =>
+      condition({
+        steps: [
+          {
+            toolResults: [],
+          },
+        ],
+      }),
+    );
+
+    expect(shouldStop).toBe(true);
+  });
+
   it("response_end heartbeat_continuation after successful send_message with requestHeartbeat true", async () => {
     const sessionManager = SessionManager.inMemory("discord:channel-1");
     const context = createContextMock();
@@ -466,7 +544,7 @@ describe("ChannelRuntime protocol", () => {
     });
   });
 
-  it("appends outbound channel_message entries from wrapped send_message tool results", async () => {
+  it("does not append outbound channel_message entries from send_message tool results", async () => {
     const sessionManager = SessionManager.inMemory("discord:channel-1");
     const context = createContextMock();
     const bot = createBotMock();
@@ -511,18 +589,12 @@ describe("ChannelRuntime protocol", () => {
     await agent.receive(createEvent({ messageId: "msg-project" }));
 
     await vi.waitFor(() => {
-      const outboundMessages = sessionManager
+      const channelMessages = sessionManager
         .getEntries()
         .filter(
-          (entry) =>
-            entry.type === "custom_message" &&
-            entry.customType === "channel_message" &&
-            entry.details &&
-            typeof entry.details === "object" &&
-            "direction" in entry.details &&
-            entry.details.direction === "outbound",
+          (entry) => entry.type === "custom_message" && entry.customType === "channel_message",
         );
-      expect(outboundMessages).toHaveLength(1);
+      expect(channelMessages).toHaveLength(1);
     });
 
     const toolMessage = sessionManager
@@ -541,21 +613,6 @@ describe("ChannelRuntime protocol", () => {
       });
       expect(toolMessage.message.content[0]?.result).not.toHaveProperty("type", "json");
     }
-
-    const outboundMessage = sessionManager
-      .getEntries()
-      .find(
-        (entry) =>
-          entry.type === "custom_message" &&
-          entry.customType === "channel_message" &&
-          entry.details &&
-          typeof entry.details === "object" &&
-          "direction" in entry.details &&
-          entry.details.direction === "outbound",
-      );
-    expect(outboundMessage).toMatchObject({
-      content: "[assistant]: hello",
-    });
   });
 
   it("ignores replayed send_message tool-call and tool-result records", async () => {
@@ -639,13 +696,7 @@ describe("ChannelRuntime protocol", () => {
       sessionManager
         .getEntries()
         .filter(
-          (entry) =>
-            entry.type === "custom_message" &&
-            entry.customType === "channel_message" &&
-            entry.details &&
-            typeof entry.details === "object" &&
-            "direction" in entry.details &&
-            entry.details.direction === "outbound",
+          (entry) => entry.type === "custom_message" && entry.customType === "channel_message",
         ),
     ).toHaveLength(1);
     expect(
@@ -656,9 +707,9 @@ describe("ChannelRuntime protocol", () => {
   });
 
   it("removes legacy text output helper module", () => {
-    expect(
-      existsSync("/home/workspace/Athena/core/src/services/session/runtime/output.ts"),
-    ).toBe(false);
+    expect(existsSync("/home/workspace/Athena/core/src/services/session/runtime/output.ts")).toBe(
+      false,
+    );
   });
 
   it("runs at most one follow-up after a burst arrives during an active turn", async () => {

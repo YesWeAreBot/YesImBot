@@ -6,7 +6,12 @@ export const DEFAULT_SESSION_INSTRUCTIONS =
 
 export const DEFAULT_AGENTS_MARKDOWN = `# Workspace Instructions
 
-Add workspace-specific operating rules here.
+## Heartbeat and request_heartbeat
+
+- \`request_heartbeat=true\` 表示这个工具结束后要立刻再运行一轮模型。
+- 如果这次 \`send_message\` 已经完成当前任务，就不要请求 heartbeat。省略 \`request_heartbeat\` 或显式设为 \`false\`，这样消息发送后当前轮次就会结束并交还控制权。
+- 只有在你已经明确知道发送后还要立刻执行下一步时，才设置 \`request_heartbeat=true\`，例如紧接着还要调用另一个工具，或还要再发送一条跟进消息。
+- 不要为了“继续想一想”而请求 heartbeat。普通的一次性回复通常应该是一条 \`send_message\`，且不请求 heartbeat。
 `;
 
 function writeTextIfMissing(filePath: string, content: string): void {

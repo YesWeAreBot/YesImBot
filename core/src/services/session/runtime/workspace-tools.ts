@@ -8,10 +8,7 @@ import { LocalFilesystem, LocalSandbox, Workspace } from "../workspace";
 import { createSendMessageTool } from "./send-message-tool";
 import type { ChannelRuntimeOptions } from "./types";
 
-type WorkspaceToolOptions = Pick<
-  ChannelRuntimeOptions,
-  "basePath" | "settingsManager"
-> & {
+type WorkspaceToolOptions = Pick<ChannelRuntimeOptions, "basePath" | "settingsManager"> & {
   logger: Logger;
 };
 

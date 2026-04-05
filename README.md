@@ -25,7 +25,7 @@ Koishi 4.x plugin monorepo for building personality-driven LLM chat agents.
 yarn build
 yarn typecheck
 yarn test
-yarn turbo run test --filter=koishi-plugin-yesimbot
-yarn turbo run typecheck --filter=@yesimbot/plugin-sdk
+yarn workspace koishi-plugin-yesimbot test
+yarn workspace @yesimbot/plugin-sdk typecheck
 yarn lint
 ```

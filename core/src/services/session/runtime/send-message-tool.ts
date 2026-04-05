@@ -110,7 +110,11 @@ export function createSendMessageTool(options: SendMessageToolOptions) {
           items: { type: "string" },
           description: "An array of message segments.",
         },
-        request_heartbeat: { type: "boolean" },
+        request_heartbeat: {
+          type: "boolean",
+          description:
+            "Request an immediate heartbeat after function execution. Set to `True` if you want to send a follow-up message or run a follow-up function.",
+        },
       },
     }),
     execute: async (input: SendMessageToolInput, executionOptions?: unknown) => {

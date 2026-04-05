@@ -1,4 +1,4 @@
-import type { SessionEntry } from "../session-manager/types";
+import type { SessionEntry } from "../session-manager";
 import { estimateTokens } from "./estimate";
 import type { CutPointResult } from "./types";
 

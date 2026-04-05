@@ -1,36 +1,45 @@
+import { env } from "node:process";
+
 import type { ModelMessage } from "@ai-sdk/provider-utils";
 import type { LanguageModel, OnFinishEvent, PrepareStepResult, ToolSet } from "ai";
 import { stepCountIs, ToolLoopAgent } from "ai";
-import { Bot, Context } from "koishi";
+import { Bot, Context, Logger } from "koishi";
 
 import { renderInboundChannelMessage } from "../channel-message";
 import { compact, prepareCompaction, shouldCompact } from "../compaction";
 import { estimateContextTokens } from "../compaction/estimate";
-import {
-  buildSessionContext,
-  type ChannelMessageDetails,
-  type SessionManager,
-} from "../session-manager";
-import type { ChannelEvent, ResponseEndRecord } from "../types";
+import { DefaultSessionResourceLoader } from "../resource-loader";
+import type { SessionManager } from "../session-manager";
+import { buildSessionContext, type ChannelMessageDetails } from "../session-manager";
+import type {
+  ChannelEvent,
+  FollowUpReviewRecord,
+  ResponseEndReason,
+  ResponseEndRecord,
+} from "../types";
 import {
   createDefaultWillingnessJudge,
   evaluateRuntimeWillingnessHeuristic,
   type WillingnessJudge,
 } from "../willingness";
-import { TurnFinalizer } from "./finalization/turn-finalizer";
 import {
+  buildGenerateInputForTest,
   getReliableInputTokens,
   hasCompletedSendMessageWithoutHeartbeat,
+  PROTOCOL_GUIDANCE_TEXT,
   ResponseStepProcessor,
 } from "./response-step-processor";
-import { executeRuntimeTurn } from "./turn-execution";
 import type {
-  ChannelRuntimeTurnSettingsSnapshot,
   ChannelRuntimeOptions,
+  ChannelRuntimeTurnSettingsSnapshot,
   CompactionRunResult,
   MergedFollowUpOpportunity,
   ResponseState,
+  RuntimeTurnExecutionOptions,
+  RuntimeTurnExecutionResult,
+  TurnOutcomeSelection,
 } from "./types";
+import { buildResponseToolSet } from "./workspace-tools";
 
 // ============================================================================
 // ChannelRuntime
@@ -55,12 +64,17 @@ export class ChannelRuntime {
   private pendingFollowUp: MergedFollowUpOpportunity | null = null;
   private responseStartTime = 0;
   private stepsCompleted = 0;
-  private responseToolSnapshot: ToolSet = {};
   private responseActiveTools: string[] = [];
   private currentTurnSettings: ChannelRuntimeTurnSettingsSnapshot | null = null;
-  private readonly turnFinalizer = new TurnFinalizer();
+  private currentTurnInstructions: string | null = null;
+  private currentTurnFollowUpReview: FollowUpReviewRecord | null = null;
+  private nextTurnFollowUpReview: FollowUpReviewRecord | null = null;
+  private currentProtocolRetry = false;
+  private cachedAgent: ToolLoopAgent<never, ToolSet> | null = null;
+  private cachedAgentSignature: string | null = null;
   private readonly responseStepProcessor: ResponseStepProcessor;
   private readonly willingnessJudge: WillingnessJudge;
+  private readonly logger: Logger;
 
   constructor(
     private ctx: Context,
@@ -69,12 +83,32 @@ export class ChannelRuntime {
     this.options = options;
     this.bot = options.bot;
     this.sessionManager = options.sessionManager;
+    this.logger = this.ctx.logger("session");
+    this.logger.level = 3;
     this.willingnessJudge = options.willingnessJudge ?? createDefaultWillingnessJudge(this.ctx);
     this.responseStepProcessor = new ResponseStepProcessor({
       sessionManager: this.sessionManager,
       platform: options.platform,
       channelId: options.channelId,
+      logger: this.logger,
     });
+  }
+
+  private getChannelKey(): string {
+    return `${this.options.platform}:${this.options.channelId}`;
+  }
+
+  private setResponseState(nextState: ResponseState, reason: string): void {
+    const prevState = this.responseState;
+    if (prevState === nextState) {
+      this.logger.debug(`[state:${this.getChannelKey()}] ${nextState} reason=${reason}`);
+      return;
+    }
+
+    this.responseState = nextState;
+    this.logger.debug(
+      `[state:${this.getChannelKey()}] ${prevState}->${nextState} reason=${reason}`,
+    );
   }
 
   private getModelId(): string {
@@ -127,7 +161,9 @@ export class ChannelRuntime {
       tools: {},
       stopWhen: [
         stepCountIs(turnSettings.maxSteps),
-        ({ steps }) => hasCompletedSendMessageWithoutHeartbeat(steps),
+        ({ steps }) =>
+          hasCompletedSendMessageWithoutHeartbeat(steps) ||
+          this.responseStepProcessor.completedSendMessageWithoutHeartbeat,
       ],
       timeout: {
         totalMs: cumulativeTimeoutMs,
@@ -137,6 +173,38 @@ export class ChannelRuntime {
       onStepFinish: this.handleStepFinish.bind(this),
       onFinish: this.handleFinish.bind(this),
     });
+  }
+
+  private getAgentSignature(turnSettings: ChannelRuntimeTurnSettingsSnapshot): string {
+    return [
+      turnSettings.modelId,
+      turnSettings.maxSteps,
+      turnSettings.baseTimeoutMs,
+      turnSettings.perStepTimeoutMs,
+      turnSettings.chunkTimeoutMs,
+    ].join(":");
+  }
+
+  private getOrCreateAgent(
+    turnSettings: ChannelRuntimeTurnSettingsSnapshot,
+  ): ToolLoopAgent<never, ToolSet> {
+    const nextSignature = this.getAgentSignature(turnSettings);
+    if (this.cachedAgent && this.cachedAgentSignature === nextSignature) {
+      return this.cachedAgent;
+    }
+
+    const agent = this.createAgent(turnSettings);
+    this.cachedAgent = agent;
+    this.cachedAgentSignature = nextSignature;
+    return agent;
+  }
+
+  private syncAgentTools(agent: ToolLoopAgent<never, ToolSet>, nextTools: ToolSet): void {
+    for (const toolName of Object.keys(agent.tools)) {
+      Reflect.deleteProperty(agent.tools, toolName);
+    }
+
+    Object.assign(agent.tools, nextTools);
   }
 
   // =========================================================================
@@ -153,10 +221,13 @@ export class ChannelRuntime {
   async receive(event: ChannelEvent): Promise<void> {
     this.bindBot(event.bot);
 
+    this.logger.debug(
+      `[input:${this.getChannelKey()}] user=${event.userId} direct=${event.isDirect} atSelf=${event.atSelf} replyToBot=${event.isReplyToBot} messageId=${event.messageId}`,
+    );
+
     // 1. Persist to JSONL immediately
     const content = renderInboundChannelMessage(event);
     const details: ChannelMessageDetails = {
-      direction: "inbound",
       timestamp: event.timestamp,
       userId: event.userId,
       username: event.username,
@@ -196,12 +267,19 @@ export class ChannelRuntime {
         judgeTimeoutMs: judgeSettings?.timeoutMs,
       }));
 
+    this.logger.debug(
+      `[willingness:${this.getChannelKey()}] shouldRespond=${willingness.shouldRespond} reason=${willingness.reason} source=${heuristic ? "heuristic" : "judge"}`,
+    );
+
     if (!willingness.shouldRespond) {
       return;
     }
 
     if (this.hasActiveTurn()) {
-      this.markPendingFollowUp(event.timestamp);
+      this.markPendingFollowUp({
+        observedAt: event.timestamp,
+        messageId: event.messageId,
+      });
       return;
     }
 
@@ -218,7 +296,7 @@ export class ChannelRuntime {
   /** Abort the current response if one is in progress. */
   abort(): void {
     if (this.abortController && this.responseState === "responding") {
-      this.responseState = "aborting";
+      this.setResponseState("aborting", "abort_requested");
       this.abortController.abort();
     }
   }
@@ -252,18 +330,26 @@ export class ChannelRuntime {
     );
   }
 
-  private markPendingFollowUp(observedAt: number): void {
+  private markPendingFollowUp(input: { observedAt: number; messageId: string }): void {
     if (!this.pendingFollowUp) {
       this.pendingFollowUp = {
         pending: true,
-        firstObservedAt: observedAt,
-        latestObservedAt: observedAt,
+        firstObservedAt: input.observedAt,
+        latestObservedAt: input.observedAt,
+        messageCount: 1,
+        messageIds: [input.messageId],
       };
+      this.logger.debug(`[state:${this.getChannelKey()}] pending_follow_up observed`);
       return;
     }
 
-    this.pendingFollowUp.latestObservedAt = observedAt;
+    this.pendingFollowUp.latestObservedAt = input.observedAt;
     this.pendingFollowUp.pending = true;
+    if (!this.pendingFollowUp.messageIds.includes(input.messageId)) {
+      this.pendingFollowUp.messageIds.push(input.messageId);
+      this.pendingFollowUp.messageCount = this.pendingFollowUp.messageIds.length;
+    }
+    this.logger.debug(`[state:${this.getChannelKey()}] pending_follow_up updated`);
   }
 
   private consumePendingFollowUp(): MergedFollowUpOpportunity | null {
@@ -272,9 +358,129 @@ export class ChannelRuntime {
     return pendingFollowUp;
   }
 
+  private buildRuntimeMessages(instructions: string, protocolRetry: boolean): ModelMessage[] {
+    const { messages: baseMessages } = buildGenerateInputForTest({
+      instructions,
+      sessionEntries: [...this.sessionManager.getEntries()],
+    });
+    const messages = [...baseMessages];
+
+    if (this.currentTurnFollowUpReview) {
+      messages.push({
+        role: "user",
+        content: this.currentTurnFollowUpReview.content,
+      });
+    }
+
+    if (protocolRetry) {
+      messages.push({
+        role: "user",
+        content: PROTOCOL_GUIDANCE_TEXT,
+      });
+    }
+
+    return messages;
+  }
+
+  private createFollowUpReviewRecord(
+    pendingFollowUp: MergedFollowUpOpportunity,
+  ): FollowUpReviewRecord {
+    const firstObservedIso = new Date(pendingFollowUp.firstObservedAt).toISOString();
+    const latestObservedIso = new Date(pendingFollowUp.latestObservedAt).toISOString();
+    const observedWindow =
+      pendingFollowUp.firstObservedAt === pendingFollowUp.latestObservedAt
+        ? firstObservedIso
+        : `${firstObservedIso} -> ${latestObservedIso}`;
+    const messageLabel = pendingFollowUp.messageCount === 1 ? "message" : "messages";
+    const trackedMessageIds =
+      pendingFollowUp.messageIds.length > 0
+        ? pendingFollowUp.messageIds.join(", ")
+        : "unknown";
+    const content = [
+      "[Follow-up Review]",
+      `While you were responding, ${pendingFollowUp.messageCount} new channel ${messageLabel} arrived during ${observedWindow}.`,
+      `Review the recent channel_message entries from that window before deciding what to do next. Tracked messageIds: ${trackedMessageIds}.`,
+      "Some of those messages may already have been handled during earlier response rounds. If a message is already handled, skip it. Otherwise reply or take the necessary action now.",
+    ].join("\n");
+
+    return {
+      content,
+      firstObservedAt: pendingFollowUp.firstObservedAt,
+      latestObservedAt: pendingFollowUp.latestObservedAt,
+      messageCount: pendingFollowUp.messageCount,
+      messageIds: [...pendingFollowUp.messageIds],
+    };
+  }
+
+  private async executeRuntimeTurn(
+    options: RuntimeTurnExecutionOptions,
+  ): Promise<RuntimeTurnExecutionResult> {
+    const channelKey = `${options.platform}:${options.channelId}`;
+    const resourceLoader = new DefaultSessionResourceLoader({
+      channelDir: options.basePath,
+      settingsManager: options.settingsManager,
+      logger: options.logger,
+    });
+    resourceLoader.reload();
+
+    const instructions = resourceLoader.buildSystemPrompt();
+    this.currentTurnInstructions = instructions;
+    this.currentProtocolRetry = options.protocolRetry;
+    const modelMessages = this.buildRuntimeMessages(instructions, options.protocolRetry);
+
+    const pluginTools = options.ctx["yesimbot.plugin"]?.getToolSet() ?? {};
+    const responseToolSnapshot = await buildResponseToolSet({
+      bot: options.bot,
+      channelId: options.channelId,
+      pluginTools,
+      workspace: {
+        basePath: options.basePath,
+        settingsManager: options.settingsManager,
+        logger: options.logger,
+      },
+    });
+    const responseActiveTools = Object.keys(responseToolSnapshot);
+    this.responseActiveTools = responseActiveTools;
+
+    const agent = this.getOrCreateAgent(options.turnSettings);
+    this.syncAgentTools(agent, responseToolSnapshot);
+
+    options.logger.debug(
+      `[llm:${channelKey}] start streaming=${options.turnSettings.streaming} messages=${modelMessages.length} tools=${responseActiveTools.length} retry=${options.protocolRetry}`,
+    );
+
+    if (options.turnSettings.streaming) {
+      const result = await abortable(options.abortSignal, () =>
+        agent.stream({
+          messages: modelMessages,
+          abortSignal: options.abortSignal,
+        }),
+      );
+      await abortable(options.abortSignal, () => result.consumeStream());
+    } else {
+      await abortable(options.abortSignal, () =>
+        agent.generate({
+          messages: modelMessages,
+          abortSignal: options.abortSignal,
+        }),
+      );
+    }
+
+    options.logger.debug(`[llm:${channelKey}] end`);
+
+    return {
+      responseActiveTools,
+    };
+  }
+
   private async runResponse(protocolRetry = false): Promise<void> {
+    if (!protocolRetry) {
+      this.currentTurnFollowUpReview = this.nextTurnFollowUpReview;
+      this.nextTurnFollowUpReview = null;
+    }
+
     this.responseStepProcessor.beginResponse(protocolRetry);
-    this.responseState = "responding";
+    this.setResponseState("responding", protocolRetry ? "protocol_retry" : "response_start");
     this.abortController = new AbortController();
     this.responseStartTime = Date.now();
     this.stepsCompleted = 0;
@@ -294,23 +500,24 @@ export class ChannelRuntime {
 
     try {
       if (!this.bot) {
-        throw new Error(`Channel bot unavailable for ${this.options.platform}:${this.options.channelId}`);
+        throw new Error(
+          `Channel bot unavailable for ${this.options.platform}:${this.options.channelId}`,
+        );
       }
 
-      const executionResult = await executeRuntimeTurn({
+      const executionResult = await this.executeRuntimeTurn({
         ctx: this.ctx,
-        logger: this.ctx.logger("session"),
+        logger: this.logger,
         bot: this.bot,
         sessionManager: this.sessionManager,
         settingsManager: this.options.settingsManager,
+        platform: this.options.platform,
         channelId: this.options.channelId,
         basePath: this.options.basePath,
         turnSettings,
         protocolRetry,
         abortSignal: this.abortController.signal,
-        createAgent: this.createAgent.bind(this),
       });
-      this.responseToolSnapshot = executionResult.responseToolSnapshot;
       this.responseActiveTools = executionResult.responseActiveTools;
     } catch (err: unknown) {
       if (!this.abortController?.signal.aborted) {
@@ -324,16 +531,47 @@ export class ChannelRuntime {
       clearTimeout(watchdog);
 
       if (this.responseStepProcessor.pendingProtocolRetry) {
-        this.responseState = "idle";
+        this.setResponseState("idle", "protocol_retry_pending");
         this.abortController = null;
         this.currentTurnSettings = null;
+        this.currentTurnInstructions = null;
+        this.currentProtocolRetry = false;
         this.runResponse(true).catch(() => {});
         return;
       }
 
-      this.responseState = "finalizing";
+      this.setResponseState("finalizing", "response_end");
+      function resolveEndReason(input: {
+        aborted: boolean;
+        timedOut: boolean;
+        protocolError: boolean;
+        heartbeatRequested: boolean;
+        sendFailure: boolean;
+        thrownError?: string;
+      }): ResponseEndReason {
+        if (input.timedOut) {
+          return "timeout";
+        }
 
-      const endReason = this.turnFinalizer.resolveEndReason({
+        if (input.aborted) {
+          return "abort";
+        }
+
+        if (input.protocolError) {
+          return "protocol_error";
+        }
+
+        if (input.sendFailure || Boolean(input.thrownError)) {
+          return "exception";
+        }
+
+        if (input.heartbeatRequested) {
+          return "heartbeat_continuation";
+        }
+
+        return "normal";
+      }
+      const endReason = resolveEndReason({
         aborted: this.abortController?.signal.aborted === true && !timedOut,
         timedOut,
         protocolError: this.responseStepProcessor.protocolError,
@@ -341,7 +579,30 @@ export class ChannelRuntime {
         sendFailure: this.responseStepProcessor.sendFailure,
         thrownError: this.responseStepProcessor.thrownError,
       });
-      const outcome = this.turnFinalizer.selectOutcome({
+
+      function selectOutcome(input: {
+        endReason: ResponseEndReason;
+        hasPendingFollowUp: boolean;
+        thrownError?: string;
+      }): TurnOutcomeSelection {
+        if (
+          input.endReason === "timeout" ||
+          input.endReason === "protocol_error" ||
+          input.endReason === "exception"
+        ) {
+          return {
+            nextOutcome: "blocked",
+            blockedReason: input.thrownError ?? input.endReason,
+          };
+        }
+
+        if (input.hasPendingFollowUp) {
+          return { nextOutcome: "follow_up" };
+        }
+
+        return { nextOutcome: "idle" };
+      }
+      const outcome = selectOutcome({
         endReason,
         hasPendingFollowUp: Boolean(this.pendingFollowUp?.pending),
         thrownError: this.responseStepProcessor.thrownError,
@@ -354,22 +615,39 @@ export class ChannelRuntime {
         error: this.responseStepProcessor.thrownError,
         blockedReason: outcome.blockedReason,
       };
-      this.turnFinalizer.persist(this.sessionManager, record);
+      this.sessionManager.appendCustomEntry<ResponseEndRecord>("response_end", record);
+      this.logger.debug(
+        `[state:${this.getChannelKey()}] end reason=${endReason} outcome=${outcome.nextOutcome} steps=${this.stepsCompleted} durationMs=${record.durationMs}`,
+      );
 
-      this.responseState = "ended";
+      this.setResponseState("ended", "record_persisted");
       this.abortController = null;
 
       if (outcome.nextOutcome === "follow_up") {
-        this.consumePendingFollowUp();
-        this.responseState = "idle";
+        const pendingFollowUp = this.consumePendingFollowUp();
+        if (pendingFollowUp) {
+          const followUpReview = this.createFollowUpReviewRecord(pendingFollowUp);
+          this.sessionManager.appendCustomEntry<FollowUpReviewRecord>(
+            "follow_up_review",
+            followUpReview,
+          );
+          this.nextTurnFollowUpReview = followUpReview;
+        }
+        this.setResponseState("idle", "follow_up");
         this.currentTurnSettings = null;
+        this.currentTurnInstructions = null;
+        this.currentTurnFollowUpReview = null;
+        this.currentProtocolRetry = false;
         this.runResponse().catch(() => {});
         return;
       }
 
       this.pendingFollowUp = null;
-      this.responseState = "idle";
+      this.setResponseState("idle", "response_complete");
       this.currentTurnSettings = null;
+      this.currentTurnInstructions = null;
+      this.currentTurnFollowUpReview = null;
+      this.currentProtocolRetry = false;
     }
   }
 
@@ -386,11 +664,14 @@ export class ChannelRuntime {
     model: unknown;
     messages: ModelMessage[];
   }): PrepareStepResult {
+    const nextMessages = this.currentTurnInstructions
+      ? this.buildRuntimeMessages(this.currentTurnInstructions, this.currentProtocolRetry)
+      : _opts.messages;
     const maxTokenEstimate = 100000;
-    const estimatedTokens = JSON.stringify(_opts.messages).length / 4;
+    const estimatedTokens = JSON.stringify(nextMessages).length / 4;
 
     if (estimatedTokens > maxTokenEstimate) {
-      const [system, ...rest] = _opts.messages;
+      const [system, ...rest] = nextMessages;
       if (!system) {
         return {};
       }
@@ -405,6 +686,7 @@ export class ChannelRuntime {
 
     return {
       activeTools: this.responseActiveTools,
+      messages: nextMessages,
     };
   }
 
@@ -414,6 +696,9 @@ export class ChannelRuntime {
   private handleStepFinish(stepResult: Parameters<ResponseStepProcessor["apply"]>[0]): void {
     this.stepsCompleted++;
     this.responseStepProcessor.apply(stepResult);
+    this.logger.debug(
+      `[step:${this.getChannelKey()}] completed count=${this.stepsCompleted} finishReason=${stepResult.finishReason ?? "unknown"}`,
+    );
   }
 
   private handleFinish(event: OnFinishEvent): void {
@@ -425,7 +710,9 @@ export class ChannelRuntime {
         buildSessionContext([...this.sessionManager.getEntries()]).agentMessages,
       );
 
-    if (!shouldCompact(contextTokens, turnSettings.contextWindow, turnSettings.compactionSettings)) {
+    if (
+      !shouldCompact(contextTokens, turnSettings.contextWindow, turnSettings.compactionSettings)
+    ) {
       return;
     }
 
@@ -478,4 +765,30 @@ export class ChannelRuntime {
       tokensBefore: result.tokensBefore,
     };
   }
+}
+
+async function abortable<T>(signal: AbortSignal, operation: () => PromiseLike<T>): Promise<T> {
+  if (signal.aborted) {
+    throw new Error("aborted");
+  }
+
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      signal.removeEventListener("abort", onAbort);
+      reject(new Error("aborted"));
+    };
+
+    signal.addEventListener("abort", onAbort, { once: true });
+
+    operation().then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
 }

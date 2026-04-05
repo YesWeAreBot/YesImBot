@@ -1,4 +1,4 @@
-import type { AgentMessage } from "../session-manager/types";
+import type { AgentMessage } from "../session-manager";
 
 export interface CompactionSettings {
   enabled: boolean;

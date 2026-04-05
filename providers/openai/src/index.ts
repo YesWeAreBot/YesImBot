@@ -1,5 +1,7 @@
+import { hermesToolMiddleware } from "@ai-sdk-tool/parser";
 import { createOpenAI } from "@ai-sdk/openai";
 import type { ModelEntry, ModelProvider } from "@yesimbot/shared-model";
+import { wrapLanguageModel } from "ai";
 import { Context, Schema } from "koishi";
 
 export const name = "yesimbot-provider-openai";
@@ -40,7 +42,16 @@ export function apply(ctx: Context, config: Config) {
 
   const provider: ModelProvider = {
     id: config.id,
-    chat: (modelId) => client.chat(modelId),
+    chat: (modelId) => {
+      const modelConfig = config.models.find((m) => m.id === modelId);
+      if (modelConfig && !modelConfig.toolCall) {
+        return wrapLanguageModel({
+          model: client.chat(modelId),
+          middleware: [hermesToolMiddleware],
+        });
+      }
+      return client.chat(modelId);
+    },
     embedding: (modelId) => client.embedding(modelId),
     models: () => config.models,
   };

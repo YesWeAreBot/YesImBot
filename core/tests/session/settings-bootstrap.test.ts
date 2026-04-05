@@ -41,8 +41,8 @@ vi.mock("koishi", () => {
   };
 });
 
-import { AgentSessionService } from "../../src/services/session/service";
 import { DefaultSessionResourceLoader } from "../../src/services/session/resource-loader";
+import { AgentSessionService } from "../../src/services/session/service";
 import { SessionManager } from "../../src/services/session/session-manager";
 
 const tempDirs: string[] = [];
@@ -100,7 +100,10 @@ function createExistingWorkspace(baseDir: string, channelId = "channel-1"): void
   const workspaceDir = join(channelDir, "workspace");
 
   mkdirSync(workspaceDir, { recursive: true });
-  writeFileSync(join(globalRoot, "settings.json"), JSON.stringify({ model: "global-model" }, null, 2));
+  writeFileSync(
+    join(globalRoot, "settings.json"),
+    JSON.stringify({ model: "global-model" }, null, 2),
+  );
   writeFileSync(join(channelDir, "settings.json"), JSON.stringify({ useGlobal: true }, null, 2));
   writeFileSync(join(workspaceDir, "SOUL.md"), "workspace soul\n", "utf8");
   writeFileSync(join(workspaceDir, "AGENTS.md"), "workspace agents\n", "utf8");
@@ -309,6 +312,7 @@ describe("AgentSessionService settings bootstrap", () => {
     const firstPrompt = loader.buildSystemPrompt();
     expect(firstPrompt).toContain("send_message");
     expect(firstPrompt).toContain("request_heartbeat");
+    expect(firstPrompt).toContain("已经完成当前任务，就不要请求 heartbeat");
     expect(firstPrompt).toContain("## Project Context");
     expect(firstPrompt).toContain("### SOUL.md");
     expect(firstPrompt).not.toContain("<system-reminder");

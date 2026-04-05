@@ -13,22 +13,234 @@ import {
 } from "node:fs";
 import { join, resolve } from "node:path";
 
-import type { ChannelBootstrapStatus, ChannelKey } from "../types";
 import type {
-  AgentMessage,
-  AgentToolMessage,
-  AgentToolResultPart,
-  CompactionEntry,
-  ContentPart,
-  CustomEntry,
-  CustomMessageEntry,
-  FileEntry,
-  ModelChangeEntry,
-  SessionEntry,
-  SessionHeader,
-  SessionMessageEntry,
-} from "./types";
-import { CURRENT_SESSION_VERSION } from "./types";
+  AssistantModelMessage,
+  ModelMessage,
+  ToolModelMessage,
+  UserModelMessage,
+} from "@ai-sdk/provider-utils";
+import { JSONValue } from "ai";
+
+import type { ChannelBootstrapStatus, ChannelKey, ReplyReference } from "./types";
+
+// ============================================================================
+// Session File Version
+// ============================================================================
+
+export const CURRENT_SESSION_VERSION = 1;
+
+// ============================================================================
+// Content Parts (shared)
+// ============================================================================
+
+export interface TextPart {
+  type: "text";
+  text: string;
+}
+
+export interface ImagePart {
+  type: "image";
+  image: string | URL | Uint8Array;
+  mimeType?: string;
+}
+
+export type ContentPart = TextPart | ImagePart;
+
+// ============================================================================
+// AgentMessage Types — persistable/runtime message types with metadata
+// ============================================================================
+
+export interface AgentUserMessage {
+  role: "user";
+  content: string | ContentPart[];
+  timestamp: number;
+}
+
+export interface AgentTextPart {
+  type: "text";
+  text: string;
+}
+
+export interface AgentToolCallPart {
+  type: "tool-call";
+  toolCallId: string;
+  toolName: string;
+  args: unknown;
+}
+
+export interface AgentAssistantThinkingPart {
+  type: "thinking";
+  text: string;
+  signature?: string;
+}
+
+export type AgentAssistantContentPart =
+  | AgentTextPart
+  | AgentToolCallPart
+  | AgentAssistantThinkingPart;
+
+export interface AgentCustomMessage<T = unknown> {
+  role: "custom";
+  customType: string;
+  content: string | ContentPart[];
+  display: boolean;
+  details?: T;
+  timestamp: number;
+}
+
+export interface AgentAssistantMessage {
+  role: "assistant";
+  content: string | AgentAssistantContentPart[];
+  timestamp: number;
+  provider: string;
+  model: string;
+  usage?: AgentUsage;
+  finishReason?: string;
+}
+
+export interface AgentUsage {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  cacheRead?: number;
+  cacheWrite?: number;
+}
+
+export interface AgentToolResultPart {
+  type: "tool-result";
+  toolCallId: string;
+  toolName: string;
+  result: unknown;
+  isError?: boolean;
+}
+
+export interface AgentToolMessage {
+  role: "tool";
+  content: AgentToolResultPart[];
+  timestamp: number;
+}
+
+export type AgentMessage =
+  | AgentUserMessage
+  | AgentCustomMessage
+  | AgentAssistantMessage
+  | AgentToolMessage;
+
+// ============================================================================
+// Session Header — first line of JSONL file
+// ============================================================================
+
+export interface SessionHeader {
+  type: "session";
+  version: number;
+  id: string;
+  channelKey: ChannelKey;
+  timestamp: string;
+  modelId?: string;
+}
+
+// ============================================================================
+// Session Entry Types — all entries after header
+// ============================================================================
+
+export interface SessionEntryBase {
+  type: string;
+  /** Unique 8-char hex id within this session file. */
+  id: string;
+  /** Previous entry's id. Null for the first entry after header. */
+  parentId: string | null;
+  /** ISO 8601 timestamp. */
+  timestamp: string;
+}
+
+/** Wraps an AgentMessage (user / custom / assistant / tool). */
+export interface SessionMessageEntry extends SessionEntryBase {
+  type: "message";
+  message: AgentMessage;
+}
+
+/**
+ * Extension message that participates in LLM context.
+ * Used for channel chat messages, system events, image cache, etc.
+ *
+ * - `content` is sent to LLM (formatted text or structured parts).
+ * - `details` carries metadata that is NOT sent to LLM.
+ */
+export interface CustomMessageEntry<T = unknown> extends SessionEntryBase {
+  type: "custom_message";
+  customType: string;
+  content: string | ContentPart[];
+  details?: T;
+  display: boolean;
+}
+
+/**
+ * Extension state that does NOT participate in LLM context.
+ * Used to persist arbitrary state across session reloads.
+ */
+export interface CustomEntry<T = unknown> extends SessionEntryBase {
+  type: "custom";
+  customType: string;
+  data?: T;
+}
+
+/** Context compaction summary. Entries before `firstKeptEntryId` are summarized. */
+export interface CompactionEntry extends SessionEntryBase {
+  type: "compaction";
+  summary: string;
+  firstKeptEntryId: string;
+  tokensBefore: number;
+}
+
+/** Records a model switch within the session. */
+export interface ModelChangeEntry extends SessionEntryBase {
+  type: "model_change";
+  provider: string;
+  modelId: string;
+}
+
+// ============================================================================
+// Union Types
+// ============================================================================
+
+export type SessionEntry =
+  | SessionMessageEntry
+  | CustomMessageEntry
+  | CustomEntry
+  | CompactionEntry
+  | ModelChangeEntry;
+
+export type FileEntry = SessionHeader | SessionEntry;
+
+// ============================================================================
+// Channel Message Details — metadata for CustomMessageEntry
+// ============================================================================
+
+/** Structured metadata stored in `details` of a channel_message CustomMessageEntry. */
+export interface ChannelMessageDetails {
+  timestamp: number;
+  userId: string;
+  username: string;
+  nickname: string;
+  identity: string;
+  platform: string;
+  channelId: string;
+  messageId: string;
+  isDirect: boolean;
+  atSelf: boolean;
+  isReplyToBot: boolean;
+  replyTo?: ReplyReference;
+}
+
+// ============================================================================
+// Session Context — output of buildSessionContext()
+// ============================================================================
+
+export interface SessionContext {
+  agentMessages: AgentMessage[];
+  model: { provider: string; modelId: string } | null;
+  entryCount: number;
+}
 
 // ============================================================================
 // Helpers
@@ -556,4 +768,243 @@ export class SessionManager {
       appendFileSync(this.sessionFile, `${serializeFileEntry(entry)}\n`);
     }
   }
+}
+
+// ============================================================================
+// AgentMessage → AI SDK ModelMessage conversion
+// ============================================================================
+
+function userToModelMessage(msg: AgentUserMessage): UserModelMessage {
+  if (typeof msg.content === "string") {
+    return { role: "user", content: msg.content };
+  }
+  return {
+    role: "user",
+    content: msg.content.map((part) => {
+      if (part.type === "text") return { type: "text" as const, text: part.text };
+      return {
+        type: "image" as const,
+        image: part.image,
+        mimeType: part.mimeType,
+      };
+    }),
+  };
+}
+
+function assistantToModelMessage(msg: AgentAssistantMessage): AssistantModelMessage {
+  if (typeof msg.content === "string") {
+    return { role: "assistant", content: msg.content };
+  }
+  const content = msg.content.map((part) => {
+    switch (part.type) {
+      case "text":
+        return { type: "text" as const, text: part.text };
+      case "tool-call":
+        return {
+          type: "tool-call" as const,
+          toolCallId: part.toolCallId,
+          toolName: part.toolName,
+          input: part.args,
+        };
+      case "thinking":
+        return { type: "reasoning" as const, text: part.text };
+    }
+  });
+  return { role: "assistant", content } as AssistantModelMessage;
+}
+
+function toolToModelMessage(msg: AgentToolMessage): ToolModelMessage {
+  return {
+    role: "tool",
+    content: msg.content.map((part) => ({
+      type: "tool-result" as const,
+      toolCallId: part.toolCallId,
+      toolName: part.toolName,
+      output: { type: "json" as const, value: part.result as JSONValue },
+      isError: part.isError,
+    })),
+  };
+}
+
+/** Convert an AgentMessage to an AI SDK ModelMessage. */
+function agentMessageToModelMessage(msg: Exclude<AgentMessage, { role: "custom" }>): ModelMessage {
+  switch (msg.role) {
+    case "user":
+      return userToModelMessage(msg);
+    case "assistant":
+      return assistantToModelMessage(msg);
+    case "tool":
+      return toolToModelMessage(msg);
+  }
+}
+
+// ============================================================================
+// CustomMessageEntry → UserModelMessage
+// ============================================================================
+
+function contentPartsToString(content: string | ContentPart[]): string {
+  if (typeof content === "string") return content;
+  return content
+    .filter((p): p is { type: "text"; text: string } => p.type === "text")
+    .map((p) => p.text)
+    .join("");
+}
+
+function customMessageToUserMessage(entry: CustomMessageEntry): UserModelMessage {
+  const text = contentPartsToString(entry.content);
+  return { role: "user", content: text };
+}
+
+function customMessageToModelMessage(entry: CustomMessageEntry): ModelMessage | undefined {
+  if (entry.customType === "channel_message") {
+    return customMessageToUserMessage(entry);
+  }
+
+  if (entry.customType === "protocol_guidance") {
+    return undefined;
+  }
+
+  return undefined;
+}
+
+// ============================================================================
+// buildSessionContext
+// ============================================================================
+
+/**
+ * Build the LLM context from session entries.
+ *
+ * Walks entries linearly, converting them to AI SDK ModelMessage[].
+ * Handles compaction: when a CompactionEntry is found, all previously
+ * accumulated messages are replaced by the compaction summary.
+ *
+ * Entry type handling:
+ * - SessionMessageEntry → preserve as AgentMessage runtime state
+ * - CustomMessageEntry  → preserve as AgentCustomMessage runtime state
+ * - CompactionEntry     → reset context, insert summary AgentUserMessage
+ * - ModelChangeEntry    → track model, skip from runtime messages
+ * - CustomEntry         → skip (not in runtime/model context)
+ */
+export function buildSessionContext(entries: readonly SessionEntry[]): SessionContext {
+  let agentMessages: AgentMessage[] = [];
+  let model: { provider: string; modelId: string } | null = null;
+  let compaction: CompactionEntry | null = null;
+  let firstKeptIndex = 0;
+
+  // First pass: find the latest compaction and determine the "kept" range
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    if (entry.type === "compaction") {
+      compaction = entry;
+      // Find the index of firstKeptEntryId
+      for (let j = 0; j < entries.length; j++) {
+        if (entries[j].id === entry.firstKeptEntryId) {
+          firstKeptIndex = j;
+          break;
+        }
+      }
+    }
+  }
+
+  // If there's a compaction, start with the summary
+  if (compaction) {
+    agentMessages.push({
+      role: "user",
+      content: `[Context Summary]\n${compaction.summary}`,
+      timestamp: Date.now(),
+    });
+  }
+
+  // Determine which entries to process
+  const startIndex = compaction ? firstKeptIndex : 0;
+  let entryCount = 0;
+
+  for (let i = startIndex; i < entries.length; i++) {
+    const entry = entries[i];
+    entryCount++;
+
+    switch (entry.type) {
+      case "message": {
+        agentMessages.push(entry.message);
+        // Track model from assistant messages
+        if (entry.message.role === "assistant") {
+          model = { provider: entry.message.provider, modelId: entry.message.model };
+        }
+        break;
+      }
+      case "custom_message": {
+        agentMessages.push({
+          role: "custom",
+          customType: entry.customType,
+          content: entry.content,
+          details: entry.details,
+          display: entry.display,
+          timestamp: Date.parse(entry.timestamp),
+        });
+        break;
+      }
+      case "model_change": {
+        model = { provider: entry.provider, modelId: entry.modelId };
+        break;
+      }
+      case "compaction": {
+        // Already handled above; skip
+        break;
+      }
+      case "custom": {
+        // Not in LLM context
+        break;
+      }
+    }
+  }
+
+  return { agentMessages, model, entryCount };
+}
+
+export function convertAgentMessagesToModelMessages(
+  messages: readonly AgentMessage[],
+): ModelMessage[] {
+  return messages
+    .map((message) => {
+      switch (message.role) {
+        case "custom":
+          return customMessageToModelMessage({
+            type: "custom_message",
+            id: "",
+            parentId: null,
+            timestamp: String(message.timestamp),
+            customType: message.customType,
+            content: message.content,
+            details: message.details,
+            display: message.display,
+          });
+        case "user":
+        case "assistant":
+        case "tool":
+          return agentMessageToModelMessage(message);
+      }
+    })
+    .filter((message): message is ModelMessage => message !== undefined);
+}
+
+// ============================================================================
+// AI SDK helpers
+// ============================================================================
+
+/** Extract text from an AI SDK ResponseMessage for sending to channel. */
+export function extractTextFromResponseMessages(messages: readonly ModelMessage[]): string {
+  const texts: string[] = [];
+  for (const msg of messages) {
+    if (msg.role !== "assistant") continue;
+    if (typeof msg.content === "string") {
+      texts.push(msg.content);
+    } else if (Array.isArray(msg.content)) {
+      for (const part of msg.content) {
+        if ("text" in part && part.type === "text") {
+          texts.push(part.text);
+        }
+      }
+    }
+  }
+  return texts.join("");
 }

@@ -80,6 +80,8 @@ export async function callLLMJudge(
   }
 
   try {
+    const logger = ctx.logger("session");
+    logger.debug(`[judge] start model=${modelId}`);
     const model = ctx["yesimbot.model"].resolve(modelId);
     const result = await generateText({
       model,
@@ -89,8 +91,14 @@ export async function callLLMJudge(
       abortSignal: AbortSignal.timeout(params.timeoutMs ?? 10000),
     });
 
-    return parseJudgeResult(result.text.trim());
-  } catch {
+    const parsed = parseJudgeResult(result.text.trim());
+    logger.debug(`[judge] end model=${modelId} decision=${parsed?.decision ?? "invalid"}`);
+    return parsed;
+  } catch (error: unknown) {
+    const logger = ctx.logger("session");
+    logger.debug(
+      `[judge] failed model=${modelId} error=${error instanceof Error ? error.message : String(error)}`,
+    );
     return null;
   }
 }

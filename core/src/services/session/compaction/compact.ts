@@ -1,6 +1,6 @@
 import type { LanguageModel } from "ai";
 
-import type { AgentMessage, SessionEntry } from "../session-manager/types";
+import type { AgentMessage, SessionEntry } from "../session-manager";
 import { findCutPoint } from "./cut-point";
 import { estimateContextTokens } from "./estimate";
 import { generateSummary, generateTurnPrefixSummary } from "./summarize";

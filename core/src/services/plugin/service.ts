@@ -1,8 +1,6 @@
 import type { Tool as AiTool, ToolExecutionOptions } from "@ai-sdk/provider-utils";
-import type { YesImPlugin } from "@yesimbot/plugin-sdk";
-import { Context, Schema, Service } from "koishi";
-
-import type { IPluginService } from "./types";
+import type { IPluginService, YesImPlugin } from "@yesimbot/plugin-sdk";
+import { Context, Service } from "koishi";
 
 declare module "koishi" {
   interface Context {
@@ -13,10 +11,6 @@ declare module "koishi" {
 export interface PluginServiceConfig {
   debugLevel?: number;
 }
-
-export const PluginServiceConfigSchema = Schema.object({
-  debugLevel: Schema.union([0, 1, 2, 3]).default(2).description("Plugin service logger level"),
-});
 
 export class PluginService extends Service<PluginServiceConfig> implements IPluginService {
   private plugins = new Map<string, YesImPlugin>();

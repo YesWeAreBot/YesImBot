@@ -2,13 +2,9 @@ import { join } from "node:path";
 
 import { Bot, Context, Service, Session } from "koishi";
 
-import { ChannelRuntime } from "./runtime";
 import { resolveSenderIdentity, summarizeReplyContent } from "./channel-message";
-import {
-  ensureGlobalScaffold,
-  hasExistingWorkspace,
-  ensureWorkspaceScaffold,
-} from "./scaffold";
+import { ChannelRuntime } from "./runtime";
+import { ensureGlobalScaffold, hasExistingWorkspace, ensureWorkspaceScaffold } from "./scaffold";
 import { SessionManager } from "./session-manager";
 import {
   SettingsManager,
@@ -27,6 +23,8 @@ import type {
 interface BootstrappedChannelRuntime {
   channelKey: ChannelKey;
   channelDir: string;
+  platform: string;
+  channelId: string;
   sessionManager: SessionManager;
   settingsManager: SettingsManager;
   status: Extract<ChannelBootstrapStatus, "restored" | "created">;
@@ -469,6 +467,8 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
 
     return {
       channelKey,
+      platform,
+      channelId,
       channelDir,
       sessionManager,
       settingsManager,
@@ -477,8 +477,7 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
   }
 
   private createChannelRuntime(runtime: BootstrappedChannelRuntime, bot?: Bot): ChannelRuntime {
-    const { channelDir, channelKey, sessionManager, settingsManager } = runtime;
-    const [platform, channelId] = channelKey.split(":") as [string, string];
+    const { channelDir, platform, channelId, sessionManager, settingsManager } = runtime;
 
     return new ChannelRuntime(this.ctx, {
       bot,
@@ -612,8 +611,7 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
       metadata.sources.global.exists,
       metadata.sources.global.valid,
     );
-    const issueSummary =
-      metadata.issues.length > 0 ? `; issues=${metadata.issues.length}` : "";
+    const issueSummary = metadata.issues.length > 0 ? `; issues=${metadata.issues.length}` : "";
     const conflictSummary =
       metadata.conflicts.length > 0 ? `; overrides=${metadata.conflicts.length}` : "";
 

@@ -18,7 +18,6 @@ describe("buildSessionContext", () => {
         content: "[alice]: hi",
         display: false,
         details: {
-          direction: "inbound",
           userId: "alice",
           username: "alice",
           platform: "discord",
@@ -36,33 +35,6 @@ describe("buildSessionContext", () => {
 
     const modelMessages = convertAgentMessagesToModelMessages(ctx.agentMessages);
     expect(modelMessages[0]).toMatchObject({ role: "user" });
-  });
-
-  it("projects outbound channel_message to assistant role", () => {
-    const entries: SessionEntry[] = [
-      {
-        type: "custom_message",
-        id: "bbbb2222",
-        parentId: null,
-        timestamp: new Date().toISOString(),
-        customType: "channel_message",
-        content: "[assistant]: hi there",
-        display: false,
-        details: {
-          direction: "outbound",
-          platform: "discord",
-          channelId: "channel-1",
-          toolCallId: "call-1",
-          utteranceId: "utt-1",
-          index: 0,
-          requestHeartbeat: false,
-        },
-      },
-    ];
-
-    const ctx = buildSessionContext(entries);
-    const modelMessages = convertAgentMessagesToModelMessages(ctx.agentMessages);
-    expect(modelMessages[0]).toMatchObject({ role: "assistant", content: "[assistant]: hi there" });
   });
 
   it("excludes protocol_guidance and other control custom_message from model context", () => {

@@ -16,18 +16,18 @@
     "providers/*"
   ],
   "scripts": {
-    "build": "turbo run build",
-    "clean": "turbo run clean && rimraf .turbo",
-    "fmt": "turbo run fmt",
-    "fmt:check": "yarn fmt -- --check",
-    "lint": "turbo run lint",
-    "lint:fix": "yarn lint -- --fix",
+    "build": "yarn workspaces foreach -Apt --topological-dev run build",
+    "clean": "yarn workspaces foreach -Ap run clean",
+    "fmt": "yarn workspaces foreach -Ap run fmt",
+    "fmt:check": "yarn workspaces foreach -Ap run fmt --check",
+    "lint": "yarn workspaces foreach -Ap run lint",
+    "lint:fix": "yarn workspaces foreach -Ap run lint --fix",
     "prepare": "husky",
-    "pub": "turbo run pub",
+    "pub": "yarn build && yarn workspaces foreach -Ap --topological-dev run pub",
     "release": "node scripts/release.mjs",
     "release:beta": "node scripts/release.mjs --beta",
-    "test": "turbo run test",
-    "typecheck": "turbo run typecheck"
+    "test": "yarn workspaces foreach -Ap run test",
+    "typecheck": "yarn workspaces foreach -Apt --topological-dev run typecheck"
   },
   "devDependencies": {
     "@types/node": "^22.16.2",
@@ -38,7 +38,6 @@
     "oxlint": "^1.48.0",
     "pkgroll": "^2.21.4",
     "rimraf": "^6.1.2",
-    "turbo": "^2.8.9",
     "typescript": "^5.9.3"
   },
   "lint-staged": {

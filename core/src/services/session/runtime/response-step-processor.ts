@@ -1,5 +1,6 @@
 import type { ModelMessage } from "@ai-sdk/provider-utils";
 import type { OnStepFinishEvent } from "ai";
+import type { Logger } from "koishi";
 
 import {
   buildSessionContext,
@@ -10,12 +11,10 @@ import {
   type AgentToolCallPart,
   type AgentToolMessage,
   type AgentUsage,
-  type InboundChannelMessageDetails,
   type SessionEntry,
   type SessionManager,
 } from "../session-manager";
-import type { ChannelEvent } from "../types";
-import { isSendMessageResult, type SendMessageResult } from "./send-message-tool";
+import { isSendMessageResult } from "./send-message-tool";
 
 export const PROTOCOL_GUIDANCE_TEXT =
   "[Protocol Guidance]\n" +
@@ -29,19 +28,21 @@ interface ResponseStepProcessorOptions {
   sessionManager: SessionManager;
   platform: string;
   channelId: string;
+  logger: Logger;
 }
 
 export class ResponseStepProcessor {
   private readonly sessionManager: SessionManager;
   private readonly platform: string;
   private readonly channelId: string;
+  private readonly logger: Logger;
   private seenAssistantToolCallIds = new Set<string>();
   private seenToolResultCallIds = new Set<string>();
-  private seenChannelMessageSegmentIds = new Set<string>();
   private _pendingProtocolRetry = false;
   private protocolRetryCount = 0;
   private _protocolError = false;
   private _heartbeatRequested = false;
+  private _completedSendMessageWithoutHeartbeat = false;
   private _sendFailure = false;
   private _thrownError: string | undefined;
 
@@ -49,6 +50,7 @@ export class ResponseStepProcessor {
     this.sessionManager = options.sessionManager;
     this.platform = options.platform;
     this.channelId = options.channelId;
+    this.logger = options.logger;
   }
 
   beginResponse(protocolRetry: boolean): void {
@@ -59,11 +61,11 @@ export class ResponseStepProcessor {
     this._pendingProtocolRetry = false;
     this._protocolError = false;
     this._heartbeatRequested = false;
+    this._completedSendMessageWithoutHeartbeat = false;
     this._sendFailure = false;
     this._thrownError = undefined;
     this.seenAssistantToolCallIds.clear();
     this.seenToolResultCallIds.clear();
-    this.seenChannelMessageSegmentIds.clear();
   }
 
   apply(stepResult: OnStepFinishEvent): void {
@@ -71,6 +73,10 @@ export class ResponseStepProcessor {
     if (!responseMessages) {
       return;
     }
+
+    this.logger.debug(
+      `[step:${this.platform}:${this.channelId}] finish index=${stepResult.stepNumber} reason=${stepResult.finishReason ?? "unknown"}`,
+    );
 
     for (const msg of responseMessages) {
       if (msg.role === "assistant") {
@@ -100,6 +106,10 @@ export class ResponseStepProcessor {
     return this._heartbeatRequested;
   }
 
+  get completedSendMessageWithoutHeartbeat(): boolean {
+    return this._completedSendMessageWithoutHeartbeat;
+  }
+
   get sendFailure(): boolean {
     return this._sendFailure;
   }
@@ -126,12 +136,18 @@ export class ResponseStepProcessor {
       ? stripUndeliveredAssistantText(agentMsg)
       : agentMsg;
 
-    if (persistableAgentMsg && !isDuplicateAssistantToolCallMessage(persistableAgentMsg, this.seenAssistantToolCallIds)) {
+    if (
+      persistableAgentMsg &&
+      !isDuplicateAssistantToolCallMessage(persistableAgentMsg, this.seenAssistantToolCallIds)
+    ) {
       this.sessionManager.appendMessage(persistableAgentMsg);
       rememberAssistantToolCallIds(persistableAgentMsg, this.seenAssistantToolCallIds);
     }
 
     if (hasUndeliveredVisibleText) {
+      this.logger.debug(
+        `[step:${this.platform}:${this.channelId}] undelivered assistant text detected protocolRetry=${this.protocolRetryCount < MAX_PROTOCOL_RETRIES_PER_RESPONSE}`,
+      );
       this.sessionManager.appendCustomEntry("protocol_assistant_draft", {
         text: assistantText,
         provider: agentMsg.provider,
@@ -169,6 +185,10 @@ export class ResponseStepProcessor {
       return;
     }
 
+    this.logger.debug(
+      `[step:${this.platform}:${this.channelId}] tool results=${freshToolParts.length}`,
+    );
+
     const agentMsg: AgentToolMessage = {
       role: "tool",
       content: freshToolParts.map((part) => ({
@@ -196,61 +216,32 @@ export class ResponseStepProcessor {
         continue;
       }
 
-      this.applySendMessageResult(part.toolCallId as string, toolResult);
-    }
-  }
+      this.logger.debug(
+        `[step:${this.platform}:${this.channelId}] send_message success=${toolResult.success} segments=${toolResult.segments.length} heartbeat=${toolResult.requestHeartbeat}`,
+      );
 
-  private applySendMessageResult(toolCallId: string, toolResult: SendMessageResult): void {
-    if (toolResult.success === true) {
-      this._heartbeatRequested = toolResult.requestHeartbeat;
-    }
+      if (toolResult.success === true) {
+        this._heartbeatRequested = toolResult.requestHeartbeat;
+        if (!toolResult.requestHeartbeat) {
+          this._completedSendMessageWithoutHeartbeat = true;
+        }
+      }
 
-    if (toolResult.success === false && toolResult.segments.length === 0) {
-      this._protocolError = true;
-    }
+      if (toolResult.success === false && toolResult.segments.length === 0) {
+        this._protocolError = true;
+      }
 
-    if (
-      toolResult.success === false &&
-      toolResult.segments.some((segment) => segment.success === false || Boolean(segment.error))
-    ) {
-      this._sendFailure = true;
       const firstErrorSegment = toolResult.segments.find(
         (segment) => segment.success === false || Boolean(segment.error),
       );
-      if (firstErrorSegment?.error && !this._thrownError) {
-        this._thrownError = firstErrorSegment.error;
+      if (toolResult.success === false && firstErrorSegment) {
+        this._sendFailure = true;
+        if (firstErrorSegment.error && !this._thrownError) {
+          this._thrownError = firstErrorSegment.error;
+        }
       }
-    }
-
-    for (const segment of toolResult.segments) {
-      if (segment.success !== true) {
-        continue;
-      }
-      if (this.seenChannelMessageSegmentIds.has(segment.segmentId)) {
-        continue;
-      }
-      this.seenChannelMessageSegmentIds.add(segment.segmentId);
-      this.sessionManager.appendCustomMessageEntry(
-        "channel_message",
-        formatOutboundChannelMessage(segment.content),
-        false,
-        {
-          direction: "outbound",
-          platform: this.platform,
-          channelId: this.channelId,
-          toolCallId,
-          utteranceId: toolResult.utteranceId,
-          index: segment.index,
-          messageIds: segment.messageIds,
-          requestHeartbeat: toolResult.requestHeartbeat,
-        },
-      );
     }
   }
-}
-
-function formatOutboundChannelMessage(content: string): string {
-  return `[assistant]: ${content}`;
 }
 
 function createAgentUsage(usage?: {
@@ -426,69 +417,6 @@ export function hasCompletedSendMessageWithoutHeartbeat(
       isSendMessageResult(output) && output.success === true && output.requestHeartbeat === false
     );
   });
-}
-
-export function getInboundChannelMessageDetails(
-  details: unknown,
-): InboundChannelMessageDetails | null {
-  if (!details || typeof details !== "object") {
-    return null;
-  }
-
-  const candidate = details as Record<string, unknown>;
-  if (candidate.direction === "outbound") {
-    return null;
-  }
-
-  if (
-    typeof candidate.userId !== "string" ||
-    typeof candidate.username !== "string" ||
-    typeof candidate.platform !== "string" ||
-    typeof candidate.channelId !== "string" ||
-    typeof candidate.messageId !== "string" ||
-    typeof candidate.isDirect !== "boolean" ||
-    typeof candidate.atSelf !== "boolean" ||
-    typeof candidate.isReplyToBot !== "boolean"
-  ) {
-    return null;
-  }
-
-  const isDirect = candidate.isDirect;
-  const username = candidate.username;
-
-  return {
-    direction: "inbound",
-    timestamp: typeof candidate.timestamp === "number" ? candidate.timestamp : 0,
-    userId: candidate.userId,
-    username,
-    nickname: typeof candidate.nickname === "string" ? candidate.nickname : username,
-    identity:
-      typeof candidate.identity === "string"
-        ? candidate.identity
-        : isDirect
-          ? "direct-user"
-          : "member",
-    platform: candidate.platform,
-    channelId: candidate.channelId,
-    messageId: candidate.messageId,
-    isDirect,
-    atSelf: candidate.atSelf,
-    isReplyToBot: candidate.isReplyToBot,
-    replyTo: isReplyReference(candidate.replyTo) ? candidate.replyTo : undefined,
-  };
-}
-
-function isReplyReference(value: unknown): value is ChannelEvent["replyTo"] {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-
-  const candidate = value as Record<string, unknown>;
-  return (
-    typeof candidate.username === "string" &&
-    typeof candidate.nickname === "string" &&
-    typeof candidate.summary === "string"
-  );
 }
 
 /** Normalize AI SDK AssistantContent into AgentAssistantMessage content parts. */

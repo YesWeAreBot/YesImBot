@@ -77,12 +77,14 @@ describe("SessionManager", () => {
   });
 
   describe("channel message records", () => {
-    it("persists inbound and outbound channel messages as custom_message entries", () => {
+    it("persists channel messages as custom_message entries", () => {
       const manager = SessionManager.inMemory("discord:12345");
       manager.appendCustomMessageEntry("channel_message", "[alice]: hello", false, {
-        direction: "inbound",
+        timestamp: Date.now(),
         userId: "user-1",
         username: "alice",
+        nickname: "alice",
+        identity: "direct-user",
         platform: "discord",
         channelId: "12345",
         messageId: "msg-1",
@@ -90,22 +92,11 @@ describe("SessionManager", () => {
         atSelf: false,
         isReplyToBot: false,
       });
-      manager.appendCustomMessageEntry("channel_message", "[assistant]: hi", false, {
-        direction: "outbound",
-        platform: "discord",
-        channelId: "12345",
-        toolCallId: "call-1",
-        utteranceId: "utt-1",
-        index: 0,
-        messageIds: ["m1"],
-        requestHeartbeat: false,
-      });
 
       const entries = manager.getEntries();
 
-      expect(entries).toHaveLength(2);
+      expect(entries).toHaveLength(1);
       expect(entries[0]).toMatchObject({ type: "custom_message", customType: "channel_message" });
-      expect(entries[1]).toMatchObject({ type: "custom_message", customType: "channel_message" });
     });
   });
 });

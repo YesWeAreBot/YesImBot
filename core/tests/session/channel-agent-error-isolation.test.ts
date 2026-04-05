@@ -30,7 +30,6 @@ import {
   createAgentAssistantMessage,
   normalizeAssistantContent,
 } from "../../src/services/session/runtime";
-import { TurnFinalizer } from "../../src/services/session/runtime/finalization/turn-finalizer";
 import { SessionManager } from "../../src/services/session/session-manager";
 import type { ChannelEvent, ResponseEndRecord } from "../../src/services/session/types";
 import { createTestSettingsManager } from "./test-settings-manager";
@@ -43,7 +42,10 @@ function createContextMock() {
     warn: vi.fn(),
     error: vi.fn(),
   };
-  const loggerFactory = Object.assign(vi.fn(() => logger), logger);
+  const loggerFactory = Object.assign(
+    vi.fn(() => logger),
+    logger,
+  );
   return {
     ctx: {
       logger: loggerFactory,
@@ -120,66 +122,6 @@ describe("ChannelRuntime plugin safety helpers", () => {
     });
   });
 
-  it("all six exact reason strings resolve from finalizer matrix", () => {
-    const finalizer = new TurnFinalizer();
-
-    expect(
-      finalizer.resolveEndReason({
-        aborted: false,
-        timedOut: false,
-        protocolError: false,
-        heartbeatRequested: false,
-        sendFailure: false,
-      }),
-    ).toBe("normal");
-    expect(
-      finalizer.resolveEndReason({
-        aborted: false,
-        timedOut: false,
-        protocolError: false,
-        heartbeatRequested: true,
-        sendFailure: false,
-      }),
-    ).toBe("heartbeat_continuation");
-    expect(
-      finalizer.resolveEndReason({
-        aborted: false,
-        timedOut: false,
-        protocolError: true,
-        heartbeatRequested: true,
-        sendFailure: false,
-      }),
-    ).toBe("protocol_error");
-    expect(
-      finalizer.resolveEndReason({
-        aborted: false,
-        timedOut: true,
-        protocolError: false,
-        heartbeatRequested: true,
-        sendFailure: true,
-      }),
-    ).toBe("timeout");
-    expect(
-      finalizer.resolveEndReason({
-        aborted: true,
-        timedOut: false,
-        protocolError: false,
-        heartbeatRequested: true,
-        sendFailure: true,
-      }),
-    ).toBe("abort");
-    expect(
-      finalizer.resolveEndReason({
-        aborted: false,
-        timedOut: false,
-        protocolError: false,
-        heartbeatRequested: false,
-        sendFailure: true,
-        thrownError: "transport failed",
-      }),
-    ).toBe("exception");
-  });
-
   it("builds generation payload with system instruction boundary", () => {
     const { messages } = buildGenerateInputForTest({
       instructions: "test-instruction",
@@ -214,9 +156,7 @@ describe("ChannelRuntime plugin safety helpers", () => {
     await agent.receive(createEvent());
 
     await vi.waitFor(() => {
-      expect(logger.error).toHaveBeenCalledWith(
-        expect.stringContaining("discord:channel-1"),
-      );
+      expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("discord:channel-1"));
     });
   });
 });

@@ -5,7 +5,6 @@ export {
 } from "./response-step-processor";
 export { ChannelRuntime } from "./channel-runtime";
 export { createSendMessageTool, isSendMessageResult } from "./send-message-tool";
-export { TurnFinalizer } from "./finalization/turn-finalizer";
 export type { SendMessageResult, SendMessageSegmentResult } from "./send-message-tool";
 export type {
   ChannelRuntimeOptions,

@@ -6,7 +6,7 @@
     ".env.universal": ".env.*",
     "README.md": "CHANGELOG.md, LICENSE",
     "tsconfig.json": "tsconfig.*.json, env.d.ts",
-    "package.json": ".editorconfig, .gitignore, .oxfmtrc.json, .oxlintrc.json, .yarnrc.yml, turbo.json, yarn.lock"
+    "package.json": ".editorconfig, .gitignore, .oxfmtrc.json, .oxlintrc.json, .yarnrc.yml, yarn.lock"
   },
   "oxc.typeAware": true,
   "oxc.fmt.configPath": ".oxfmtrc.json",

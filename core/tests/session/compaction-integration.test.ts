@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { buildGenerateInputForTest, ChannelRuntime } from "../../src/services/session/runtime";
-import type { AthenaSessionSettings } from "../../src/services/session/settings-manager";
 import { SessionManager } from "../../src/services/session/session-manager";
+import type { AthenaSessionSettings } from "../../src/services/session/settings-manager";
 import type { ChannelEvent } from "../../src/services/session/types";
 import { createTestSettingsManager } from "./test-settings-manager";
 

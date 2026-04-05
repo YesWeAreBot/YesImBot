@@ -238,7 +238,8 @@ const SESSION_SETTINGS_RULES: SettingsRuleMap = {
   },
   useGlobal: {
     kind: "deprecated",
-    message: "Deprecated key 'useGlobal' is ignored. Workspace settings always layer over global settings.",
+    message:
+      "Deprecated key 'useGlobal' is ignored. Workspace settings always layer over global settings.",
   },
 };
 

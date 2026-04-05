@@ -1,5 +1,3 @@
-import { describe, expect, it } from "vitest";
-
 import {
   estimateContextTokens,
   estimateTokens,
@@ -7,15 +5,16 @@ import {
   prepareCompaction,
   serializeConversation,
   shouldCompact,
-} from "../../src/services/session/compaction";
-import type {
+} from "core/src/services/session/compaction";
+import {
   AgentAssistantMessage,
   AgentCustomMessage,
   AgentMessage,
   AgentToolMessage,
   AgentUserMessage,
   SessionEntry,
-} from "../../src/services/session/session-manager/types";
+} from "core/src/services/session/session-manager";
+import { describe, expect, it } from "vitest";
 
 const DEFAULT_COMPACTION_SETTINGS = {
   enabled: true,
