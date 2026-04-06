@@ -262,28 +262,34 @@ describe("AgentSessionService", () => {
       );
 
       const persisted = sessionManager
-        .getEntries()
-        .find((entry) => entry.type === "custom_message" && entry.customType === "channel_message");
+        .getTimeline()
+        .find((record) => record.kind === "channel_message");
 
       expect(persisted).toBeTruthy();
-      if (!persisted || persisted.type !== "custom_message") {
+      if (!persisted || persisted.kind !== "channel_message") {
         return;
       }
 
-      expect(typeof persisted.content).toBe("string");
-      expect(persisted.content).toContain("[timestamp]");
-      expect(persisted.content).toContain("[platform/channel]");
-      expect(persisted.content).toContain("[sender]");
-      expect(persisted.content).toContain("[context]");
-      expect(persisted.content).toContain("[reply]");
-
-      expect(persisted.details).toMatchObject({
+      expect(persisted.message.sender).toMatchObject({
         nickname: "Alice-Display",
         identity: "title:moderator",
-        replyTo: {
-          summary: "quoted summary",
-        },
       });
+      expect(persisted.message.replyTo).toMatchObject({
+        summary: "quoted summary",
+      });
+
+      const modelMessage = sessionManager.getModelMessages()[0];
+      expect(modelMessage).toMatchObject({ role: "user" });
+      expect(modelMessage?.content).toEqual(expect.any(String));
+      if (typeof modelMessage?.content !== "string") {
+        return;
+      }
+
+      expect(modelMessage.content).toContain("[timestamp]");
+      expect(modelMessage.content).toContain("[platform/channel]");
+      expect(modelMessage.content).toContain("[sender]");
+      expect(modelMessage.content).toContain("[context]");
+      expect(modelMessage.content).toContain("[reply]");
     });
 
     it("ignores self messages", async () => {
@@ -362,12 +368,88 @@ describe("AgentSessionService", () => {
         createEvent({ isDirect: true, messageId: "msg-burst-3", timestamp: 1002 }),
       );
 
+      expect(service.getActiveChannels()).toEqual(["discord:channel-1"]);
+
       releaseFirst();
       await Promise.all([first, second, third]);
 
       await vi.waitFor(() => {
         expect(generateMock).toHaveBeenCalledTimes(2);
       });
+
+      expect(service.getActiveChannels()).toEqual(["discord:channel-1"]);
+
+      const runtime = service.getAgent("discord:channel-1");
+      expect(runtime).toBeDefined();
+      const timeline = runtime?.sessionManager.getTimeline() ?? [];
+      const channelMessages = timeline.filter((record) => record.kind === "channel_message");
+      const followUpReviews = timeline.filter(
+        (record) => record.kind === "state_change" && record.stateType === "follow_up_review",
+      );
+      const runtimeOutcomes = timeline.filter(
+        (record) =>
+          record.kind === "system_notice" && record.materializationKey === "runtime_outcome",
+      );
+
+      expect(channelMessages).toHaveLength(3);
+      expect(followUpReviews).toHaveLength(1);
+      expect(followUpReviews[0]?.data).toMatchObject({
+        messageCount: 2,
+        messageIds: expect.arrayContaining(["msg-burst-2", "msg-burst-3"]),
+      });
+      expect(
+        runtimeOutcomes.some(
+          (record) =>
+            record.kind === "system_notice" &&
+            record.data?.nextOutcome === "follow_up" &&
+            typeof record.notice === "string",
+        ),
+      ).toBe(true);
+    });
+
+    it("concurrent first receive keeps one cached runtime owner", async () => {
+      const tempDir = mkdtempSync(join(tmpdir(), "athena-concurrent-owner-"));
+      tempDirs.push(tempDir);
+      const service = new AgentSessionService(createContextMock(tempDir), {
+        model: "test:model",
+        basePath: "sessions",
+      });
+
+      let releaseFirst!: () => void;
+      const firstTurn = new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+
+      generateMock.mockImplementationOnce(async () => {
+        await firstTurn;
+      });
+      generateMock.mockResolvedValueOnce();
+
+      const first = service.receive(
+        createEvent({ channelId: "channel-race", isDirect: true, messageId: "race-msg-1" }),
+      );
+      const second = service.receive(
+        createEvent({ channelId: "channel-race", isDirect: true, messageId: "race-msg-2" }),
+      );
+
+      await vi.waitFor(() => {
+        expect(generateMock).toHaveBeenCalledTimes(1);
+      });
+
+      expect(service.getActiveChannels()).toEqual(["discord:channel-race"]);
+
+      const runtime = service.getAgent("discord:channel-race");
+      expect(runtime).toBeDefined();
+
+      releaseFirst();
+      await Promise.all([first, second]);
+
+      await vi.waitFor(() => {
+        expect(generateMock).toHaveBeenCalledTimes(2);
+      });
+
+      expect(service.getActiveChannels()).toEqual(["discord:channel-race"]);
+      expect(service.getAgent("discord:channel-race")).toBe(runtime);
     });
   });
 
@@ -396,7 +478,53 @@ describe("AgentSessionService", () => {
       await service.receive(event);
 
       expect(routeSpy).toHaveBeenCalledWith("discord", "origin-channel", bot);
-      expect(agentReceive).toHaveBeenCalledWith(event);
+      expect(agentReceive).toHaveBeenCalledWith({
+        kind: "channel_message",
+        platform: "discord",
+        channelId: "origin-channel",
+        messageId: "route-msg-1",
+        timestamp: event.timestamp,
+        content: event.content,
+        sender: {
+          userId: event.userId,
+          username: event.username,
+          nickname: event.nickname,
+          identity: event.identity,
+        },
+        isDirect: event.isDirect,
+        atSelf: event.atSelf,
+        isReplyToBot: event.isReplyToBot,
+        replyTo: event.replyTo,
+      });
+    });
+
+    it("reuses the cached runtime for repeated same-channel receives", async () => {
+      const tempDir = mkdtempSync(join(tmpdir(), "athena-runtime-reuse-"));
+      tempDirs.push(tempDir);
+      const service = new AgentSessionService(createContextMock(tempDir), {
+        model: "test:model",
+        basePath: "sessions",
+      });
+      const bot = createBotMock();
+
+      const first = createEvent({ bot, isDirect: true, messageId: "reuse-msg-1", timestamp: 1000 });
+      const second = createEvent({
+        bot,
+        isDirect: true,
+        messageId: "reuse-msg-2",
+        timestamp: 1001,
+      });
+
+      generateMock.mockResolvedValue(undefined);
+
+      await service.receive(first);
+      const firstRuntime = service.getAgent("discord:channel-1");
+      await service.receive(second);
+      const secondRuntime = service.getAgent("discord:channel-1");
+
+      expect(firstRuntime).toBeDefined();
+      expect(secondRuntime).toBe(firstRuntime);
+      expect(service.getActiveChannels()).toEqual(["discord:channel-1"]);
     });
   });
 

@@ -116,6 +116,21 @@ function findTimelineState(sessionManager: SessionManager, stateType: string) {
   return listTimelineStates(sessionManager, stateType)[0];
 }
 
+function listRuntimeOutcomeNotices(sessionManager: SessionManager) {
+  return sessionManager.getTimeline().filter((record) => {
+    return (
+      record.kind === "system_notice" &&
+      record.materializationKey === "runtime_outcome" &&
+      record.subType.startsWith("runtime_outcome_")
+    );
+  });
+}
+
+function findLatestRuntimeOutcomeNotice(sessionManager: SessionManager) {
+  const records = listRuntimeOutcomeNotices(sessionManager);
+  return records[records.length - 1];
+}
+
 interface MutableSettingsManager extends ChannelRuntimeSettingsManager {
   setResponseSettings(
     settings: NonNullable<ReturnType<ChannelRuntimeSettingsManager["getResponseSettings"]>>,
@@ -426,9 +441,7 @@ describe("ChannelRuntime state machine", () => {
       });
 
       expect(
-        sessionManager
-          .getTimeline()
-          .some((record) => record.kind === "assistant_message"),
+        sessionManager.getTimeline().some((record) => record.kind === "assistant_message"),
       ).toBe(true);
     });
 
@@ -453,10 +466,12 @@ describe("ChannelRuntime state machine", () => {
       await vi.waitFor(() => {
         expect(agent.getResponseState()).toBe("idle");
       });
-      const responseEnd = findTimelineState(sessionManager, "response_end");
-      expect(responseEnd).toBeTruthy();
-      if (responseEnd?.kind === "state_change") {
-        expect(responseEnd.data).toMatchObject({ endReason: "abort" });
+      const runtimeOutcome = findLatestRuntimeOutcomeNotice(sessionManager);
+      expect(runtimeOutcome).toBeTruthy();
+      if (runtimeOutcome?.kind === "system_notice") {
+        expect(runtimeOutcome.visibility).toBe("hidden");
+        expect(runtimeOutcome.materialization).toBe("hidden");
+        expect(runtimeOutcome.data).toMatchObject({ endReason: "abort" });
       }
     });
 
@@ -491,10 +506,12 @@ describe("ChannelRuntime state machine", () => {
       await vi.waitFor(() => {
         expect(timeoutAgent.getResponseState()).toBe("idle");
       });
-      const responseEnd = findTimelineState(sessionManager, "response_end");
-      expect(responseEnd).toBeTruthy();
-      if (responseEnd?.kind === "state_change") {
-        expect(responseEnd.data).toMatchObject({ endReason: "timeout" });
+      const runtimeOutcome = findLatestRuntimeOutcomeNotice(sessionManager);
+      expect(runtimeOutcome).toBeTruthy();
+      if (runtimeOutcome?.kind === "system_notice") {
+        expect(runtimeOutcome.visibility).toBe("hidden");
+        expect(runtimeOutcome.materialization).toBe("hidden");
+        expect(runtimeOutcome.data).toMatchObject({ endReason: "timeout" });
       }
     });
     it.todo("transitions idle -> responding -> ended on error");
@@ -585,15 +602,17 @@ describe("ChannelRuntime state machine", () => {
 
       const secondTurnInput = generateMock.mock.calls[1]?.[0];
 
-      const responseEndRecords = listTimelineStates(sessionManager, "response_end");
+      const responseEndRecords = listRuntimeOutcomeNotices(sessionManager);
       const followUpReviewRecords = listTimelineStates(sessionManager, "follow_up_review");
 
       expect(responseEndRecords).toHaveLength(2);
       expect(followUpReviewRecords).toHaveLength(1);
-      if (responseEndRecords[0]?.kind === "state_change") {
+      if (responseEndRecords[0]?.kind === "system_notice") {
+        expect(responseEndRecords[0].visibility).toBe("hidden");
+        expect(responseEndRecords[0].materialization).toBe("hidden");
         expect(responseEndRecords[0].data).toMatchObject({ nextOutcome: "follow_up" });
       }
-      if (responseEndRecords[1]?.kind === "state_change") {
+      if (responseEndRecords[1]?.kind === "system_notice") {
         expect(responseEndRecords[1].data).toMatchObject({ nextOutcome: "idle" });
       }
       if (followUpReviewRecords[0]?.kind === "state_change") {
@@ -601,6 +620,12 @@ describe("ChannelRuntime state machine", () => {
           messageCount: 2,
           messageIds: ["msg-burst-2", "msg-burst-3"],
         });
+        expect((followUpReviewRecords[0].data as { content?: string }).content).toContain(
+          "Observed window:",
+        );
+        expect((followUpReviewRecords[0].data as { content?: string }).content).toContain(
+          "Tracked message IDs: msg-burst-2, msg-burst-3",
+        );
       }
       expect(secondTurnInput?.messages).toEqual(
         expect.arrayContaining([
@@ -681,10 +706,12 @@ describe("ChannelRuntime state machine", () => {
       await vi.waitFor(() => {
         expect(agent.getResponseState()).toBe("idle");
       });
-      const responseEnd = findTimelineState(sessionManager, "response_end");
-      expect(responseEnd).toBeTruthy();
-      if (responseEnd?.kind === "state_change") {
-        expect(responseEnd.data).toMatchObject({ endReason: "exception" });
+      const runtimeOutcome = findLatestRuntimeOutcomeNotice(sessionManager);
+      expect(runtimeOutcome).toBeTruthy();
+      if (runtimeOutcome?.kind === "system_notice") {
+        expect(runtimeOutcome.visibility).toBe("hidden");
+        expect(runtimeOutcome.materialization).toBe("hidden");
+        expect(runtimeOutcome.data).toMatchObject({ endReason: "exception" });
       }
     });
   });

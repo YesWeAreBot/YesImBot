@@ -15,8 +15,9 @@ import type {
   CanonicalChannelMessageInput,
   ChannelEvent,
   FollowUpReviewRecord,
-  ResponseEndReason,
-  ResponseEndRecord,
+  RuntimeOutcomeNoticeSubType,
+  RuntimeOutcomeReason,
+  RuntimeOutcomeRecord,
 } from "../types";
 import {
   createDefaultWillingnessJudge,
@@ -234,6 +235,14 @@ export class ChannelRuntime {
   async receive(input: CanonicalChannelInput | ChannelEvent): Promise<void> {
     const event = normalizeChannelRuntimeInput(input);
 
+    this.appendInboundMessage(event);
+    const shouldRespond = await this.shouldRespondNow(event);
+    this.receiveWriteback(event, shouldRespond);
+  }
+
+  private appendInboundMessage(event: CanonicalChannelMessageInput): void {
+    // receive
+    // Always append the canonical channel_message before making turn decisions.
     this.logger.debug(
       `[input:${this.getChannelKey()}] user=${event.sender.userId} direct=${event.isDirect} atSelf=${event.atSelf} replyToBot=${event.isReplyToBot} messageId=${event.messageId}`,
     );
@@ -246,8 +255,11 @@ export class ChannelRuntime {
       materialization: "default",
       message: event,
     });
+  }
 
-    // 2. Willingness check
+  private async shouldRespondNow(event: CanonicalChannelMessageInput): Promise<boolean> {
+    // shouldRespond
+    // Decide after the inbound message has already become canonical session truth.
     const selfId = this.bot?.selfId ?? "";
     const judgeSettings = this.options.settingsManager.getJudgeSettings();
     const heuristic = evaluateRuntimeWillingnessHeuristic({
@@ -275,7 +287,13 @@ export class ChannelRuntime {
       `[willingness:${this.getChannelKey()}] shouldRespond=${willingness.shouldRespond} reason=${willingness.reason} source=${heuristic ? "heuristic" : "judge"}`,
     );
 
-    if (!willingness.shouldRespond) {
+    return willingness.shouldRespond;
+  }
+
+  private receiveWriteback(event: CanonicalChannelMessageInput, shouldRespond: boolean): void {
+    // writeback
+    // Fan the receive-stage decision into immediate idle, a queued follow-up, or a new run.
+    if (!shouldRespond) {
       return;
     }
 
@@ -287,7 +305,6 @@ export class ChannelRuntime {
       return;
     }
 
-    // 3. Schedule response
     this.scheduleResponse();
   }
 
@@ -300,7 +317,6 @@ export class ChannelRuntime {
   /** Abort the current response if one is in progress. */
   abort(): void {
     if (this.abortController && this.responseState === "responding") {
-      this.setResponseState("aborting", "abort_requested");
       this.abortController.abort();
     }
   }
@@ -327,11 +343,22 @@ export class ChannelRuntime {
   }
 
   private hasActiveTurn(): boolean {
-    return (
-      this.responseState === "responding" ||
-      this.responseState === "aborting" ||
-      this.responseState === "finalizing"
-    );
+    return this.responseState === "responding";
+  }
+
+  private appendRuntimeOutcome(record: RuntimeOutcomeRecord): void {
+    const subType = getRuntimeOutcomeNoticeSubType(record.endReason);
+    this.session.appendSystemNotice({
+      id: createRuntimeRecordId(),
+      timestamp: Date.now(),
+      stage: "runtime",
+      visibility: "hidden",
+      materialization: "hidden",
+      subType,
+      materializationKey: "runtime_outcome",
+      notice: buildRuntimeOutcomeNotice(subType, record),
+      data: record,
+    });
   }
 
   private markPendingFollowUp(input: { observedAt: number; messageId: string }): void {
@@ -380,13 +407,13 @@ export class ChannelRuntime {
         : `${firstObservedIso} -> ${latestObservedIso}`;
     const messageLabel = pendingFollowUp.messageCount === 1 ? "message" : "messages";
     const trackedMessageIds =
-      pendingFollowUp.messageIds.length > 0
-        ? pendingFollowUp.messageIds.join(", ")
-        : "unknown";
+      pendingFollowUp.messageIds.length > 0 ? pendingFollowUp.messageIds.join(", ") : "unknown";
     const content = [
       "[Follow-up Review]",
-      `While you were responding, ${pendingFollowUp.messageCount} new channel ${messageLabel} arrived during ${observedWindow}.`,
-      `Review the recent channel_message entries from that window before deciding what to do next. Tracked messageIds: ${trackedMessageIds}.`,
+      `While you were responding, ${pendingFollowUp.messageCount} new channel ${messageLabel} arrived.`,
+      `Observed window: ${observedWindow}.`,
+      `Tracked message IDs: ${trackedMessageIds}.`,
+      "Review the recent channel_message entries from that window before deciding what to do next.",
       "Some of those messages may already have been handled during earlier response rounds. If a message is already handled, skip it. Otherwise reply or take the necessary action now.",
     ].join("\n");
 
@@ -527,7 +554,7 @@ export class ChannelRuntime {
         return;
       }
 
-      this.setResponseState("finalizing", "response_end");
+      // maybe follow-up
       function resolveEndReason(input: {
         aborted: boolean;
         timedOut: boolean;
@@ -535,7 +562,7 @@ export class ChannelRuntime {
         heartbeatRequested: boolean;
         sendFailure: boolean;
         thrownError?: string;
-      }): ResponseEndReason {
+      }): RuntimeOutcomeReason {
         if (input.timedOut) {
           return "timeout";
         }
@@ -568,7 +595,7 @@ export class ChannelRuntime {
       });
 
       function selectOutcome(input: {
-        endReason: ResponseEndReason;
+        endReason: RuntimeOutcomeReason;
         hasPendingFollowUp: boolean;
         thrownError?: string;
       }): TurnOutcomeSelection {
@@ -594,7 +621,7 @@ export class ChannelRuntime {
         hasPendingFollowUp: Boolean(this.pendingFollowUp?.pending),
         thrownError: this.responseStepProcessor.thrownError,
       });
-      const record: ResponseEndRecord = {
+      const record: RuntimeOutcomeRecord = {
         endReason,
         nextOutcome: outcome.nextOutcome,
         durationMs: Date.now() - this.responseStartTime,
@@ -602,12 +629,12 @@ export class ChannelRuntime {
         error: this.responseStepProcessor.thrownError,
         blockedReason: outcome.blockedReason,
       };
-      this.sessionManager.appendCustomEntry<ResponseEndRecord>("response_end", record);
+      this.appendRuntimeOutcome(record);
       this.logger.debug(
         `[state:${this.getChannelKey()}] end reason=${endReason} outcome=${outcome.nextOutcome} steps=${this.stepsCompleted} durationMs=${record.durationMs}`,
       );
 
-      this.setResponseState("ended", "record_persisted");
+      this.setResponseState("idle", "runtime_outcome_persisted");
       this.abortController = null;
 
       if (outcome.nextOutcome === "follow_up") {
@@ -625,7 +652,6 @@ export class ChannelRuntime {
           });
           this.nextTurnFollowUpReview = followUpReview;
         }
-        this.setResponseState("idle", "follow_up");
         this.currentTurnSettings = null;
         this.currentTurnInstructions = null;
         this.currentTurnFollowUpReview = null;
@@ -635,7 +661,6 @@ export class ChannelRuntime {
       }
 
       this.pendingFollowUp = null;
-      this.setResponseState("idle", "response_complete");
       this.currentTurnSettings = null;
       this.currentTurnInstructions = null;
       this.currentTurnFollowUpReview = null;
@@ -696,7 +721,8 @@ export class ChannelRuntime {
   private handleFinish(event: OnFinishEvent): void {
     const turnSettings = this.getActiveTurnSettings();
     const totalUsage = event.totalUsage ?? event.usage;
-    const contextTokens = getReliableInputTokens(totalUsage) ?? estimateContextTokens(this.session.getModelMessages());
+    const contextTokens =
+      getReliableInputTokens(totalUsage) ?? estimateContextTokens(this.session.getModelMessages());
 
     if (
       !shouldCompact(contextTokens, turnSettings.contextWindow, turnSettings.compactionSettings)
@@ -835,4 +861,36 @@ function normalizeChannelRuntimeInput(
 
 function createRuntimeRecordId(): string {
   return `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+}
+
+function getRuntimeOutcomeNoticeSubType(
+  endReason: RuntimeOutcomeReason,
+): RuntimeOutcomeNoticeSubType {
+  switch (endReason) {
+    case "normal":
+      return "runtime_outcome_normal";
+    case "heartbeat_continuation":
+      return "runtime_outcome_heartbeat_continuation";
+    case "protocol_error":
+      return "runtime_outcome_protocol_error";
+    case "timeout":
+      return "runtime_outcome_timeout";
+    case "abort":
+      return "runtime_outcome_abort";
+    case "exception":
+      return "runtime_outcome_exception";
+  }
+}
+
+function buildRuntimeOutcomeNotice(
+  subType: RuntimeOutcomeNoticeSubType,
+  record: RuntimeOutcomeRecord,
+): string {
+  return [
+    `[runtime-outcome] ${subType}`,
+    `endReason=${record.endReason}`,
+    `nextOutcome=${record.nextOutcome}`,
+    `stepsCompleted=${record.stepsCompleted}`,
+    `durationMs=${record.durationMs}`,
+  ].join(" ");
 }

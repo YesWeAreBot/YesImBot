@@ -32,7 +32,7 @@ import {
   normalizeAssistantContent,
 } from "../../src/services/session/runtime";
 import { SessionManager } from "../../src/services/session/session-manager";
-import type { ChannelEvent, ResponseEndRecord } from "../../src/services/session/types";
+import type { ChannelEvent, RuntimeOutcomeRecord } from "../../src/services/session/types";
 import { createTestSettingsManager } from "./test-settings-manager";
 
 function createContextMock() {
@@ -112,8 +112,8 @@ describe("ChannelRuntime plugin safety helpers", () => {
     ]);
   });
 
-  it("keeps response_end exception shape stable for persistence", () => {
-    const record: ResponseEndRecord = {
+  it("keeps runtime outcome exception shape stable for persistence", () => {
+    const record: RuntimeOutcomeRecord = {
       endReason: "exception",
       nextOutcome: "blocked",
       durationMs: 1200,
@@ -145,9 +145,7 @@ describe("ChannelRuntime plugin safety helpers", () => {
       ["sessionEntries"]: [],
     };
 
-    expect(() =>
-      buildGenerateInputForTest(legacyInput as never),
-    ).toThrow();
+    expect(() => buildGenerateInputForTest(legacyInput as never)).toThrow();
   });
 
   it("preserves finish reason in assistant payload", () => {

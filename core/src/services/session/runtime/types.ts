@@ -98,7 +98,7 @@ export interface ChannelRuntimeTurnSettingsSnapshot {
   };
 }
 
-export type ResponseState = "idle" | "responding" | "finalizing" | "aborting" | "ended";
+export type ResponseState = "idle" | "responding";
 
 export interface RuntimeTurnExecutionOptions {
   ctx: Context;

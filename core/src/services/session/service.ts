@@ -334,9 +334,10 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
   /** Process an incoming canonical or compatibility channel input. */
   async receive(input: CanonicalChannelInput | ChannelEvent, bot?: Bot): Promise<void> {
     const canonicalInput = normalizeIncomingChannelInput(input);
+    const routeBot = bot ?? ("bot" in input ? input.bot : undefined);
 
     if (canonicalInput.kind === "channel_message") {
-      const selfId = bot?.selfId ?? ("bot" in input ? input.bot?.selfId : undefined) ?? "";
+      const selfId = routeBot?.selfId ?? "";
       if (selfId && canonicalInput.sender.userId === selfId) {
         return;
       }
@@ -347,7 +348,11 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
       }
     }
 
-    const agent = this.getOrCreateAgent(canonicalInput.platform, canonicalInput.channelId, bot);
+    const agent = this.getOrCreateAgent(
+      canonicalInput.platform,
+      canonicalInput.channelId,
+      routeBot,
+    );
     await agent.receive(canonicalInput);
   }
 
@@ -743,7 +748,9 @@ export function koishiSessionToCanonicalInput(session: Session): CanonicalChanne
   } satisfies CanonicalChannelMessageInput;
 }
 
-function normalizeIncomingChannelInput(input: CanonicalChannelInput | ChannelEvent): CanonicalChannelInput {
+function normalizeIncomingChannelInput(
+  input: CanonicalChannelInput | ChannelEvent,
+): CanonicalChannelInput {
   if ("kind" in input) {
     return input;
   }

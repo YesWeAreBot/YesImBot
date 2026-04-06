@@ -1,3 +1,4 @@
+import type { JSONValue } from "ai";
 import type { Bot } from "koishi";
 
 export type {
@@ -66,7 +67,7 @@ export interface WillingnessResult {
     | "self_message";
 }
 
-export type ResponseEndReason =
+export type RuntimeOutcomeReason =
   | "normal"
   | "heartbeat_continuation"
   | "protocol_error"
@@ -74,14 +75,22 @@ export type ResponseEndReason =
   | "abort"
   | "exception";
 
-export interface ResponseEndRecord {
-  endReason: ResponseEndReason;
+export type RuntimeOutcomeNoticeSubType =
+  | "runtime_outcome_normal"
+  | "runtime_outcome_heartbeat_continuation"
+  | "runtime_outcome_protocol_error"
+  | "runtime_outcome_timeout"
+  | "runtime_outcome_abort"
+  | "runtime_outcome_exception";
+
+export type RuntimeOutcomeRecord = Record<string, JSONValue | undefined> & {
+  endReason: RuntimeOutcomeReason;
   nextOutcome: ChannelTurnOutcome;
   durationMs: number;
   stepsCompleted: number;
   error?: string;
   blockedReason?: string;
-}
+};
 
 export interface FollowUpReviewRecord {
   content: string;
