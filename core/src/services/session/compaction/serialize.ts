@@ -4,12 +4,9 @@
 
 import type { ModelMessage, TextPart } from "@ai-sdk/provider-utils";
 
-import { AgentAssistantContentPart, AgentMessage, ContentPart } from "../session-manager";
 import type { TimelineRecord } from "../contracts";
-import {
-  materializeTimeline,
-  type MaterializeTimelineOptions,
-} from "../materialize";
+import { materializeTimeline, type MaterializeTimelineOptions } from "../materialize";
+import { AgentAssistantContentPart, AgentMessage, ContentPart } from "../session-manager";
 
 const TOOL_RESULT_MAX_CHARS = 2000;
 

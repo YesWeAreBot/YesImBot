@@ -49,7 +49,11 @@ describe("session serialization", () => {
 
     const file = manager.getSessionFile();
     const lines = readFileSync(file!, "utf8").trim().split("\n");
-    expect(lines[1]).toMatch(/^\{"type":"timeline","record":\{"id":"message-1","kind":"channel_message"/);
-    expect(lines[2]).toMatch(/^\{"type":"timeline","record":\{"id":"assistant-1","kind":"assistant_message"/);
+    expect(lines[1]).toMatch(
+      /^\{"type":"timeline","record":\{"id":"message-1","kind":"channel_message"/,
+    );
+    expect(lines[2]).toMatch(
+      /^\{"type":"timeline","record":\{"id":"assistant-1","kind":"assistant_message"/,
+    );
   });
 });

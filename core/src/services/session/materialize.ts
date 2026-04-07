@@ -1,9 +1,6 @@
-import type {
-  ModelMessage,
-  SystemModelMessage,
-  UserModelMessage,
-} from "@ai-sdk/provider-utils";
+import type { ModelMessage, SystemModelMessage, UserModelMessage } from "@ai-sdk/provider-utils";
 
+import { formatCanonicalChannelMessage } from "./channel-message";
 import type {
   CanonicalRawPayload,
   ChannelEventRecord,
@@ -12,7 +9,6 @@ import type {
   SystemNoticeRecord,
   TimelineRecord,
 } from "./contracts";
-import { formatCanonicalChannelMessage } from "./channel-message";
 
 export interface MaterializeTimelineOptions {
   includeInternal?: boolean;
@@ -29,13 +25,9 @@ export function materializeTimelineRecord(
 ): ModelMessage[] {
   switch (record.kind) {
     case "channel_message":
-      return shouldProjectRecord(record, options)
-        ? [materializeChannelMessage(record)]
-        : [];
+      return shouldProjectRecord(record, options) ? [materializeChannelMessage(record)] : [];
     case "channel_event":
-      return shouldProjectRecord(record, options)
-        ? [materializeChannelEvent(record)]
-        : [];
+      return shouldProjectRecord(record, options) ? [materializeChannelEvent(record)] : [];
     case "assistant_message":
       return shouldProjectRecord(record, options) ? [record.message] : [];
     case "tool_message":

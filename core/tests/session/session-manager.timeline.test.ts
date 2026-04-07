@@ -129,4 +129,40 @@ describe("SessionManager canonical timeline persistence", () => {
     });
     expect(manager.getModelMessages()).toEqual([]);
   });
+
+  it("keeps hidden response_status durable across append, persist, reload, and materialize", () => {
+    const sessionDir = mkdtempSync(join(tmpdir(), "athena-session-response-status-"));
+    const manager = SessionManager.create("discord:channel-1", sessionDir);
+
+    manager.appendTimelineRecord({
+      id: "response-status-1",
+      kind: "system_notice",
+      timestamp: 5,
+      stage: "runtime",
+      visibility: "hidden",
+      materialization: "hidden",
+      subType: "response_status_timeout",
+      materializationKey: "response_status",
+      notice: "timed out",
+      data: {
+        endReason: "timeout",
+        nextAction: "idle",
+        durationMs: 1000,
+        stepsCompleted: 2,
+      },
+    });
+
+    const restored = SessionManager.continueRecent("discord:channel-1", sessionDir);
+
+    expect(restored).not.toBeNull();
+    expect(restored!.getTimeline()).toEqual([
+      expect.objectContaining({
+        kind: "system_notice",
+        materializationKey: "response_status",
+        visibility: "hidden",
+        materialization: "hidden",
+      }),
+    ]);
+    expect(restored!.getModelMessages()).toEqual([]);
+  });
 });

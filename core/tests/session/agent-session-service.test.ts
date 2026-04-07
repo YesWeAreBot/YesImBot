@@ -386,9 +386,9 @@ describe("AgentSessionService", () => {
       const followUpReviews = timeline.filter(
         (record) => record.kind === "state_change" && record.stateType === "follow_up_review",
       );
-      const runtimeOutcomes = timeline.filter(
+      const responseStatuses = timeline.filter(
         (record) =>
-          record.kind === "system_notice" && record.materializationKey === "runtime_outcome",
+          record.kind === "system_notice" && record.materializationKey === "response_status",
       );
 
       expect(channelMessages).toHaveLength(3);
@@ -398,10 +398,10 @@ describe("AgentSessionService", () => {
         messageIds: expect.arrayContaining(["msg-burst-2", "msg-burst-3"]),
       });
       expect(
-        runtimeOutcomes.some(
+        responseStatuses.some(
           (record) =>
             record.kind === "system_notice" &&
-            record.data?.nextOutcome === "follow_up" &&
+            record.data?.nextAction === "follow_up" &&
             typeof record.notice === "string",
         ),
       ).toBe(true);
@@ -525,6 +525,138 @@ describe("AgentSessionService", () => {
       expect(firstRuntime).toBeDefined();
       expect(secondRuntime).toBe(firstRuntime);
       expect(service.getActiveChannels()).toEqual(["discord:channel-1"]);
+    });
+
+    it("keeps one restored owner and resumes on the next valid input after restart", async () => {
+      const tempDir = mkdtempSync(join(tmpdir(), "athena-restart-recovery-"));
+      tempDirs.push(tempDir);
+
+      const firstService = new AgentSessionService(createContextMock(tempDir), {
+        model: "test:model",
+        basePath: "sessions",
+      });
+
+      generateMock.mockRejectedValueOnce(new Error("model exploded before restart"));
+
+      await firstService.receive(
+        createEvent({
+          channelId: "channel-restart",
+          isDirect: true,
+          messageId: "restart-msg-1",
+          timestamp: 1000,
+          content: "first run fails",
+        }),
+      );
+
+      const firstRuntime = firstService.getAgent("discord:channel-restart");
+      expect(firstRuntime).toBeDefined();
+
+      await vi.waitFor(() => {
+        const timeline = firstRuntime?.sessionManager.getTimeline() ?? [];
+        expect(
+          timeline.some(
+            (record) =>
+              record.kind === "system_notice" &&
+              record.materializationKey === "response_status" &&
+              record.data?.endReason === "exception",
+          ),
+        ).toBe(true);
+      });
+
+      firstRuntime?.sessionManager.appendMessage({
+        role: "assistant",
+        content: [
+          { type: "text", text: "Calling tool before restart" },
+          {
+            type: "tool-call",
+            toolCallId: "restart-tool-call",
+            toolName: "send_message",
+            args: { content: "ping" },
+          },
+        ],
+        timestamp: 1001,
+        provider: "test",
+        model: "test:model",
+      });
+
+      const restartBot = createBotMock();
+      const restartedService = new AgentSessionService(createContextMock(tempDir), {
+        model: "test:model",
+        basePath: "sessions",
+      });
+
+      const bootstrap = await restartedService.bootstrapChannelForManagement(
+        "discord",
+        "channel-restart",
+        restartBot,
+      );
+
+      const restoredRuntime = restartedService.getAgent("discord:channel-restart");
+      const restoredTimeline = restoredRuntime?.sessionManager.getTimeline() ?? [];
+
+      expect(bootstrap).toMatchObject({
+        channelKey: "discord:channel-restart",
+        status: "restored",
+      });
+      expect(restartedService.getActiveChannels()).toEqual(["discord:channel-restart"]);
+      expect(restoredRuntime).toBeDefined();
+      expect(
+        restoredTimeline.some(
+          (record) =>
+            record.kind === "system_notice" &&
+            record.materializationKey === "response_status" &&
+            record.data?.endReason === "exception",
+        ),
+      ).toBe(true);
+      expect(
+        restoredTimeline.some(
+          (record) =>
+            record.kind === "tool_message" &&
+            record.message.content.some(
+              (part) =>
+                part.type === "tool-result" &&
+                part.toolCallId === "restart-tool-call" &&
+                part.output.value === "Session interrupted before tool execution completed",
+            ),
+        ),
+      ).toBe(true);
+      expect(
+        restoredRuntime?.sessionManager.getModelMessages().some((message) => {
+          return typeof message.content === "string" && message.content.includes("response_status");
+        }) ?? false,
+      ).toBe(false);
+
+      generateMock.mockResolvedValueOnce();
+
+      await restartedService.receive(
+        createEvent({
+          bot: restartBot,
+          channelId: "channel-restart",
+          isDirect: true,
+          messageId: "restart-msg-2",
+          timestamp: 1002,
+          content: "resume after restart",
+        }),
+      );
+
+      await vi.waitFor(() => {
+        expect(generateMock).toHaveBeenCalledTimes(2);
+      });
+
+      const resumedRuntime = restartedService.getAgent("discord:channel-restart");
+      const resumedTimeline = resumedRuntime?.sessionManager.getTimeline() ?? [];
+
+      expect(restartedService.getActiveChannels()).toEqual(["discord:channel-restart"]);
+      expect(resumedRuntime).toBe(restoredRuntime);
+      expect(
+        resumedTimeline.filter((record) => {
+          return (
+            record.kind === "channel_message" &&
+            record.message.messageId === "restart-msg-2" &&
+            record.message.content === "resume after restart"
+          );
+        }),
+      ).toHaveLength(1);
     });
   });
 

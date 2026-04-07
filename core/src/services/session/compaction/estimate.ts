@@ -28,7 +28,9 @@ function charsToTokens(chars: number): number {
   return Math.ceil(chars / 4);
 }
 
-function hasReliableContextUsage(message: CompactionMessage): message is CompactionMessage & UsageCarrier {
+function hasReliableContextUsage(
+  message: CompactionMessage,
+): message is CompactionMessage & UsageCarrier {
   const usage = (message as UsageCarrier).usage;
 
   return (

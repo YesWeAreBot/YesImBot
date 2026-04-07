@@ -39,7 +39,8 @@ export function prepareCompaction(
 
   const visibleRecords = filterSummarizableRecords(records);
   const tokensBefore =
-    estimateContextTokens(materializeTimeline(visibleRecords)) + estimateSummaryTokens(previousSummary);
+    estimateContextTokens(materializeTimeline(visibleRecords)) +
+    estimateSummaryTokens(previousSummary);
   const ratio =
     contextTokens !== undefined && tokensBefore > 0 ? Math.max(1, contextTokens / tokensBefore) : 1;
   const effectiveKeepRecentTokens = Math.max(1, Math.floor(settings.keepRecentTokens / ratio));
@@ -53,7 +54,9 @@ export function prepareCompaction(
   const historyEnd = cutPoint.isSplitTurn ? cutPoint.turnStartIndex : cutPoint.firstKeptRecordIndex;
   const recordsToSummarize = filterSummarizableRecords(records.slice(0, Math.max(historyEnd, 0)));
   const turnPrefixRecords = cutPoint.isSplitTurn
-    ? filterSummarizableRecords(records.slice(cutPoint.turnStartIndex, cutPoint.firstKeptRecordIndex))
+    ? filterSummarizableRecords(
+        records.slice(cutPoint.turnStartIndex, cutPoint.firstKeptRecordIndex),
+      )
     : [];
 
   if (
@@ -95,7 +98,13 @@ export async function compact(
   if (isSplitTurn && turnPrefixRecords.length > 0) {
     const [historySummary, turnPrefixSummary] = await Promise.all([
       recordsToSummarize.length > 0
-        ? generateSummary(recordsToSummarize, model, settings.reserveTokens, signal, previousSummary)
+        ? generateSummary(
+            recordsToSummarize,
+            model,
+            settings.reserveTokens,
+            signal,
+            previousSummary,
+          )
         : Promise.resolve(previousSummary ?? "No prior history."),
       generateTurnPrefixSummary(turnPrefixRecords, model, settings.reserveTokens, signal),
     ]);

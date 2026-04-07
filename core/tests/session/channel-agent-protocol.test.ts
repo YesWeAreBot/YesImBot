@@ -130,18 +130,18 @@ function listTimelineStates(sessionManager: SessionManager, stateType: string) {
     .filter((record) => record.kind === "state_change" && record.stateType === stateType);
 }
 
-function listRuntimeOutcomeNotices(sessionManager: SessionManager) {
+function listResponseStatusNotices(sessionManager: SessionManager) {
   return sessionManager.getTimeline().filter((record) => {
     return (
       record.kind === "system_notice" &&
-      record.materializationKey === "runtime_outcome" &&
-      record.subType.startsWith("runtime_outcome_")
+      record.materializationKey === "response_status" &&
+      record.subType.startsWith("response_status_")
     );
   });
 }
 
-function findLatestRuntimeOutcomeNotice(sessionManager: SessionManager) {
-  const notices = listRuntimeOutcomeNotices(sessionManager);
+function findLatestResponseStatusNotice(sessionManager: SessionManager) {
+  const notices = listResponseStatusNotices(sessionManager);
   return notices[notices.length - 1];
 }
 
@@ -269,6 +269,7 @@ describe("ChannelRuntime protocol", () => {
 
     await vi.waitFor(() => {
       expect(generateMock).toHaveBeenCalledTimes(2);
+      expect(agent.getResponseState()).toBe("idle");
     });
     expect(toolLoopAgentCtorMock).toHaveBeenCalledTimes(1);
 
@@ -279,13 +280,19 @@ describe("ChannelRuntime protocol", () => {
     expect(
       sessionManager.getTimeline().filter((record) => record.kind === "assistant_message"),
     ).toHaveLength(0);
-    const responseEnd = findLatestRuntimeOutcomeNotice(sessionManager);
-    expect(responseEnd).toBeTruthy();
-    if (responseEnd?.kind === "system_notice") {
-      expect(responseEnd.materializationKey).toBe("runtime_outcome");
-      expect(responseEnd.visibility).toBe("hidden");
-      expect(responseEnd.materialization).toBe("hidden");
-      expect(responseEnd.data).toMatchObject({ endReason: "protocol_error" });
+    const responseStatus = findLatestResponseStatusNotice(sessionManager);
+    expect(listResponseStatusNotices(sessionManager)).toHaveLength(1);
+    expect(responseStatus).toBeTruthy();
+    if (responseStatus?.kind === "system_notice") {
+      expect(responseStatus.materializationKey).toBe("response_status");
+      expect(responseStatus.visibility).toBe("hidden");
+      expect(responseStatus.materialization).toBe("hidden");
+      expect(responseStatus.data).toMatchObject({
+        endReason: "protocol_error",
+        nextAction: "blocked",
+        blockedReason: "protocol_error",
+        stepsCompleted: 1,
+      });
     }
     expect(findTimelineState(sessionManager, "protocol_violation")).toBeUndefined();
 
@@ -343,7 +350,7 @@ describe("ChannelRuntime protocol", () => {
     ).toBe(false);
   });
 
-  it("persists normal runtime outcome notice after successful send_message without heartbeat", async () => {
+  it("persists normal response status notice after successful send_message without heartbeat", async () => {
     const sessionManager = SessionManager.inMemory("discord:channel-1");
     const context = createContextMock();
     const bot = createBotMock();
@@ -412,11 +419,11 @@ describe("ChannelRuntime protocol", () => {
     );
 
     await vi.waitFor(() => {
-      const responseEnd = findLatestRuntimeOutcomeNotice(sessionManager);
-      expect(responseEnd).toBeTruthy();
-      if (responseEnd?.kind === "system_notice") {
-        expect(responseEnd.materializationKey).toBe("runtime_outcome");
-        expect(responseEnd.data).toMatchObject({ endReason: "normal" });
+      const responseStatus = findLatestResponseStatusNotice(sessionManager);
+      expect(responseStatus).toBeTruthy();
+      if (responseStatus?.kind === "system_notice") {
+        expect(responseStatus.materializationKey).toBe("response_status");
+        expect(responseStatus.data).toMatchObject({ endReason: "normal" });
       }
     });
 
@@ -491,7 +498,7 @@ describe("ChannelRuntime protocol", () => {
     expect(shouldStop).toBe(true);
   });
 
-  it("persists heartbeat continuation runtime outcome notice after successful send_message", async () => {
+  it("persists heartbeat continuation response status notice after successful send_message", async () => {
     const sessionManager = SessionManager.inMemory("discord:channel-1");
     const context = createContextMock();
     const bot = createBotMock();
@@ -536,11 +543,11 @@ describe("ChannelRuntime protocol", () => {
     await agent.receive(createEvent({ messageId: "msg-heartbeat-after-send" }));
 
     await vi.waitFor(() => {
-      const responseEnd = findLatestRuntimeOutcomeNotice(sessionManager);
-      expect(responseEnd).toBeTruthy();
-      if (responseEnd?.kind === "system_notice") {
-        expect(responseEnd.materializationKey).toBe("runtime_outcome");
-        expect(responseEnd.data).toMatchObject({ endReason: "heartbeat_continuation" });
+      const responseStatus = findLatestResponseStatusNotice(sessionManager);
+      expect(responseStatus).toBeTruthy();
+      if (responseStatus?.kind === "system_notice") {
+        expect(responseStatus.materializationKey).toBe("response_status");
+        expect(responseStatus.data).toMatchObject({ endReason: "heartbeat_continuation" });
       }
     });
   });
@@ -569,12 +576,12 @@ describe("ChannelRuntime protocol", () => {
     await agent.receive(createEvent({ messageId: "msg-reserved" }));
 
     await vi.waitFor(() => {
-      const responseEnd = findLatestRuntimeOutcomeNotice(sessionManager);
-      expect(responseEnd).toBeTruthy();
-      if (responseEnd?.kind === "system_notice") {
-        expect(responseEnd.materializationKey).toBe("runtime_outcome");
-        expect(responseEnd.data).toMatchObject({ endReason: "exception" });
-        expect((responseEnd.data as { error?: string }).error).toContain(
+      const responseStatus = findLatestResponseStatusNotice(sessionManager);
+      expect(responseStatus).toBeTruthy();
+      if (responseStatus?.kind === "system_notice") {
+        expect(responseStatus.materializationKey).toBe("response_status");
+        expect(responseStatus.data).toMatchObject({ endReason: "exception" });
+        expect((responseStatus.data as { error?: string }).error).toContain(
           "Tool name reserved: send_message",
         );
       }
@@ -786,10 +793,10 @@ describe("ChannelRuntime protocol", () => {
       expect(generateMock).toHaveBeenCalledTimes(2);
     });
 
-    const responseEndRecords = listRuntimeOutcomeNotices(sessionManager);
+    const responseStatusRecords = listResponseStatusNotices(sessionManager);
     const followUpReviewRecords = listTimelineStates(sessionManager, "follow_up_review");
 
-    expect(responseEndRecords).toHaveLength(2);
+    expect(responseStatusRecords).toHaveLength(2);
     expect(followUpReviewRecords).toHaveLength(1);
     if (followUpReviewRecords[0]?.kind === "state_change") {
       expect(followUpReviewRecords[0].data).toMatchObject({
@@ -803,12 +810,12 @@ describe("ChannelRuntime protocol", () => {
         "Tracked message IDs: msg-protocol-burst-2, msg-protocol-burst-3",
       );
     }
-    if (responseEndRecords[0]?.kind === "system_notice") {
-      expect(responseEndRecords[0].materializationKey).toBe("runtime_outcome");
-      expect(responseEndRecords[0].data).toMatchObject({ nextOutcome: "follow_up" });
+    if (responseStatusRecords[0]?.kind === "system_notice") {
+      expect(responseStatusRecords[0].materializationKey).toBe("response_status");
+      expect(responseStatusRecords[0].data).toMatchObject({ nextAction: "follow_up" });
     }
-    if (responseEndRecords[1]?.kind === "system_notice") {
-      expect(responseEndRecords[1].data).toMatchObject({ nextOutcome: "idle" });
+    if (responseStatusRecords[1]?.kind === "system_notice") {
+      expect(responseStatusRecords[1].data).toMatchObject({ nextAction: "idle" });
     }
   });
 });

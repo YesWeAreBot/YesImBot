@@ -1,3 +1,6 @@
+import type { ModelMessage } from "@ai-sdk/provider-utils";
+import { describe, expect, it } from "vitest";
+
 import {
   estimateContextTokens,
   estimateTokens,
@@ -7,6 +10,7 @@ import {
   shouldCompact,
 } from "../../src/services/session/compaction/index.ts";
 import { serializeTimelineForCompaction } from "../../src/services/session/compaction/serialize";
+import type { TimelineRecord } from "../../src/services/session/contracts";
 import {
   AgentAssistantMessage,
   AgentCustomMessage,
@@ -14,9 +18,6 @@ import {
   AgentToolMessage,
   AgentUserMessage,
 } from "../../src/services/session/session-manager";
-import type { TimelineRecord } from "../../src/services/session/contracts";
-import type { ModelMessage } from "@ai-sdk/provider-utils";
-import { describe, expect, it } from "vitest";
 
 const DEFAULT_COMPACTION_SETTINGS = {
   enabled: true,

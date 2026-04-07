@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -93,6 +93,128 @@ describe("SessionManager", () => {
       const restored = SessionManager.continueRecent("discord:12345", sessionDir);
       expect(restored).not.toBeNull();
       expect(restored!.getEntryCount()).toBe(manager.getEntryCount());
+    });
+
+    it("restores the latest valid session for the requested channel only", () => {
+      const tempBase = mkdtempSync(join(tmpdir(), "athena-session-manager-"));
+      const sessionDir = join(tempBase, "discord_12345", "session");
+
+      const targetSession = SessionManager.create("discord:12345", sessionDir, "openai:gpt-4.1");
+      targetSession.appendTimelineRecord({
+        id: "target-message-1",
+        kind: "channel_message",
+        timestamp: 10,
+        stage: "ingress",
+        visibility: "model",
+        materialization: "default",
+        message: {
+          kind: "channel_message",
+          platform: "discord",
+          channelId: "12345",
+          messageId: "msg-target-1",
+          timestamp: 10,
+          content: "target session",
+          sender: {
+            userId: "user-1",
+            username: "alice",
+          },
+          isDirect: true,
+          atSelf: false,
+          isReplyToBot: false,
+        },
+      });
+
+      const unrelatedSession = SessionManager.create("discord:99999", sessionDir, "openai:gpt-4.1");
+      unrelatedSession.appendTimelineRecord({
+        id: "other-message-1",
+        kind: "channel_message",
+        timestamp: 20,
+        stage: "ingress",
+        visibility: "model",
+        materialization: "default",
+        message: {
+          kind: "channel_message",
+          platform: "discord",
+          channelId: "99999",
+          messageId: "msg-other-1",
+          timestamp: 20,
+          content: "other session",
+          sender: {
+            userId: "user-2",
+            username: "bob",
+          },
+          isDirect: true,
+          atSelf: false,
+          isReplyToBot: false,
+        },
+      });
+
+      const restored = SessionManager.restoreOrCreateRecent("discord:12345", sessionDir);
+
+      expect(restored).toMatchObject({ status: "restored" });
+      expect(restored.status).toBe("restored");
+      expect(restored.sessionManager.getHeader().channelKey).toBe("discord:12345");
+      expect(restored.sessionManager.getTimeline()).toEqual([
+        expect.objectContaining({
+          kind: "channel_message",
+          message: expect.objectContaining({
+            channelId: "12345",
+            content: "target session",
+          }),
+        }),
+      ]);
+    });
+
+    it("restoreOrCreateRecent recovers the newest usable session before falling back to created", () => {
+      const tempBase = mkdtempSync(join(tmpdir(), "athena-session-manager-"));
+      const sessionDir = join(tempBase, "discord_12345", "session");
+
+      const older = SessionManager.create("discord:12345", sessionDir, "openai:gpt-4.1");
+      older.appendMessage({
+        role: "assistant",
+        content: [{ type: "text", text: "older reply" }],
+        timestamp: 1,
+        provider: "openai",
+        model: "gpt-4.1",
+      });
+
+      const newer = SessionManager.create("discord:12345", sessionDir, "openai:gpt-4.1");
+      newer.appendMessage({
+        role: "assistant",
+        content: [{ type: "text", text: "newer reply" }],
+        timestamp: 2,
+        provider: "openai",
+        model: "gpt-4.1",
+      });
+
+      utimesSync(older.getSessionFile()!, new Date(1_000), new Date(1_000));
+      utimesSync(newer.getSessionFile()!, new Date(2_000), new Date(2_000));
+
+      const restored = SessionManager.restoreOrCreateRecent("discord:12345", sessionDir);
+
+      expect(restored).toMatchObject({ status: "restored" });
+      expect(restored.status).toBe("restored");
+      expect(restored.sessionManager.getModelMessages()).toEqual([
+        {
+          role: "assistant",
+          content: [{ type: "text", text: "newer reply" }],
+        },
+      ]);
+    });
+
+    it("creates a new session only when no recoverable session exists", () => {
+      const tempBase = mkdtempSync(join(tmpdir(), "athena-session-manager-"));
+      const sessionDir = join(tempBase, "discord_12345", "session");
+
+      const restored = SessionManager.restoreOrCreateRecent(
+        "discord:12345",
+        sessionDir,
+        "openai:gpt-4.1",
+      );
+
+      expect(restored.status).toBe("created");
+      expect(restored.sessionManager.getEntryCount()).toBe(0);
+      expect(restored.sessionManager.getSessionFile()).toBeDefined();
     });
   });
 

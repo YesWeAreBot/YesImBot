@@ -306,9 +306,7 @@ function assistantMessageToModelMessage(message: AgentAssistantMessage): Assista
   } satisfies AssistantModelMessage;
 }
 
-function toolPartsToModelMessage(
-  parts: Array<Record<string, unknown>>,
-): ToolModelMessage {
+function toolPartsToModelMessage(parts: Array<Record<string, unknown>>): ToolModelMessage {
   return {
     role: "tool",
     content: parts.map((part) => ({
@@ -563,10 +561,9 @@ export function buildRuntimeModelMessages(
   return [{ role: "system", content: instructions }, ...modelMessages];
 }
 
-export function buildGenerateInputForTest(input: {
-  instructions: string;
-  session: AgentSession;
-}): { messages: ModelMessage[] } {
+export function buildGenerateInputForTest(input: { instructions: string; session: AgentSession }): {
+  messages: ModelMessage[];
+} {
   if (!(input.session instanceof AgentSession)) {
     throw new Error("buildGenerateInputForTest requires a live AgentSession");
   }

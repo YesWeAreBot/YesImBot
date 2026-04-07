@@ -15,9 +15,9 @@ import type {
   CanonicalChannelMessageInput,
   ChannelEvent,
   FollowUpReviewRecord,
-  RuntimeOutcomeNoticeSubType,
-  RuntimeOutcomeReason,
-  RuntimeOutcomeRecord,
+  ResponseStatusNoticeSubType,
+  ResponseStatusReason,
+  ResponseStatusRecord,
 } from "../types";
 import {
   createDefaultWillingnessJudge,
@@ -39,7 +39,7 @@ import type {
   ResponseState,
   RuntimeTurnExecutionOptions,
   RuntimeTurnExecutionResult,
-  TurnOutcomeSelection,
+  RuntimeNextActionSelection,
 } from "./types";
 import { buildResponseToolSet } from "./workspace-tools";
 
@@ -346,8 +346,8 @@ export class ChannelRuntime {
     return this.responseState === "responding";
   }
 
-  private appendRuntimeOutcome(record: RuntimeOutcomeRecord): void {
-    const subType = getRuntimeOutcomeNoticeSubType(record.endReason);
+  private appendResponseStatus(record: ResponseStatusRecord): void {
+    const subType = getResponseStatusNoticeSubType(record.endReason);
     this.session.appendSystemNotice({
       id: createRuntimeRecordId(),
       timestamp: Date.now(),
@@ -355,8 +355,8 @@ export class ChannelRuntime {
       visibility: "hidden",
       materialization: "hidden",
       subType,
-      materializationKey: "runtime_outcome",
-      notice: buildRuntimeOutcomeNotice(subType, record),
+      materializationKey: "response_status",
+      notice: buildResponseStatusNotice(subType, record),
       data: record,
     });
   }
@@ -534,13 +534,12 @@ export class ChannelRuntime {
       });
       this.responseActiveTools = executionResult.responseActiveTools;
     } catch (err: unknown) {
-      if (!this.abortController?.signal.aborted) {
-        this.responseStepProcessor.setThrownError(err instanceof Error ? err.message : String(err));
+      const thrownError = err instanceof Error ? err.message : String(err);
+      this.responseStepProcessor.setThrownError(thrownError);
 
-        this.ctx.logger.error(
-          `Response failed for ${this.options.platform}:${this.options.channelId}: ${this.responseStepProcessor.thrownError}`,
-        );
-      }
+      this.ctx.logger.error(
+        `Response failed for ${this.options.platform}:${this.options.channelId}: ${this.responseStepProcessor.thrownError}`,
+      );
     } finally {
       clearTimeout(watchdog);
 
@@ -562,7 +561,7 @@ export class ChannelRuntime {
         heartbeatRequested: boolean;
         sendFailure: boolean;
         thrownError?: string;
-      }): RuntimeOutcomeReason {
+      }): ResponseStatusReason {
         if (input.timedOut) {
           return "timeout";
         }
@@ -595,49 +594,63 @@ export class ChannelRuntime {
       });
 
       function selectOutcome(input: {
-        endReason: RuntimeOutcomeReason;
+        endReason: ResponseStatusReason;
         hasPendingFollowUp: boolean;
         thrownError?: string;
-      }): TurnOutcomeSelection {
-        if (
-          input.endReason === "timeout" ||
-          input.endReason === "protocol_error" ||
-          input.endReason === "exception"
-        ) {
+      }): RuntimeNextActionSelection {
+        if (input.endReason === "timeout") {
           return {
-            nextOutcome: "blocked",
+            nextAction: "blocked",
+            blockedReason: "timeout",
+          };
+        }
+
+        if (input.endReason === "protocol_error" || input.endReason === "exception") {
+          return {
+            nextAction: "blocked",
             blockedReason: input.thrownError ?? input.endReason,
           };
         }
 
-        if (input.hasPendingFollowUp) {
-          return { nextOutcome: "follow_up" };
+        if (
+          input.endReason === "abort" &&
+          input.thrownError &&
+          !isAbortLikeThrownError(input.thrownError)
+        ) {
+          return {
+            nextAction: "blocked",
+            blockedReason: input.thrownError,
+          };
         }
 
-        return { nextOutcome: "idle" };
+        if (input.hasPendingFollowUp) {
+          return { nextAction: "follow_up" };
+        }
+
+        return { nextAction: "idle" };
       }
       const outcome = selectOutcome({
         endReason,
         hasPendingFollowUp: Boolean(this.pendingFollowUp?.pending),
         thrownError: this.responseStepProcessor.thrownError,
       });
-      const record: RuntimeOutcomeRecord = {
+      const record: ResponseStatusRecord = {
         endReason,
-        nextOutcome: outcome.nextOutcome,
+        nextAction: outcome.nextAction,
         durationMs: Date.now() - this.responseStartTime,
         stepsCompleted: this.stepsCompleted,
         error: this.responseStepProcessor.thrownError,
         blockedReason: outcome.blockedReason,
       };
-      this.appendRuntimeOutcome(record);
+      this.appendResponseStatus(record);
       this.logger.debug(
-        `[state:${this.getChannelKey()}] end reason=${endReason} outcome=${outcome.nextOutcome} steps=${this.stepsCompleted} durationMs=${record.durationMs}`,
+        `[state:${this.getChannelKey()}] end reason=${endReason} nextAction=${outcome.nextAction} steps=${this.stepsCompleted} durationMs=${record.durationMs}`,
       );
 
-      this.setResponseState("idle", "runtime_outcome_persisted");
+      this.setResponseState("idle", "response_status_persisted");
       this.abortController = null;
 
-      if (outcome.nextOutcome === "follow_up") {
+      if (outcome.nextAction === "follow_up") {
         const pendingFollowUp = this.consumePendingFollowUp();
         if (pendingFollowUp) {
           const followUpReview = this.createFollowUpReviewRecord(pendingFollowUp);
@@ -808,24 +821,37 @@ async function abortable<T>(signal: AbortSignal, operation: () => PromiseLike<T>
   }
 
   return new Promise<T>((resolve, reject) => {
+    let abortTimer: ReturnType<typeof setTimeout> | null = null;
     const onAbort = () => {
       signal.removeEventListener("abort", onAbort);
-      reject(new Error("aborted"));
+      abortTimer = setTimeout(() => {
+        reject(new Error("aborted"));
+      }, 10);
     };
 
     signal.addEventListener("abort", onAbort, { once: true });
 
     operation().then(
       (value) => {
+        if (abortTimer) {
+          clearTimeout(abortTimer);
+        }
         signal.removeEventListener("abort", onAbort);
         resolve(value);
       },
       (error) => {
+        if (abortTimer) {
+          clearTimeout(abortTimer);
+        }
         signal.removeEventListener("abort", onAbort);
         reject(error);
       },
     );
   });
+}
+
+function isAbortLikeThrownError(message: string): boolean {
+  return /\babort(?:ed|ing)?\b/i.test(message);
 }
 
 function normalizeChannelRuntimeInput(
@@ -863,33 +889,33 @@ function createRuntimeRecordId(): string {
   return `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
 }
 
-function getRuntimeOutcomeNoticeSubType(
-  endReason: RuntimeOutcomeReason,
-): RuntimeOutcomeNoticeSubType {
+function getResponseStatusNoticeSubType(
+  endReason: ResponseStatusReason,
+): ResponseStatusNoticeSubType {
   switch (endReason) {
     case "normal":
-      return "runtime_outcome_normal";
+      return "response_status_normal";
     case "heartbeat_continuation":
-      return "runtime_outcome_heartbeat_continuation";
+      return "response_status_heartbeat_continuation";
     case "protocol_error":
-      return "runtime_outcome_protocol_error";
+      return "response_status_protocol_error";
     case "timeout":
-      return "runtime_outcome_timeout";
+      return "response_status_timeout";
     case "abort":
-      return "runtime_outcome_abort";
+      return "response_status_abort";
     case "exception":
-      return "runtime_outcome_exception";
+      return "response_status_exception";
   }
 }
 
-function buildRuntimeOutcomeNotice(
-  subType: RuntimeOutcomeNoticeSubType,
-  record: RuntimeOutcomeRecord,
+function buildResponseStatusNotice(
+  subType: ResponseStatusNoticeSubType,
+  record: ResponseStatusRecord,
 ): string {
   return [
-    `[runtime-outcome] ${subType}`,
+    `[response-status] ${subType}`,
     `endReason=${record.endReason}`,
-    `nextOutcome=${record.nextOutcome}`,
+    `nextAction=${record.nextAction}`,
     `stepsCompleted=${record.stepsCompleted}`,
     `durationMs=${record.durationMs}`,
   ].join(" ");

@@ -35,7 +35,9 @@ export interface CanonicalSenderMetadata {
   identity?: string;
 }
 
-export interface CanonicalChannelMessageInput<TRaw extends CanonicalRawPayload | undefined = undefined> {
+export interface CanonicalChannelMessageInput<
+  TRaw extends CanonicalRawPayload | undefined = undefined,
+> {
   kind: "channel_message";
   platform: string;
   channelId: string;
@@ -50,7 +52,9 @@ export interface CanonicalChannelMessageInput<TRaw extends CanonicalRawPayload |
   raw?: TRaw;
 }
 
-export interface CanonicalChannelEventInput<TRaw extends CanonicalRawPayload | undefined = undefined> {
+export interface CanonicalChannelEventInput<
+  TRaw extends CanonicalRawPayload | undefined = undefined,
+> {
   kind: "channel_event";
   platform: string;
   channelId: string;
@@ -74,14 +78,16 @@ export interface TimelineRecordBase {
   materialization: TimelineRecordMaterialization;
 }
 
-export interface ChannelMessageRecord<TRaw extends CanonicalRawPayload | undefined = undefined>
-  extends TimelineRecordBase {
+export interface ChannelMessageRecord<
+  TRaw extends CanonicalRawPayload | undefined = undefined,
+> extends TimelineRecordBase {
   kind: "channel_message";
   message: CanonicalChannelMessageInput<TRaw>;
 }
 
-export interface ChannelEventRecord<TRaw extends CanonicalRawPayload | undefined = undefined>
-  extends TimelineRecordBase {
+export interface ChannelEventRecord<
+  TRaw extends CanonicalRawPayload | undefined = undefined,
+> extends TimelineRecordBase {
   kind: "channel_event";
   event: CanonicalChannelEventInput<TRaw>;
 }
@@ -96,15 +102,17 @@ export interface ToolMessageRecord extends TimelineRecordBase {
   message: ToolModelMessage;
 }
 
-export interface StateChangeRecord<TData extends CanonicalRawPayload | undefined = undefined>
-  extends TimelineRecordBase {
+export interface StateChangeRecord<
+  TData extends CanonicalRawPayload | undefined = undefined,
+> extends TimelineRecordBase {
   kind: "state_change";
   stateType: string;
   data?: TData;
 }
 
-export interface SystemNoticeRecord<TData extends CanonicalRawPayload | undefined = undefined>
-  extends TimelineRecordBase {
+export interface SystemNoticeRecord<
+  TData extends CanonicalRawPayload | undefined = undefined,
+> extends TimelineRecordBase {
   kind: "system_notice";
   subType: string;
   materializationKey: string;

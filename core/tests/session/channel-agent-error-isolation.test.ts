@@ -32,7 +32,7 @@ import {
   normalizeAssistantContent,
 } from "../../src/services/session/runtime";
 import { SessionManager } from "../../src/services/session/session-manager";
-import type { ChannelEvent, RuntimeOutcomeRecord } from "../../src/services/session/types";
+import type { ChannelEvent, ResponseStatusRecord } from "../../src/services/session/types";
 import { createTestSettingsManager } from "./test-settings-manager";
 
 function createContextMock() {
@@ -112,10 +112,10 @@ describe("ChannelRuntime plugin safety helpers", () => {
     ]);
   });
 
-  it("keeps runtime outcome exception shape stable for persistence", () => {
-    const record: RuntimeOutcomeRecord = {
+  it("keeps response status exception shape stable for persistence", () => {
+    const record: ResponseStatusRecord = {
       endReason: "exception",
-      nextOutcome: "blocked",
+      nextAction: "blocked",
       durationMs: 1200,
       stepsCompleted: 2,
       error: "plugin execution failed",
@@ -126,6 +126,41 @@ describe("ChannelRuntime plugin safety helpers", () => {
       stepsCompleted: 2,
       error: expect.stringContaining("plugin"),
     });
+  });
+
+  it("keeps blocked response_status fields stable across failure reasons", () => {
+    const records: ResponseStatusRecord[] = [
+      {
+        endReason: "timeout",
+        nextAction: "blocked",
+        durationMs: 10,
+        stepsCompleted: 0,
+        blockedReason: "timeout",
+      },
+      {
+        endReason: "protocol_error",
+        nextAction: "blocked",
+        durationMs: 20,
+        stepsCompleted: 1,
+        blockedReason: "protocol_error",
+      },
+      {
+        endReason: "exception",
+        nextAction: "blocked",
+        durationMs: 30,
+        stepsCompleted: 2,
+        error: "plugin exploded",
+        blockedReason: "plugin exploded",
+      },
+    ];
+
+    expect(records).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ endReason: "timeout", nextAction: "blocked" }),
+        expect.objectContaining({ endReason: "protocol_error", nextAction: "blocked" }),
+        expect.objectContaining({ endReason: "exception", error: "plugin exploded" }),
+      ]),
+    );
   });
 
   it("builds generation payload with system instruction boundary", () => {

@@ -18,10 +18,7 @@ import { JSONValue } from "ai";
 
 import type {
   AssistantMessageRecord,
-  ChannelEventRecord,
   ChannelMessageRecord,
-  StateChangeRecord,
-  SystemNoticeRecord,
   TimelineRecord,
   ToolMessageRecord,
 } from "./contracts";
@@ -282,31 +279,51 @@ export function loadEntriesFromFile(filePath: string): FileEntry[] {
   return entries;
 }
 
-/** Quick validation: reads only the first line to check if it's a valid session file. */
-function isValidSessionFile(filePath: string): boolean {
+function readSessionHeader(filePath: string): SessionHeader | null {
   try {
     const fd = openSync(filePath, "r");
     const buffer = Buffer.alloc(512);
     const bytesRead = readSync(fd, buffer, 0, 512, 0);
     closeSync(fd);
     const firstLine = buffer.toString("utf8", 0, bytesRead).split("\n")[0];
-    if (!firstLine) return false;
+    if (!firstLine) return null;
     const header = JSON.parse(firstLine);
-    return header.type === "session" && typeof header.id === "string";
+    if (header.type !== "session" || typeof header.id !== "string") {
+      return null;
+    }
+    return header as SessionHeader;
   } catch {
-    return false;
+    return null;
   }
 }
 
 /** Find the most recent valid .jsonl session file in a directory. */
-function findMostRecentSession(sessionDir: string): string | null {
+function findMostRecentSession(sessionDir: string, channelKey: ChannelKey): string | null {
   try {
     const files = readdirSync(sessionDir)
       .filter((f) => f.endsWith(".jsonl"))
       .map((f) => join(sessionDir, f))
-      .filter(isValidSessionFile)
-      .map((path) => ({ path, mtime: statSync(path).mtime }))
-      .sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
+      .map((path) => ({
+        path,
+        header: readSessionHeader(path),
+        mtime: statSync(path).mtime.getTime(),
+      }))
+      .filter(
+        (file): file is { path: string; header: SessionHeader; mtime: number } =>
+          file.header !== null && file.header.channelKey === channelKey,
+      )
+      .sort((a, b) => {
+        if (b.mtime !== a.mtime) {
+          return b.mtime - a.mtime;
+        }
+
+        const timestampDelta = Date.parse(b.header.timestamp) - Date.parse(a.header.timestamp);
+        if (timestampDelta !== 0) {
+          return timestampDelta;
+        }
+
+        return b.path.localeCompare(a.path);
+      });
 
     return files[0]?.path ?? null;
   } catch {
@@ -463,7 +480,12 @@ function legacyMessageToTimelineRecord(
         },
       } satisfies ChannelMessageRecord;
     case "custom":
-      return legacyCustomMessageToTimelineRecord(message.customType, message.content, message.details, id);
+      return legacyCustomMessageToTimelineRecord(
+        message.customType,
+        message.content,
+        message.details,
+        id,
+      );
   }
 }
 
@@ -519,7 +541,11 @@ function legacyCustomMessageToTimelineRecord<T>(
   } as TimelineRecord;
 }
 
-function legacyStateToTimelineRecord<T>(customType: string, data: T | undefined, id: string): TimelineRecord {
+function legacyStateToTimelineRecord<T>(
+  customType: string,
+  data: T | undefined,
+  id: string,
+): TimelineRecord {
   return {
     id,
     kind: "state_change",
@@ -539,7 +565,12 @@ function entryToTimelineRecord(entry: SessionEntry): TimelineRecord | null {
     case "message":
       return legacyMessageToTimelineRecord(entry.message, "unknown:unknown", entry.id);
     case "custom_message":
-      return legacyCustomMessageToTimelineRecord(entry.customType, entry.content, entry.details, entry.id);
+      return legacyCustomMessageToTimelineRecord(
+        entry.customType,
+        entry.content,
+        entry.details,
+        entry.id,
+      );
     case "custom":
       return legacyStateToTimelineRecord(entry.customType, entry.data, entry.id);
     default:
@@ -611,7 +642,7 @@ export class SessionManager {
    */
   static continueRecent(channelKey: ChannelKey, sessionDir: string): SessionManager | null {
     if (!existsSync(sessionDir)) return null;
-    const mostRecent = findMostRecentSession(sessionDir);
+    const mostRecent = findMostRecentSession(sessionDir, channelKey);
     if (!mostRecent) return null;
 
     const mgr = new SessionManager(channelKey, sessionDir, true);
@@ -701,7 +732,7 @@ export class SessionManager {
 
       this.buildIndex();
       this.flushed = true;
-      this.repairOrphanToolCalls();
+      this.repairUnresolvedToolCalls();
     } else {
       const explicitPath = this.sessionFile;
       this.initNewSession();
@@ -709,7 +740,7 @@ export class SessionManager {
     }
   }
 
-  private repairOrphanToolCalls(): void {
+  private repairUnresolvedToolCalls(): void {
     const pendingToolCalls = new Map<string, { toolCallId: string; toolName: string }>();
 
     for (const entry of this.fileEntries) {
@@ -738,7 +769,10 @@ export class SessionManager {
 
       if (entry.type !== "timeline") continue;
 
-      if (entry.record.kind === "assistant_message" && Array.isArray(entry.record.message.content)) {
+      if (
+        entry.record.kind === "assistant_message" &&
+        Array.isArray(entry.record.message.content)
+      ) {
         for (const part of entry.record.message.content) {
           if (part.type === "tool-call") {
             pendingToolCalls.set(part.toolCallId, {

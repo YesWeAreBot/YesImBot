@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { AgentSession } from "../../src/services/session/agent-session";
 import type {
   AssistantMessageRecord,
   ChannelEventRecord,
@@ -8,7 +9,6 @@ import type {
   SystemNoticeRecord,
   ToolMessageRecord,
 } from "../../src/services/session/contracts";
-import { AgentSession } from "../../src/services/session/agent-session";
 import { SessionManager } from "../../src/services/session/session-manager";
 import type { ChannelKey } from "../../src/services/session/types";
 

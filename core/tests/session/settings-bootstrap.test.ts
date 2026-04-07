@@ -6,13 +6,17 @@ import type { LanguageModel } from "ai";
 import type { Bot, Context, Logger } from "koishi";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+const generateMock = vi.fn<(input: unknown) => Promise<void>>();
+
 vi.mock("ai", () => {
   class ToolLoopAgent {
     readonly tools: Record<string, unknown> = {};
 
     constructor(_options: unknown) {}
 
-    async generate(_input: unknown): Promise<void> {}
+    async generate(input: unknown): Promise<void> {
+      return generateMock(input);
+    }
   }
 
   return {
@@ -113,6 +117,7 @@ afterEach(() => {
   for (const dir of tempDirs.splice(0, tempDirs.length)) {
     rmSync(dir, { recursive: true, force: true });
   }
+  generateMock.mockReset();
   vi.restoreAllMocks();
 });
 
@@ -508,6 +513,51 @@ describe("AgentSessionService settings bootstrap", () => {
     tempDirs.push(tempDir);
     createExistingWorkspace(tempDir);
 
+    const sessionDir = join(tempDir, "athena", "discord-channel-1", "session");
+    const seededSession = SessionManager.create("discord:channel-1", sessionDir, "global-model");
+    seededSession.appendTimelineRecord({
+      id: "persisted-channel-message",
+      kind: "channel_message",
+      timestamp: 100,
+      stage: "ingress",
+      visibility: "model",
+      materialization: "default",
+      message: {
+        kind: "channel_message",
+        platform: "discord",
+        channelId: "channel-1",
+        messageId: "persisted-msg-1",
+        timestamp: 100,
+        content: "persisted hello before restart",
+        sender: {
+          userId: "user-1",
+          username: "alice",
+          nickname: "Alice",
+        },
+        isDirect: false,
+        atSelf: false,
+        isReplyToBot: false,
+      },
+    });
+    seededSession.appendTimelineRecord({
+      id: "persisted-response-status",
+      kind: "system_notice",
+      timestamp: 101,
+      stage: "runtime",
+      visibility: "hidden",
+      materialization: "hidden",
+      subType: "response_status_exception",
+      materializationKey: "response_status",
+      notice: "step failed",
+      data: {
+        endReason: "exception",
+        nextAction: "idle",
+        durationMs: 12,
+        stepsCompleted: 1,
+        error: "seeded failure",
+      },
+    });
+
     const bot = createBotMock();
     const service = new AgentSessionService(createContextMock(tempDir), {
       model: "global-model",
@@ -515,13 +565,33 @@ describe("AgentSessionService settings bootstrap", () => {
     });
 
     const result = await service.bootstrapChannelForManagement("discord", "channel-1", bot);
+    const runtime = service.getAgent("discord:channel-1");
+    const timeline = runtime?.sessionManager.getTimeline() ?? [];
 
     expect(result).toMatchObject({
       channelKey: "discord:channel-1",
-      status: "created",
+      status: "restored",
     });
     expect(service.getActiveChannels()).toEqual(["discord:channel-1"]);
+    expect(runtime).toBeDefined();
+    expect(timeline).toEqual([
+      expect.objectContaining({
+        kind: "channel_message",
+        message: expect.objectContaining({
+          content: "persisted hello before restart",
+        }),
+      }),
+      expect.objectContaining({
+        kind: "system_notice",
+        materializationKey: "response_status",
+        data: expect.objectContaining({
+          error: "seeded failure",
+          endReason: "exception",
+        }),
+      }),
+    ]);
     expect(bot.sendMessage).not.toHaveBeenCalled();
+    expect(generateMock).not.toHaveBeenCalled();
   });
 
   it("keeps bootstrap failures channel-local and logs the channel identifier", async () => {

@@ -212,9 +212,7 @@ describe("ChannelRuntime compaction integration", () => {
       expect(appendCompactionSpy).toHaveBeenCalledWith("summary text", "keep-1", 90000);
     });
     expect(prepareCompactionMock.mock.calls[0]?.[0]).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ kind: "channel_message" }),
-      ]),
+      expect.arrayContaining([expect.objectContaining({ kind: "channel_message" })]),
     );
     expect(prepareCompactionMock).toHaveBeenCalledWith(
       expect.any(Array),
@@ -381,9 +379,14 @@ describe("ChannelRuntime compaction integration", () => {
 
   it("builds next response context from compaction summary and kept messages", async () => {
     const { agent, sessionManager } = createAgent();
-    sessionManager.appendCustomMessageEntry("channel_message", "legacy context that should compact", false, {
-      userId: "user-legacy",
-    });
+    sessionManager.appendCustomMessageEntry(
+      "channel_message",
+      "legacy context that should compact",
+      false,
+      {
+        userId: "user-legacy",
+      },
+    );
 
     let firstKeptEntryId = "keep-1";
     prepareCompactionMock.mockImplementation((records: Array<{ id: string }>) => {
@@ -433,7 +436,9 @@ describe("ChannelRuntime compaction integration", () => {
     );
     expect(nextInput.messages).not.toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ content: expect.stringContaining("legacy context that should compact") }),
+        expect.objectContaining({
+          content: expect.stringContaining("legacy context that should compact"),
+        }),
       ]),
     );
   });

@@ -22,12 +22,12 @@ vi.mock("koishi", () => {
   };
 });
 
+import { AgentSession } from "../../src/services/session/agent-session";
+import { serializeTimelineForCompaction } from "../../src/services/session/compaction/serialize";
 import type {
   CanonicalChannelEventInput,
   CanonicalChannelMessageInput,
 } from "../../src/services/session/contracts";
-import { AgentSession } from "../../src/services/session/agent-session";
-import { serializeTimelineForCompaction } from "../../src/services/session/compaction/serialize";
 import { ChannelRuntime } from "../../src/services/session/runtime";
 import { ResponseStepProcessor } from "../../src/services/session/runtime/response-step-processor";
 import { buildRuntimeModelMessages } from "../../src/services/session/runtime/response-step-processor";
@@ -175,7 +175,9 @@ describe("canonical runtime input wiring", () => {
     });
     const receiveSpy = vi
       .spyOn(service, "getOrCreateAgent")
-      .mockReturnValue({ receive: vi.fn().mockResolvedValue(undefined) } as unknown as ChannelRuntime);
+      .mockReturnValue({
+        receive: vi.fn().mockResolvedValue(undefined),
+      } as unknown as ChannelRuntime);
 
     const futureEvent: CanonicalChannelEventInput = {
       kind: "channel_event",

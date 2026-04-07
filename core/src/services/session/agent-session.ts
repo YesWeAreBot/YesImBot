@@ -65,7 +65,10 @@ export class AgentSession {
       return messages;
     }
 
-    return [{ role: "user", content: `[Context Summary]\n${latestCompaction.summary}` }, ...messages];
+    return [
+      { role: "user", content: `[Context Summary]\n${latestCompaction.summary}` },
+      ...messages,
+    ];
   }
 
   getInternalRecords(): TimelineRecord[] {

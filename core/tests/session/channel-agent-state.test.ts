@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { AgentSession } from "../../src/services/session/agent-session";
 import { ChannelRuntime } from "../../src/services/session/runtime";
 import type { ChannelRuntimeSettingsManager } from "../../src/services/session/runtime/types";
 import { SessionManager } from "../../src/services/session/session-manager";
@@ -116,20 +117,23 @@ function findTimelineState(sessionManager: SessionManager, stateType: string) {
   return listTimelineStates(sessionManager, stateType)[0];
 }
 
-function listRuntimeOutcomeNotices(sessionManager: SessionManager) {
+function listResponseStatusNotices(sessionManager: SessionManager) {
   return sessionManager.getTimeline().filter((record) => {
     return (
       record.kind === "system_notice" &&
-      record.materializationKey === "runtime_outcome" &&
-      record.subType.startsWith("runtime_outcome_")
+      record.materializationKey === "response_status" &&
+      record.subType.startsWith("response_status_")
     );
   });
 }
 
-function findLatestRuntimeOutcomeNotice(sessionManager: SessionManager) {
-  const records = listRuntimeOutcomeNotices(sessionManager);
+function findLatestResponseStatusNotice(sessionManager: SessionManager) {
+  const records = listResponseStatusNotices(sessionManager);
   return records[records.length - 1];
 }
+
+const delayedProviderFailureMessage =
+  "RetryError [AI_RetryError]: Failed after 3 attempts. Last error: AI_APICallError: Cannot connect to API: getaddrinfo EAI_AGAIN model.nekohouse.cafe";
 
 interface MutableSettingsManager extends ChannelRuntimeSettingsManager {
   setResponseSettings(
@@ -466,12 +470,18 @@ describe("ChannelRuntime state machine", () => {
       await vi.waitFor(() => {
         expect(agent.getResponseState()).toBe("idle");
       });
-      const runtimeOutcome = findLatestRuntimeOutcomeNotice(sessionManager);
-      expect(runtimeOutcome).toBeTruthy();
-      if (runtimeOutcome?.kind === "system_notice") {
-        expect(runtimeOutcome.visibility).toBe("hidden");
-        expect(runtimeOutcome.materialization).toBe("hidden");
-        expect(runtimeOutcome.data).toMatchObject({ endReason: "abort" });
+      const responseStatus = findLatestResponseStatusNotice(sessionManager);
+      expect(listResponseStatusNotices(sessionManager)).toHaveLength(1);
+      expect(responseStatus).toBeTruthy();
+      if (responseStatus?.kind === "system_notice") {
+        expect(responseStatus.materializationKey).toBe("response_status");
+        expect(responseStatus.visibility).toBe("hidden");
+        expect(responseStatus.materialization).toBe("hidden");
+        expect(responseStatus.data).toMatchObject({
+          endReason: "abort",
+          nextAction: "idle",
+          stepsCompleted: 0,
+        });
       }
     });
 
@@ -506,30 +516,387 @@ describe("ChannelRuntime state machine", () => {
       await vi.waitFor(() => {
         expect(timeoutAgent.getResponseState()).toBe("idle");
       });
-      const runtimeOutcome = findLatestRuntimeOutcomeNotice(sessionManager);
-      expect(runtimeOutcome).toBeTruthy();
-      if (runtimeOutcome?.kind === "system_notice") {
-        expect(runtimeOutcome.visibility).toBe("hidden");
-        expect(runtimeOutcome.materialization).toBe("hidden");
-        expect(runtimeOutcome.data).toMatchObject({ endReason: "timeout" });
+      const responseStatus = findLatestResponseStatusNotice(sessionManager);
+      expect(listResponseStatusNotices(sessionManager)).toHaveLength(1);
+      expect(responseStatus).toBeTruthy();
+      if (responseStatus?.kind === "system_notice") {
+        expect(responseStatus.materializationKey).toBe("response_status");
+        expect(responseStatus.visibility).toBe("hidden");
+        expect(responseStatus.materialization).toBe("hidden");
+        expect(responseStatus.data).toMatchObject({
+          endReason: "timeout",
+          nextAction: "blocked",
+          blockedReason: "timeout",
+          stepsCompleted: 0,
+        });
+      }
+
+      const session = new AgentSession(sessionManager);
+      expect(
+        session.getModelMessages().some((message) => {
+          return typeof message.content === "string" && message.content.includes("response_status");
+        }),
+      ).toBe(false);
+    });
+
+    it('transitions idle -> responding -> ended on error (endReason === "exception")', async () => {
+      const { agent, sessionManager } = createAgent();
+      generateMock.mockRejectedValueOnce(new Error("tool exploded"));
+
+      await agent.receive(createEvent({ messageId: "msg-error" }));
+
+      await vi.waitFor(() => {
+        expect(agent.getResponseState()).toBe("idle");
+      });
+
+      const responseStatus = findLatestResponseStatusNotice(sessionManager);
+      expect(listResponseStatusNotices(sessionManager)).toHaveLength(1);
+      expect(responseStatus).toBeTruthy();
+      if (responseStatus?.kind === "system_notice") {
+        expect(responseStatus.materializationKey).toBe("response_status");
+        expect(responseStatus.visibility).toBe("hidden");
+        expect(responseStatus.materialization).toBe("hidden");
+        expect(responseStatus.data).toMatchObject({
+          endReason: "exception",
+          nextAction: "blocked",
+          blockedReason: "tool exploded",
+          error: "tool exploded",
+          stepsCompleted: 0,
+        });
       }
     });
-    it.todo("transitions idle -> responding -> ended on error");
+
+    it("persists delayed provider/network rejection details after abort signal flips", async () => {
+      const { agent, sessionManager } = createAgent();
+
+      generateMock.mockImplementationOnce(async (input) => {
+        await new Promise<void>((_resolve, reject) => {
+          input.abortSignal?.addEventListener(
+            "abort",
+            () => {
+              setTimeout(() => {
+                reject(new Error(delayedProviderFailureMessage));
+              }, 0);
+            },
+            { once: true },
+          );
+        });
+      });
+
+      const receivePromise = agent.receive(createEvent({ messageId: "msg-provider-race-failure" }));
+
+      await vi.waitFor(() => {
+        expect(generateMock).toHaveBeenCalledTimes(1);
+        expect(agent.getResponseState()).toBe("responding");
+      });
+
+      agent.abort();
+      await receivePromise;
+
+      await vi.waitFor(() => {
+        expect(agent.getResponseState()).toBe("idle");
+      });
+
+      const responseStatus = findLatestResponseStatusNotice(sessionManager);
+      expect(responseStatus?.kind).toBe("system_notice");
+      if (responseStatus?.kind === "system_notice") {
+        expect(responseStatus.materializationKey).toBe("response_status");
+        expect(responseStatus.visibility).toBe("hidden");
+        expect(responseStatus.materialization).toBe("hidden");
+        expect(responseStatus.data.endReason).not.toBe("normal");
+        expect(responseStatus.data.error).toContain("RetryError");
+        expect(responseStatus.data.error).toContain("EAI_AGAIN");
+        expect(responseStatus.data.blockedReason).toContain("AI_APICallError");
+      }
+    });
   });
 
   describe("terminal state", () => {
-    it.todo("every run reaches terminal state");
+    it("every run reaches terminal state", async () => {
+      const { agent, sessionManager } = createAgent();
+      generateMock.mockRejectedValueOnce(new Error("terminal failure"));
+
+      await agent.receive(createEvent({ messageId: "msg-terminal" }));
+
+      await vi.waitFor(() => {
+        expect(agent.getResponseState()).toBe("idle");
+      });
+
+      expect(listResponseStatusNotices(sessionManager)).toHaveLength(1);
+      expect((agent as ChannelRuntime).getResponseState()).toBe("idle");
+    });
   });
 
   describe("continues after abort", () => {
-    it.todo("reuses session after abort");
-    it.todo("reuses session after timeout");
+    it("reuses session after abort", async () => {
+      const { agent, sessionManager } = createAgent();
+
+      generateMock
+        .mockImplementationOnce(async (input) => {
+          await new Promise<void>((_resolve, reject) => {
+            input.abortSignal?.addEventListener("abort", () => reject(new Error("aborted")), {
+              once: true,
+            });
+          });
+        })
+        .mockResolvedValueOnce();
+
+      const firstReceive = agent.receive(createEvent({ messageId: "msg-recover-abort-1" }));
+
+      await vi.waitFor(() => {
+        expect(generateMock).toHaveBeenCalledTimes(1);
+        expect(agent.getResponseState()).toBe("responding");
+      });
+
+      agent.abort();
+      await firstReceive;
+
+      await vi.waitFor(() => {
+        expect(agent.getResponseState()).toBe("idle");
+      });
+
+      const sessionAfterFailure = new AgentSession(sessionManager);
+      expect(
+        sessionAfterFailure.getModelMessages().some((message) => {
+          return typeof message.content === "string" && message.content.includes("response_status");
+        }),
+      ).toBe(false);
+
+      await agent.receive(
+        createEvent({ messageId: "msg-recover-abort-2", content: "hello again" }),
+      );
+
+      await vi.waitFor(() => {
+        expect(generateMock).toHaveBeenCalledTimes(2);
+        expect(agent.getResponseState()).toBe("idle");
+      });
+
+      expect(
+        sessionManager.getTimeline().filter((record) => record.kind === "channel_message"),
+      ).toHaveLength(2);
+      expect(listResponseStatusNotices(sessionManager)).toHaveLength(2);
+      expect(generateMock.mock.calls[1]?.[0]?.messages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            role: "user",
+            content: expect.stringContaining("hello again"),
+          }),
+        ]),
+      );
+    });
+
+    it("reuses session after timeout", async () => {
+      const sessionManager = SessionManager.inMemory("discord:channel-1");
+      const timeoutAgent = new ChannelRuntime(createContextMock() as never, {
+        bot: createBotMock() as never,
+        sessionManager,
+        settingsManager: createTestSettingsManager({
+          response: {
+            baseTimeoutMs: 1,
+            perStepTimeoutMs: 0,
+            maxSteps: 1,
+          },
+        } satisfies AthenaSessionSettings),
+        platform: "discord",
+        channelId: "channel-1",
+        basePath: "/tmp/athena-test",
+      });
+
+      generateMock
+        .mockImplementationOnce(async (input) => {
+          await new Promise<void>((_resolve, reject) => {
+            input.abortSignal?.addEventListener("abort", () => reject(new Error("timed out")), {
+              once: true,
+            });
+          });
+        })
+        .mockResolvedValueOnce();
+
+      await timeoutAgent.receive(createEvent({ messageId: "msg-recover-timeout-1" }));
+
+      await vi.waitFor(() => {
+        expect(timeoutAgent.getResponseState()).toBe("idle");
+      });
+
+      const sessionAfterFailure = new AgentSession(sessionManager);
+      expect(
+        sessionAfterFailure.getModelMessages().some((message) => {
+          return typeof message.content === "string" && message.content.includes("response_status");
+        }),
+      ).toBe(false);
+
+      await timeoutAgent.receive(
+        createEvent({ messageId: "msg-recover-timeout-2", content: "timeout recovered" }),
+      );
+
+      await vi.waitFor(() => {
+        expect(generateMock).toHaveBeenCalledTimes(2);
+        expect(timeoutAgent.getResponseState()).toBe("idle");
+      });
+
+      expect(
+        sessionManager.getTimeline().filter((record) => record.kind === "channel_message"),
+      ).toHaveLength(2);
+      expect(listResponseStatusNotices(sessionManager)).toHaveLength(2);
+      expect(generateMock.mock.calls[1]?.[0]?.messages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            role: "user",
+            content: expect.stringContaining("timeout recovered"),
+          }),
+        ]),
+      );
+    });
+
+    it("recovers on next valid input after delayed provider/network rejection while keeping failure hidden", async () => {
+      const { agent, sessionManager } = createAgent();
+
+      generateMock
+        .mockImplementationOnce(async (input) => {
+          await new Promise<void>((_resolve, reject) => {
+            input.abortSignal?.addEventListener(
+              "abort",
+              () => {
+                setTimeout(() => {
+                  reject(new Error(delayedProviderFailureMessage));
+                }, 0);
+              },
+              { once: true },
+            );
+          });
+        })
+        .mockResolvedValueOnce();
+
+      const firstReceive = agent.receive(
+        createEvent({ messageId: "msg-provider-race-recover-1", content: "first try" }),
+      );
+
+      await vi.waitFor(() => {
+        expect(generateMock).toHaveBeenCalledTimes(1);
+        expect(agent.getResponseState()).toBe("responding");
+      });
+
+      agent.abort();
+      await firstReceive;
+
+      await vi.waitFor(() => {
+        expect(agent.getResponseState()).toBe("idle");
+      });
+
+      const sessionAfterFailure = new AgentSession(sessionManager);
+      expect(
+        sessionAfterFailure.getModelMessages().some((message) => {
+          return typeof message.content === "string" && message.content.includes("response_status");
+        }),
+      ).toBe(false);
+
+      const failedStatus = findLatestResponseStatusNotice(sessionManager);
+      expect(failedStatus?.kind).toBe("system_notice");
+      if (failedStatus?.kind === "system_notice") {
+        expect(failedStatus.data.endReason).not.toBe("normal");
+        expect(failedStatus.data.error).toContain("EAI_AGAIN");
+      }
+
+      await agent.receive(
+        createEvent({
+          messageId: "msg-provider-race-recover-2",
+          content: "network recovered now reply normally",
+        }),
+      );
+
+      await vi.waitFor(() => {
+        expect(generateMock).toHaveBeenCalledTimes(2);
+        expect(agent.getResponseState()).toBe("idle");
+      });
+
+      expect(
+        sessionManager.getTimeline().filter((record) => record.kind === "channel_message"),
+      ).toHaveLength(2);
+      expect(listResponseStatusNotices(sessionManager)).toHaveLength(2);
+      expect(generateMock.mock.calls[1]?.[0]?.messages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            role: "user",
+            content: expect.stringContaining("network recovered now reply normally"),
+          }),
+        ]),
+      );
+    });
   });
 
   describe("never deadlocks", () => {
-    it.todo("returns to idle after error in generate");
-    it.todo("returns to idle after abort signal");
-    it.todo("watchdog timer forces idle on stuck response");
+    it("returns to idle after error in generate", async () => {
+      const { agent } = createAgent();
+      generateMock.mockRejectedValueOnce(new Error("deadlock failure"));
+
+      await agent.receive(createEvent({ messageId: "msg-deadlock-error" }));
+
+      await vi.waitFor(() => {
+        expect(agent.getResponseState()).toBe("idle");
+      });
+    });
+
+    it("returns to idle after abort signal", async () => {
+      const { agent } = createAgent();
+      generateMock.mockImplementationOnce(async (input) => {
+        await new Promise<void>((_resolve, reject) => {
+          input.abortSignal?.addEventListener("abort", () => reject(new Error("aborted")), {
+            once: true,
+          });
+        });
+      });
+
+      const receivePromise = agent.receive(createEvent({ messageId: "msg-deadlock-abort" }));
+
+      await vi.waitFor(() => {
+        expect(agent.getResponseState()).toBe("responding");
+      });
+
+      agent.abort();
+      await receivePromise;
+
+      await vi.waitFor(() => {
+        expect(agent.getResponseState()).toBe("idle");
+      });
+    });
+
+    it("watchdog timer forces idle on stuck response", async () => {
+      const sessionManager = SessionManager.inMemory("discord:channel-1");
+      const watchdogAgent = new ChannelRuntime(createContextMock() as never, {
+        bot: createBotMock() as never,
+        sessionManager,
+        settingsManager: createTestSettingsManager({
+          response: {
+            baseTimeoutMs: 1,
+            perStepTimeoutMs: 0,
+            maxSteps: 1,
+          },
+        } satisfies AthenaSessionSettings),
+        platform: "discord",
+        channelId: "channel-1",
+        basePath: "/tmp/athena-test",
+      });
+
+      generateMock.mockImplementationOnce(async () => {
+        await new Promise<void>(() => undefined);
+      });
+
+      void watchdogAgent.receive(createEvent({ messageId: "msg-watchdog" }));
+
+      await vi.waitFor(() => {
+        expect(generateMock).toHaveBeenCalledTimes(1);
+      });
+
+      await vi.waitFor(() => {
+        expect(watchdogAgent.getResponseState()).toBe("idle");
+      });
+
+      const responseStatus = findLatestResponseStatusNotice(sessionManager);
+      expect(responseStatus?.kind).toBe("system_notice");
+      if (responseStatus?.kind === "system_notice") {
+        expect(responseStatus.data).toMatchObject({ endReason: "timeout", nextAction: "blocked" });
+      }
+    });
   });
 
   describe("single-flight per channel", () => {
@@ -602,18 +969,18 @@ describe("ChannelRuntime state machine", () => {
 
       const secondTurnInput = generateMock.mock.calls[1]?.[0];
 
-      const responseEndRecords = listRuntimeOutcomeNotices(sessionManager);
+      const responseStatusRecords = listResponseStatusNotices(sessionManager);
       const followUpReviewRecords = listTimelineStates(sessionManager, "follow_up_review");
 
-      expect(responseEndRecords).toHaveLength(2);
+      expect(responseStatusRecords).toHaveLength(2);
       expect(followUpReviewRecords).toHaveLength(1);
-      if (responseEndRecords[0]?.kind === "system_notice") {
-        expect(responseEndRecords[0].visibility).toBe("hidden");
-        expect(responseEndRecords[0].materialization).toBe("hidden");
-        expect(responseEndRecords[0].data).toMatchObject({ nextOutcome: "follow_up" });
+      if (responseStatusRecords[0]?.kind === "system_notice") {
+        expect(responseStatusRecords[0].visibility).toBe("hidden");
+        expect(responseStatusRecords[0].materialization).toBe("hidden");
+        expect(responseStatusRecords[0].data).toMatchObject({ nextAction: "follow_up" });
       }
-      if (responseEndRecords[1]?.kind === "system_notice") {
-        expect(responseEndRecords[1].data).toMatchObject({ nextOutcome: "idle" });
+      if (responseStatusRecords[1]?.kind === "system_notice") {
+        expect(responseStatusRecords[1].data).toMatchObject({ nextAction: "idle" });
       }
       if (followUpReviewRecords[0]?.kind === "state_change") {
         expect(followUpReviewRecords[0].data).toMatchObject({
@@ -706,12 +1073,20 @@ describe("ChannelRuntime state machine", () => {
       await vi.waitFor(() => {
         expect(agent.getResponseState()).toBe("idle");
       });
-      const runtimeOutcome = findLatestRuntimeOutcomeNotice(sessionManager);
-      expect(runtimeOutcome).toBeTruthy();
-      if (runtimeOutcome?.kind === "system_notice") {
-        expect(runtimeOutcome.visibility).toBe("hidden");
-        expect(runtimeOutcome.materialization).toBe("hidden");
-        expect(runtimeOutcome.data).toMatchObject({ endReason: "exception" });
+      const responseStatus = findLatestResponseStatusNotice(sessionManager);
+      expect(listResponseStatusNotices(sessionManager)).toHaveLength(1);
+      expect(responseStatus).toBeTruthy();
+      if (responseStatus?.kind === "system_notice") {
+        expect(responseStatus.materializationKey).toBe("response_status");
+        expect(responseStatus.visibility).toBe("hidden");
+        expect(responseStatus.materialization).toBe("hidden");
+        expect(responseStatus.data).toMatchObject({
+          endReason: "exception",
+          nextAction: "blocked",
+          blockedReason: "tool exploded",
+          error: "tool exploded",
+          stepsCompleted: 0,
+        });
       }
     });
   });
