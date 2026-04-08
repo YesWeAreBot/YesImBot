@@ -20,7 +20,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
-    "build": "pkgroll",
+    "build": "npx pkgroll",
     "clean": "rimraf dist && rimraf tsconfig.tsbuildinfo",
     "fmt": "oxfmt",
     "lint": "oxlint",

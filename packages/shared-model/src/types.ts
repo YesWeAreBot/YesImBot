@@ -10,6 +10,15 @@ export interface ModelEntry {
   reasoning?: boolean;
 }
 
+/** runtime 可直接消费的 provider:model 解析结果 */
+export interface ResolvedModelRegistration {
+  fullId: string;
+  providerId: string;
+  modelId: string;
+  entry: ModelEntry;
+  model: LanguageModelV3;
+}
+
 /** provider 插件向 ModelRegistry 注册时实现此接口 */
 export interface ModelProvider {
   readonly id: string;
@@ -23,6 +32,7 @@ export interface ModelRegistry {
   register(provider: ModelProvider): void;
   unregister(id: string): void;
   resolve(fullId: string): LanguageModelV3;
+  resolveRegistration(fullId: string): ResolvedModelRegistration;
   resolveEmbedding(fullId: string): EmbeddingModelV3;
   getProvider(id: string): ModelProvider | undefined;
   listProviders(): string[];

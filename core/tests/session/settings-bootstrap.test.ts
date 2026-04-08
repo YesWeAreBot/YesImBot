@@ -66,6 +66,17 @@ function createContextMock(baseDir: string): Context {
     baseDir,
     logger: vi.fn(() => createLoggerMock()),
     "yesimbot.model": {
+      resolveRegistration: vi.fn((fullId: string) => ({
+        fullId,
+        providerId: "test",
+        modelId: "model",
+        entry: {
+          id: "model",
+          toolCall: true,
+          reasoning: false,
+        },
+        model: {} as unknown as LanguageModel,
+      })),
       resolve: vi.fn(() => ({}) as unknown as LanguageModel),
     },
     "yesimbot.plugin": {
@@ -81,6 +92,17 @@ function createContextWithLogger(baseDir: string): { ctx: Context; logger: Logge
       baseDir,
       logger: vi.fn(() => logger),
       "yesimbot.model": {
+        resolveRegistration: vi.fn((fullId: string) => ({
+          fullId,
+          providerId: "test",
+          modelId: "model",
+          entry: {
+            id: "model",
+            toolCall: true,
+            reasoning: false,
+          },
+          model: {} as unknown as LanguageModel,
+        })),
         resolve: vi.fn(() => ({}) as unknown as LanguageModel),
       },
       "yesimbot.plugin": {

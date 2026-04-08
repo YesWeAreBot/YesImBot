@@ -35,7 +35,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
-    "build": "pkgroll --sourcemap",
+    "build": "npx pkgroll --sourcemap",
     "clean": "rimraf dist && rimraf tsconfig.tsbuildinfo",
     "fmt": "oxfmt",
     "lint": "oxlint",
@@ -44,6 +44,7 @@
     "typecheck": "tsc --noEmit && echo 'TypeScript typecheck passed!'"
   },
   "dependencies": {
+    "@ai-sdk-tool/parser": "^4.1.19",
     "@ai-sdk/provider-utils": "^4.0.0",
     "@yesimbot/plugin-sdk": "workspace:^",
     "@yesimbot/shared-model": "workspace:^",
@@ -52,7 +53,6 @@
   "devDependencies": {
     "@types/json-schema": "^7.0.15",
     "koishi": "^4.18.11",
-    "pkgroll": "^2.21.4",
     "vitest": "^4.0.18"
   },
   "peerDependencies": {

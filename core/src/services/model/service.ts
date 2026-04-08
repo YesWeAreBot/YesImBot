@@ -1,4 +1,4 @@
-import type { ModelEntry, ModelProvider } from "@yesimbot/shared-model";
+import type { ModelEntry, ModelProvider, ResolvedModelRegistration } from "@yesimbot/shared-model";
 import { parseModelId } from "@yesimbot/shared-model";
 import { Context, Schema, Service } from "koishi";
 
@@ -60,15 +60,37 @@ export class ModelService extends Service<ModelServiceConfig> {
   }
 
   resolve(fullId: string) {
+    return this.resolveRegistration(fullId).model;
+  }
+
+  resolveRegistration(fullId: string): ResolvedModelRegistration {
     const parsed = parseModelId(fullId);
     if (!parsed) throw new Error(`Invalid model ID format: ${fullId}`);
+
     const provider = this.providers.get(parsed.provider);
     if (!provider) {
       throw new Error(
         `Provider "${parsed.provider}" not found. Available: [${this.listProviders().join(", ")}]`,
       );
     }
-    return provider.chat(parsed.model);
+
+    const entry = provider.models().find((model) => model.id === parsed.model);
+    if (!entry) {
+      throw new Error(
+        `Model "${parsed.model}" not found in provider "${parsed.provider}". Available: [${provider
+          .models()
+          .map((model) => model.id)
+          .join(", ")}]`,
+      );
+    }
+
+    return {
+      fullId,
+      providerId: parsed.provider,
+      modelId: parsed.model,
+      entry,
+      model: provider.chat(parsed.model),
+    };
   }
 
   resolveEmbedding(fullId: string) {

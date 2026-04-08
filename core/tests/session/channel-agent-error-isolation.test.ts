@@ -51,6 +51,17 @@ function createContextMock() {
     ctx: {
       logger: loggerFactory,
       "yesimbot.model": {
+        resolveRegistration: vi.fn((fullId: string) => ({
+          fullId,
+          providerId: "test",
+          modelId: "model",
+          entry: {
+            id: "model",
+            toolCall: true,
+            reasoning: false,
+          },
+          model: { provider: "test", modelId: fullId },
+        })),
         resolve: vi.fn(() => ({ provider: "test", modelId: "test:model" })),
       },
     },

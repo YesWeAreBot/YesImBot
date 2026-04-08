@@ -53,6 +53,17 @@ function createContextMock(baseDir = "/tmp/athena-canonical-input"): Context {
     baseDir,
     logger: vi.fn(() => createLoggerMock()),
     "yesimbot.model": {
+      resolveRegistration: vi.fn((fullId: string) => ({
+        fullId,
+        providerId: "test",
+        modelId: "model",
+        entry: {
+          id: "model",
+          toolCall: true,
+          reasoning: false,
+        },
+        model: {} as unknown as LanguageModel,
+      })),
       resolve: vi.fn(() => ({}) as unknown as LanguageModel),
     },
     "yesimbot.plugin": {
@@ -173,11 +184,9 @@ describe("canonical runtime input wiring", () => {
       model: "test:model",
       basePath: "sessions",
     });
-    const receiveSpy = vi
-      .spyOn(service, "getOrCreateAgent")
-      .mockReturnValue({
-        receive: vi.fn().mockResolvedValue(undefined),
-      } as unknown as ChannelRuntime);
+    const receiveSpy = vi.spyOn(service, "getOrCreateAgent").mockReturnValue({
+      receive: vi.fn().mockResolvedValue(undefined),
+    } as unknown as ChannelRuntime);
 
     const futureEvent: CanonicalChannelEventInput = {
       kind: "channel_event",

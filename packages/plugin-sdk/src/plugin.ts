@@ -4,12 +4,13 @@ import { Context } from "koishi";
 
 import { normalizeInputSchema } from "./schema";
 import { TOOL_DECORATOR_KEY, ToolDecoratorEntry } from "./tools";
-import { YesImToolDefinition } from "./tools/types";
+import { RegisteredToolDefinition, YesImToolDefinition } from "./tools/types";
 
 export interface IPluginService {
   install(plugin: YesImPlugin): Promise<void>;
   remove(name: string): void;
   list(): string[];
+  getToolDefinitions(): RegisteredToolDefinition[];
   getToolSet(): Record<string, AiTool>;
   invoke(name: string, input: unknown, options?: Partial<ToolExecutionOptions>): Promise<unknown>;
 }
@@ -40,7 +41,7 @@ export function Metadata(meta: PluginMetadata): ClassDecorator {
 export class YesImPlugin {
   public readonly ctx: Context;
   public readonly metadata: PluginMetadata;
-  private tools: Map<string, AiTool> = new Map();
+  private toolDefinitions: Map<string, RegisteredToolDefinition> = new Map();
 
   constructor(ctx: Context) {
     this.ctx = ctx;
@@ -64,7 +65,13 @@ export class YesImPlugin {
   }
 
   public getTools(): Map<string, AiTool> {
-    return new Map(this.tools);
+    return new Map(
+      this.getToolDefinitions().map((definition) => [definition.name, definition.tool]),
+    );
+  }
+
+  public getToolDefinitions(): RegisteredToolDefinition[] {
+    return [...this.toolDefinitions.values()];
   }
 
   protected registerTool(definition: YesImToolDefinition): void {
@@ -74,7 +81,12 @@ export class YesImPlugin {
       inputSchema,
       execute: definition.execute,
     });
-    this.registerAiTool(definition.name, tool);
+    this.registerToolDefinition({
+      pluginName: this.metadata.name,
+      name: definition.name,
+      definition,
+      tool,
+    });
   }
 
   private registerDecoratedTools(): void {
@@ -95,7 +107,27 @@ export class YesImPlugin {
             handler as (input: unknown, options: ToolExecutionOptions) => unknown | Promise<unknown>
           ).call(this, input, options),
       });
-      this.registerAiTool(name, tool);
+      this.registerToolDefinition({
+        pluginName: this.metadata.name,
+        name,
+        definition: {
+          name,
+          description: entry.description,
+          inputSchema: entry.inputSchema,
+          builtin: entry.builtin,
+          isSupported: entry.isSupported,
+          isAllowed: entry.isAllowed,
+          buildExtensionContext: entry.buildExtensionContext,
+          execute: async (input, options) =>
+            await (
+              handler as (
+                input: unknown,
+                options: ToolExecutionOptions,
+              ) => unknown | Promise<unknown>
+            ).call(this, input, options),
+        },
+        tool,
+      });
     }
   }
 
@@ -103,8 +135,13 @@ export class YesImPlugin {
     return name;
   }
 
-  private registerAiTool(name: string, tool: AiTool): void {
-    this.tools.set(name, tool);
+  private registerToolDefinition(definition: RegisteredToolDefinition): void {
+    if (this.toolDefinitions.has(definition.name)) {
+      throw new Error(
+        `Plugin ${this.metadata.name} already registered tool definition: ${definition.name}`,
+      );
+    }
+    this.toolDefinitions.set(definition.name, definition);
   }
 }
 

@@ -1,6 +1,5 @@
-import { env } from "node:process";
-
 import type { ModelMessage } from "@ai-sdk/provider-utils";
+import type { RegisteredToolDefinition, ToolRuntime } from "@yesimbot/plugin-sdk";
 import type { LanguageModel, OnFinishEvent, PrepareStepResult, ToolSet } from "ai";
 import { stepCountIs, ToolLoopAgent } from "ai";
 import { Bot, Context, Logger } from "koishi";
@@ -24,13 +23,15 @@ import {
   evaluateRuntimeWillingnessHeuristic,
   type WillingnessJudge,
 } from "../willingness";
+import { prepareRuntimeModel } from "./model-adapter";
 import {
   buildRuntimeModelMessages,
   getReliableInputTokens,
   hasCompletedSendMessageWithoutHeartbeat,
-  PROTOCOL_GUIDANCE_TEXT,
   ResponseStepProcessor,
 } from "./response-step-processor";
+import { createSendMessageTool } from "./send-message-tool";
+import { buildToolAssembly } from "./tool-assembly";
 import type {
   ChannelRuntimeOptions,
   ChannelRuntimeTurnSettingsSnapshot,
@@ -41,7 +42,7 @@ import type {
   RuntimeTurnExecutionResult,
   RuntimeNextActionSelection,
 } from "./types";
-import { buildResponseToolSet } from "./workspace-tools";
+import { buildWorkspaceToolDefinitions } from "./workspace-tools";
 
 // ============================================================================
 // ChannelRuntime
@@ -75,6 +76,10 @@ export class ChannelRuntime {
   private currentProtocolRetry = false;
   private cachedAgent: ToolLoopAgent<never, ToolSet> | null = null;
   private cachedAgentSignature: string | null = null;
+  private cachedPreparedModel: ReturnType<typeof prepareRuntimeModel> | null = null;
+  private cachedPreparedModelSignature: string | null = null;
+  private currentSupportedToolSignature: string | null = null;
+  private currentToolExperimentalContext: unknown;
   private readonly responseStepProcessor: ResponseStepProcessor;
   private readonly willingnessJudge: WillingnessJudge;
   private readonly logger: Logger;
@@ -166,8 +171,8 @@ export class ChannelRuntime {
 
   private createAgent(
     turnSettings: ChannelRuntimeTurnSettingsSnapshot,
+    model: LanguageModel,
   ): ToolLoopAgent<never, ToolSet> {
-    const model = this.ctx["yesimbot.model"].resolve(turnSettings.modelId);
     const cumulativeTimeoutMs =
       turnSettings.baseTimeoutMs + turnSettings.maxSteps * turnSettings.perStepTimeoutMs;
     return new ToolLoopAgent<never, ToolSet>({
@@ -183,15 +188,23 @@ export class ChannelRuntime {
         totalMs: cumulativeTimeoutMs,
         chunkMs: turnSettings.chunkTimeoutMs,
       },
+      prepareCall: async (options) => ({
+        ...options,
+        experimental_context: this.currentToolExperimentalContext,
+      }),
       prepareStep: this.handlePrepareStep.bind(this),
       onStepFinish: this.handleStepFinish.bind(this),
       onFinish: this.handleFinish.bind(this),
     });
   }
 
-  private getAgentSignature(turnSettings: ChannelRuntimeTurnSettingsSnapshot): string {
+  private getAgentSignature(
+    turnSettings: ChannelRuntimeTurnSettingsSnapshot,
+    modelMode: string,
+  ): string {
     return [
       turnSettings.modelId,
+      modelMode,
       turnSettings.maxSteps,
       turnSettings.baseTimeoutMs,
       turnSettings.perStepTimeoutMs,
@@ -201,15 +214,18 @@ export class ChannelRuntime {
 
   private getOrCreateAgent(
     turnSettings: ChannelRuntimeTurnSettingsSnapshot,
+    model: LanguageModel,
+    modelMode: string,
   ): ToolLoopAgent<never, ToolSet> {
-    const nextSignature = this.getAgentSignature(turnSettings);
+    const nextSignature = this.getAgentSignature(turnSettings, modelMode);
     if (this.cachedAgent && this.cachedAgentSignature === nextSignature) {
       return this.cachedAgent;
     }
 
-    const agent = this.createAgent(turnSettings);
+    const agent = this.createAgent(turnSettings, model);
     this.cachedAgent = agent;
     this.cachedAgentSignature = nextSignature;
+    this.currentSupportedToolSignature = null;
     return agent;
   }
 
@@ -219,6 +235,30 @@ export class ChannelRuntime {
     }
 
     Object.assign(agent.tools, nextTools);
+  }
+
+  private getPreparedModel(
+    turnSettings: ChannelRuntimeTurnSettingsSnapshot,
+    requiresTools: boolean,
+  ): ReturnType<typeof prepareRuntimeModel> {
+    const nextSignature = this.getAgentSignature(
+      turnSettings,
+      requiresTools ? "tools-requested" : "plain",
+    );
+    if (this.cachedPreparedModel && this.cachedPreparedModelSignature === nextSignature) {
+      return this.cachedPreparedModel;
+    }
+
+    const preparedModel = prepareRuntimeModel({
+      registry: this.ctx["yesimbot.model"],
+      modelId: turnSettings.modelId,
+      requiresTools,
+      requiresReasoning: false,
+    });
+
+    this.cachedPreparedModel = preparedModel;
+    this.cachedPreparedModelSignature = nextSignature;
+    return preparedModel;
   }
 
   // =========================================================================
@@ -396,6 +436,38 @@ export class ChannelRuntime {
     });
   }
 
+  private getLatestChannelMessageInput(): CanonicalChannelMessageInput | undefined {
+    const timeline = this.session.getTimeline();
+    for (let i = timeline.length - 1; i >= 0; i--) {
+      const record = timeline[i];
+      if (record?.kind === "channel_message") {
+        return record.message;
+      }
+    }
+
+    return undefined;
+  }
+
+  private createToolRuntime(
+    turnSettings: ChannelRuntimeTurnSettingsSnapshot,
+    latestInput: CanonicalChannelMessageInput | undefined,
+  ) {
+    return {
+      channelKey: this.getChannelKey(),
+      platform: this.options.platform,
+      channelId: this.options.channelId,
+      modelId: turnSettings.modelId,
+      basePath: this.options.basePath,
+      turn: {
+        messageId: latestInput?.messageId ?? createRuntimeRecordId(),
+        timestamp: latestInput?.timestamp ?? Date.now(),
+        isDirect: latestInput?.isDirect ?? false,
+        atSelf: latestInput?.atSelf ?? false,
+        isReplyToBot: latestInput?.isReplyToBot ?? false,
+      },
+    };
+  }
+
   private createFollowUpReviewRecord(
     pendingFollowUp: MergedFollowUpOpportunity,
   ): FollowUpReviewRecord {
@@ -442,35 +514,73 @@ export class ChannelRuntime {
     this.currentProtocolRetry = options.protocolRetry;
     const modelMessages = this.buildRuntimeMessages(instructions, options.protocolRetry);
 
-    const pluginTools = options.ctx["yesimbot.plugin"]?.getToolSet() ?? {};
-    const responseToolSnapshot = await buildResponseToolSet({
-      bot: options.bot,
-      channelId: options.channelId,
-      pluginTools,
-      workspace: {
+    const latestInput = this.getLatestChannelMessageInput();
+    const pluginToolDefinitions = getRegisteredPluginToolDefinitions(options.ctx);
+    const toolAssembly = await buildToolAssembly({
+      runtime: this.createToolRuntime(options.turnSettings, latestInput),
+      hostInput: latestInput,
+      pluginToolDefinitions,
+      workspaceToolDefinitions: await buildWorkspaceToolDefinitions({
         basePath: options.basePath,
         settingsManager: options.settingsManager,
         logger: options.logger,
-      },
+      }),
+      toolSettings: options.settingsManager.getToolSettings?.(),
+      contextFactories: buildToolContextFactories(pluginToolDefinitions),
+      sendMessageTool: createSendMessageTool({
+        bot: options.bot,
+        channelId: options.channelId,
+      }),
     });
-    const responseActiveTools = Object.keys(responseToolSnapshot);
+    const responseActiveTools = Object.keys(toolAssembly.activeTools);
     this.responseActiveTools = responseActiveTools;
+    this.currentToolExperimentalContext = toolAssembly.experimentalContext;
 
-    const agent = this.getOrCreateAgent(options.turnSettings);
-    this.syncAgentTools(agent, responseToolSnapshot);
+    const preparedModel = this.getPreparedModel(
+      options.turnSettings,
+      responseActiveTools.length > 0,
+    );
+    const modelMode =
+      responseActiveTools.length > 0 && preparedModel.entry.toolCall === false
+        ? "tool-compat"
+        : "raw";
+
+    const agent = this.getOrCreateAgent(options.turnSettings, preparedModel.model, modelMode);
+    if (this.currentSupportedToolSignature !== toolAssembly.signature) {
+      this.syncAgentTools(agent, toolAssembly.supportedTools);
+      this.currentSupportedToolSignature = toolAssembly.signature;
+    }
 
     options.logger.debug(
       `[llm:${channelKey}] start streaming=${options.turnSettings.streaming} messages=${modelMessages.length} tools=${responseActiveTools.length} retry=${options.protocolRetry}`,
     );
 
     if (options.turnSettings.streaming) {
+      let streamError: unknown;
+      const captureStreamError = (error: unknown) => {
+        if (streamError === undefined) {
+          streamError = error;
+        }
+      };
       const result = await abortable(options.abortSignal, () =>
         agent.stream({
           messages: modelMessages,
           abortSignal: options.abortSignal,
+          onError: ({ error }) => {
+            captureStreamError(error);
+          },
         }),
       );
-      await abortable(options.abortSignal, () => result.consumeStream());
+      await abortable(options.abortSignal, () =>
+        result.consumeStream({
+          onError: (error) => {
+            captureStreamError(error);
+          },
+        }),
+      );
+      if (streamError !== undefined) {
+        throw streamError;
+      }
     } else {
       await abortable(options.abortSignal, () =>
         agent.generate({
@@ -548,6 +658,7 @@ export class ChannelRuntime {
         this.abortController = null;
         this.currentTurnSettings = null;
         this.currentTurnInstructions = null;
+        this.currentToolExperimentalContext = undefined;
         this.currentProtocolRetry = false;
         this.runResponse(true).catch(() => {});
         return;
@@ -562,6 +673,15 @@ export class ChannelRuntime {
         sendFailure: boolean;
         thrownError?: string;
       }): ResponseStatusReason {
+        if (
+          (input.sendFailure || Boolean(input.thrownError)) &&
+          input.thrownError &&
+          !isAbortLikeThrownError(input.thrownError) &&
+          !isTimeoutLikeThrownError(input.thrownError)
+        ) {
+          return "exception";
+        }
+
         if (input.timedOut) {
           return "timeout";
         }
@@ -668,6 +788,7 @@ export class ChannelRuntime {
         this.currentTurnSettings = null;
         this.currentTurnInstructions = null;
         this.currentTurnFollowUpReview = null;
+        this.currentToolExperimentalContext = undefined;
         this.currentProtocolRetry = false;
         this.runResponse().catch(() => {});
         return;
@@ -677,6 +798,7 @@ export class ChannelRuntime {
       this.currentTurnSettings = null;
       this.currentTurnInstructions = null;
       this.currentTurnFollowUpReview = null;
+      this.currentToolExperimentalContext = undefined;
       this.currentProtocolRetry = false;
     }
   }
@@ -693,6 +815,7 @@ export class ChannelRuntime {
     stepNumber: number;
     model: unknown;
     messages: ModelMessage[];
+    experimental_context?: unknown;
   }): PrepareStepResult {
     const nextMessages = this.currentTurnInstructions
       ? this.buildRuntimeMessages(this.currentTurnInstructions, this.currentProtocolRetry)
@@ -710,12 +833,14 @@ export class ChannelRuntime {
       const trimmed = rest.slice(-keepCount);
       return {
         activeTools: this.responseActiveTools,
+        experimental_context: this.currentToolExperimentalContext,
         messages: [system, ...trimmed],
       };
     }
 
     return {
       activeTools: this.responseActiveTools,
+      experimental_context: this.currentToolExperimentalContext,
       messages: nextMessages,
     };
   }
@@ -815,6 +940,8 @@ export class ChannelRuntime {
   }
 }
 
+const ABORT_REJECTION_GRACE_MS = 100;
+
 async function abortable<T>(signal: AbortSignal, operation: () => PromiseLike<T>): Promise<T> {
   if (signal.aborted) {
     throw new Error("aborted");
@@ -826,7 +953,7 @@ async function abortable<T>(signal: AbortSignal, operation: () => PromiseLike<T>
       signal.removeEventListener("abort", onAbort);
       abortTimer = setTimeout(() => {
         reject(new Error("aborted"));
-      }, 10);
+      }, ABORT_REJECTION_GRACE_MS);
     };
 
     signal.addEventListener("abort", onAbort, { once: true });
@@ -852,6 +979,87 @@ async function abortable<T>(signal: AbortSignal, operation: () => PromiseLike<T>
 
 function isAbortLikeThrownError(message: string): boolean {
   return /\babort(?:ed|ing)?\b/i.test(message);
+}
+
+function isTimeoutLikeThrownError(message: string): boolean {
+  return /\btime(?:d)?\s*out\b/i.test(message);
+}
+
+function getRegisteredPluginToolDefinitions(ctx: Context): RegisteredToolDefinition[] {
+  const pluginService = ctx["yesimbot.plugin"] as
+    | {
+        getToolDefinitions?: () => RegisteredToolDefinition[];
+        getToolSet?: () => ToolSet;
+      }
+    | undefined;
+
+  if (typeof pluginService?.getToolDefinitions === "function") {
+    return pluginService.getToolDefinitions();
+  }
+
+  if (typeof pluginService?.getToolSet === "function") {
+    return Object.entries(pluginService.getToolSet()).map(([name, tool]) => ({
+      pluginName: "legacy-plugin-service",
+      name,
+      definition: {
+        name,
+        description: tool.description ?? name,
+        inputSchema: tool.inputSchema,
+        isSupported: () => true,
+        isAllowed: ({ enabledTools }) => enabledTools.includes(name),
+        execute: async (input, executionOptions) => {
+          if (!tool.execute) {
+            throw new Error(`Tool is not executable: ${name}`);
+          }
+
+          return await tool.execute(input, executionOptions);
+        },
+      },
+      tool,
+    }));
+  }
+
+  return [];
+}
+
+function buildToolContextFactories(
+  definitions: RegisteredToolDefinition[],
+): Record<
+  string,
+  (hostInput: unknown, runtime: ToolRuntime) => Record<string, unknown> | undefined
+> {
+  const grouped = new Map<
+    string,
+    Array<(hostInput: unknown, runtime: ToolRuntime) => Record<string, unknown> | undefined>
+  >();
+
+  for (const definition of definitions) {
+    if (!definition.definition.buildExtensionContext) {
+      continue;
+    }
+
+    const existing = grouped.get(definition.pluginName) ?? [];
+    existing.push(definition.definition.buildExtensionContext);
+    grouped.set(definition.pluginName, existing);
+  }
+
+  return Object.fromEntries(
+    [...grouped.entries()].map(([pluginName, factories]) => [
+      pluginName,
+      (hostInput: unknown, runtime: ToolRuntime) => {
+        const merged: Record<string, unknown> = {};
+
+        for (const factory of factories) {
+          const value = factory(hostInput, runtime);
+          if (value !== undefined) {
+            Object.assign(merged, value);
+          }
+        }
+
+        return Object.keys(merged).length > 0 ? merged : undefined;
+      },
+    ]),
+  );
 }
 
 function normalizeChannelRuntimeInput(

@@ -11,6 +11,7 @@ import { createTestSettingsManager } from "./test-settings-manager";
 type GenerateInput = {
   messages: unknown[];
   abortSignal?: AbortSignal;
+  onError?: (event: { error: unknown }) => void | Promise<void>;
 };
 
 const generateMock = vi.fn<(input: GenerateInput) => Promise<void>>();
@@ -19,7 +20,11 @@ const streamMock =
     (
       input: GenerateInput,
       options: Record<string, unknown>,
-    ) => Promise<{ consumeStream(): Promise<void> }>
+    ) => Promise<{
+      consumeStream(options?: {
+        onError?: (error: unknown) => void | Promise<void>;
+      }): Promise<void>;
+    }>
   >();
 const toolLoopAgentCtorMock = vi.fn();
 
@@ -59,6 +64,17 @@ function createContextMock() {
       error: vi.fn(),
     })),
     "yesimbot.model": {
+      resolveRegistration: vi.fn((fullId: string) => ({
+        fullId,
+        providerId: "test",
+        modelId: "model",
+        entry: {
+          id: "model",
+          toolCall: true,
+          reasoning: false,
+        },
+        model: { provider: "test", modelId: fullId },
+      })),
       resolve: vi.fn(() => ({ provider: "test", modelId: "test:model" })),
     },
   };
@@ -134,6 +150,7 @@ function findLatestResponseStatusNotice(sessionManager: SessionManager) {
 
 const delayedProviderFailureMessage =
   "RetryError [AI_RetryError]: Failed after 3 attempts. Last error: AI_APICallError: Cannot connect to API: getaddrinfo EAI_AGAIN model.nekohouse.cafe";
+const delayedProviderFailureDelayMs = 20;
 
 interface MutableSettingsManager extends ChannelRuntimeSettingsManager {
   setResponseSettings(
@@ -350,7 +367,7 @@ describe("ChannelRuntime state machine", () => {
       });
 
       expect(toolLoopAgentCtorMock).toHaveBeenCalledTimes(1);
-      expect(ctx["yesimbot.model"].resolve).toHaveBeenCalledTimes(1);
+      expect(ctx["yesimbot.model"].resolveRegistration).toHaveBeenCalledTimes(1);
     });
 
     it("rebuilds the ToolLoopAgent when constructor-bound turn settings change", async () => {
@@ -386,7 +403,7 @@ describe("ChannelRuntime state machine", () => {
       });
 
       expect(toolLoopAgentCtorMock).toHaveBeenCalledTimes(2);
-      expect(ctx["yesimbot.model"].resolve).toHaveBeenCalledTimes(2);
+      expect(ctx["yesimbot.model"].resolveRegistration).toHaveBeenCalledTimes(2);
     });
 
     it("consumes streaming results before completing response", async () => {
@@ -447,6 +464,49 @@ describe("ChannelRuntime state machine", () => {
       expect(
         sessionManager.getTimeline().some((record) => record.kind === "assistant_message"),
       ).toBe(true);
+    });
+
+    it("persists swallowed streaming provider/network errors reported through stream onError", async () => {
+      const sessionManager = SessionManager.inMemory("discord:channel-1");
+
+      streamMock.mockImplementationOnce(async (input) => ({
+        consumeStream: async () => {
+          await input.onError?.({ error: new Error(delayedProviderFailureMessage) });
+        },
+      }));
+
+      const streamingAgent = new ChannelRuntime(createContextMock() as never, {
+        bot: createBotMock() as never,
+        sessionManager,
+        settingsManager: createTestSettingsManager({
+          response: {
+            streaming: true,
+            baseTimeoutMs: 50,
+            perStepTimeoutMs: 0,
+            maxSteps: 1,
+          },
+        }),
+        platform: "discord",
+        channelId: "channel-1",
+        basePath: "/tmp/athena-test",
+      });
+
+      await streamingAgent.receive(createEvent({ messageId: "msg-stream-error" }));
+
+      await vi.waitFor(() => {
+        expect(streamingAgent.getResponseState()).toBe("idle");
+      });
+
+      const responseStatus = findLatestResponseStatusNotice(sessionManager);
+      expect(responseStatus?.kind).toBe("system_notice");
+      if (responseStatus?.kind === "system_notice") {
+        expect(responseStatus.data).toMatchObject({
+          endReason: "exception",
+          nextAction: "blocked",
+        });
+        expect(responseStatus.data.error).toContain("RetryError");
+        expect(responseStatus.data.blockedReason).toContain("AI_APICallError");
+      }
     });
 
     it('transitions idle -> responding -> aborting -> ended on abort (endReason === "abort")', async () => {
@@ -566,8 +626,8 @@ describe("ChannelRuntime state machine", () => {
       }
     });
 
-    it("persists delayed provider/network rejection details after abort signal flips", async () => {
-      const { agent, sessionManager } = createAgent();
+    it("persists delayed provider/network rejection details after timeout-triggered abort signal flips", async () => {
+      const sessionManager = SessionManager.inMemory("discord:channel-1");
 
       generateMock.mockImplementationOnce(async (input) => {
         await new Promise<void>((_resolve, reject) => {
@@ -576,25 +636,32 @@ describe("ChannelRuntime state machine", () => {
             () => {
               setTimeout(() => {
                 reject(new Error(delayedProviderFailureMessage));
-              }, 0);
+              }, delayedProviderFailureDelayMs);
             },
             { once: true },
           );
         });
       });
 
-      const receivePromise = agent.receive(createEvent({ messageId: "msg-provider-race-failure" }));
-
-      await vi.waitFor(() => {
-        expect(generateMock).toHaveBeenCalledTimes(1);
-        expect(agent.getResponseState()).toBe("responding");
+      const timeoutAgent = new ChannelRuntime(createContextMock() as never, {
+        bot: createBotMock() as never,
+        sessionManager,
+        settingsManager: createTestSettingsManager({
+          response: {
+            baseTimeoutMs: 1,
+            perStepTimeoutMs: 0,
+            maxSteps: 1,
+          },
+        } satisfies AthenaSessionSettings),
+        platform: "discord",
+        channelId: "channel-1",
+        basePath: "/tmp/athena-test",
       });
 
-      agent.abort();
-      await receivePromise;
+      await timeoutAgent.receive(createEvent({ messageId: "msg-provider-race-failure" }));
 
       await vi.waitFor(() => {
-        expect(agent.getResponseState()).toBe("idle");
+        expect(timeoutAgent.getResponseState()).toBe("idle");
       });
 
       const responseStatus = findLatestResponseStatusNotice(sessionManager);
@@ -604,7 +671,9 @@ describe("ChannelRuntime state machine", () => {
         expect(responseStatus.visibility).toBe("hidden");
         expect(responseStatus.materialization).toBe("hidden");
         expect(responseStatus.data.endReason).not.toBe("normal");
+        expect(responseStatus.data.endReason).not.toBe("abort");
         expect(responseStatus.data.error).toContain("RetryError");
+        expect(responseStatus.data.error).toContain("AI_APICallError");
         expect(responseStatus.data.error).toContain("EAI_AGAIN");
         expect(responseStatus.data.blockedReason).toContain("AI_APICallError");
       }
@@ -749,7 +818,21 @@ describe("ChannelRuntime state machine", () => {
     });
 
     it("recovers on next valid input after delayed provider/network rejection while keeping failure hidden", async () => {
-      const { agent, sessionManager } = createAgent();
+      const sessionManager = SessionManager.inMemory("discord:channel-1");
+      const timeoutAgent = new ChannelRuntime(createContextMock() as never, {
+        bot: createBotMock() as never,
+        sessionManager,
+        settingsManager: createTestSettingsManager({
+          response: {
+            baseTimeoutMs: 1,
+            perStepTimeoutMs: 0,
+            maxSteps: 1,
+          },
+        } satisfies AthenaSessionSettings),
+        platform: "discord",
+        channelId: "channel-1",
+        basePath: "/tmp/athena-test",
+      });
 
       generateMock
         .mockImplementationOnce(async (input) => {
@@ -759,7 +842,7 @@ describe("ChannelRuntime state machine", () => {
               () => {
                 setTimeout(() => {
                   reject(new Error(delayedProviderFailureMessage));
-                }, 0);
+                }, delayedProviderFailureDelayMs);
               },
               { once: true },
             );
@@ -767,20 +850,13 @@ describe("ChannelRuntime state machine", () => {
         })
         .mockResolvedValueOnce();
 
-      const firstReceive = agent.receive(
+      await timeoutAgent.receive(
         createEvent({ messageId: "msg-provider-race-recover-1", content: "first try" }),
       );
 
       await vi.waitFor(() => {
         expect(generateMock).toHaveBeenCalledTimes(1);
-        expect(agent.getResponseState()).toBe("responding");
-      });
-
-      agent.abort();
-      await firstReceive;
-
-      await vi.waitFor(() => {
-        expect(agent.getResponseState()).toBe("idle");
+        expect(timeoutAgent.getResponseState()).toBe("idle");
       });
 
       const sessionAfterFailure = new AgentSession(sessionManager);
@@ -794,10 +870,12 @@ describe("ChannelRuntime state machine", () => {
       expect(failedStatus?.kind).toBe("system_notice");
       if (failedStatus?.kind === "system_notice") {
         expect(failedStatus.data.endReason).not.toBe("normal");
+        expect(failedStatus.data.endReason).not.toBe("abort");
         expect(failedStatus.data.error).toContain("EAI_AGAIN");
+        expect(failedStatus.data.blockedReason).toContain("AI_APICallError");
       }
 
-      await agent.receive(
+      await timeoutAgent.receive(
         createEvent({
           messageId: "msg-provider-race-recover-2",
           content: "network recovered now reply normally",
@@ -806,7 +884,7 @@ describe("ChannelRuntime state machine", () => {
 
       await vi.waitFor(() => {
         expect(generateMock).toHaveBeenCalledTimes(2);
-        expect(agent.getResponseState()).toBe("idle");
+        expect(timeoutAgent.getResponseState()).toBe("idle");
       });
 
       expect(

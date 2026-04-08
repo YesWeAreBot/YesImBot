@@ -1,5 +1,5 @@
 import type { Tool as AiTool, ToolExecutionOptions } from "@ai-sdk/provider-utils";
-import type { IPluginService, YesImPlugin } from "@yesimbot/plugin-sdk";
+import type { IPluginService, RegisteredToolDefinition, YesImPlugin } from "@yesimbot/plugin-sdk";
 import { Context, Service } from "koishi";
 
 declare module "koishi" {
@@ -13,6 +13,7 @@ export interface PluginServiceConfig {
 }
 
 export class PluginService extends Service<PluginServiceConfig> implements IPluginService {
+  private static readonly RESERVED_TOOL_NAMES = new Set(["send_message"]);
   private plugins = new Map<string, YesImPlugin>();
 
   constructor(ctx: Context, config: PluginServiceConfig = {}) {
@@ -23,6 +24,7 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
   }
 
   public async install(plugin: YesImPlugin): Promise<void> {
+    this.assertPluginToolDefinitions(plugin);
     this.plugins.set(plugin.metadata.name, plugin);
     this.logger.info(`Plugin installed: ${plugin.metadata.name}`);
   }
@@ -36,18 +38,14 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
     return [...this.plugins.keys()];
   }
 
+  public getToolDefinitions(): RegisteredToolDefinition[] {
+    return this.collectToolDefinitions();
+  }
+
   public getToolSet(): Record<string, AiTool> {
     const set: Record<string, AiTool> = {};
-    for (const [pluginName, plugin] of this.plugins.entries()) {
-      for (const [name, tool] of plugin.getTools().entries()) {
-        if (!(name in set)) {
-          set[name] = tool;
-          continue;
-        }
-
-        const prefixedName = `${pluginName}.${name}`;
-        set[this.getUniqueToolName(set, prefixedName)] = tool;
-      }
+    for (const definition of this.getToolDefinitions()) {
+      set[definition.name] = definition.tool;
     }
     return set;
   }
@@ -68,13 +66,52 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
     });
   }
 
-  private getUniqueToolName(tools: Record<string, AiTool>, baseName: string): string {
-    let uniqueName = baseName;
-    let suffix = 2;
-    while (uniqueName in tools) {
-      uniqueName = `${baseName}_${suffix}`;
-      suffix++;
+  private assertPluginToolDefinitions(plugin: YesImPlugin): void {
+    const seen = new Map<string, string>();
+
+    for (const [pluginName, existingPlugin] of this.plugins.entries()) {
+      for (const definition of existingPlugin.getToolDefinitions()) {
+        this.assertToolDefinition(definition, pluginName, seen);
+      }
     }
-    return uniqueName;
+
+    for (const definition of plugin.getToolDefinitions()) {
+      this.assertToolDefinition(definition, plugin.metadata.name, seen);
+    }
+  }
+
+  private collectToolDefinitions(): RegisteredToolDefinition[] {
+    const definitions: RegisteredToolDefinition[] = [];
+    const seen = new Map<string, string>();
+
+    for (const [pluginName, plugin] of this.plugins.entries()) {
+      for (const definition of plugin.getToolDefinitions()) {
+        this.assertToolDefinition(definition, pluginName, seen);
+        definitions.push(definition);
+      }
+    }
+
+    return definitions;
+  }
+
+  private assertToolDefinition(
+    definition: RegisteredToolDefinition,
+    pluginName: string,
+    seen: Map<string, string>,
+  ): void {
+    if (PluginService.RESERVED_TOOL_NAMES.has(definition.name)) {
+      throw new Error(
+        `Tool name '${definition.name}' is reserved and cannot be registered by ${pluginName}`,
+      );
+    }
+
+    const previousPlugin = seen.get(definition.name);
+    if (previousPlugin) {
+      throw new Error(
+        `Duplicate tool name '${definition.name}' registered by ${previousPlugin} and ${pluginName}`,
+      );
+    }
+
+    seen.set(definition.name, pluginName);
   }
 }

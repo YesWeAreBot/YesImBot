@@ -72,6 +72,17 @@ function createContextMock(baseDir: string): Context {
     baseDir,
     logger: vi.fn(() => createLoggerMock()),
     "yesimbot.model": {
+      resolveRegistration: vi.fn((fullId: string) => ({
+        fullId,
+        providerId: "test",
+        modelId: "model",
+        entry: {
+          id: "model",
+          toolCall: true,
+          reasoning: false,
+        },
+        model: {} as LanguageModel,
+      })),
       resolve: vi.fn(() => ({}) as unknown as LanguageModel),
     },
   } as unknown as Context;

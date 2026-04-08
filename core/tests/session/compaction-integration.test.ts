@@ -84,6 +84,17 @@ function createContextMock() {
   return {
     logger,
     "yesimbot.model": {
+      resolveRegistration: vi.fn((fullId: string) => ({
+        fullId,
+        providerId: "test",
+        modelId: "model",
+        entry: {
+          id: "model",
+          toolCall: true,
+          reasoning: false,
+        },
+        model: { provider: "test", modelId: fullId },
+      })),
       resolve: vi.fn((modelId: string) => ({ provider: "test", modelId })),
     },
   };
