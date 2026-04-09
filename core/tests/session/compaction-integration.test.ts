@@ -149,15 +149,18 @@ function createAgent(
     contextWindow?: number;
     compactionReserveTokens?: number;
     compactionKeepRecentTokens?: number;
+    sessionManager?: SessionManager;
   } = {},
 ) {
   const ctx = createContextMock();
   const bot = createBotMock();
-  const sessionManager = SessionManager.inMemory("discord:channel-1");
+  const sessionManager = overrides.sessionManager ?? SessionManager.inMemory("discord:channel-1");
 
-  sessionManager.appendCustomMessageEntry("channel_message", "[alice]: hello", false, {
-    userId: "user-1",
-  });
+  if (!overrides.sessionManager) {
+    sessionManager.appendCustomMessageEntry("channel_message", "[alice]: hello", false, {
+      userId: "user-1",
+    });
+  }
 
   const agent = new ChannelRuntime(ctx as never, {
     bot: bot as never,
@@ -452,5 +455,93 @@ describe("ChannelRuntime compaction integration", () => {
         }),
       ]),
     );
+  });
+
+  it("allows another compaction after new timeline records arrive", async () => {
+    const sessionManager = SessionManager.inMemory("discord:channel-1");
+    sessionManager.appendCustomMessageEntry("channel_message", "[alice]: first", false, {
+      userId: "user-1",
+    });
+    const keptEntryId = sessionManager.appendCustomMessageEntry(
+      "channel_message",
+      "[alice]: keep this window",
+      false,
+      {
+        userId: "user-2",
+      },
+    );
+    sessionManager.appendCompaction("previous summary", keptEntryId, 50000);
+    const newestEntryId = sessionManager.appendCustomMessageEntry(
+      "channel_message",
+      "[alice]: new growth after compaction",
+      false,
+      {
+        userId: "user-3",
+      },
+    );
+
+    const { agent } = createAgent({ sessionManager });
+
+    prepareCompactionMock.mockImplementation(
+      (records, _settings, previousSummary, contextTokens) => {
+        expect(records.map((record: { id: string }) => record.id)).toEqual([
+          keptEntryId,
+          newestEntryId,
+        ]);
+        expect(previousSummary).toBe("previous summary");
+        expect(contextTokens).toBe(75000);
+        return {
+          firstKeptEntryId: newestEntryId,
+          recordsToSummarize: [],
+          turnPrefixRecords: [],
+          isSplitTurn: false,
+          tokensBefore: 75000,
+          previousSummary,
+          settings: {
+            enabled: true,
+            reserveTokens: 16384,
+            keepRecentTokens: 20000,
+          },
+        };
+      },
+    );
+    compactMock.mockResolvedValue({
+      summary: "updated summary",
+      firstKeptEntryId: newestEntryId,
+      tokensBefore: 75000,
+    });
+
+    const result = await agent.runCompaction(75000);
+
+    expect(result).toEqual({
+      compacted: true,
+      firstKeptEntryId: newestEntryId,
+      summaryLength: "updated summary".length,
+      tokensBefore: 75000,
+    });
+    expect(sessionManager.getEntries().filter((entry) => entry.type === "compaction")).toHaveLength(
+      2,
+    );
+  });
+
+  it("skips manual compaction when the latest entry is already a compaction", async () => {
+    const sessionManager = SessionManager.inMemory("discord:channel-1");
+    const keptEntryId = sessionManager.appendCustomMessageEntry(
+      "channel_message",
+      "[alice]: keep this window",
+      false,
+      {
+        userId: "user-1",
+      },
+    );
+    sessionManager.appendCompaction("previous summary", keptEntryId, 50000);
+
+    const { agent } = createAgent({ sessionManager });
+
+    const result = await agent.runCompaction(75000);
+
+    expect(result).toEqual({ compacted: false, reason: "already-compacted" });
+    expect(prepareCompactionMock).not.toHaveBeenCalled();
+    expect(compactMock).not.toHaveBeenCalled();
   });
 });

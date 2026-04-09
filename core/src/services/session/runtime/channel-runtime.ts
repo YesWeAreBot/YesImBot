@@ -7,6 +7,7 @@ import { Bot, Context, Logger } from "koishi";
 import { AgentSession } from "../agent-session";
 import { compact, prepareCompaction, shouldCompact } from "../compaction";
 import { estimateContextTokens } from "../compaction/estimate";
+import type { TimelineRecord } from "../contracts";
 import { DefaultSessionResourceLoader } from "../resource-loader";
 import type { SessionManager } from "../session-manager";
 import type {
@@ -566,9 +567,6 @@ export class ChannelRuntime {
         agent.stream({
           messages: modelMessages,
           abortSignal: options.abortSignal,
-          onError: ({ error }) => {
-            captureStreamError(error);
-          },
         }),
       );
       await abortable(options.abortSignal, () =>
@@ -885,14 +883,19 @@ export class ChannelRuntime {
       return { compacted: false, reason: "empty-session" };
     }
 
-    if (this.getLatestCompactionSidecar() !== undefined) {
+    const latestCompaction = this.getLatestCompactionSidecar();
+    if (latestCompaction !== undefined && this.isLatestSessionEntryCompaction()) {
       return { compacted: false, reason: "already-compacted" };
     }
 
-    const preparation = prepareCompaction(
+    const compactionRecords = this.getCompactionRecords(
       records,
+      latestCompaction?.firstKeptEntryId,
+    );
+    const preparation = prepareCompaction(
+      compactionRecords,
       turnSettings.compactionSettings,
-      this.getLatestCompactionSummary(),
+      latestCompaction?.summary,
       contextTokens,
     );
     if (!preparation) {
@@ -923,20 +926,45 @@ export class ChannelRuntime {
     };
   }
 
-  private getLatestCompactionSummary(): string | undefined {
-    return this.getLatestCompactionSidecar()?.summary;
-  }
-
-  private getLatestCompactionSidecar(): { summary: string } | undefined {
+  private getLatestCompactionSidecar():
+    | {
+        summary: string;
+        firstKeptEntryId: string;
+      }
+    | undefined {
     const entries = this.sessionManager.getEntries();
     for (let i = entries.length - 1; i >= 0; i--) {
       const entry = entries[i];
       if (entry?.type === "compaction") {
-        return { summary: entry.summary };
+        return {
+          summary: entry.summary,
+          firstKeptEntryId: entry.firstKeptEntryId,
+        };
       }
     }
 
     return undefined;
+  }
+
+  private isLatestSessionEntryCompaction(): boolean {
+    const entries = this.sessionManager.getEntries();
+    return entries[entries.length - 1]?.type === "compaction";
+  }
+
+  private getCompactionRecords(
+    records: readonly TimelineRecord[],
+    firstKeptEntryId?: string,
+  ): readonly TimelineRecord[] {
+    if (!firstKeptEntryId) {
+      return records;
+    }
+
+    const firstKeptIndex = records.findIndex((record) => record.id === firstKeptEntryId);
+    if (firstKeptIndex === -1) {
+      return records;
+    }
+
+    return records.slice(firstKeptIndex);
   }
 }
 
