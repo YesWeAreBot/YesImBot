@@ -1,14 +1,14 @@
 import type { ModelMessage, SystemModelMessage, UserModelMessage } from "@ai-sdk/provider-utils";
 
-import { formatCanonicalChannelMessage } from "./channel-message";
+import { formatChannelMessageInput } from "./channel-message";
 import type {
-  CanonicalRawPayload,
+  ChannelRawPayload,
   ChannelEventRecord,
   ChannelMessageRecord,
   StateChangeRecord,
   SystemNoticeRecord,
   TimelineRecord,
-} from "./contracts";
+} from "./types/index";
 
 export interface MaterializeTimelineOptions {
   includeInternal?: boolean;
@@ -16,7 +16,7 @@ export interface MaterializeTimelineOptions {
 }
 
 export type SystemNoticeStrategy = (
-  record: SystemNoticeRecord<CanonicalRawPayload | undefined>,
+  record: SystemNoticeRecord<ChannelRawPayload | undefined>,
 ) => ModelMessage | ModelMessage[] | null | undefined;
 
 export function materializeTimelineRecord(
@@ -75,7 +75,7 @@ function shouldProjectRecord(record: TimelineRecord, options: MaterializeTimelin
 function materializeChannelMessage(record: ChannelMessageRecord): UserModelMessage {
   return {
     role: "user",
-    content: formatCanonicalChannelMessage(record.message),
+    content: formatChannelMessageInput(record.message),
   };
 }
 
@@ -89,7 +89,7 @@ function materializeChannelEvent(record: ChannelEventRecord): SystemModelMessage
 }
 
 function materializeStateChange(
-  record: StateChangeRecord<CanonicalRawPayload | undefined>,
+  record: StateChangeRecord<ChannelRawPayload | undefined>,
 ): SystemModelMessage {
   return {
     role: "system",

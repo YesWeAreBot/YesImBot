@@ -1,4 +1,5 @@
 export { LocalFilesystem } from "./filesystem";
+export { WorkspacePlugin } from "./plugin";
 export { LocalSandbox } from "./sandbox";
 export { Workspace } from "./workspace";
 export type {

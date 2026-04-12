@@ -1,18 +1,18 @@
 import { describe, expect, it } from "vitest";
 
-import { TIMELINE_RECORD_KINDS } from "../../../src/services/session/contracts";
+import { TIMELINE_RECORD_KINDS } from "../../../src/services/session/types/index";
 import type {
   AssistantMessageRecord,
-  CanonicalChannelEventInput,
-  CanonicalChannelMessageInput,
+  ChannelEventInput,
+  ChannelMessageInput,
   SystemNoticeRecord,
   TimelineRecord,
   ToolMessageRecord,
-} from "../../../src/services/session/contracts";
+} from "../../../src/services/session/types/index";
 
 describe("timeline contracts", () => {
-  it("host/runtime handles stay outside canonical channel inputs", () => {
-    const message: CanonicalChannelMessageInput<{ sourceMessageId: string }> = {
+  it("host/runtime handles stay outside typed channel inputs", () => {
+    const message: ChannelMessageInput<{ sourceMessageId: string }> = {
       kind: "channel_message",
       platform: "discord",
       channelId: "channel-1",
@@ -54,7 +54,7 @@ describe("timeline contracts", () => {
   });
 
   it("stores normalized message metadata instead of pre-rendered model text", () => {
-    const message: CanonicalChannelMessageInput<{ sourceMessageId: string }> = {
+    const message: ChannelMessageInput<{ sourceMessageId: string }> = {
       kind: "channel_message",
       platform: "discord",
       channelId: "channel-1",
@@ -125,7 +125,7 @@ describe("timeline contracts", () => {
   });
 
   it("keeps channel_event open for typed non-message expansion", () => {
-    const event: CanonicalChannelEventInput<{ targetMessageId: string }> = {
+    const event: ChannelEventInput<{ targetMessageId: string }> = {
       kind: "channel_event",
       platform: "discord",
       channelId: "channel-1",

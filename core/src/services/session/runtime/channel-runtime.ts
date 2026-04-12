@@ -1,5 +1,5 @@
 import type { ModelMessage } from "@ai-sdk/provider-utils";
-import type { RegisteredToolDefinition, ToolRuntime } from "@yesimbot/plugin-sdk";
+import type { IPluginService } from "@yesimbot/plugin-sdk";
 import type { LanguageModel, OnFinishEvent, PrepareStepResult, ToolSet } from "ai";
 import { stepCountIs, ToolLoopAgent } from "ai";
 import { Bot, Context, Logger } from "koishi";
@@ -7,13 +7,10 @@ import { Bot, Context, Logger } from "koishi";
 import { AgentSession } from "../agent-session";
 import { compact, prepareCompaction, shouldCompact } from "../compaction";
 import { estimateContextTokens } from "../compaction/estimate";
-import type { TimelineRecord } from "../contracts";
+import type { ChannelInput, ChannelMessageInput, TimelineRecord } from "../types/index";
 import { DefaultSessionResourceLoader } from "../resource-loader";
 import type { SessionManager } from "../session-manager";
 import type {
-  CanonicalChannelInput,
-  CanonicalChannelMessageInput,
-  ChannelEvent,
   FollowUpReviewRecord,
   ResponseStatusNoticeSubType,
   ResponseStatusReason,
@@ -32,18 +29,16 @@ import {
   ResponseStepProcessor,
 } from "./response-step-processor";
 import { createSendMessageTool } from "./send-message-tool";
-import { buildToolAssembly } from "./tool-assembly";
 import type {
   ChannelRuntimeOptions,
   ChannelRuntimeTurnSettingsSnapshot,
   CompactionRunResult,
   MergedFollowUpOpportunity,
+  NextActionSelection,
   ResponseState,
   RuntimeTurnExecutionOptions,
   RuntimeTurnExecutionResult,
-  RuntimeNextActionSelection,
 } from "./types";
-import { buildWorkspaceToolDefinitions } from "./workspace-tools";
 
 // ============================================================================
 // ChannelRuntime
@@ -273,15 +268,17 @@ export class ChannelRuntime {
    * 2. Run willingness check
    * 3. If should respond, schedule a response
    */
-  async receive(input: CanonicalChannelInput | ChannelEvent): Promise<void> {
-    const event = normalizeChannelRuntimeInput(input);
+  async receive(input: ChannelInput): Promise<void> {
+    if (input.kind !== "channel_message") {
+      throw new Error(`Unsupported channel input kind for runtime receive: ${input.kind}`);
+    }
 
-    this.appendInboundMessage(event);
-    const shouldRespond = await this.shouldRespondNow(event);
-    this.receiveWriteback(event, shouldRespond);
+    this.appendInboundMessage(input);
+    const shouldRespond = await this.shouldRespondNow(input);
+    this.receiveWriteback(input, shouldRespond);
   }
 
-  private appendInboundMessage(event: CanonicalChannelMessageInput): void {
+  private appendInboundMessage(event: ChannelMessageInput): void {
     // receive
     // Always append the canonical channel_message before making turn decisions.
     this.logger.debug(
@@ -298,7 +295,7 @@ export class ChannelRuntime {
     });
   }
 
-  private async shouldRespondNow(event: CanonicalChannelMessageInput): Promise<boolean> {
+  private async shouldRespondNow(event: ChannelMessageInput): Promise<boolean> {
     // shouldRespond
     // Decide after the inbound message has already become canonical session truth.
     const selfId = this.bot?.selfId ?? "";
@@ -331,7 +328,7 @@ export class ChannelRuntime {
     return willingness.shouldRespond;
   }
 
-  private receiveWriteback(event: CanonicalChannelMessageInput, shouldRespond: boolean): void {
+  private receiveWriteback(event: ChannelMessageInput, shouldRespond: boolean): void {
     // writeback
     // Fan the receive-stage decision into immediate idle, a queued follow-up, or a new run.
     if (!shouldRespond) {
@@ -437,7 +434,7 @@ export class ChannelRuntime {
     });
   }
 
-  private getLatestChannelMessageInput(): CanonicalChannelMessageInput | undefined {
+  private getLatestChannelMessageInput(): ChannelMessageInput | undefined {
     const timeline = this.session.getTimeline();
     for (let i = timeline.length - 1; i >= 0; i--) {
       const record = timeline[i];
@@ -451,7 +448,7 @@ export class ChannelRuntime {
 
   private createToolRuntime(
     turnSettings: ChannelRuntimeTurnSettingsSnapshot,
-    latestInput: CanonicalChannelMessageInput | undefined,
+    latestInput: ChannelMessageInput | undefined,
   ) {
     return {
       channelKey: this.getChannelKey(),
@@ -516,18 +513,16 @@ export class ChannelRuntime {
     const modelMessages = this.buildRuntimeMessages(instructions, options.protocolRetry);
 
     const latestInput = this.getLatestChannelMessageInput();
-    const pluginToolDefinitions = getRegisteredPluginToolDefinitions(options.ctx);
-    const toolAssembly = await buildToolAssembly({
+    const pluginService = options.ctx["yesimbot.plugin"] as IPluginService | undefined;
+    if (!pluginService?.assembleTools) {
+      throw new Error("PluginService assembleTools() unavailable for runtime tool assembly");
+    }
+
+    const toolAssembly = await pluginService.assembleTools({
       runtime: this.createToolRuntime(options.turnSettings, latestInput),
       hostInput: latestInput,
-      pluginToolDefinitions,
-      workspaceToolDefinitions: await buildWorkspaceToolDefinitions({
-        basePath: options.basePath,
-        settingsManager: options.settingsManager,
-        logger: options.logger,
-      }),
+      scope: this.getChannelKey(),
       toolSettings: options.settingsManager.getToolSettings?.(),
-      contextFactories: buildToolContextFactories(pluginToolDefinitions),
       sendMessageTool: createSendMessageTool({
         bot: options.bot,
         channelId: options.channelId,
@@ -715,7 +710,7 @@ export class ChannelRuntime {
         endReason: ResponseStatusReason;
         hasPendingFollowUp: boolean;
         thrownError?: string;
-      }): RuntimeNextActionSelection {
+      }): NextActionSelection {
         if (input.endReason === "timeout") {
           return {
             nextAction: "blocked",
@@ -1011,114 +1006,6 @@ function isAbortLikeThrownError(message: string): boolean {
 
 function isTimeoutLikeThrownError(message: string): boolean {
   return /\btime(?:d)?\s*out\b/i.test(message);
-}
-
-function getRegisteredPluginToolDefinitions(ctx: Context): RegisteredToolDefinition[] {
-  const pluginService = ctx["yesimbot.plugin"] as
-    | {
-        getToolDefinitions?: () => RegisteredToolDefinition[];
-        getToolSet?: () => ToolSet;
-      }
-    | undefined;
-
-  if (typeof pluginService?.getToolDefinitions === "function") {
-    return pluginService.getToolDefinitions();
-  }
-
-  if (typeof pluginService?.getToolSet === "function") {
-    return Object.entries(pluginService.getToolSet()).map(([name, tool]) => ({
-      pluginName: "legacy-plugin-service",
-      name,
-      definition: {
-        name,
-        description: tool.description ?? name,
-        inputSchema: tool.inputSchema,
-        isSupported: () => true,
-        isAllowed: ({ enabledTools }) => enabledTools.includes(name),
-        execute: async (input, executionOptions) => {
-          if (!tool.execute) {
-            throw new Error(`Tool is not executable: ${name}`);
-          }
-
-          return await tool.execute(input, executionOptions);
-        },
-      },
-      tool,
-    }));
-  }
-
-  return [];
-}
-
-function buildToolContextFactories(
-  definitions: RegisteredToolDefinition[],
-): Record<
-  string,
-  (hostInput: unknown, runtime: ToolRuntime) => Record<string, unknown> | undefined
-> {
-  const grouped = new Map<
-    string,
-    Array<(hostInput: unknown, runtime: ToolRuntime) => Record<string, unknown> | undefined>
-  >();
-
-  for (const definition of definitions) {
-    if (!definition.definition.buildExtensionContext) {
-      continue;
-    }
-
-    const existing = grouped.get(definition.pluginName) ?? [];
-    existing.push(definition.definition.buildExtensionContext);
-    grouped.set(definition.pluginName, existing);
-  }
-
-  return Object.fromEntries(
-    [...grouped.entries()].map(([pluginName, factories]) => [
-      pluginName,
-      (hostInput: unknown, runtime: ToolRuntime) => {
-        const merged: Record<string, unknown> = {};
-
-        for (const factory of factories) {
-          const value = factory(hostInput, runtime);
-          if (value !== undefined) {
-            Object.assign(merged, value);
-          }
-        }
-
-        return Object.keys(merged).length > 0 ? merged : undefined;
-      },
-    ]),
-  );
-}
-
-function normalizeChannelRuntimeInput(
-  input: CanonicalChannelInput | ChannelEvent,
-): CanonicalChannelMessageInput {
-  if ("kind" in input) {
-    if (input.kind !== "channel_message") {
-      throw new Error(`Unsupported canonical input kind for runtime receive: ${input.kind}`);
-    }
-
-    return input;
-  }
-
-  return {
-    kind: "channel_message",
-    platform: input.platform,
-    channelId: input.channelId,
-    messageId: input.messageId,
-    timestamp: input.timestamp,
-    content: input.content,
-    sender: {
-      userId: input.userId,
-      username: input.username,
-      nickname: input.nickname,
-      identity: input.identity,
-    },
-    isDirect: input.isDirect,
-    atSelf: input.atSelf,
-    isReplyToBot: input.isReplyToBot,
-    replyTo: input.replyTo,
-  };
 }
 
 function createRuntimeRecordId(): string {

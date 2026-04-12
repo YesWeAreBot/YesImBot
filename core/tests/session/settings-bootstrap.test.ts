@@ -144,7 +144,7 @@ afterEach(() => {
 });
 
 describe("AgentSessionService settings bootstrap", () => {
-  it("scaffolds prompt files without auto-creating settings.json", () => {
+  it("scaffolds prompt files without auto-creating settings.json", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "athena-settings-bootstrap-"));
     tempDirs.push(tempDir);
 
@@ -153,7 +153,7 @@ describe("AgentSessionService settings bootstrap", () => {
       basePath: "athena",
     });
 
-    service.getOrCreateAgent("discord", "channel-1", createBotMock());
+    await service.getOrCreateAgent("discord", "channel-1", createBotMock());
 
     const globalRoot = join(tempDir, "athena");
     const channelDir = join(globalRoot, "discord-channel-1");
@@ -177,7 +177,7 @@ describe("AgentSessionService settings bootstrap", () => {
     expect(readFileSync(workspaceAgentsPath, "utf8")).toBe(readFileSync(globalAgentsPath, "utf8"));
   });
 
-  it("does not overwrite existing workspace files", () => {
+  it("does not overwrite existing workspace files", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "athena-settings-no-overwrite-"));
     tempDirs.push(tempDir);
 
@@ -195,7 +195,7 @@ describe("AgentSessionService settings bootstrap", () => {
       basePath: "athena",
     });
 
-    service.getOrCreateAgent("discord", "channel-1", createBotMock());
+    await service.getOrCreateAgent("discord", "channel-1", createBotMock());
 
     expect(readFileSync(join(channelDir, "settings.json"), "utf8")).toBe(
       JSON.stringify({ useGlobal: false }),
@@ -204,7 +204,7 @@ describe("AgentSessionService settings bootstrap", () => {
     expect(readFileSync(join(workspaceDir, "AGENTS.md"), "utf8")).toBe("workspace agents\n");
   });
 
-  it("exposes resolved settings through the channel settings manager", () => {
+  it("exposes resolved settings through the channel settings manager", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "athena-settings-options-"));
     tempDirs.push(tempDir);
 
@@ -265,7 +265,7 @@ describe("AgentSessionService settings bootstrap", () => {
       maxSteps: 3,
     });
 
-    const agent = service.getOrCreateAgent("discord", "channel-1", createBotMock());
+    const agent = await service.getOrCreateAgent("discord", "channel-1", createBotMock());
     const settingsManager = agent.getSettingsManager();
 
     expect(settingsManager.getModel()).toBe("global-model");
@@ -274,7 +274,7 @@ describe("AgentSessionService settings bootstrap", () => {
     expect(settingsManager.getResponseSettings()?.maxSteps).toBe(5);
   });
 
-  it("ignores deprecated useGlobal and still applies global plus workspace overrides", () => {
+  it("ignores deprecated useGlobal and still applies global plus workspace overrides", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "athena-settings-use-global-false-"));
     tempDirs.push(tempDir);
 
@@ -301,7 +301,7 @@ describe("AgentSessionService settings bootstrap", () => {
       maxSteps: 2,
     });
 
-    const agent = service.getOrCreateAgent("discord", "channel-1", createBotMock());
+    const agent = await service.getOrCreateAgent("discord", "channel-1", createBotMock());
     const settingsManager = agent.getSettingsManager();
 
     expect(settingsManager.getModel()).toBe("global-model");
@@ -325,7 +325,7 @@ describe("AgentSessionService settings bootstrap", () => {
       basePath: "athena",
     });
 
-    const agent = service.getOrCreateAgent("discord", "channel-1", createBotMock());
+    const agent = await service.getOrCreateAgent("discord", "channel-1", createBotMock());
     const channelDir = join(tempDir, "athena", "discord-channel-1");
     const loader = new DefaultSessionResourceLoader({
       channelDir,
@@ -356,7 +356,7 @@ describe("AgentSessionService settings bootstrap", () => {
     expect(loader.getSystemPrompt()).toBe(firstBuiltIn);
   });
 
-  it("loads configured attached instruction files from settings", () => {
+  it("loads configured attached instruction files from settings", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "athena-settings-custom-resource-files-"));
     tempDirs.push(tempDir);
 
@@ -377,7 +377,7 @@ describe("AgentSessionService settings bootstrap", () => {
       basePath: "athena",
     });
 
-    const agent = service.getOrCreateAgent("discord", "channel-1", createBotMock());
+    const agent = await service.getOrCreateAgent("discord", "channel-1", createBotMock());
     const loader = new DefaultSessionResourceLoader({
       channelDir: join(tempDir, "athena", "discord-channel-1"),
       settingsManager: agent.getSettingsManager(),
@@ -393,7 +393,7 @@ describe("AgentSessionService settings bootstrap", () => {
     expect(prompt).not.toContain("<system-reminder");
   });
 
-  it("allows promptResourceFilenames override to take precedence over settings", () => {
+  it("allows promptResourceFilenames override to take precedence over settings", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "athena-settings-resource-override-"));
     tempDirs.push(tempDir);
 
@@ -414,7 +414,7 @@ describe("AgentSessionService settings bootstrap", () => {
       basePath: "athena",
     });
 
-    const agent = service.getOrCreateAgent("discord", "channel-1", createBotMock());
+    const agent = await service.getOrCreateAgent("discord", "channel-1", createBotMock());
     const loader = new DefaultSessionResourceLoader({
       channelDir: join(tempDir, "athena", "discord-channel-1"),
       settingsManager: agent.getSettingsManager(),
@@ -431,7 +431,7 @@ describe("AgentSessionService settings bootstrap", () => {
     expect(prompt).not.toContain("<system-reminder");
   });
 
-  it("loads configured attached instruction files in deterministic order", () => {
+  it("loads configured attached instruction files in deterministic order", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "athena-settings-attached-files-"));
     tempDirs.push(tempDir);
 
@@ -462,7 +462,7 @@ describe("AgentSessionService settings bootstrap", () => {
       model: "model-a",
       basePath: "athena",
     });
-    const agent = service.getOrCreateAgent("discord", "channel-1", createBotMock());
+    const agent = await service.getOrCreateAgent("discord", "channel-1", createBotMock());
     const loader = new DefaultSessionResourceLoader({
       channelDir,
       settingsManager: agent.getSettingsManager(),
@@ -482,7 +482,7 @@ describe("AgentSessionService settings bootstrap", () => {
     expect(prompt).not.toContain("<system-reminder");
   });
 
-  it("supports overriding built-in instructions and loaded resources", () => {
+  it("supports overriding built-in instructions and loaded resources", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "athena-settings-loader-overrides-"));
     tempDirs.push(tempDir);
 
@@ -495,7 +495,7 @@ describe("AgentSessionService settings bootstrap", () => {
     mkdirSync(workspaceDir, { recursive: true });
     writeFileSync(join(workspaceDir, "SOUL.md"), "workspace soul\n", "utf8");
 
-    const agent = service.getOrCreateAgent("discord", "channel-1", createBotMock());
+    const agent = await service.getOrCreateAgent("discord", "channel-1", createBotMock());
     const loader = new DefaultSessionResourceLoader({
       channelDir,
       settingsManager: agent.getSettingsManager(),

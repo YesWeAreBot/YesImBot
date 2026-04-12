@@ -1,7 +1,7 @@
 import type { Context } from "koishi";
 
 import { callLLMJudge, type JudgeResult } from "./llm-judge";
-import type { WillingnessResult } from "./types";
+import type { WillingnessResult } from "./types/index";
 
 export interface WillingnessJudgeParams {
   isDirect: boolean;

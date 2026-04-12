@@ -1,20 +1,24 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  renderInboundChannelMessage,
+  formatChannelMessageInput,
   summarizeReplyContent,
 } from "../../src/services/session/channel-message";
 
 describe("channel message formatter", () => {
   it("exact structured header labels", () => {
-    const rendered = renderInboundChannelMessage({
+    const rendered = formatChannelMessageInput({
+      kind: "channel_message",
       timestamp: Date.UTC(2026, 2, 31, 12, 0, 0),
       platform: "discord",
       channelId: "general",
-      userId: "u-1",
-      username: "alice",
-      nickname: "Ali",
-      identity: "member",
+      messageId: "msg-1",
+      sender: {
+        userId: "u-1",
+        username: "alice",
+        nickname: "Ali",
+        identity: "member",
+      },
       isDirect: false,
       atSelf: true,
       isReplyToBot: false,
@@ -28,12 +32,16 @@ describe("channel message formatter", () => {
   });
 
   it("falls back nickname and identity", () => {
-    const rendered = renderInboundChannelMessage({
+    const rendered = formatChannelMessageInput({
+      kind: "channel_message",
       timestamp: Date.UTC(2026, 2, 31, 12, 0, 0),
       platform: "discord",
       channelId: "general",
-      userId: "u-1",
-      username: "alice",
+      messageId: "msg-1",
+      sender: {
+        userId: "u-1",
+        username: "alice",
+      },
       isDirect: false,
       atSelf: false,
       isReplyToBot: false,
@@ -54,12 +62,16 @@ describe("channel message formatter", () => {
   });
 
   it("keeps body outside header after one blank line", () => {
-    const rendered = renderInboundChannelMessage({
+    const rendered = formatChannelMessageInput({
+      kind: "channel_message",
       timestamp: Date.UTC(2026, 2, 31, 12, 0, 0),
       platform: "discord",
       channelId: "general",
-      userId: "u-1",
-      username: "alice",
+      messageId: "msg-1",
+      sender: {
+        userId: "u-1",
+        username: "alice",
+      },
       isDirect: false,
       atSelf: false,
       isReplyToBot: true,

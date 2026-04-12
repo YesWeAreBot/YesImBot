@@ -1,4 +1,4 @@
-import type { TimelineRecord } from "../contracts";
+import type { TimelineRecord } from "../types/index";
 
 export interface CompactionSettings {
   enabled: boolean;

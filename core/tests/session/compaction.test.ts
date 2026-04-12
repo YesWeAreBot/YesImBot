@@ -10,7 +10,7 @@ import {
   shouldCompact,
 } from "../../src/services/session/compaction/index.ts";
 import { serializeTimelineForCompaction } from "../../src/services/session/compaction/serialize";
-import type { TimelineRecord } from "../../src/services/session/contracts";
+import type { TimelineRecord } from "../../src/services/session/types/index";
 import {
   AgentAssistantMessage,
   AgentCustomMessage,

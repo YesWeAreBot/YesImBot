@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { TimelineRecord } from "../../../src/services/session/contracts";
+import type { TimelineRecord } from "../../../src/services/session/types/index";
 import {
   materializeTimeline,
   materializeTimelineRecord,

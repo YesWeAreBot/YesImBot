@@ -1,4 +1,4 @@
-import type { TimelineRecord } from "../contracts";
+import type { TimelineRecord } from "../types/index";
 import type { CutPointResult } from "./types";
 
 function charsToTokens(chars: number): number {

@@ -10,7 +10,7 @@ import {
   type SendMessageResult,
 } from "../../src/services/session/runtime";
 import { SessionManager } from "../../src/services/session/session-manager";
-import type { ChannelEvent } from "../../src/services/session/types";
+import type { ChannelMessageInput } from "../../src/services/session/types/index";
 import { createTestSettingsManager } from "./test-settings-manager";
 
 type GenerateInput = {
@@ -72,6 +72,27 @@ function createContextMock(toolSet: Record<string, unknown> = {}) {
     },
     "yesimbot.plugin": {
       getToolSet: vi.fn(() => toolSet),
+      getToolDefinitions: vi.fn(() => []),
+      assembleTools: vi.fn(async (request: {
+        sendMessageTool?: Record<string, unknown>;
+        toolSettings?: { enabled?: string[] };
+      }) => {
+        const supportedTools = {
+          ...(request.sendMessageTool ? { send_message: request.sendMessageTool } : {}),
+          ...toolSet,
+        };
+        const enabled = new Set(request.toolSettings?.enabled ?? Object.keys(supportedTools));
+        const activeTools = Object.fromEntries(
+          Object.entries(supportedTools).filter(([name]) => enabled.has(name)),
+        );
+
+        return {
+          supportedTools,
+          activeTools,
+          experimentalContext: {},
+          signature: JSON.stringify(Object.keys(supportedTools).sort()),
+        };
+      }),
     },
   };
 }
@@ -83,26 +104,30 @@ function createBotMock() {
   };
 }
 
-function createEvent(overrides: Partial<ChannelEvent> = {}): ChannelEvent {
+function createChannelMessageInput(
+  overrides: Partial<ChannelMessageInput> = {},
+): ChannelMessageInput {
   return {
+    kind: "channel_message",
     platform: "discord",
     channelId: "channel-1",
-    userId: "user-1",
-    username: "alice",
+    sender: {
+      userId: "user-1",
+      username: "alice",
+    },
     content: "@bot hello",
     isDirect: true,
     atSelf: false,
     isReplyToBot: false,
     messageId: `msg-${Math.random().toString(16).slice(2)}`,
     timestamp: Date.now(),
-    elements: [],
     ...overrides,
   };
 }
 
-function createBurstEvents(messageIds: string[]): ChannelEvent[] {
+function createBurstChannelMessageInputs(messageIds: string[]): ChannelMessageInput[] {
   return messageIds.map((messageId, index) =>
-    createEvent({
+    createChannelMessageInput({
       isDirect: true,
       messageId,
       timestamp: 2000 + index,
@@ -276,7 +301,7 @@ describe("ChannelRuntime protocol", () => {
         });
       });
 
-    await agent.receive(createEvent({ messageId: "msg-protocol-retry" }));
+    await agent.receive(createChannelMessageInput({ messageId: "msg-protocol-retry" }));
 
     await vi.waitFor(() => {
       expect(generateMock).toHaveBeenCalledTimes(2);
@@ -403,7 +428,7 @@ describe("ChannelRuntime protocol", () => {
       });
     });
 
-    await agent.receive(createEvent({ messageId: "msg-stop-after-send" }));
+    await agent.receive(createChannelMessageInput({ messageId: "msg-stop-after-send" }));
 
     await vi.waitFor(() => {
       expect(toolLoopAgentCtorMock).toHaveBeenCalledTimes(1);
@@ -484,7 +509,7 @@ describe("ChannelRuntime protocol", () => {
     });
 
     await agent.receive(
-      createEvent({ messageId: "msg-stop-after-send-missing-step-tool-results" }),
+      createChannelMessageInput({ messageId: "msg-stop-after-send-missing-step-tool-results" }),
     );
 
     await vi.waitFor(() => {
@@ -551,7 +576,7 @@ describe("ChannelRuntime protocol", () => {
       });
     });
 
-    await agent.receive(createEvent({ messageId: "msg-heartbeat-after-send" }));
+    await agent.receive(createChannelMessageInput({ messageId: "msg-heartbeat-after-send" }));
 
     await vi.waitFor(() => {
       const responseStatus = findLatestResponseStatusNotice(sessionManager);
@@ -565,12 +590,9 @@ describe("ChannelRuntime protocol", () => {
 
   it("reserved send_message tool collision persists exception", async () => {
     const sessionManager = SessionManager.inMemory("discord:channel-1");
-    const context = createContextMock({
-      send_message: {
-        description: "plugin send",
-        inputSchema: {},
-        execute: async () => ({ ok: true }),
-      },
+    const context = createContextMock();
+    context["yesimbot.plugin"].assembleTools.mockImplementationOnce(async () => {
+      throw new Error("Tool name reserved: send_message");
     });
     const bot = createBotMock();
     const agent = new ChannelRuntime(context as never, {
@@ -584,7 +606,7 @@ describe("ChannelRuntime protocol", () => {
 
     generateMock.mockResolvedValueOnce();
 
-    await agent.receive(createEvent({ messageId: "msg-reserved" }));
+    await agent.receive(createChannelMessageInput({ messageId: "msg-reserved" }));
 
     await vi.waitFor(() => {
       const responseStatus = findLatestResponseStatusNotice(sessionManager);
@@ -641,7 +663,7 @@ describe("ChannelRuntime protocol", () => {
       });
     });
 
-    await agent.receive(createEvent({ messageId: "msg-project" }));
+    await agent.receive(createChannelMessageInput({ messageId: "msg-project" }));
 
     await vi.waitFor(() => {
       const channelMessages = sessionManager
@@ -736,7 +758,7 @@ describe("ChannelRuntime protocol", () => {
       options?.onStepFinish?.(replayedStep);
     });
 
-    await agent.receive(createEvent({ messageId: "msg-replay" }));
+    await agent.receive(createChannelMessageInput({ messageId: "msg-replay" }));
 
     await vi.waitFor(() => {
       const toolMessages = sessionManager
@@ -782,7 +804,7 @@ describe("ChannelRuntime protocol", () => {
     });
     generateMock.mockResolvedValueOnce();
 
-    const [firstEvent, secondEvent, thirdEvent] = createBurstEvents([
+    const [firstEvent, secondEvent, thirdEvent] = createBurstChannelMessageInputs([
       "msg-protocol-burst-1",
       "msg-protocol-burst-2",
       "msg-protocol-burst-3",

@@ -79,8 +79,8 @@ describe("SettingsManager", () => {
     }
   });
 
-  it("replaces arrays instead of concatenating", async () => {
-    const paths = createTestPaths("athena-settings-array-replace-");
+  it("ignores extracted workspace array overrides", async () => {
+    const paths = createTestPaths("athena-settings-ignore-workspace-array-");
     try {
       writeFileSync(
         paths.globalSettingsPath,
@@ -107,11 +107,21 @@ describe("SettingsManager", () => {
         workspaceSettingsPath: paths.workspaceSettingsPath,
       });
 
-      expect(manager.resolveSettings()).toEqual({
-        workspace: {
-          externalPath: ["/local-only"],
-        },
-      });
+      expect(manager.resolveSettings()).toEqual({});
+      expect(manager.getReloadMetadata().issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: "unknown-key",
+            path: "workspace",
+            scope: "global",
+          }),
+          expect.objectContaining({
+            code: "unknown-key",
+            path: "workspace",
+            scope: "workspace",
+          }),
+        ]),
+      );
     } finally {
       await rm(paths.rootDir, { recursive: true, force: true });
     }
@@ -281,6 +291,72 @@ describe("SettingsManager", () => {
           }),
         ]),
       );
+    } finally {
+      await rm(paths.rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects workspace override keys after extraction", async () => {
+    const paths = createTestPaths("athena-settings-reject-workspace-overrides-");
+    try {
+      writeFileSync(
+        paths.workspaceSettingsPath,
+        JSON.stringify({
+          workspace: {
+            enableWorkspace: false,
+          },
+        }),
+        "utf8",
+      );
+
+      const manager = new SettingsManager({
+        globalSettingsPath: paths.globalSettingsPath,
+        workspaceSettingsPath: paths.workspaceSettingsPath,
+      });
+
+      expect(manager.resolveSettings()).toEqual({});
+      expect(manager.getReloadMetadata().issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: "unknown-key",
+            path: "workspace",
+            scope: "workspace",
+          }),
+        ]),
+      );
+    } finally {
+      await rm(paths.rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns raw workspace plugin settings through the compatibility bridge", async () => {
+    const paths = createTestPaths("athena-settings-workspace-bridge-");
+    try {
+      writeFileSync(
+        paths.workspaceSettingsPath,
+        JSON.stringify({
+          workspace: {
+            enableWorkspace: false,
+            enableSandbox: true,
+            externalPath: ["/tmp/external"],
+            skills: ["/skills"],
+          },
+        }),
+        "utf8",
+      );
+
+      const manager = new SettingsManager({
+        globalSettingsPath: paths.globalSettingsPath,
+        workspaceSettingsPath: paths.workspaceSettingsPath,
+      });
+
+      expect(manager.resolveSettings()).toEqual({});
+      expect(manager.getWorkspaceSettings()).toEqual({
+        enableWorkspace: false,
+        enableSandbox: true,
+        externalPath: ["/tmp/external"],
+        skills: ["/skills"],
+      });
     } finally {
       await rm(paths.rootDir, { recursive: true, force: true });
     }

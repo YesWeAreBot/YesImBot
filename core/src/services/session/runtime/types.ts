@@ -3,7 +3,7 @@ import type { Bot, Context, Logger } from "koishi";
 
 import type { SessionManager } from "../session-manager";
 import { SettingsReloadMetadata } from "../settings-manager";
-import type { RuntimeNextAction } from "../types";
+import type { NextAction } from "../types/index";
 import type { WillingnessJudge } from "../willingness";
 
 export interface ChannelRuntimeSettingsManager {
@@ -83,8 +83,8 @@ export interface MergedFollowUpOpportunity {
   messageIds: string[];
 }
 
-export interface RuntimeNextActionSelection {
-  nextAction: RuntimeNextAction;
+export interface NextActionSelection {
+  nextAction: NextAction;
   blockedReason?: string;
 }
 

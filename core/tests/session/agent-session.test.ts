@@ -3,14 +3,14 @@ import { describe, expect, it } from "vitest";
 import { AgentSession } from "../../src/services/session/agent-session";
 import type {
   AssistantMessageRecord,
+  ChannelKey,
   ChannelEventRecord,
   ChannelMessageRecord,
   StateChangeRecord,
   SystemNoticeRecord,
   ToolMessageRecord,
-} from "../../src/services/session/contracts";
+} from "../../src/services/session/types/index";
 import { SessionManager } from "../../src/services/session/session-manager";
-import type { ChannelKey } from "../../src/services/session/types";
 
 const channelKey: ChannelKey = "discord:channel-1";
 

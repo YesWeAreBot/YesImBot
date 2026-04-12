@@ -6,7 +6,7 @@ import { materializeTimeline } from "../../src/services/session/materialize";
 import { buildGenerateInputForTest, ChannelRuntime } from "../../src/services/session/runtime";
 import { SessionManager } from "../../src/services/session/session-manager";
 import type { AthenaSessionSettings } from "../../src/services/session/settings-manager";
-import type { ChannelEvent } from "../../src/services/session/types";
+import type { ChannelMessageInput } from "../../src/services/session/types/index";
 import { createTestSettingsManager } from "./test-settings-manager";
 
 type GenerateInput = {
@@ -97,6 +97,27 @@ function createContextMock() {
       })),
       resolve: vi.fn((modelId: string) => ({ provider: "test", modelId })),
     },
+    "yesimbot.plugin": {
+      assembleTools: vi.fn(async (request: {
+        sendMessageTool?: Record<string, unknown>;
+        toolSettings?: { enabled?: string[] };
+      }) => {
+        const sendMessageTool = request.sendMessageTool;
+        const supportedTools = sendMessageTool ? { send_message: sendMessageTool } : {};
+        const activeTools =
+          sendMessageTool && (request.toolSettings?.enabled?.includes("send_message") ?? true)
+            ? { send_message: sendMessageTool }
+            : {};
+
+        return {
+          supportedTools,
+          activeTools,
+          experimentalContext: {},
+          signature: JSON.stringify(Object.keys(supportedTools).sort()),
+        };
+      }),
+      getToolDefinitions: vi.fn(() => []),
+    },
   };
 }
 
@@ -107,19 +128,23 @@ function createBotMock(selfId = "bot-self") {
   };
 }
 
-function createEvent(overrides: Partial<ChannelEvent> = {}): ChannelEvent {
+function createChannelMessageInput(
+  overrides: Partial<ChannelMessageInput> = {},
+): ChannelMessageInput {
   return {
+    kind: "channel_message",
     platform: "discord",
     channelId: "channel-1",
-    userId: "user-1",
-    username: "alice",
+    sender: {
+      userId: "user-1",
+      username: "alice",
+    },
     content: "@bot hello",
     isDirect: true,
     atSelf: false,
     isReplyToBot: false,
     messageId: `msg-${Math.random().toString(16).slice(2)}`,
     timestamp: Date.now(),
-    elements: [],
     ...overrides,
   };
 }
@@ -220,7 +245,7 @@ describe("ChannelRuntime compaction integration", () => {
     });
 
     setupGenerateToFinish(90000);
-    await agent.receive(createEvent({ messageId: "msg-trigger" }));
+    await agent.receive(createChannelMessageInput({ messageId: "msg-trigger" }));
 
     await vi.waitFor(() => {
       expect(appendCompactionSpy).toHaveBeenCalledWith("summary text", "keep-1", 90000);
@@ -241,7 +266,7 @@ describe("ChannelRuntime compaction integration", () => {
     const appendCompactionSpy = vi.spyOn(sessionManager, "appendCompaction");
 
     setupGenerateToFinish(10000);
-    await agent.receive(createEvent({ messageId: "msg-no-trigger" }));
+    await agent.receive(createChannelMessageInput({ messageId: "msg-no-trigger" }));
 
     await vi.waitFor(() => {
       expect(agent.getResponseState()).toBe("idle");
@@ -254,7 +279,7 @@ describe("ChannelRuntime compaction integration", () => {
     const appendCompactionSpy = vi.spyOn(sessionManager, "appendCompaction");
 
     setupGenerateToFinish(90000);
-    await agent.receive(createEvent({ messageId: "msg-disabled" }));
+    await agent.receive(createChannelMessageInput({ messageId: "msg-disabled" }));
 
     await vi.waitFor(() => {
       expect(agent.getResponseState()).toBe("idle");
@@ -280,7 +305,7 @@ describe("ChannelRuntime compaction integration", () => {
     compactMock.mockRejectedValue(new Error("compaction exploded"));
 
     setupGenerateToFinish(90000);
-    await agent.receive(createEvent({ messageId: "msg-error" }));
+    await agent.receive(createChannelMessageInput({ messageId: "msg-error" }));
 
     await vi.waitFor(() => {
       expect(agent.getResponseState()).toBe("idle");
@@ -321,7 +346,7 @@ describe("ChannelRuntime compaction integration", () => {
     });
 
     setupGenerateToFinishWithoutUsage();
-    await agent.receive(createEvent({ messageId: "msg-missing-usage" }));
+    await agent.receive(createChannelMessageInput({ messageId: "msg-missing-usage" }));
 
     await vi.waitFor(() => {
       expect(appendCompactionSpy).toHaveBeenCalledWith("summary text", "keep-1", 900);
@@ -355,7 +380,7 @@ describe("ChannelRuntime compaction integration", () => {
     });
 
     setupGenerateToFinish(90000);
-    await agent.receive(createEvent({ messageId: "msg-fallback" }));
+    await agent.receive(createChannelMessageInput({ messageId: "msg-fallback" }));
 
     await vi.waitFor(() => {
       expect(latestModelResolveCall(ctx)).toBe("test:model");
@@ -384,7 +409,7 @@ describe("ChannelRuntime compaction integration", () => {
     });
 
     setupGenerateToFinish(90000);
-    await agent.receive(createEvent({ messageId: "msg-model" }));
+    await agent.receive(createChannelMessageInput({ messageId: "msg-model" }));
 
     await vi.waitFor(() => {
       expect(latestModelResolveCall(ctx)).toBe("test:small-model");
@@ -425,7 +450,7 @@ describe("ChannelRuntime compaction integration", () => {
     }));
 
     setupGenerateToFinish(90000);
-    await agent.receive(createEvent({ messageId: "msg-context" }));
+    await agent.receive(createChannelMessageInput({ messageId: "msg-context" }));
 
     await vi.waitFor(() => {
       expect(sessionManager.getEntries().some((entry) => entry.type === "compaction")).toBe(true);

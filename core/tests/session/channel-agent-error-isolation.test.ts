@@ -32,7 +32,10 @@ import {
   normalizeAssistantContent,
 } from "../../src/services/session/runtime";
 import { SessionManager } from "../../src/services/session/session-manager";
-import type { ChannelEvent, ResponseStatusRecord } from "../../src/services/session/types";
+import type {
+  ChannelMessageInput,
+  ResponseStatusRecord,
+} from "../../src/services/session/types/index";
 import { createTestSettingsManager } from "./test-settings-manager";
 
 function createContextMock() {
@@ -76,19 +79,23 @@ function createBotMock() {
   };
 }
 
-function createEvent(overrides: Partial<ChannelEvent> = {}): ChannelEvent {
+function createChannelMessageInput(
+  overrides: Partial<ChannelMessageInput> = {},
+): ChannelMessageInput {
   return {
+    kind: "channel_message",
     platform: "discord",
     channelId: "channel-1",
-    userId: "user-1",
-    username: "alice",
+    sender: {
+      userId: "user-1",
+      username: "alice",
+    },
     content: "hello",
     isDirect: true,
     atSelf: false,
     isReplyToBot: false,
     messageId: "msg-error-1",
     timestamp: Date.now(),
-    elements: [],
     ...overrides,
   };
 }
@@ -216,7 +223,7 @@ describe("ChannelRuntime plugin safety helpers", () => {
 
     generateMock.mockRejectedValueOnce(new Error("transport failed"));
 
-    await agent.receive(createEvent());
+    await agent.receive(createChannelMessageInput());
 
     await vi.waitFor(() => {
       expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("discord:channel-1"));

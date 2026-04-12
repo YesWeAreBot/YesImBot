@@ -4,7 +4,7 @@
 
 import type { ModelMessage, TextPart } from "@ai-sdk/provider-utils";
 
-import type { TimelineRecord } from "../contracts";
+import type { TimelineRecord } from "../types/index";
 import { materializeTimeline, type MaterializeTimelineOptions } from "../materialize";
 import { AgentAssistantContentPart, AgentMessage, ContentPart } from "../session-manager";
 

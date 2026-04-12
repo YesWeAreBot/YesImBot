@@ -21,9 +21,9 @@ import type {
   ChannelMessageRecord,
   TimelineRecord,
   ToolMessageRecord,
-} from "./contracts";
+} from "./types/index";
 import { materializeTimeline } from "./materialize";
-import type { ChannelBootstrapStatus, ChannelKey, ReplyReference } from "./types";
+import type { ChannelBootstrapStatus, ChannelKey, ReplyReference } from "./types/index";
 
 // ============================================================================
 // Session File Version

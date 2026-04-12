@@ -2,14 +2,14 @@ import type { ModelMessage } from "@ai-sdk/provider-utils";
 
 import type {
   AssistantMessageRecord,
-  CanonicalRawPayload,
+  ChannelRawPayload,
   ChannelEventRecord,
   ChannelMessageRecord,
   StateChangeRecord,
   SystemNoticeRecord,
   TimelineRecord,
   ToolMessageRecord,
-} from "./contracts";
+} from "./types/index";
 import { materializeTimeline } from "./materialize";
 import { SessionManager } from "./session-manager";
 
@@ -95,7 +95,7 @@ export class AgentSession {
     return normalizedRecord.id;
   }
 
-  appendStateChange<TData extends CanonicalRawPayload | undefined = undefined>(
+  appendStateChange<TData extends ChannelRawPayload | undefined = undefined>(
     record: Omit<StateChangeRecord<TData>, "kind">,
   ): string {
     const normalizedRecord: StateChangeRecord<TData> = {
@@ -107,7 +107,7 @@ export class AgentSession {
     return normalizedRecord.id;
   }
 
-  appendSystemNotice<TData extends CanonicalRawPayload | undefined = undefined>(
+  appendSystemNotice<TData extends ChannelRawPayload | undefined = undefined>(
     record: Omit<SystemNoticeRecord<TData>, "kind">,
   ): string {
     const normalizedRecord: SystemNoticeRecord<TData> = {

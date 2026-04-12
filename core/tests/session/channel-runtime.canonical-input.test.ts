@@ -25,16 +25,13 @@ vi.mock("koishi", () => {
 import { AgentSession } from "../../src/services/session/agent-session";
 import { serializeTimelineForCompaction } from "../../src/services/session/compaction/serialize";
 import type {
-  CanonicalChannelEventInput,
-  CanonicalChannelMessageInput,
-} from "../../src/services/session/contracts";
+  ChannelInput,
+  ChannelMessageInput,
+} from "../../src/services/session/types/index";
 import { ChannelRuntime } from "../../src/services/session/runtime";
 import { ResponseStepProcessor } from "../../src/services/session/runtime/response-step-processor";
 import { buildRuntimeModelMessages } from "../../src/services/session/runtime/response-step-processor";
-import {
-  AgentSessionService,
-  koishiSessionToCanonicalInput,
-} from "../../src/services/session/service";
+import { AgentSessionService, koishiSessionToChannelInput } from "../../src/services/session/service";
 import { SessionManager } from "../../src/services/session/session-manager";
 import { createTestSettingsManager } from "./test-settings-manager";
 
@@ -48,7 +45,7 @@ function createLoggerMock(): Logger {
   } as unknown as Logger;
 }
 
-function createContextMock(baseDir = "/tmp/athena-canonical-input"): Context {
+function createContextMock(baseDir = "/tmp/athena-channel-input"): Context {
   return {
     baseDir,
     logger: vi.fn(() => createLoggerMock()),
@@ -79,9 +76,9 @@ function createBotMock(selfId = "bot-self"): Bot {
   } as unknown as Bot;
 }
 
-function createCanonicalMessageInput(
-  overrides: Partial<CanonicalChannelMessageInput> = {},
-): CanonicalChannelMessageInput {
+function createChannelMessageInput(
+  overrides: Partial<ChannelMessageInput> = {},
+): ChannelMessageInput {
   return {
     kind: "channel_message",
     platform: "discord",
@@ -102,8 +99,8 @@ function createCanonicalMessageInput(
   };
 }
 
-describe("canonical runtime input wiring", () => {
-  it("normalizes Koishi session into canonical input before scheduling", () => {
+describe("typed runtime input wiring", () => {
+  it("normalizes Koishi session into channel input before scheduling", () => {
     const bot = createBotMock();
     const session = {
       platform: "discord",
@@ -124,7 +121,7 @@ describe("canonical runtime input wiring", () => {
       },
     } as unknown as Session;
 
-    const input = koishiSessionToCanonicalInput(session);
+    const input = koishiSessionToChannelInput(session);
 
     expect(input).toMatchObject({
       kind: "channel_message",
@@ -144,7 +141,7 @@ describe("canonical runtime input wiring", () => {
     expect(input).not.toHaveProperty("elements");
   });
 
-  it("appends canonical channel records instead of formatted channel_message text", async () => {
+  it("appends typed channel records instead of formatted channel_message text", async () => {
     const ctx = createContextMock();
     const sessionManager = SessionManager.inMemory("discord:channel-1");
     const runtime = new ChannelRuntime(ctx, {
@@ -156,12 +153,10 @@ describe("canonical runtime input wiring", () => {
       },
       platform: "discord",
       channelId: "channel-1",
-      basePath: "/tmp/athena-canonical-input",
+      basePath: "/tmp/athena-channel-input",
     });
 
-    await runtime.receive(
-      createCanonicalMessageInput({ isDirect: false, atSelf: false, isReplyToBot: false }),
-    );
+    await runtime.receive(createChannelMessageInput({ isDirect: false, atSelf: false, isReplyToBot: false }));
 
     const timeline = sessionManager.getTimeline();
     expect(timeline[0]).toMatchObject({
@@ -178,17 +173,55 @@ describe("canonical runtime input wiring", () => {
     });
   });
 
-  it("keeps a typed canonical path open for future non-message channel events", async () => {
+  it("routes typed channel_message inputs through service without re-normalizing", async () => {
     const ctx = createContextMock();
     const service = new AgentSessionService(ctx, {
       model: "test:model",
       basePath: "sessions",
     });
-    const receiveSpy = vi.spyOn(service, "getOrCreateAgent").mockReturnValue({
-      receive: vi.fn().mockResolvedValue(undefined),
+    const agentReceive = vi.fn().mockResolvedValue(undefined);
+    const getOrCreateAgentSpy = vi.spyOn(service, "getOrCreateAgent").mockReturnValue({
+      receive: agentReceive,
     } as unknown as ChannelRuntime);
 
-    const futureEvent: CanonicalChannelEventInput = {
+    const channelMessageInput: ChannelMessageInput = {
+      kind: "channel_message",
+      platform: "discord",
+      channelId: "channel-1",
+      messageId: "msg-1",
+      timestamp: Date.now(),
+      content: "typed service input",
+      sender: {
+        userId: "user-2",
+        username: "bob",
+      },
+      isDirect: false,
+      atSelf: false,
+      isReplyToBot: false,
+    };
+
+    await service.receive(channelMessageInput);
+
+    expect(getOrCreateAgentSpy).toHaveBeenCalledWith("discord", "channel-1", undefined);
+    expect(agentReceive).toHaveBeenCalledWith(channelMessageInput);
+  });
+
+  it("rejects non-message channel inputs at the runtime seam with typed kind branching", async () => {
+    const ctx = createContextMock();
+    const sessionManager = SessionManager.inMemory("discord:channel-1");
+    const runtime = new ChannelRuntime(ctx, {
+      bot: createBotMock(),
+      sessionManager,
+      settingsManager: createTestSettingsManager(),
+      willingnessJudge: {
+        judge: vi.fn().mockResolvedValue({ shouldRespond: false, reason: "no_trigger" }),
+      },
+      platform: "discord",
+      channelId: "channel-1",
+      basePath: "/tmp/athena-channel-input",
+    });
+
+    const input: ChannelInput = {
       kind: "channel_event",
       platform: "discord",
       channelId: "channel-1",
@@ -198,12 +231,12 @@ describe("canonical runtime input wiring", () => {
       sourceUserId: "user-2",
     };
 
-    await service.receive(futureEvent);
-
-    expect(receiveSpy).toHaveBeenCalledWith("discord", "channel-1", undefined);
+    await expect(runtime.receive(input)).rejects.toThrow(
+      "Unsupported channel input kind for runtime receive: channel_event",
+    );
   });
 
-  it("aligns assistant/tool role alignment to canonical first-class records", () => {
+  it("aligns assistant/tool role alignment to typed first-class records", () => {
     const sessionManager = SessionManager.inMemory("discord:channel-1");
     const processor = new ResponseStepProcessor({
       session: new AgentSession(sessionManager),
@@ -249,7 +282,7 @@ describe("canonical runtime input wiring", () => {
     );
   });
 
-  it("materializes canonical records into model messages for runtime context", () => {
+  it("materializes typed records into model messages for runtime context", () => {
     const sessionManager = SessionManager.inMemory("discord:channel-1");
     const session = new AgentSession(sessionManager);
 
@@ -259,7 +292,7 @@ describe("canonical runtime input wiring", () => {
       stage: "ingress",
       visibility: "model",
       materialization: "default",
-      message: createCanonicalMessageInput({ messageId: "msg-runtime-1" }),
+      message: createChannelMessageInput({ messageId: "msg-runtime-1" }),
     });
     session.appendSystemNotice({
       id: "notice-hidden-1",
@@ -288,7 +321,7 @@ describe("canonical runtime input wiring", () => {
       stage: "ingress",
       visibility: "model",
       materialization: "default",
-      message: createCanonicalMessageInput({ messageId: "msg-compaction-1" }),
+      message: createChannelMessageInput({ messageId: "msg-compaction-1" }),
     });
     session.appendSystemNotice({
       id: "notice-hidden-2",

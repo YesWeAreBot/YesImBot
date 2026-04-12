@@ -1,5 +1,5 @@
 {
-  "name": "@yesimbot/plugin-sdk",
+  "name": "koishi-plugin-yesimbot-workspace",
   "version": "0.1.0-beta.1",
   "files": [
     "dist"
@@ -13,11 +13,6 @@
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
     },
-    "./tools": {
-      "types": "./dist/tools/index.d.ts",
-      "import": "./dist/tools/index.js",
-      "require": "./dist/tools/index.cjs"
-    },
     "./package.json": "./package.json"
   },
   "publishConfig": {
@@ -29,16 +24,21 @@
     "clean": "rimraf dist && rimraf tsconfig.tsbuildinfo",
     "fmt": "oxfmt",
     "lint": "oxlint",
+    "pub": "yarn npm publish --access public",
     "typecheck": "tsc --noEmit && echo 'TypeScript typecheck passed!'"
   },
-  "dependencies": {
-    "@ai-sdk/provider-utils": "^4.0.21"
-  },
   "devDependencies": {
-    "koishi": "^4.18.3"
+    "@yesimbot/plugin-sdk": "workspace:^",
+    "koishi": "^4.18.10"
   },
   "peerDependencies": {
-    "koishi": "^4.18.3",
-    "zod": "^3.25.76 || ^4.1.8"
+    "@yesimbot/plugin-sdk": "workspace:^",
+    "koishi": "^4.18.10"
+  },
+  "koishi": {
+    "description": {
+      "zh": "工作区工具插件",
+      "en": "Workspace tools plugin"
+    }
   }
 }

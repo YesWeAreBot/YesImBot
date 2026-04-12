@@ -5,7 +5,7 @@ import { ChannelRuntime } from "../../src/services/session/runtime";
 import type { ChannelRuntimeSettingsManager } from "../../src/services/session/runtime/types";
 import { SessionManager } from "../../src/services/session/session-manager";
 import type { AthenaSessionSettings } from "../../src/services/session/settings-manager";
-import type { ChannelEvent } from "../../src/services/session/types";
+import type { ChannelMessageInput } from "../../src/services/session/types/index";
 import { createTestSettingsManager } from "./test-settings-manager";
 
 type GenerateInput = {
@@ -77,6 +77,27 @@ function createContextMock() {
       })),
       resolve: vi.fn(() => ({ provider: "test", modelId: "test:model" })),
     },
+    "yesimbot.plugin": {
+      assembleTools: vi.fn(async (request: {
+        sendMessageTool?: Record<string, unknown>;
+        toolSettings?: { enabled?: string[] };
+      }) => {
+        const sendMessageTool = request.sendMessageTool;
+        const supportedTools = sendMessageTool ? { send_message: sendMessageTool } : {};
+        const activeTools =
+          sendMessageTool && (request.toolSettings?.enabled?.includes("send_message") ?? true)
+            ? { send_message: sendMessageTool }
+            : {};
+
+        return {
+          supportedTools,
+          activeTools,
+          experimentalContext: {},
+          signature: JSON.stringify(Object.keys(supportedTools).sort()),
+        };
+      }),
+      getToolDefinitions: vi.fn(() => []),
+    },
   };
 }
 
@@ -87,26 +108,30 @@ function createBotMock(selfId = "bot-self") {
   };
 }
 
-function createEvent(overrides: Partial<ChannelEvent> = {}): ChannelEvent {
+function createChannelMessageInput(
+  overrides: Partial<ChannelMessageInput> = {},
+): ChannelMessageInput {
   return {
+    kind: "channel_message",
     platform: "discord",
     channelId: "channel-1",
-    userId: "user-1",
-    username: "alice",
+    sender: {
+      userId: "user-1",
+      username: "alice",
+    },
     content: "@bot hello",
     isDirect: true,
     atSelf: false,
     isReplyToBot: false,
     messageId: `msg-${Math.random().toString(16).slice(2)}`,
     timestamp: Date.now(),
-    elements: [],
     ...overrides,
   };
 }
 
-function createBurstEvents(messageIds: string[]): ChannelEvent[] {
+function createBurstChannelMessageInputs(messageIds: string[]): ChannelMessageInput[] {
   return messageIds.map((messageId, index) =>
-    createEvent({
+    createChannelMessageInput({
       isDirect: true,
       messageId,
       timestamp: 1000 + index,
@@ -231,7 +256,7 @@ describe("ChannelRuntime state machine", () => {
       const { agent } = createAgent();
       generateMock.mockResolvedValueOnce();
 
-      await agent.receive(createEvent());
+      await agent.receive(createChannelMessageInput());
 
       await vi.waitFor(() => {
         expect(agent.getResponseState()).toBe("idle");
@@ -267,7 +292,7 @@ describe("ChannelRuntime state machine", () => {
         prepareStepActiveTools = prepareStepResult?.activeTools;
       });
 
-      await agent.receive(createEvent({ messageId: "msg-active-tools" }));
+      await agent.receive(createChannelMessageInput({ messageId: "msg-active-tools" }));
 
       await vi.waitFor(() => {
         expect(generateMock).toHaveBeenCalledTimes(1);
@@ -310,7 +335,9 @@ describe("ChannelRuntime state machine", () => {
         })
         .mockResolvedValueOnce();
 
-      const first = agent.receive(createEvent({ messageId: "msg-refresh-1", content: "first" }));
+      const first = agent.receive(
+        createChannelMessageInput({ messageId: "msg-refresh-1", content: "first" }),
+      );
 
       await vi.waitFor(() => {
         expect(generateMock).toHaveBeenCalledTimes(1);
@@ -318,7 +345,7 @@ describe("ChannelRuntime state machine", () => {
       });
 
       const second = agent.receive(
-        createEvent({ messageId: "msg-refresh-2", content: "stop now" }),
+        createChannelMessageInput({ messageId: "msg-refresh-2", content: "stop now" }),
       );
 
       releaseRefresh();
@@ -354,13 +381,13 @@ describe("ChannelRuntime state machine", () => {
 
       generateMock.mockResolvedValue(undefined);
 
-      await agent.receive(createEvent({ messageId: "msg-reuse-1" }));
+      await agent.receive(createChannelMessageInput({ messageId: "msg-reuse-1" }));
       await vi.waitFor(() => {
         expect(generateMock).toHaveBeenCalledTimes(1);
         expect(agent.getResponseState()).toBe("idle");
       });
 
-      await agent.receive(createEvent({ messageId: "msg-reuse-2" }));
+      await agent.receive(createChannelMessageInput({ messageId: "msg-reuse-2" }));
       await vi.waitFor(() => {
         expect(generateMock).toHaveBeenCalledTimes(2);
         expect(agent.getResponseState()).toBe("idle");
@@ -386,7 +413,7 @@ describe("ChannelRuntime state machine", () => {
 
       generateMock.mockResolvedValue(undefined);
 
-      await agent.receive(createEvent({ messageId: "msg-rebuild-1" }));
+      await agent.receive(createChannelMessageInput({ messageId: "msg-rebuild-1" }));
       await vi.waitFor(() => {
         expect(generateMock).toHaveBeenCalledTimes(1);
         expect(agent.getResponseState()).toBe("idle");
@@ -396,7 +423,7 @@ describe("ChannelRuntime state machine", () => {
         maxSteps: 1,
       });
 
-      await agent.receive(createEvent({ messageId: "msg-rebuild-2" }));
+      await agent.receive(createChannelMessageInput({ messageId: "msg-rebuild-2" }));
       await vi.waitFor(() => {
         expect(generateMock).toHaveBeenCalledTimes(2);
         expect(agent.getResponseState()).toBe("idle");
@@ -453,7 +480,7 @@ describe("ChannelRuntime state machine", () => {
         basePath: "/tmp/athena-test",
       });
 
-      await streamingAgent.receive(createEvent({ messageId: "msg-streaming" }));
+      await streamingAgent.receive(createChannelMessageInput({ messageId: "msg-streaming" }));
 
       await vi.waitFor(() => {
         expect(bot.sendMessage).not.toHaveBeenCalled();
@@ -469,9 +496,9 @@ describe("ChannelRuntime state machine", () => {
     it("persists swallowed streaming provider/network errors reported through stream onError", async () => {
       const sessionManager = SessionManager.inMemory("discord:channel-1");
 
-      streamMock.mockImplementationOnce(async (input) => ({
-        consumeStream: async () => {
-          await input.onError?.({ error: new Error(delayedProviderFailureMessage) });
+      streamMock.mockImplementationOnce(async () => ({
+        consumeStream: async (options?: { onError?: (error: unknown) => void | Promise<void> }) => {
+          await options?.onError?.(new Error(delayedProviderFailureMessage));
         },
       }));
 
@@ -491,7 +518,7 @@ describe("ChannelRuntime state machine", () => {
         basePath: "/tmp/athena-test",
       });
 
-      await streamingAgent.receive(createEvent({ messageId: "msg-stream-error" }));
+      await streamingAgent.receive(createChannelMessageInput({ messageId: "msg-stream-error" }));
 
       await vi.waitFor(() => {
         expect(streamingAgent.getResponseState()).toBe("idle");
@@ -520,7 +547,7 @@ describe("ChannelRuntime state machine", () => {
         });
       });
 
-      const receivePromise = agent.receive(createEvent({ messageId: "msg-abort" }));
+      const receivePromise = agent.receive(createChannelMessageInput({ messageId: "msg-abort" }));
       await vi.waitFor(() => {
         expect(agent.getResponseState()).toBe("responding");
       });
@@ -571,7 +598,7 @@ describe("ChannelRuntime state machine", () => {
         basePath: "/tmp/athena-test",
       });
 
-      await timeoutAgent.receive(createEvent({ messageId: "msg-timeout" }));
+      await timeoutAgent.receive(createChannelMessageInput({ messageId: "msg-timeout" }));
 
       await vi.waitFor(() => {
         expect(timeoutAgent.getResponseState()).toBe("idle");
@@ -603,7 +630,7 @@ describe("ChannelRuntime state machine", () => {
       const { agent, sessionManager } = createAgent();
       generateMock.mockRejectedValueOnce(new Error("tool exploded"));
 
-      await agent.receive(createEvent({ messageId: "msg-error" }));
+      await agent.receive(createChannelMessageInput({ messageId: "msg-error" }));
 
       await vi.waitFor(() => {
         expect(agent.getResponseState()).toBe("idle");
@@ -658,7 +685,9 @@ describe("ChannelRuntime state machine", () => {
         basePath: "/tmp/athena-test",
       });
 
-      await timeoutAgent.receive(createEvent({ messageId: "msg-provider-race-failure" }));
+      await timeoutAgent.receive(
+        createChannelMessageInput({ messageId: "msg-provider-race-failure" }),
+      );
 
       await vi.waitFor(() => {
         expect(timeoutAgent.getResponseState()).toBe("idle");
@@ -685,7 +714,7 @@ describe("ChannelRuntime state machine", () => {
       const { agent, sessionManager } = createAgent();
       generateMock.mockRejectedValueOnce(new Error("terminal failure"));
 
-      await agent.receive(createEvent({ messageId: "msg-terminal" }));
+      await agent.receive(createChannelMessageInput({ messageId: "msg-terminal" }));
 
       await vi.waitFor(() => {
         expect(agent.getResponseState()).toBe("idle");
@@ -710,7 +739,9 @@ describe("ChannelRuntime state machine", () => {
         })
         .mockResolvedValueOnce();
 
-      const firstReceive = agent.receive(createEvent({ messageId: "msg-recover-abort-1" }));
+      const firstReceive = agent.receive(
+        createChannelMessageInput({ messageId: "msg-recover-abort-1" }),
+      );
 
       await vi.waitFor(() => {
         expect(generateMock).toHaveBeenCalledTimes(1);
@@ -732,7 +763,7 @@ describe("ChannelRuntime state machine", () => {
       ).toBe(false);
 
       await agent.receive(
-        createEvent({ messageId: "msg-recover-abort-2", content: "hello again" }),
+        createChannelMessageInput({ messageId: "msg-recover-abort-2", content: "hello again" }),
       );
 
       await vi.waitFor(() => {
@@ -781,7 +812,9 @@ describe("ChannelRuntime state machine", () => {
         })
         .mockResolvedValueOnce();
 
-      await timeoutAgent.receive(createEvent({ messageId: "msg-recover-timeout-1" }));
+      await timeoutAgent.receive(
+        createChannelMessageInput({ messageId: "msg-recover-timeout-1" }),
+      );
 
       await vi.waitFor(() => {
         expect(timeoutAgent.getResponseState()).toBe("idle");
@@ -795,7 +828,10 @@ describe("ChannelRuntime state machine", () => {
       ).toBe(false);
 
       await timeoutAgent.receive(
-        createEvent({ messageId: "msg-recover-timeout-2", content: "timeout recovered" }),
+        createChannelMessageInput({
+          messageId: "msg-recover-timeout-2",
+          content: "timeout recovered",
+        }),
       );
 
       await vi.waitFor(() => {
@@ -851,7 +887,10 @@ describe("ChannelRuntime state machine", () => {
         .mockResolvedValueOnce();
 
       await timeoutAgent.receive(
-        createEvent({ messageId: "msg-provider-race-recover-1", content: "first try" }),
+        createChannelMessageInput({
+          messageId: "msg-provider-race-recover-1",
+          content: "first try",
+        }),
       );
 
       await vi.waitFor(() => {
@@ -876,7 +915,7 @@ describe("ChannelRuntime state machine", () => {
       }
 
       await timeoutAgent.receive(
-        createEvent({
+        createChannelMessageInput({
           messageId: "msg-provider-race-recover-2",
           content: "network recovered now reply normally",
         }),
@@ -907,7 +946,7 @@ describe("ChannelRuntime state machine", () => {
       const { agent } = createAgent();
       generateMock.mockRejectedValueOnce(new Error("deadlock failure"));
 
-      await agent.receive(createEvent({ messageId: "msg-deadlock-error" }));
+      await agent.receive(createChannelMessageInput({ messageId: "msg-deadlock-error" }));
 
       await vi.waitFor(() => {
         expect(agent.getResponseState()).toBe("idle");
@@ -924,7 +963,9 @@ describe("ChannelRuntime state machine", () => {
         });
       });
 
-      const receivePromise = agent.receive(createEvent({ messageId: "msg-deadlock-abort" }));
+      const receivePromise = agent.receive(
+        createChannelMessageInput({ messageId: "msg-deadlock-abort" }),
+      );
 
       await vi.waitFor(() => {
         expect(agent.getResponseState()).toBe("responding");
@@ -959,7 +1000,7 @@ describe("ChannelRuntime state machine", () => {
         await new Promise<void>(() => undefined);
       });
 
-      void watchdogAgent.receive(createEvent({ messageId: "msg-watchdog" }));
+      void watchdogAgent.receive(createChannelMessageInput({ messageId: "msg-watchdog" }));
 
       await vi.waitFor(() => {
         expect(generateMock).toHaveBeenCalledTimes(1);
@@ -991,9 +1032,11 @@ describe("ChannelRuntime state machine", () => {
         })
         .mockResolvedValueOnce();
 
-      const firstReceive = agent.receive(createEvent({ messageId: "msg-queue-1" }));
+      const firstReceive = agent.receive(createChannelMessageInput({ messageId: "msg-queue-1" }));
       await Promise.resolve();
-      const secondReceive = agent.receive(createEvent({ messageId: "msg-queue-2" }));
+      const secondReceive = agent.receive(
+        createChannelMessageInput({ messageId: "msg-queue-2" }),
+      );
 
       await vi.waitFor(() => {
         expect(generateMock).toHaveBeenCalledTimes(1);
@@ -1022,7 +1065,7 @@ describe("ChannelRuntime state machine", () => {
       });
       generateMock.mockResolvedValueOnce();
 
-      const [firstEvent, secondEvent, thirdEvent] = createBurstEvents([
+      const [firstEvent, secondEvent, thirdEvent] = createBurstChannelMessageInputs([
         "msg-burst-1",
         "msg-burst-2",
         "msg-burst-3",
@@ -1114,7 +1157,7 @@ describe("ChannelRuntime state machine", () => {
           });
         });
 
-      await agent.receive(createEvent({ messageId: "msg-guidance-single" }));
+      await agent.receive(createChannelMessageInput({ messageId: "msg-guidance-single" }));
 
       await vi.waitFor(() => {
         expect(agent.getResponseState()).toBe("idle");
@@ -1146,7 +1189,7 @@ describe("ChannelRuntime state machine", () => {
       const { agent, sessionManager } = createAgent();
       generateMock.mockRejectedValueOnce(new Error("tool exploded"));
 
-      await agent.receive(createEvent({ messageId: "msg-tool-error" }));
+      await agent.receive(createChannelMessageInput({ messageId: "msg-tool-error" }));
 
       await vi.waitFor(() => {
         expect(agent.getResponseState()).toBe("idle");

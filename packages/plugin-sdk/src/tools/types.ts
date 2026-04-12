@@ -1,5 +1,6 @@
 import type { Tool as AiTool } from "@ai-sdk/provider-utils";
 import type { FlexibleSchema, ToolExecutionOptions } from "@ai-sdk/provider-utils";
+import type { ToolSet } from "ai";
 import type { JSONSchema4 } from "json-schema";
 import type { Schema } from "koishi";
 
@@ -54,6 +55,28 @@ export interface RegisteredToolDefinition<INPUT = unknown, OUTPUT = unknown> {
   name: string;
   definition: YesImToolDefinition<INPUT, OUTPUT>;
   tool: AiTool;
+}
+
+export type ToolAssemblyContextFactory<THostInput = unknown> = (
+  hostInput: THostInput,
+  runtime: ToolRuntime,
+) => Record<string, unknown> | undefined;
+
+export interface ToolAssemblySettings {
+  enabled?: string[];
+  required?: string[];
+}
+
+export interface ToolSource<THostInput = unknown> {
+  toolDefinitions: RegisteredToolDefinition[];
+  contextFactories?: Partial<Record<string, ToolAssemblyContextFactory<THostInput>>>;
+}
+
+export interface ToolAssemblyResult {
+  supportedTools: ToolSet;
+  activeTools: ToolSet;
+  experimentalContext: ToolExtensionContext;
+  signature: string;
 }
 
 export interface ToolDecoratorOptions {

@@ -53,9 +53,17 @@ vi.mock("koishi", () => {
 import { ChannelRuntime } from "../../src/services/session/runtime";
 import { AgentSessionService } from "../../src/services/session/service";
 import { SessionManager } from "../../src/services/session/session-manager";
-import type { ChannelEvent } from "../../src/services/session/types";
+import type { ChannelMessageInput } from "../../src/services/session/types/index";
 import type { WillingnessJudge } from "../../src/services/session/willingness";
 import { createTestSettingsManager } from "./test-settings-manager";
+
+type TestChannelMessageInput = ChannelMessageInput & {
+  bot?: Bot;
+  userId: string;
+  username: string;
+  nickname?: string;
+  identity?: string;
+};
 
 function createLoggerMock(): Logger {
   return {
@@ -67,7 +75,22 @@ function createLoggerMock(): Logger {
   } as unknown as Logger;
 }
 
-function createContextMock(baseDir: string): Context {
+interface PluginServiceMockOptions {
+  assembleTools?: (request: {
+    sendMessageTool?: Record<string, unknown>;
+    toolSettings?: { enabled?: string[] };
+  }) => Promise<{
+    supportedTools: Record<string, unknown>;
+    activeTools: Record<string, unknown>;
+    experimentalContext: Record<string, unknown>;
+    signature: string;
+  }>;
+  getToolDefinitions?: () => unknown[];
+  install?: (plugin: unknown, options?: { scope?: string }) => Promise<void>;
+  remove?: (name: string, options?: { scope?: string }) => void;
+}
+
+function createContextMock(baseDir: string, pluginOptions: PluginServiceMockOptions = {}): Context {
   return {
     baseDir,
     logger: vi.fn(() => createLoggerMock()),
@@ -85,23 +108,52 @@ function createContextMock(baseDir: string): Context {
       })),
       resolve: vi.fn(() => ({}) as unknown as LanguageModel),
     },
+    "yesimbot.plugin": {
+      assembleTools: vi.fn(
+        pluginOptions.assembleTools ??
+          (async (request: {
+            sendMessageTool?: Record<string, unknown>;
+            toolSettings?: { enabled?: string[] };
+          }) => {
+            const sendMessageTool = request.sendMessageTool;
+            const supportedTools = sendMessageTool ? { send_message: sendMessageTool } : {};
+            const activeTools =
+              sendMessageTool && (request.toolSettings?.enabled?.includes("send_message") ?? true)
+                ? { send_message: sendMessageTool }
+                : {};
+
+            return {
+              supportedTools,
+              activeTools,
+              experimentalContext: {},
+              signature: JSON.stringify(Object.keys(supportedTools).sort()),
+            };
+          }),
+      ),
+      getToolDefinitions: vi.fn(pluginOptions.getToolDefinitions ?? (() => [])),
+      install: vi.fn(pluginOptions.install ?? (async () => undefined)),
+      remove: vi.fn(pluginOptions.remove ?? (() => undefined)),
+    },
   } as unknown as Context;
 }
 
-function createCommandContextMock(baseDir: string): {
+function createCommandContextMock(
+  baseDir: string,
+  pluginOptions: PluginServiceMockOptions = {},
+): {
   commands: Map<
     string,
-    (argv: { session?: ChannelEvent; options?: Record<string, unknown> }) => unknown
+    (argv: { session?: ChannelMessageInput; options?: Record<string, unknown> }) => unknown
   >;
   ctx: Context;
 } {
   const commands = new Map<
     string,
-    (argv: { session?: ChannelEvent; options?: Record<string, unknown> }) => unknown
+    (argv: { session?: ChannelMessageInput; options?: Record<string, unknown> }) => unknown
   >();
 
   const ctx = {
-    ...createContextMock(baseDir),
+    ...createContextMock(baseDir, pluginOptions),
     middleware: vi.fn(),
     command: vi.fn((name: string) => {
       const builder = {
@@ -118,6 +170,28 @@ function createCommandContextMock(baseDir: string): {
   return { commands, ctx };
 }
 
+function createScopedWorkspacePluginLifecycleMocks(): {
+  install: (plugin: unknown, options?: { scope?: string }) => Promise<void>;
+  remove: (name: string, options?: { scope?: string }) => void;
+} {
+  const installedScopes = new Set<string>();
+
+  return {
+    install: async (_plugin, options) => {
+      const scope = options?.scope ?? "global";
+      const key = `${scope}:workspace`;
+      if (installedScopes.has(key)) {
+        throw new Error(`duplicate tool name workspace for ${scope}`);
+      }
+      installedScopes.add(key);
+    },
+    remove: (name, options) => {
+      const scope = options?.scope ?? "global";
+      installedScopes.delete(`${scope}:${name}`);
+    },
+  };
+}
+
 async function startService(service: AgentSessionService): Promise<void> {
   return (service as unknown as { start(): Promise<void> }).start();
 }
@@ -129,22 +203,41 @@ function createBotMock(selfId = "bot-self"): Bot {
   } as unknown as Bot;
 }
 
-function createEvent(overrides: Partial<ChannelEvent> = {}): ChannelEvent {
-  const bot = createBotMock();
+function createChannelMessageInput(
+  overrides: Partial<TestChannelMessageInput> = {},
+): TestChannelMessageInput {
+  const {
+    bot = createBotMock(),
+    userId = "user-1",
+    username = "alice",
+    nickname,
+    identity,
+    sender,
+    ...rest
+  } = overrides;
   return {
+    kind: "channel_message",
     platform: "discord",
     channelId: "channel-1",
-    userId: "user-1",
-    username: "alice",
+    sender: {
+      userId,
+      username,
+      nickname,
+      identity,
+      ...sender,
+    },
     content: "hello",
     isDirect: false,
     atSelf: false,
     isReplyToBot: false,
     messageId: "msg-1",
     timestamp: Date.now(),
-    elements: [],
     bot,
-    ...overrides,
+    userId,
+    username,
+    nickname,
+    identity,
+    ...rest,
   };
 }
 
@@ -188,7 +281,7 @@ describe("AgentSessionService", () => {
         basePath: "/tmp/athena-test",
       });
 
-      await agent.receive(createEvent({ bot }));
+      await agent.receive(createChannelMessageInput({ bot }));
 
       expect(sessionManager.getEntryCount()).toBeGreaterThan(0);
       expect(bot.sendMessage).not.toHaveBeenCalled();
@@ -212,7 +305,9 @@ describe("AgentSessionService", () => {
       });
 
       generateMock.mockResolvedValueOnce();
-      await agent.receive(createEvent({ bot, isDirect: true, atSelf: false, isReplyToBot: false }));
+      await agent.receive(
+        createChannelMessageInput({ bot, isDirect: true, atSelf: false, isReplyToBot: false }),
+      );
 
       await vi.waitFor(() => {
         expect(generateMock).toHaveBeenCalledTimes(1);
@@ -238,7 +333,7 @@ describe("AgentSessionService", () => {
       });
 
       await agent.receive(
-        createEvent({ bot, isDirect: false, atSelf: false, isReplyToBot: false }),
+        createChannelMessageInput({ bot, isDirect: false, atSelf: false, isReplyToBot: false }),
       );
 
       expect(deferredJudge.judge).toHaveBeenCalledTimes(1);
@@ -260,7 +355,7 @@ describe("AgentSessionService", () => {
       });
 
       await agent.receive(
-        createEvent({
+        createChannelMessageInput({
           bot,
           nickname: "Alice-Display",
           identity: "title:moderator",
@@ -315,11 +410,12 @@ describe("AgentSessionService", () => {
       const bot = createBotMock("bot-self");
 
       await service.receive(
-        createEvent({
+        createChannelMessageInput({
           bot,
           userId: "bot-self",
           messageId: "self-msg-1",
         }),
+        bot,
       );
 
       expect(getOrCreateAgentSpy).not.toHaveBeenCalled();
@@ -339,7 +435,7 @@ describe("AgentSessionService", () => {
         receive: agentReceive,
       } as unknown as ChannelRuntime);
 
-      const event = createEvent({ messageId: "dup-msg-1" });
+      const event = createChannelMessageInput({ messageId: "dup-msg-1" });
       await service.receive(event);
       await service.receive(event);
 
@@ -353,6 +449,7 @@ describe("AgentSessionService", () => {
         model: "test:model",
         basePath: "sessions",
       });
+      const bot = createBotMock();
 
       let releaseFirst!: () => void;
       const firstTurn = new Promise<void>((resolve) => {
@@ -365,7 +462,8 @@ describe("AgentSessionService", () => {
       generateMock.mockResolvedValueOnce();
 
       const first = service.receive(
-        createEvent({ isDirect: true, messageId: "msg-burst-1", timestamp: 1000 }),
+        createChannelMessageInput({ bot, isDirect: true, messageId: "msg-burst-1", timestamp: 1000 }),
+        bot,
       );
 
       await vi.waitFor(() => {
@@ -373,10 +471,12 @@ describe("AgentSessionService", () => {
       });
 
       const second = service.receive(
-        createEvent({ isDirect: true, messageId: "msg-burst-2", timestamp: 1001 }),
+        createChannelMessageInput({ bot, isDirect: true, messageId: "msg-burst-2", timestamp: 1001 }),
+        bot,
       );
       const third = service.receive(
-        createEvent({ isDirect: true, messageId: "msg-burst-3", timestamp: 1002 }),
+        createChannelMessageInput({ bot, isDirect: true, messageId: "msg-burst-3", timestamp: 1002 }),
+        bot,
       );
 
       expect(service.getActiveChannels()).toEqual(["discord:channel-1"]);
@@ -425,6 +525,7 @@ describe("AgentSessionService", () => {
         model: "test:model",
         basePath: "sessions",
       });
+      const bot = createBotMock();
 
       let releaseFirst!: () => void;
       const firstTurn = new Promise<void>((resolve) => {
@@ -437,10 +538,22 @@ describe("AgentSessionService", () => {
       generateMock.mockResolvedValueOnce();
 
       const first = service.receive(
-        createEvent({ channelId: "channel-race", isDirect: true, messageId: "race-msg-1" }),
+        createChannelMessageInput({
+          bot,
+          channelId: "channel-race",
+          isDirect: true,
+          messageId: "race-msg-1",
+        }),
+        bot,
       );
       const second = service.receive(
-        createEvent({ channelId: "channel-race", isDirect: true, messageId: "race-msg-2" }),
+        createChannelMessageInput({
+          bot,
+          channelId: "channel-race",
+          isDirect: true,
+          messageId: "race-msg-2",
+        }),
+        bot,
       );
 
       await vi.waitFor(() => {
@@ -479,17 +592,18 @@ describe("AgentSessionService", () => {
         receive: agentReceive,
       } as unknown as ChannelRuntime);
 
-      const event = createEvent({
+      const event = createChannelMessageInput({
         bot,
         platform: "discord",
         channelId: "origin-channel",
         messageId: "route-msg-1",
       });
 
-      await service.receive(event);
+      await service.receive(event, bot);
 
       expect(routeSpy).toHaveBeenCalledWith("discord", "origin-channel", bot);
-      expect(agentReceive).toHaveBeenCalledWith({
+      expect(agentReceive).toHaveBeenCalledWith(
+        expect.objectContaining({
         kind: "channel_message",
         platform: "discord",
         channelId: "origin-channel",
@@ -505,8 +619,8 @@ describe("AgentSessionService", () => {
         isDirect: event.isDirect,
         atSelf: event.atSelf,
         isReplyToBot: event.isReplyToBot,
-        replyTo: event.replyTo,
-      });
+        }),
+      );
     });
 
     it("reuses the cached runtime for repeated same-channel receives", async () => {
@@ -518,8 +632,13 @@ describe("AgentSessionService", () => {
       });
       const bot = createBotMock();
 
-      const first = createEvent({ bot, isDirect: true, messageId: "reuse-msg-1", timestamp: 1000 });
-      const second = createEvent({
+      const first = createChannelMessageInput({
+        bot,
+        isDirect: true,
+        messageId: "reuse-msg-1",
+        timestamp: 1000,
+      });
+      const second = createChannelMessageInput({
         bot,
         isDirect: true,
         messageId: "reuse-msg-2",
@@ -528,9 +647,9 @@ describe("AgentSessionService", () => {
 
       generateMock.mockResolvedValue(undefined);
 
-      await service.receive(first);
+      await service.receive(first, bot);
       const firstRuntime = service.getAgent("discord:channel-1");
-      await service.receive(second);
+      await service.receive(second, bot);
       const secondRuntime = service.getAgent("discord:channel-1");
 
       expect(firstRuntime).toBeDefined();
@@ -546,17 +665,20 @@ describe("AgentSessionService", () => {
         model: "test:model",
         basePath: "sessions",
       });
+      const firstBot = createBotMock();
 
       generateMock.mockRejectedValueOnce(new Error("model exploded before restart"));
 
       await firstService.receive(
-        createEvent({
+        createChannelMessageInput({
+          bot: firstBot,
           channelId: "channel-restart",
           isDirect: true,
           messageId: "restart-msg-1",
           timestamp: 1000,
           content: "first run fails",
         }),
+        firstBot,
       );
 
       const firstRuntime = firstService.getAgent("discord:channel-restart");
@@ -640,7 +762,7 @@ describe("AgentSessionService", () => {
       generateMock.mockResolvedValueOnce();
 
       await restartedService.receive(
-        createEvent({
+        createChannelMessageInput({
           bot: restartBot,
           channelId: "channel-restart",
           isDirect: true,
@@ -648,6 +770,7 @@ describe("AgentSessionService", () => {
           timestamp: 1002,
           content: "resume after restart",
         }),
+        restartBot,
       );
 
       await vi.waitFor(() => {
@@ -762,6 +885,56 @@ describe("AgentSessionService", () => {
           },
         }),
       ).resolves.toBe("No compaction needed for discord:channel-1: session is empty.");
+    });
+  });
+
+  describe("agent.clear command", () => {
+    it("removes the scoped workspace plugin before same-channel recreate", async () => {
+      const tempDir = mkdtempSync(join(tmpdir(), "athena-agent-clear-workspace-"));
+      tempDirs.push(tempDir);
+      createExistingWorkspace(tempDir);
+
+      const lifecycle = createScopedWorkspacePluginLifecycleMocks();
+      const { commands, ctx } = createCommandContextMock(tempDir, lifecycle);
+      const service = new AgentSessionService(ctx, {
+        model: "test:model",
+        basePath: "sessions",
+        enableWorkspace: true,
+        enableFilesystem: true,
+      });
+
+      await startService(service);
+      await expect(
+        service.bootstrapChannelForManagement("discord", "channel-1", createBotMock()),
+      ).resolves.toMatchObject({
+        channelKey: "discord:channel-1",
+        status: "created",
+      });
+
+      const clearAction = commands.get("agent.clear");
+      expect(clearAction).toBeDefined();
+
+      await expect(
+        clearAction?.({
+          options: {
+            platform: "discord",
+            channel: "channel-1",
+          },
+        }),
+      ).resolves.toBe("Cleared agent session for discord:channel-1.");
+
+      expect(
+        (ctx as unknown as { "yesimbot.plugin": { remove: ReturnType<typeof vi.fn> } })[
+          "yesimbot.plugin"
+        ].remove,
+      ).toHaveBeenCalledWith("workspace", { scope: "discord:channel-1" });
+
+      await expect(
+        service.bootstrapChannelForManagement("discord", "channel-1", createBotMock()),
+      ).resolves.toMatchObject({
+        channelKey: "discord:channel-1",
+        status: "created",
+      });
     });
   });
 });

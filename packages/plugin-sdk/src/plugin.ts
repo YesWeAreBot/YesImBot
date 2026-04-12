@@ -1,17 +1,47 @@
 import type { Tool as AiTool, ToolExecutionOptions } from "@ai-sdk/provider-utils";
 import { tool as aiTool } from "@ai-sdk/provider-utils";
+import type { ToolSet } from "ai";
 import { Context } from "koishi";
 
 import { normalizeInputSchema } from "./schema";
 import { TOOL_DECORATOR_KEY, ToolDecoratorEntry } from "./tools";
-import { RegisteredToolDefinition, YesImToolDefinition } from "./tools/types";
+import {
+  RegisteredToolDefinition,
+  ToolAssemblyContextFactory,
+  ToolAssemblyResult,
+  ToolAssemblySettings,
+  ToolSource,
+  ToolRuntime,
+  YesImToolDefinition,
+} from "./tools/types";
+
+export interface ToolAssemblyRequest<THostInput = unknown> {
+  runtime: ToolRuntime;
+  hostInput: THostInput;
+  scope?: string;
+  toolSettings?: ToolAssemblySettings;
+  contextFactories?: Partial<Record<string, ToolAssemblyContextFactory<THostInput>>>;
+  sources?: ToolSource<THostInput>[];
+  additionalToolDefinitions?: RegisteredToolDefinition[];
+  sendMessageTool?: ToolSet["send_message"];
+}
+
+export interface ToolInvocationRequest<
+  THostInput = unknown,
+> extends ToolAssemblyRequest<THostInput> {
+  name: string;
+  input: unknown;
+  options?: Partial<ToolExecutionOptions>;
+}
 
 export interface IPluginService {
-  install(plugin: YesImPlugin): Promise<void>;
-  remove(name: string): void;
+  install(plugin: YesImPlugin, options?: { scope?: string }): Promise<void>;
+  remove(name: string, options?: { scope?: string }): void;
   list(): string[];
   getToolDefinitions(): RegisteredToolDefinition[];
   getToolSet(): Record<string, AiTool>;
+  assembleTools(request: ToolAssemblyRequest): Promise<ToolAssemblyResult>;
+  invoke(request: ToolInvocationRequest): Promise<unknown>;
   invoke(name: string, input: unknown, options?: Partial<ToolExecutionOptions>): Promise<unknown>;
 }
 
@@ -25,6 +55,7 @@ export interface PluginMetadata {
   name: string;
   description: string;
   builtin?: boolean;
+  managedLifecycle?: boolean;
 }
 
 const METADATA_KEY = Symbol("yesimbot.plugin.metadata");
@@ -41,7 +72,7 @@ export function Metadata(meta: PluginMetadata): ClassDecorator {
 export class YesImPlugin {
   public readonly ctx: Context;
   public readonly metadata: PluginMetadata;
-  private toolDefinitions: Map<string, RegisteredToolDefinition> = new Map();
+  protected toolDefinitions: Map<string, RegisteredToolDefinition> = new Map();
 
   constructor(ctx: Context) {
     this.ctx = ctx;
@@ -52,16 +83,18 @@ export class YesImPlugin {
     this.metadata = meta;
     this.registerDecoratedTools();
 
-    ctx.on("ready", async () => {
-      const pluginService = ctx["yesimbot.plugin"] as IPluginService | undefined;
-      if (!pluginService) return;
-      await pluginService.install(this);
-    });
+    if (this.metadata.managedLifecycle !== true) {
+      ctx.on("ready", async () => {
+        const pluginService = ctx["yesimbot.plugin"] as IPluginService | undefined;
+        if (!pluginService) return;
+        await pluginService.install(this);
+      });
 
-    ctx.on("dispose", async () => {
-      const pluginService = ctx["yesimbot.plugin"] as IPluginService | undefined;
-      pluginService?.remove(this.metadata.name);
-    });
+      ctx.on("dispose", async () => {
+        const pluginService = ctx["yesimbot.plugin"] as IPluginService | undefined;
+        pluginService?.remove(this.metadata.name);
+      });
+    }
   }
 
   public getTools(): Map<string, AiTool> {
@@ -135,7 +168,7 @@ export class YesImPlugin {
     return name;
   }
 
-  private registerToolDefinition(definition: RegisteredToolDefinition): void {
+  protected registerToolDefinition(definition: RegisteredToolDefinition): void {
     if (this.toolDefinitions.has(definition.name)) {
       throw new Error(
         `Plugin ${this.metadata.name} already registered tool definition: ${definition.name}`,

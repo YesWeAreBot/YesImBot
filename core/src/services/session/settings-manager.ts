@@ -25,13 +25,6 @@ export interface AthenaSessionSettings extends Record<string, unknown> {
     perStepTimeoutMs?: number;
     chunkTimeoutMs?: number;
   };
-  workspace?: {
-    enableWorkspace?: boolean;
-    enableSandbox?: boolean;
-    enableFilesystem?: boolean;
-    externalPath?: string[];
-    skills?: string[];
-  };
   prompts?: {
     builtInInstructions?: string;
     attachedInstructionFiles?: string[];
@@ -40,6 +33,14 @@ export interface AthenaSessionSettings extends Record<string, unknown> {
 
 export interface AthenaWorkspaceSettings extends AthenaSessionSettings {
   useGlobal?: boolean;
+}
+
+export interface WorkspacePluginSettings {
+  enableWorkspace?: boolean;
+  enableSandbox?: boolean;
+  enableFilesystem?: boolean;
+  externalPath?: string[];
+  skills?: string[];
 }
 
 export interface JsonSchemaDefinition {
@@ -102,23 +103,6 @@ export const ATHENA_SESSION_SETTINGS_JSON_SCHEMA: JsonSchemaDefinition = {
         chunkTimeoutMs: { type: "number", minimum: 0 },
       },
     },
-    workspace: {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        enableWorkspace: { type: "boolean" },
-        enableSandbox: { type: "boolean" },
-        enableFilesystem: { type: "boolean" },
-        externalPath: {
-          type: "array",
-          items: { type: "string" },
-        },
-        skills: {
-          type: "array",
-          items: { type: "string" },
-        },
-      },
-    },
     prompts: {
       type: "object",
       additionalProperties: false,
@@ -159,10 +143,11 @@ export interface SettingsConflict {
   overrideValue: unknown;
 }
 
-export interface SettingsFileSnapshot<T extends Record<string, unknown>> {
+export interface SettingsFileSnapshot<T extends object> {
   path: string;
   exists: boolean;
   valid: boolean;
+  rawSettings: Record<string, unknown>;
   settings: T;
   appliedPaths: string[];
   issues: SettingsIssue[];
@@ -180,7 +165,7 @@ export interface SettingsReloadMetadata {
   issues: SettingsIssue[];
 }
 
-interface SettingsValidationResult<T extends Record<string, unknown>> {
+interface SettingsValidationResult<T extends object> {
   settings: T;
   issues: SettingsIssue[];
   appliedPaths: string[];
@@ -244,16 +229,6 @@ const SESSION_SETTINGS_RULES: SettingsRuleMap = {
       chunkTimeoutMs: { kind: "number" },
     },
   },
-  workspace: {
-    kind: "object",
-    properties: {
-      enableWorkspace: { kind: "boolean" },
-      enableSandbox: { kind: "boolean" },
-      enableFilesystem: { kind: "boolean" },
-      externalPath: { kind: "string-array" },
-      skills: { kind: "string-array" },
-    },
-  },
   prompts: {
     kind: "object",
     properties: {
@@ -266,6 +241,14 @@ const SESSION_SETTINGS_RULES: SettingsRuleMap = {
     message:
       "Deprecated key 'useGlobal' is ignored. Workspace settings always layer over global settings.",
   },
+};
+
+const WORKSPACE_PLUGIN_SETTINGS_RULES: SettingsRuleMap = {
+  enableWorkspace: { kind: "boolean" },
+  enableSandbox: { kind: "boolean" },
+  enableFilesystem: { kind: "boolean" },
+  externalPath: { kind: "string-array" },
+  skills: { kind: "string-array" },
 };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -292,7 +275,7 @@ function cloneSettings<T extends Record<string, unknown>>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-function loadSettingsSnapshot<T extends Record<string, unknown>>(
+function loadSettingsSnapshot<T extends object>(
   filePath: string,
   scope: "global" | "workspace",
 ): SettingsFileSnapshot<T> {
@@ -301,6 +284,7 @@ function loadSettingsSnapshot<T extends Record<string, unknown>>(
       path: filePath,
       exists: false,
       valid: true,
+      rawSettings: {},
       settings: {} as T,
       appliedPaths: [],
       issues: [],
@@ -315,6 +299,7 @@ function loadSettingsSnapshot<T extends Record<string, unknown>>(
       path: filePath,
       exists: true,
       valid: false,
+      rawSettings: {},
       settings: {} as T,
       appliedPaths: [],
       issues: [
@@ -334,6 +319,7 @@ function loadSettingsSnapshot<T extends Record<string, unknown>>(
       path: filePath,
       exists: true,
       valid: false,
+      rawSettings: {},
       settings: {} as T,
       appliedPaths: [],
       issues: [
@@ -353,13 +339,14 @@ function loadSettingsSnapshot<T extends Record<string, unknown>>(
     path: filePath,
     exists: true,
     valid: validation.issues.every((issue) => issue.code !== "invalid-json"),
+    rawSettings: parsed,
     settings: validation.settings,
     appliedPaths: validation.appliedPaths,
     issues: validation.issues,
   };
 }
 
-function validateSettingsObject<T extends Record<string, unknown>>(
+function validateSettingsObject<T extends object>(
   raw: Record<string, unknown>,
   scope: "global" | "workspace",
   filePath: string,
@@ -509,6 +496,29 @@ function validateSettingsObject<T extends Record<string, unknown>>(
     issues,
     appliedPaths,
   };
+}
+
+function getWorkspacePluginSettingsFromSource(
+  snapshot: SettingsFileSnapshot<AthenaWorkspaceSettings>,
+): WorkspacePluginSettings | undefined {
+  const rawWorkspace = snapshot.rawSettings.workspace;
+  if (!isPlainObject(rawWorkspace)) {
+    return undefined;
+  }
+
+  const validation = validateSettingsObject<WorkspacePluginSettings>(
+    rawWorkspace,
+    "workspace",
+    snapshot.path,
+    WORKSPACE_PLUGIN_SETTINGS_RULES,
+    "workspace",
+  );
+
+  if (Object.keys(validation.settings).length === 0) {
+    return undefined;
+  }
+
+  return validation.settings;
 }
 
 export function readSettingsFile(filePath: string): Record<string, unknown> {
@@ -663,8 +673,8 @@ export class SettingsManager {
     return this.metadata.effectiveSettings.response;
   }
 
-  getWorkspaceSettings(): AthenaSessionSettings["workspace"] {
-    return this.metadata.effectiveSettings.workspace;
+  getWorkspaceSettings(): WorkspacePluginSettings | undefined {
+    return getWorkspacePluginSettingsFromSource(this.metadata.sources.workspace);
   }
 
   getBuiltInInstructions(fallback?: string): string | undefined {

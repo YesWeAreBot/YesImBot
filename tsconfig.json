@@ -3,6 +3,7 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
+      "koishi-plugin-yesimbot-workspace": ["plugins/workspace/src"],
       "koishi-plugin-yesimbot": ["core/src"],
       "@yesimbot/*": ["packages/*/src"]
     }

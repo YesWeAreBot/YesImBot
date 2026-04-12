@@ -3,14 +3,14 @@ import type { ToolSet } from "ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
-  buildToolAssemblyMock,
+  assembleToolsMock,
   prepareRuntimeModelMock,
   toolLoopAgentCtorMock,
   generateMock,
   streamMock,
   toolLoopAgentInstances,
 } = vi.hoisted(() => ({
-  buildToolAssemblyMock: vi.fn(),
+  assembleToolsMock: vi.fn(),
   prepareRuntimeModelMock: vi.fn(),
   toolLoopAgentCtorMock: vi.fn(),
   generateMock: vi.fn(),
@@ -53,10 +53,6 @@ vi.mock("ai", () => {
   };
 });
 
-vi.mock("../../src/services/session/runtime/tool-assembly", () => ({
-  buildToolAssembly: buildToolAssemblyMock,
-}));
-
 vi.mock("../../src/services/session/runtime/model-adapter", () => ({
   prepareRuntimeModel: prepareRuntimeModelMock,
 }));
@@ -64,7 +60,10 @@ vi.mock("../../src/services/session/runtime/model-adapter", () => ({
 import { AgentSession } from "../../src/services/session/agent-session";
 import { ChannelRuntime } from "../../src/services/session/runtime";
 import { SessionManager } from "../../src/services/session/session-manager";
-import type { ChannelEvent, ResponseStatusRecord } from "../../src/services/session/types";
+import type {
+  ChannelMessageInput,
+  ResponseStatusRecord,
+} from "../../src/services/session/types/index";
 import { createTestSettingsManager } from "./test-settings-manager";
 
 function createLanguageModel(label: string): LanguageModelV3 {
@@ -98,6 +97,7 @@ function createContextMock() {
       resolveRegistration: vi.fn(),
     },
     "yesimbot.plugin": {
+      assembleTools: assembleToolsMock,
       getToolSet: vi.fn(() => ({})),
       getToolDefinitions: vi.fn(() => []),
     },
@@ -111,19 +111,23 @@ function createBotMock(selfId = "bot-self") {
   };
 }
 
-function createEvent(overrides: Partial<ChannelEvent> = {}): ChannelEvent {
+function createChannelMessageInput(
+  overrides: Partial<ChannelMessageInput> = {},
+): ChannelMessageInput {
   return {
+    kind: "channel_message",
     platform: "discord",
     channelId: "channel-1",
-    userId: "user-1",
-    username: "alice",
+    sender: {
+      userId: "user-1",
+      username: "alice",
+    },
     content: "@bot hello",
     isDirect: true,
     atSelf: false,
     isReplyToBot: false,
     messageId: `msg-${Math.random().toString(16).slice(2)}`,
     timestamp: Date.now(),
-    elements: [],
     ...overrides,
   };
 }
@@ -234,8 +238,19 @@ async function runPrepareHooks(payload: {
 
 describe("ChannelRuntime integration seams", () => {
   beforeEach(() => {
-    buildToolAssemblyMock.mockReset();
+    assembleToolsMock.mockReset();
     prepareRuntimeModelMock.mockReset();
+    prepareRuntimeModelMock.mockReturnValue({
+      fullId: "test:model",
+      providerId: "test-provider",
+      modelId: "test-model",
+      entry: {
+        id: "test-model",
+        toolCall: true,
+        reasoning: false,
+      },
+      model: createLanguageModel("default"),
+    });
     toolLoopAgentCtorMock.mockClear();
     generateMock.mockReset();
     streamMock.mockReset();
@@ -257,7 +272,7 @@ describe("ChannelRuntime integration seams", () => {
     } satisfies ToolSet;
     const prepareStepActiveTools: string[][] = [];
 
-    buildToolAssemblyMock
+    assembleToolsMock
       .mockResolvedValueOnce({
         supportedTools: firstSupportedTools,
         activeTools: { send_message: sendMessageTool },
@@ -291,7 +306,7 @@ describe("ChannelRuntime integration seams", () => {
       prepareStepActiveTools.push((prepareStepResult.activeTools as string[] | undefined) ?? []);
     });
 
-    await runtime.receive(createEvent({ messageId: "msg-stable-1" }));
+    await runtime.receive(createChannelMessageInput({ messageId: "msg-stable-1" }));
     await vi.waitFor(() => {
       expect(toolLoopAgentCtorMock).toHaveBeenCalledTimes(1);
       expect(generateMock).toHaveBeenCalledTimes(1);
@@ -302,18 +317,45 @@ describe("ChannelRuntime integration seams", () => {
     expect(firstAgentTools).toBeTruthy();
     expect(firstAgentTools?.search_docs).toBe(firstSearchTool);
 
-    await runtime.receive(createEvent({ messageId: "msg-stable-2" }));
+    await runtime.receive(createChannelMessageInput({ messageId: "msg-stable-2" }));
     await vi.waitFor(() => {
       expect(generateMock).toHaveBeenCalledTimes(2);
       expect(runtime.getResponseState()).toBe("idle");
     });
 
     expect(toolLoopAgentCtorMock).toHaveBeenCalledTimes(1);
-    expect(buildToolAssemblyMock).toHaveBeenCalledTimes(2);
+    expect(assembleToolsMock).toHaveBeenCalledTimes(2);
     expect(prepareRuntimeModelMock).toHaveBeenCalledTimes(1);
     expect(ctx["yesimbot.model"].resolve).not.toHaveBeenCalled();
     expect(prepareStepActiveTools).toEqual([["send_message"], ["send_message", "search_docs"]]);
     expect(toolLoopAgentInstances[0]?.tools.search_docs).toBe(firstSearchTool);
+
+    const firstRequest = assembleToolsMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(firstRequest).toMatchObject({
+      hostInput: expect.objectContaining({ messageId: "msg-stable-1" }),
+      scope: "discord:channel-1",
+      toolSettings: { enabled: ["search_docs"] },
+    });
+    expect(firstRequest.contextFactories).toBeUndefined();
+    expect(firstRequest.runtime).toMatchObject({
+      channelKey: "discord:channel-1",
+      platform: "discord",
+      channelId: "channel-1",
+      modelId: "test:model",
+      turn: expect.objectContaining({
+        messageId: "msg-stable-1",
+        isDirect: true,
+        atSelf: false,
+        isReplyToBot: false,
+      }),
+    });
+    expect(firstRequest.sendMessageTool).toEqual(
+      expect.objectContaining({
+        description: expect.any(String),
+        inputSchema: expect.any(Object),
+        execute: expect.any(Function),
+      }),
+    );
   });
 
   it("pipes plugin-owned extension context through prepareCall and prepareStep experimental_context", async () => {
@@ -328,7 +370,7 @@ describe("ChannelRuntime integration seams", () => {
     const observedPrepareCallContexts: unknown[] = [];
     const observedPrepareStepContexts: unknown[] = [];
 
-    buildToolAssemblyMock.mockResolvedValue({
+    assembleToolsMock.mockResolvedValue({
       supportedTools: {
         send_message: createTool("send_message"),
         search_docs: createTool(
@@ -371,7 +413,7 @@ describe("ChannelRuntime integration seams", () => {
       observedPrepareStepContexts.push(prepareStepResult.experimental_context);
     });
 
-    await runtime.receive(createEvent({ messageId: "msg-experimental-context" }));
+    await runtime.receive(createChannelMessageInput({ messageId: "msg-experimental-context" }));
 
     await vi.waitFor(() => {
       expect(generateMock).toHaveBeenCalledTimes(1);
@@ -397,7 +439,7 @@ describe("ChannelRuntime integration seams", () => {
       const { sessionManager, runtime } = createRuntime();
 
       if (errorMessage === "model_not_found") {
-        buildToolAssemblyMock.mockResolvedValue({
+        assembleToolsMock.mockResolvedValue({
           supportedTools: {
             send_message: createTool("send_message"),
           },
@@ -411,12 +453,12 @@ describe("ChannelRuntime integration seams", () => {
           throw new Error("model_not_found");
         });
       } else {
-        buildToolAssemblyMock.mockImplementation(() => {
+        assembleToolsMock.mockImplementation(() => {
           throw new Error(errorMessage);
         });
       }
 
-      await runtime.receive(createEvent({ messageId: `msg-${errorMessage}` }));
+      await runtime.receive(createChannelMessageInput({ messageId: `msg-${errorMessage}` }));
 
       await vi.waitFor(() => {
         expect(runtime.getResponseState()).toBe("idle");

@@ -1,7 +1,7 @@
 import type { LanguageModel } from "ai";
 import { generateText } from "ai";
 
-import type { TimelineRecord } from "../contracts";
+import type { TimelineRecord } from "../types/index";
 import { serializeTimelineForCompaction } from "./serialize";
 
 export const SUMMARIZATION_SYSTEM_PROMPT = `You are a context summarization assistant for a group chat with an AI participant. Do NOT continue the conversation. ONLY output the structured summary.`;

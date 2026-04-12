@@ -3,7 +3,6 @@ import { join } from "node:path";
 import { Bot, Context, Service, Session } from "koishi";
 
 import { resolveSenderIdentity, summarizeReplyContent } from "./channel-message";
-import type { CanonicalChannelInput, CanonicalChannelMessageInput } from "./contracts";
 import { ChannelRuntime } from "./runtime";
 import { ensureGlobalScaffold, hasExistingWorkspace, ensureWorkspaceScaffold } from "./scaffold";
 import { SessionManager } from "./session-manager";
@@ -14,12 +13,13 @@ import {
   type SettingsIssue,
   type SettingsReloadMetadata,
 } from "./settings-manager";
+import { WorkspacePlugin } from "./workspace";
 import type {
   ChannelBootstrapResult,
   ChannelBootstrapStatus,
-  ChannelEvent,
+  ChannelMessageInput,
   ChannelKey,
-} from "./types";
+} from "./types/index";
 
 interface BootstrappedChannelRuntime {
   channelKey: ChannelKey;
@@ -29,6 +29,7 @@ interface BootstrappedChannelRuntime {
   sessionManager: SessionManager;
   settingsManager: SettingsManager;
   status: Extract<ChannelBootstrapStatus, "restored" | "created">;
+  workspacePluginInstalled: boolean;
 }
 
 export interface ChannelSettingsReloadResult {
@@ -43,14 +44,6 @@ export interface ReloadAllChannelSettingsResult {
   count: number;
   results: ChannelSettingsReloadResult[];
   summary: string;
-}
-
-function normalizeExternalPath(value?: string | string[]): string[] | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  return Array.isArray(value) ? value : [value];
 }
 
 function buildDefaultSettings(config: AgentSessionServiceConfig): AthenaSessionSettings {
@@ -74,12 +67,6 @@ function buildDefaultSettings(config: AgentSessionServiceConfig): AthenaSessionS
       baseTimeoutMs: config.baseTimeoutMs,
       perStepTimeoutMs: config.perStepTimeoutMs,
       chunkTimeoutMs: config.chunkTimeoutMs,
-    },
-    workspace: {
-      enableWorkspace: config.enableWorkspace,
-      enableSandbox: config.enableSandbox,
-      enableFilesystem: config.enableFilesystem,
-      externalPath: normalizeExternalPath(config.externalPath),
     },
     prompts: {
       builtInInstructions: config.instructions,
@@ -123,10 +110,6 @@ export interface AgentSessionServiceConfig {
   perStepTimeoutMs?: number;
   /** Chunk timeout in ms. Default 10000. */
   chunkTimeoutMs?: number;
-  enableWorkspace?: boolean;
-  enableSandbox?: boolean;
-  enableFilesystem?: boolean;
-  externalPath?: string | string[];
   logLevel?: number;
 }
 
@@ -141,7 +124,7 @@ export interface AgentSessionServiceConfig {
  * an isolated SessionManager for JSONL persistence.
  *
  * Message flow:
- * 1. Koishi message event → koishiSessionToCanonicalInput()
+ * 1. Koishi message event → koishiSessionToChannelInput()
  * 2. AgentSessionService.receive() → route to ChannelRuntime
  * 3. ChannelRuntime.receive() → persist, willingness check, maybe respond
  */
@@ -149,6 +132,7 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
   static inject = ["yesimbot.model", "yesimbot.plugin"];
 
   private agents: Map<ChannelKey, ChannelRuntime> = new Map();
+  private bootstrapPromises: Map<ChannelKey, Promise<ChannelRuntime>> = new Map();
   /** TTL-based dedupe set for messageIds. Map<messageId, expiryTimestamp>. */
   private recentMessageIds: Map<string, number> = new Map();
   private readonly dedupeTtlMs = 120000;
@@ -166,7 +150,7 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
 
   protected async start(): Promise<void> {
     this.ctx.middleware(async (session, next) => {
-      const input = koishiSessionToCanonicalInput(session);
+      const input = koishiSessionToChannelInput(session);
       if (input) {
         this.receive(input, session.bot).catch((err) => {
           this.logger.error(
@@ -210,6 +194,7 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
           return `No active agent for ${channelKey}.`;
         }
         agent.abort();
+        this.removeScopedWorkspacePlugin(channelKey);
         this.agents.delete(channelKey);
         return `Cleared agent session for ${channelKey}.`;
       });
@@ -320,40 +305,61 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
     // Abort all active agents
     for (const [key, agent] of this.agents) {
       agent.abort();
+      this.removeScopedWorkspacePlugin(key);
       this.logger.debug(`Aborted agent for ${key}`);
     }
     this.agents.clear();
+    this.bootstrapPromises.clear();
     this.recentMessageIds.clear();
     this.logger.info("AgentSessionService stopped");
+  }
+
+  private async installScopedWorkspacePlugin(
+    channelKey: ChannelKey,
+    channelDir: string,
+    settingsManager: SettingsManager,
+  ): Promise<boolean> {
+    const pluginService = this.ctx["yesimbot.plugin"];
+    const workspaceSettings = settingsManager.getWorkspaceSettings();
+    if (!pluginService?.install || workspaceSettings?.enableWorkspace === false) {
+      return false;
+    }
+
+    const plugin = new WorkspacePlugin(this.ctx, {
+      basePath: channelDir,
+      settingsManager,
+      logger: this.ctx.logger("workspace"),
+    });
+
+    await pluginService.install(plugin, { scope: channelKey });
+
+    return true;
+  }
+
+  private removeScopedWorkspacePlugin(channelKey: ChannelKey): void {
+    this.ctx["yesimbot.plugin"]?.remove?.("workspace", { scope: channelKey });
   }
 
   // =========================================================================
   // Message Routing
   // =========================================================================
 
-  /** Process an incoming canonical or compatibility channel input. */
-  async receive(input: CanonicalChannelInput | ChannelEvent, bot?: Bot): Promise<void> {
-    const canonicalInput = normalizeIncomingChannelInput(input);
-    const routeBot = bot ?? ("bot" in input ? input.bot : undefined);
+  /** Process an incoming channel input. */
+  async receive(input: ChannelMessageInput, bot?: Bot): Promise<void> {
+    const routeBot = bot;
 
-    if (canonicalInput.kind === "channel_message") {
-      const selfId = routeBot?.selfId ?? "";
-      if (selfId && canonicalInput.sender.userId === selfId) {
-        return;
-      }
-
-      if (this.isDuplicate(canonicalInput.messageId)) {
-        this.logger.debug(`Duplicate message ${canonicalInput.messageId} dropped`);
-        return;
-      }
+    const selfId = routeBot?.selfId ?? "";
+    if (selfId && input.sender.userId === selfId) {
+      return;
     }
 
-    const agent = this.getOrCreateAgent(
-      canonicalInput.platform,
-      canonicalInput.channelId,
-      routeBot,
-    );
-    await agent.receive(canonicalInput);
+    if (this.isDuplicate(input.messageId)) {
+      this.logger.debug(`Duplicate message ${input.messageId} dropped`);
+      return;
+    }
+
+    const agent = await this.getOrCreateAgent(input.platform, input.channelId, routeBot);
+    await agent.receive(input);
   }
 
   private isDuplicate(messageId: string): boolean {
@@ -384,7 +390,7 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
   // =========================================================================
 
   /** Get an existing agent or create a new one for the channel. */
-  getOrCreateAgent(platform: string, channelId: string, bot?: Bot): ChannelRuntime {
+  async getOrCreateAgent(platform: string, channelId: string, bot?: Bot): Promise<ChannelRuntime> {
     const channelKey: ChannelKey = `${platform}:${channelId}`;
     const existing = this.agents.get(channelKey);
     if (existing) {
@@ -392,11 +398,21 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
       return existing;
     }
 
-    const runtime = this.bootstrapChannelRuntime(platform, channelId);
-    const agent = this.createChannelRuntime(runtime, bot);
+    const pending = this.bootstrapPromises.get(channelKey);
+    if (pending) {
+      const agent = await pending;
+      agent.bindBot(bot);
+      return agent;
+    }
 
-    this.agents.set(channelKey, agent);
-    return agent;
+    const bootstrapPromise = this.createAndStoreAgent(channelKey, platform, channelId, bot).finally(
+      () => {
+        this.bootstrapPromises.delete(channelKey);
+      },
+    );
+    this.bootstrapPromises.set(channelKey, bootstrapPromise);
+
+    return bootstrapPromise;
   }
 
   async bootstrapChannelForManagement(
@@ -423,7 +439,7 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
     }
 
     try {
-      const runtime = this.bootstrapChannelRuntime(platform, channelId);
+      const runtime = await this.bootstrapChannelRuntime(platform, channelId);
       const agent = this.createChannelRuntime(runtime, bot);
 
       this.agents.set(channelKey, agent);
@@ -442,7 +458,23 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
     }
   }
 
-  private bootstrapChannelRuntime(platform: string, channelId: string): BootstrappedChannelRuntime {
+  private async createAndStoreAgent(
+    channelKey: ChannelKey,
+    platform: string,
+    channelId: string,
+    bot?: Bot,
+  ): Promise<ChannelRuntime> {
+    const runtime = await this.bootstrapChannelRuntime(platform, channelId);
+    const agent = this.createChannelRuntime(runtime, bot);
+
+    this.agents.set(channelKey, agent);
+    return agent;
+  }
+
+  private async bootstrapChannelRuntime(
+    platform: string,
+    channelId: string,
+  ): Promise<BootstrappedChannelRuntime> {
     const channelKey: ChannelKey = `${platform}:${channelId}`;
 
     const globalRoot = this.getGlobalRoot();
@@ -474,6 +506,12 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
       this.logger.debug(`Created new session for ${channelKey}`);
     }
 
+    const workspacePluginInstalled = await this.installScopedWorkspacePlugin(
+      channelKey,
+      channelDir,
+      settingsManager,
+    );
+
     return {
       channelKey,
       platform,
@@ -482,6 +520,7 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
       sessionManager,
       settingsManager,
       status,
+      workspacePluginInstalled,
     };
   }
 
@@ -553,7 +592,13 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
     }
 
     try {
+      this.removeScopedWorkspacePlugin(channelKey);
       const metadata = agent.getSettingsManager().reload();
+      await this.installScopedWorkspacePlugin(
+        channelKey,
+        this.getChannelDir(platform, channelId),
+        agent.getSettingsManager() as SettingsManager,
+      );
       this.logReloadMetadata(channelKey, metadata);
       return {
         channelKey,
@@ -682,14 +727,14 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
 }
 
 // ============================================================================
-// Koishi Session → canonical input mapping
+// Koishi Session → channel input mapping
 // ============================================================================
 
 /**
- * Convert a Koishi session object to canonical channel input.
+ * Convert a Koishi session object to channel input.
  * Returns null if the session lacks required fields.
  */
-export function koishiSessionToCanonicalInput(session: Session): CanonicalChannelInput | null {
+export function koishiSessionToChannelInput(session: Session): ChannelMessageInput | null {
   if (!session.platform || !session.channelId || !session.userId) {
     return null;
   }
@@ -745,32 +790,5 @@ export function koishiSessionToCanonicalInput(session: Session): CanonicalChanne
     atSelf,
     isReplyToBot: (session.quote && session.quote.user?.isBot) || false,
     replyTo,
-  } satisfies CanonicalChannelMessageInput;
-}
-
-function normalizeIncomingChannelInput(
-  input: CanonicalChannelInput | ChannelEvent,
-): CanonicalChannelInput {
-  if ("kind" in input) {
-    return input;
-  }
-
-  return {
-    kind: "channel_message",
-    platform: input.platform,
-    channelId: input.channelId,
-    messageId: input.messageId,
-    timestamp: input.timestamp,
-    content: input.content,
-    sender: {
-      userId: input.userId,
-      username: input.username,
-      nickname: input.nickname,
-      identity: input.identity,
-    },
-    isDirect: input.isDirect,
-    atSelf: input.atSelf,
-    isReplyToBot: input.isReplyToBot,
-    replyTo: input.replyTo,
-  };
+  } satisfies ChannelMessageInput;
 }

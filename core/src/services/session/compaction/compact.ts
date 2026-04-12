@@ -1,6 +1,6 @@
 import type { LanguageModel } from "ai";
 
-import type { TimelineRecord } from "../contracts";
+import type { TimelineRecord } from "../types/index";
 import { materializeTimeline } from "../materialize";
 import { findCutPoint, isCompactionRecordVisible } from "./cut-point";
 import { estimateContextTokens } from "./estimate";

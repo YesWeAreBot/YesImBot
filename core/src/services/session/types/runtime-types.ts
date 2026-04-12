@@ -1,47 +1,8 @@
 import type { JSONValue } from "ai";
-import type { Bot } from "koishi";
-
-export type {
-  AssistantMessageRecord,
-  CanonicalChannelEventInput,
-  CanonicalChannelInput,
-  CanonicalChannelMessageInput,
-  ChannelEventRecord,
-  ChannelMessageRecord,
-  StateChangeRecord,
-  SystemNoticeRecord,
-  TimelineRecord,
-  TimelineRecordMaterialization,
-  TimelineRecordStage,
-  TimelineRecordVisibility,
-  ToolMessageRecord,
-} from "./contracts";
-
-import type { CanonicalReplyReference } from "./contracts";
-
-export type ReplyReference = CanonicalReplyReference;
-
-export interface ChannelEvent {
-  platform: string;
-  channelId: string;
-  userId: string;
-  username: string;
-  nickname?: string;
-  identity?: string;
-  replyTo?: ReplyReference;
-  content: string;
-  isDirect: boolean;
-  atSelf: boolean;
-  isReplyToBot: boolean;
-  messageId: string;
-  timestamp: number;
-  elements: unknown[];
-  bot?: Bot;
-}
 
 export type ChannelKey = `${string}:${string}`;
 
-export type RuntimeNextAction = "idle" | "follow_up" | "blocked";
+export type NextAction = "idle" | "follow_up" | "blocked";
 
 export type ChannelBootstrapStatus =
   | "ready"
@@ -85,7 +46,7 @@ export type ResponseStatusNoticeSubType =
 
 export type ResponseStatusRecord = Record<string, JSONValue | undefined> & {
   endReason: ResponseStatusReason;
-  nextAction: RuntimeNextAction;
+  nextAction: NextAction;
   durationMs: number;
   stepsCompleted: number;
   error?: string;
