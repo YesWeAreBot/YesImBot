@@ -22,7 +22,7 @@ vi.mock("koishi", () => {
 import {
   Metadata,
   YesImPlugin,
-  type ToolExtensionContext,
+  type ResponseContext,
   type ToolRuntime,
 } from "../../../packages/plugin-sdk/src/index";
 import { PluginService } from "../../src/services/plugin/service";
@@ -67,14 +67,14 @@ function createPluginService(ctx: Context): PluginService {
   return new PluginService(ctx);
 }
 
-@Metadata({ name: "search-fixture", description: "search fixture plugin" })
+@Metadata({ name: "search", description: "search fixture plugin" })
 class SearchFixturePlugin extends YesImPlugin {
   constructor(
     ctx: Context,
     toolName = "search",
     private readonly captures: {
-      supportedRuntime?: ToolRuntime;
-      allowedContext?: ToolExtensionContext;
+      matchedRuntime?: ToolRuntime;
+      enabledContext?: ResponseContext;
       enabledTools?: string[];
     } = {},
   ) {
@@ -87,16 +87,14 @@ class SearchFixturePlugin extends YesImPlugin {
         type: "object",
         properties: {},
       },
-      isSupported: ({ runtime }) => {
-        this.captures.supportedRuntime = runtime;
+      match: ({ runtime }) => {
+        this.captures.matchedRuntime = runtime;
         return runtime.platform === "discord" && !("authorRoles" in runtime);
       },
-      isAllowed: ({ extensionContext, enabledTools }) => {
-        this.captures.allowedContext = extensionContext;
+      enable: ({ responseContext, enabledTools }) => {
+        this.captures.enabledContext = responseContext;
         this.captures.enabledTools = [...enabledTools];
-        const searchContext = extensionContext.search as
-          | { channelPolicy?: "enabled" | "disabled" }
-          | undefined;
+        const searchContext = responseContext.search?.[toolName];
 
         return enabledTools.includes(toolName) && searchContext?.channelPolicy === "enabled";
       },
@@ -122,7 +120,7 @@ type GroupHostInput = {
   };
 };
 
-@Metadata({ name: "group-management-fixture", description: "group management fixture plugin" })
+@Metadata({ name: "group-management", description: "group management fixture plugin" })
 class GroupManagementFixturePlugin extends YesImPlugin {
   constructor(ctx: Context) {
     super(ctx);
@@ -134,11 +132,9 @@ class GroupManagementFixturePlugin extends YesImPlugin {
         type: "object",
         properties: {},
       },
-      isSupported: ({ runtime }) => runtime.platform === "discord" && !("manage" in runtime),
-      isAllowed: ({ extensionContext, enabledTools }) => {
-        const groupContext = extensionContext["group-management"] as
-          | GroupManagementExtension
-          | undefined;
+      match: ({ runtime }) => runtime.platform === "discord" && !("manage" in runtime),
+      enable: ({ responseContext, enabledTools }) => {
+        const groupContext = responseContext["group-management"]?.["group-management"];
 
         return (
           enabledTools.includes("group-management") &&
@@ -151,13 +147,11 @@ class GroupManagementFixturePlugin extends YesImPlugin {
     });
   }
 
-  public createExtensionContext(hostInput: GroupHostInput): ToolExtensionContext {
+  public createResponseContext(hostInput: GroupHostInput): Record<string, unknown> {
     return {
-      "group-management": {
-        authorRoles: [...hostInput.koishiSession.author.roles],
-        selfRoles: [...hostInput.koishiSession.self.roles],
-        manage: hostInput.koishiSession.bot.manage,
-      },
+      authorRoles: [...hostInput.koishiSession.author.roles],
+      selfRoles: [...hostInput.koishiSession.self.roles],
+      manage: hostInput.koishiSession.bot.manage,
     };
   }
 }
@@ -178,11 +172,11 @@ describe("explicit tool gate contract", () => {
     );
   });
 
-  it("evaluates isSupported against the core-owned ToolRuntime baseline only", async () => {
+  it("evaluates match against the core-owned ToolRuntime baseline only", async () => {
     const ctx = createContextMock();
     const service = createPluginService(ctx);
     const captures: {
-      supportedRuntime?: ToolRuntime;
+      matchedRuntime?: ToolRuntime;
     } = {};
     const plugin = new SearchFixturePlugin(ctx, "search", captures);
 
@@ -192,18 +186,18 @@ describe("explicit tool gate contract", () => {
     const definition = service.getToolDefinitions().find((tool) => tool.name === "search");
 
     expect(definition).toBeDefined();
-    expect(definition?.definition.isSupported?.({ runtime })).toBe(true);
-    expect(captures.supportedRuntime).toEqual(runtime);
-    expect(captures.supportedRuntime).not.toHaveProperty("authorRoles");
-    expect(captures.supportedRuntime).not.toHaveProperty("selfRoles");
-    expect(captures.supportedRuntime).not.toHaveProperty("manage");
+    expect(definition?.definition.match?.({ runtime })).toBe(true);
+    expect(captures.matchedRuntime).toEqual(runtime);
+    expect(captures.matchedRuntime).not.toHaveProperty("authorRoles");
+    expect(captures.matchedRuntime).not.toHaveProperty("selfRoles");
+    expect(captures.matchedRuntime).not.toHaveProperty("manage");
   });
 
-  it("evaluates isAllowed from the current turn ToolExtensionContext plus enabledTools", async () => {
+  it("evaluates enable from the current ResponseContext plus enabledTools", async () => {
     const ctx = createContextMock();
     const service = createPluginService(ctx);
     const captures: {
-      allowedContext?: ToolExtensionContext;
+      enabledContext?: ResponseContext;
       enabledTools?: string[];
     } = {};
     const plugin = new SearchFixturePlugin(ctx, "search", captures);
@@ -211,23 +205,43 @@ describe("explicit tool gate contract", () => {
     await service.install(plugin);
 
     const runtime = createToolRuntime();
-    const extensionContext: ToolExtensionContext = {
-      search: { channelPolicy: "enabled" },
+    const responseContext: ResponseContext = {
+      search: {
+        search: { channelPolicy: "enabled" },
+      },
     };
     const definition = service.getToolDefinitions().find((tool) => tool.name === "search");
 
+    expect(definition?.definition.enable?.({ runtime, responseContext, enabledTools: [] })).toBe(
+      false,
+    );
     expect(
-      definition?.definition.isAllowed?.({ runtime, extensionContext, enabledTools: [] }),
-    ).toBe(false);
-    expect(
-      definition?.definition.isAllowed?.({
+      definition?.definition.enable?.({
         runtime,
-        extensionContext,
+        responseContext,
         enabledTools: ["search"],
       }),
     ).toBe(true);
-    expect(captures.allowedContext).toEqual(extensionContext);
+    expect(captures.enabledContext).toEqual(responseContext);
     expect(captures.enabledTools).toEqual(["search"]);
+  });
+
+  it("exposes response-scoped gating through the renamed lifecycle contracts", async () => {
+    const ctx = createContextMock();
+    const service = createPluginService(ctx);
+    await service.install(new SearchFixturePlugin(ctx, "search"));
+
+    const runtime = createToolRuntime();
+    const definition = service.getToolDefinitions().find((tool) => tool.name === "search");
+
+    expect(definition?.definition.match?.({ runtime })).toBe(true);
+    expect(
+      definition?.definition.enable?.({
+        runtime,
+        responseContext: { search: { search: { channelPolicy: "enabled" } } },
+        enabledTools: ["search"],
+      }),
+    ).toBe(true);
   });
 
   it("keeps group-management host fields inside plugin-owned ToolExtensionContext namespaces", async () => {
@@ -238,11 +252,31 @@ describe("explicit tool gate contract", () => {
     await service.install(plugin);
 
     const runtime = createToolRuntime();
-    const extensionContext = plugin.createExtensionContext({
-      koishiSession: {
-        author: { roles: ["admin"] },
-        self: { roles: ["owner"] },
-        bot: {
+    const responseContext: ResponseContext = {
+      "group-management": {
+        "group-management": plugin.createResponseContext({
+          koishiSession: {
+            author: { roles: ["admin"] },
+            self: { roles: ["owner"] },
+            bot: {
+              manage: {
+                kick: true,
+                ban: true,
+              },
+            },
+          },
+        }),
+      },
+    };
+    const definition = service
+      .getToolDefinitions()
+      .find((tool) => tool.name === "group-management");
+
+    expect(responseContext).toMatchObject({
+      "group-management": {
+        "group-management": {
+          authorRoles: ["admin"],
+          selfRoles: ["owner"],
           manage: {
             kick: true,
             ban: true,
@@ -250,27 +284,13 @@ describe("explicit tool gate contract", () => {
         },
       },
     });
-    const definition = service
-      .getToolDefinitions()
-      .find((tool) => tool.name === "group-management");
-
-    expect(extensionContext).toMatchObject({
-      "group-management": {
-        authorRoles: ["admin"],
-        selfRoles: ["owner"],
-        manage: {
-          kick: true,
-          ban: true,
-        },
-      },
-    });
     expect(runtime).not.toHaveProperty("authorRoles");
     expect(runtime).not.toHaveProperty("selfRoles");
     expect(runtime).not.toHaveProperty("manage");
     expect(
-      definition?.definition.isAllowed?.({
+      definition?.definition.enable?.({
         runtime,
-        extensionContext,
+        responseContext,
         enabledTools: ["group-management"],
       }),
     ).toBe(true);

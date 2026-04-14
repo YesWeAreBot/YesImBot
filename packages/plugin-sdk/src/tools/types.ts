@@ -23,27 +23,29 @@ export interface ToolRuntime {
   turn: ToolRuntimeTurn;
 }
 
-export interface ToolExtensionContext {
-  [key: string]: unknown;
+export interface ResponseContext {
+  [pluginName: string]: {
+    [toolName: string]: Record<string, unknown>;
+  };
 }
 
-export interface ToolSupportContext {
+export interface ToolMatchContext {
   runtime: ToolRuntime;
 }
 
-export interface ToolAllowContext extends ToolSupportContext {
-  extensionContext: ToolExtensionContext;
+export interface ToolEnableContext extends ToolMatchContext {
+  responseContext: ResponseContext;
   enabledTools: string[];
 }
 
-export interface YesImToolDefinition<INPUT = unknown, OUTPUT = unknown> {
+export interface ToolEntry<INPUT = unknown, OUTPUT = unknown> {
   name: string;
   description: string;
   inputSchema: MixedInputSchema;
   builtin?: boolean;
-  isSupported?: (context: ToolSupportContext) => boolean;
-  isAllowed?: (context: ToolAllowContext) => boolean;
-  buildExtensionContext?: (
+  match?: (context: ToolMatchContext) => boolean;
+  enable?: (context: ToolEnableContext) => boolean;
+  extendResponse?: (
     hostInput: unknown,
     runtime: ToolRuntime,
   ) => Record<string, unknown> | undefined;
@@ -53,30 +55,32 @@ export interface YesImToolDefinition<INPUT = unknown, OUTPUT = unknown> {
 export interface RegisteredToolDefinition<INPUT = unknown, OUTPUT = unknown> {
   pluginName: string;
   name: string;
-  definition: YesImToolDefinition<INPUT, OUTPUT>;
+  definition: ToolEntry<INPUT, OUTPUT>;
   tool: AiTool;
 }
 
-export type ToolAssemblyContextFactory<THostInput = unknown> = (
-  hostInput: THostInput,
-  runtime: ToolRuntime,
-) => Record<string, unknown> | undefined;
-
-export interface ToolAssemblySettings {
+export interface ToolSelectionSettings {
   enabled?: string[];
   required?: string[];
 }
 
-export interface ToolSource<THostInput = unknown> {
-  toolDefinitions: RegisteredToolDefinition[];
-  contextFactories?: Partial<Record<string, ToolAssemblyContextFactory<THostInput>>>;
+export interface ToolHandle<INPUT = unknown, OUTPUT = unknown> {
+  pluginName: string;
+  name: string;
+  definition: ToolEntry<INPUT, OUTPUT>;
+  tool: AiTool;
 }
 
-export interface ToolAssemblyResult {
-  supportedTools: ToolSet;
-  activeTools: ToolSet;
-  experimentalContext: ToolExtensionContext;
+export interface ToolCatalog {
+  tools: ToolSet;
+  handles: Record<string, ToolHandle>;
   signature: string;
+}
+
+export interface ToolSelection {
+  activeTools: ToolSet;
+  activeToolNames: string[];
+  responseContext: ResponseContext;
 }
 
 export interface ToolDecoratorOptions {
@@ -84,9 +88,9 @@ export interface ToolDecoratorOptions {
   description: string;
   inputSchema: MixedInputSchema;
   builtin?: boolean;
-  isSupported?: YesImToolDefinition["isSupported"];
-  isAllowed?: YesImToolDefinition["isAllowed"];
-  buildExtensionContext?: YesImToolDefinition["buildExtensionContext"];
+  match?: ToolEntry["match"];
+  enable?: ToolEntry["enable"];
+  extendResponse?: ToolEntry["extendResponse"];
   needsApproval?: AiTool["needsApproval"];
 }
 

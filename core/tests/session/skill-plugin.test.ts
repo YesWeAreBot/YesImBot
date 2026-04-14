@@ -44,6 +44,8 @@ import { PluginService } from "../../src/services/plugin/service";
 import { InstructionAssembler } from "../../src/services/session/instruction-assembler";
 import type { InstructionContributor } from "../../src/services/session/instruction-contributor";
 import { InstructionStateService } from "../../src/services/session/instruction-state/service";
+import { createSendMessageTool } from "../../src/services/session/runtime/send-message-tool";
+import type { ToolRuntime } from "../../src/services/session/types";
 
 function createLoggerMock(): Logger {
   return {
@@ -63,26 +65,87 @@ function createContextMock(baseDir: string): Context {
   } as unknown as Context;
 }
 
+function createRuntime(basePath: string, messageId = "msg-1"): ToolRuntime {
+  return {
+    channelKey: "discord:channel-1",
+    platform: "discord",
+    channelId: "channel-1",
+    modelId: "test:model",
+    basePath,
+    turn: {
+      messageId,
+      timestamp: Date.now(),
+      isDirect: true,
+      atSelf: true,
+      isReplyToBot: false,
+    },
+  };
+}
+
+async function assembleToolsWithLifecycle(options: {
+  service: PluginService;
+  runtime: ToolRuntime;
+  scope: string;
+  hostInput?: unknown;
+  toolSettings?: {
+    enabled?: string[];
+    required?: string[];
+  };
+}) {
+  const catalog = await options.service.compileTools({
+    runtime: options.runtime,
+    scope: options.scope,
+    sendMessageTool: createSendMessageTool({
+      bot: {
+        selfId: "bot-self",
+        sendMessage: async () => undefined,
+      } as never,
+      channelId: options.runtime.channelId,
+    }),
+  });
+  const responseContext = await options.service.buildResponseContext({
+    runtime: options.runtime,
+    hostInput: options.hostInput,
+    scope: options.scope,
+    catalog,
+  });
+  const selection = await options.service.selectTools({
+    runtime: options.runtime,
+    scope: options.scope,
+    catalog,
+    responseContext,
+    toolSettings: options.toolSettings,
+  });
+
+  return {
+    supportedTools: catalog.tools,
+    activeTools: selection.activeTools,
+    experimentalContext: selection.responseContext,
+  };
+}
+
+async function precompileForInvoke(service: PluginService, runtime: ToolRuntime, scope: string) {
+  await service.compileTools({
+    runtime,
+    scope,
+    sendMessageTool: createSendMessageTool({
+      bot: {
+        selfId: "bot-self",
+        sendMessage: async () => undefined,
+      } as never,
+      channelId: runtime.channelId,
+    }),
+  });
+}
+
 describe("skill plugin", () => {
   it("has no skill tools when the plugin is absent", async () => {
     const baseDir = mkdtempSync(join(tmpdir(), "athena-skill-absent-"));
     try {
       const service = new PluginService(createContextMock(baseDir));
-      const assembly = await service.assembleTools({
-        runtime: {
-          channelKey: "discord:channel-1",
-          platform: "discord",
-          channelId: "channel-1",
-          modelId: "test:model",
-          basePath: baseDir,
-          turn: {
-            messageId: "msg-1",
-            timestamp: Date.now(),
-            isDirect: true,
-            atSelf: true,
-            isReplyToBot: false,
-          },
-        },
+      const assembly = await assembleToolsWithLifecycle({
+        service,
+        runtime: createRuntime(baseDir),
         hostInput: {},
         scope: "discord:channel-1",
       });
@@ -135,21 +198,9 @@ describe("skill plugin", () => {
       await plugin.init();
       await service.install(plugin, { scope: "discord:channel-1" });
 
-      const assembly = await service.assembleTools({
-        runtime: {
-          channelKey: "discord:channel-1",
-          platform: "discord",
-          channelId: "channel-1",
-          modelId: "test:model",
-          basePath: baseDir,
-          turn: {
-            messageId: "msg-2",
-            timestamp: Date.now(),
-            isDirect: true,
-            atSelf: true,
-            isReplyToBot: false,
-          },
-        },
+      const assembly = await assembleToolsWithLifecycle({
+        service,
+        runtime: createRuntime(baseDir, "msg-2"),
         hostInput: {},
         scope: "discord:channel-1",
         toolSettings: {
@@ -230,6 +281,8 @@ describe("skill plugin", () => {
       const plugin = new SkillPlugin(ctx, { skills: ["skills"] });
       await plugin.init();
       await service.install(plugin, { scope: "discord:channel-1" });
+      const runtime = createRuntime(baseDir, "msg-4");
+      await precompileForInvoke(service, runtime, "discord:channel-1");
 
       await expect(
         service.invoke({
@@ -238,20 +291,7 @@ describe("skill plugin", () => {
             name: "code-review",
             path: "../../etc/passwd",
           },
-          runtime: {
-            channelKey: "discord:channel-1",
-            platform: "discord",
-            channelId: "channel-1",
-            modelId: "test:model",
-            basePath: baseDir,
-            turn: {
-              messageId: "msg-4",
-              timestamp: Date.now(),
-              isDirect: true,
-              atSelf: true,
-              isReplyToBot: false,
-            },
-          },
+          runtime,
           hostInput: {},
           scope: "discord:channel-1",
           toolSettings: {
@@ -281,6 +321,8 @@ describe("skill plugin", () => {
       const plugin = new SkillPlugin(ctx, { skills: ["skills"] });
       await plugin.init();
       await service.install(plugin, { scope: "discord:channel-1" });
+      const runtime = createRuntime(baseDir, "msg-5");
+      await precompileForInvoke(service, runtime, "discord:channel-1");
 
       await expect(
         service.invoke({
@@ -289,20 +331,7 @@ describe("skill plugin", () => {
             name: "code-review",
             path: "leak.txt",
           },
-          runtime: {
-            channelKey: "discord:channel-1",
-            platform: "discord",
-            channelId: "channel-1",
-            modelId: "test:model",
-            basePath: baseDir,
-            turn: {
-              messageId: "msg-5",
-              timestamp: Date.now(),
-              isDirect: true,
-              atSelf: true,
-              isReplyToBot: false,
-            },
-          },
+          runtime,
           hostInput: {},
           scope: "discord:channel-1",
           toolSettings: {
@@ -323,6 +352,8 @@ describe("skill plugin", () => {
       const plugin = new SkillPlugin(ctx, { skills: ["missing-skills-root"] });
       await plugin.init();
       await service.install(plugin, { scope: "discord:channel-1" });
+      const runtime = createRuntime(baseDir, "msg-6");
+      await precompileForInvoke(service, runtime, "discord:channel-1");
 
       await expect(
         service.invoke({
@@ -330,20 +361,7 @@ describe("skill plugin", () => {
           input: {
             name: "code-review",
           },
-          runtime: {
-            channelKey: "discord:channel-1",
-            platform: "discord",
-            channelId: "channel-1",
-            modelId: "test:model",
-            basePath: baseDir,
-            turn: {
-              messageId: "msg-6",
-              timestamp: Date.now(),
-              isDirect: true,
-              atSelf: true,
-              isReplyToBot: false,
-            },
-          },
+          runtime,
           hostInput: {},
           scope: "discord:channel-1",
           toolSettings: {
@@ -373,6 +391,8 @@ describe("skill plugin", () => {
       const plugin = new SkillPlugin(ctx, { skills: ["skills"] });
       await plugin.init();
       await service.install(plugin, { scope: "discord:channel-1" });
+      const skillRuntime = createRuntime(baseDir, "msg-7");
+      await precompileForInvoke(service, skillRuntime, "discord:channel-1");
 
       await expect(
         service.invoke({
@@ -380,20 +400,7 @@ describe("skill plugin", () => {
           input: {
             name: "code-review",
           },
-          runtime: {
-            channelKey: "discord:channel-1",
-            platform: "discord",
-            channelId: "channel-1",
-            modelId: "test:model",
-            basePath: baseDir,
-            turn: {
-              messageId: "msg-7",
-              timestamp: Date.now(),
-              isDirect: true,
-              atSelf: true,
-              isReplyToBot: false,
-            },
-          },
+          runtime: skillRuntime,
           hostInput: {},
           scope: "discord:channel-1",
           toolSettings: {
@@ -408,20 +415,7 @@ describe("skill plugin", () => {
           input: {
             query: "LEAKED_CONTENT",
           },
-          runtime: {
-            channelKey: "discord:channel-1",
-            platform: "discord",
-            channelId: "channel-1",
-            modelId: "test:model",
-            basePath: baseDir,
-            turn: {
-              messageId: "msg-8",
-              timestamp: Date.now(),
-              isDirect: true,
-              atSelf: true,
-              isReplyToBot: false,
-            },
-          },
+          runtime: createRuntime(baseDir, "msg-8"),
           hostInput: {},
           scope: "discord:channel-1",
           toolSettings: {

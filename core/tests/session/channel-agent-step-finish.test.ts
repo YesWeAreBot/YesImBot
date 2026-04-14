@@ -1,11 +1,71 @@
-import { describe, expect, it, vi } from "vitest";
+import type { LanguageModelV3 } from "@ai-sdk/provider";
+import type { ToolSet } from "ai";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const { generateMock } = vi.hoisted(() => ({
+  generateMock: vi.fn<(input: Record<string, unknown>) => Promise<void>>(),
+}));
+
+vi.mock("ai", () => {
+  class ToolLoopAgent {
+    readonly tools: ToolSet;
+
+    constructor(settings: Record<string, unknown>) {
+      this.tools = (settings.tools as ToolSet | undefined) ?? {};
+    }
+
+    async generate(input: Record<string, unknown>): Promise<void> {
+      return generateMock(input);
+    }
+
+    async stream(): Promise<never> {
+      throw new Error("stream should not be called in this test");
+    }
+  }
+
+  return {
+    ToolLoopAgent,
+    stepCountIs: (n: number) => n,
+  };
+});
+
+vi.mock("../../src/services/session/runtime/model-adapter", () => ({
+  prepareRuntimeModel: vi.fn(() => ({
+    fullId: "test:model",
+    providerId: "test-provider",
+    modelId: "test-model",
+    entry: {
+      id: "test-model",
+      toolCall: true,
+      reasoning: false,
+    },
+    model: {
+      specificationVersion: "v3",
+      provider: "test-provider",
+      modelId: "test-model",
+      defaultObjectGenerationMode: "json",
+      supportsImageUrls: false,
+      supportsUrl: () => false,
+      doGenerate: vi.fn(),
+      doStream: vi.fn(),
+    } as unknown as LanguageModelV3,
+  })),
+}));
 
 import {
+  ChannelRuntime,
   createAgentAssistantMessage,
   createSendMessageTool,
 } from "../../src/services/session/runtime";
+import { SessionManager } from "../../src/services/session/session-manager";
+import { createTestSettingsManager } from "./test-settings-manager";
 
 describe("ChannelRuntime handleStepFinish", () => {
+  beforeEach(() => {
+    generateMock.mockReset();
+    generateMock.mockResolvedValue(undefined);
+  });
+
   it("normalizes assistant reasoning blocks and usage metadata into AgentMessage payloads", () => {
     const persisted = createAgentAssistantMessage({
       content: [
@@ -114,6 +174,86 @@ describe("ChannelRuntime handleStepFinish", () => {
           { index: 1, content: "second", success: false, error: "send failed" },
         ],
       });
+    });
+  });
+
+  describe("tool lifecycle cache", () => {
+    it("reuses the compiled supported tool signature across multiple responses while recalculating active tools", async () => {
+      const sendMessageTool = createSendMessageTool({
+        bot: {
+          selfId: "bot-self",
+          sendMessage: vi.fn(),
+        } as never,
+        channelId: "channel-1",
+      });
+      const compileToolsSpy = vi.fn(async () => ({
+        tools: { send_message: sendMessageTool },
+        handles: {},
+        signature: "compiled-once-signature",
+      }));
+      const buildResponseContextSpy = vi.fn(async () => ({}));
+      const selectToolsSpy = vi.fn(async () => ({
+        activeTools: { send_message: sendMessageTool },
+        activeToolNames: ["send_message"],
+        responseContext: {},
+      }));
+      const runtime = new ChannelRuntime(
+        {
+          logger: vi.fn(() => ({
+            level: 2,
+            debug: vi.fn(),
+            info: vi.fn(),
+            warn: vi.fn(),
+            error: vi.fn(),
+          })),
+          "yesimbot.model": {
+            resolveRegistration: vi.fn(),
+            resolve: vi.fn(),
+          },
+          "yesimbot.plugin": {
+            compileTools: compileToolsSpy,
+            buildResponseContext: buildResponseContextSpy,
+            selectTools: selectToolsSpy,
+            getToolDefinitions: vi.fn(() => []),
+            install: vi.fn(),
+            remove: vi.fn(),
+            list: vi.fn(() => []),
+            invoke: vi.fn(),
+          },
+        } as never,
+        {
+          bot: {
+            selfId: "bot-self",
+            userId: "bot-user",
+            sendMessage: vi.fn(),
+          } as never,
+          sessionManager: SessionManager.inMemory("discord:channel-1"),
+          settingsManager: createTestSettingsManager({
+            tools: { enabled: ["send_message"] },
+          }),
+          platform: "discord",
+          channelId: "channel-1",
+          basePath: "/tmp/athena-runtime-step-finish",
+        },
+      );
+      const syncAgentToolsSpy = vi.spyOn(runtime as never, "syncAgentTools");
+      const runResponse = Reflect.get(runtime as object, "runResponse") as
+        | (() => Promise<void>)
+        | undefined;
+      if (!runResponse) {
+        throw new Error("ChannelRuntime.runResponse is unavailable");
+      }
+
+      await runResponse.call(runtime);
+      const firstSignature = runtime.currentSupportedToolSignature;
+
+      await runResponse.call(runtime);
+
+      expect(runtime.currentSupportedToolSignature).toBe(firstSignature);
+      expect(compileToolsSpy).toHaveBeenCalledTimes(1);
+      expect(buildResponseContextSpy).toHaveBeenCalledTimes(2);
+      expect(syncAgentToolsSpy).toHaveBeenCalledTimes(1);
+      expect(selectToolsSpy).toHaveBeenCalledTimes(2);
     });
   });
 });

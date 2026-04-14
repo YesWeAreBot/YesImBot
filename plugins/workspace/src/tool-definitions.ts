@@ -28,6 +28,26 @@ interface WorkspaceExecutionContext {
   workspaceRoot: string;
 }
 
+function resolveWorkspaceRootFromContext(
+  context:
+    | { workspace?: WorkspaceExecutionContext | Record<string, WorkspaceExecutionContext> }
+    | undefined,
+): string | undefined {
+  const workspaceContext = context?.workspace;
+  if (!workspaceContext) {
+    return undefined;
+  }
+  if (
+    typeof workspaceContext === "object" &&
+    workspaceContext !== null &&
+    "workspaceRoot" in workspaceContext &&
+    typeof workspaceContext.workspaceRoot === "string"
+  ) {
+    return workspaceContext.workspaceRoot;
+  }
+  return Object.values(workspaceContext).find((entry) => entry?.workspaceRoot)?.workspaceRoot;
+}
+
 export async function buildWorkspacePluginToolDefinitions(
   options: WorkspaceToolOptions,
 ): Promise<RegisteredToolDefinition[]> {
@@ -82,14 +102,14 @@ function toRegisteredToolDefinitions(
         name,
         description: tool.description ?? `${pluginName}:${name}`,
         inputSchema: tool.inputSchema,
-        buildExtensionContext: (_hostInput, runtime) => ({
+        extendResponse: (_hostInput, runtime) => ({
           workspaceRoot: getWorkspaceRoot({
             channelDir: options.channelDir,
             runtimeBasePath: runtime.basePath,
             config,
           }),
         }),
-        isSupported: ({ runtime }) => {
+        match: ({ runtime }) => {
           ensureWorkspaceRoot(
             getWorkspaceRoot({
               channelDir: options.channelDir,
@@ -99,7 +119,7 @@ function toRegisteredToolDefinitions(
           );
           return true;
         },
-        isAllowed: ({ enabledTools }: { enabledTools: string[] }) => enabledTools.includes(name),
+        enable: ({ enabledTools }) => enabledTools.includes(name),
         execute,
       },
       tool: {
@@ -146,10 +166,10 @@ function createRuntimeAwareExecute(
     executionOptions: Parameters<NonNullable<ToolSet[string]["execute"]>>[1],
   ) => {
     const context = executionOptions.experimental_context as
-      | { workspace?: WorkspaceExecutionContext }
+      | { workspace?: WorkspaceExecutionContext | Record<string, WorkspaceExecutionContext> }
       | undefined;
     const currentWorkspaceRoot =
-      context?.workspace?.workspaceRoot ?? workspaceRootFallback(options, config);
+      resolveWorkspaceRootFromContext(context) ?? workspaceRootFallback(options, config);
     const scopedTool = await createScopedTool(name, currentWorkspaceRoot, options, config);
 
     if (!scopedTool.execute) {

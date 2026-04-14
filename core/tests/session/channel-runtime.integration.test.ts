@@ -3,14 +3,18 @@ import type { ToolSet } from "ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
-  assembleToolsMock,
+  compileToolsMock,
+  buildResponseContextMock,
+  selectToolsMock,
   prepareRuntimeModelMock,
   toolLoopAgentCtorMock,
   generateMock,
   streamMock,
   toolLoopAgentInstances,
 } = vi.hoisted(() => ({
-  assembleToolsMock: vi.fn(),
+  compileToolsMock: vi.fn(),
+  buildResponseContextMock: vi.fn(),
+  selectToolsMock: vi.fn(),
   prepareRuntimeModelMock: vi.fn(),
   toolLoopAgentCtorMock: vi.fn(),
   generateMock: vi.fn(),
@@ -97,7 +101,9 @@ function createContextMock() {
       resolveRegistration: vi.fn(),
     },
     "yesimbot.plugin": {
-      assembleTools: assembleToolsMock,
+      compileTools: compileToolsMock,
+      buildResponseContext: buildResponseContextMock,
+      selectTools: selectToolsMock,
       getToolSet: vi.fn(() => ({})),
       getToolDefinitions: vi.fn(() => []),
     },
@@ -238,7 +244,25 @@ async function runPrepareHooks(payload: {
 
 describe("ChannelRuntime integration seams", () => {
   beforeEach(() => {
-    assembleToolsMock.mockReset();
+    compileToolsMock.mockReset();
+    buildResponseContextMock.mockReset();
+    selectToolsMock.mockReset();
+    buildResponseContextMock.mockResolvedValue({});
+    selectToolsMock.mockImplementation(
+      async (request: {
+        runtime?: unknown;
+        scope?: string;
+        catalog: { tools: ToolSet };
+        responseContext?: unknown;
+      }) => {
+        const activeTools = request.catalog.tools;
+        return {
+          activeTools,
+          activeToolNames: Object.keys(activeTools),
+          responseContext: request.responseContext ?? {},
+        };
+      },
+    );
     prepareRuntimeModelMock.mockReset();
     prepareRuntimeModelMock.mockReturnValue({
       fullId: "test:model",
@@ -261,32 +285,37 @@ describe("ChannelRuntime integration seams", () => {
     const { ctx, runtime } = createRuntime();
     const sendMessageTool = createTool("send_message");
     const firstSearchTool = createTool("search_docs");
-    const secondSearchTool = createTool("search_docs-second");
-    const firstSupportedTools = {
+    const supportedTools = {
       send_message: sendMessageTool,
       search_docs: firstSearchTool,
     } satisfies ToolSet;
-    const secondSupportedTools = {
-      send_message: sendMessageTool,
-      search_docs: secondSearchTool,
-    } satisfies ToolSet;
     const prepareStepActiveTools: string[][] = [];
 
-    assembleToolsMock
+    compileToolsMock.mockResolvedValue({
+      tools: supportedTools,
+      handles: {},
+      signature: "stable-supported-tools",
+    });
+    buildResponseContextMock
       .mockResolvedValueOnce({
-        supportedTools: firstSupportedTools,
-        activeTools: { send_message: sendMessageTool },
-        experimentalContext: { search: { turn: 1 } },
-        signature: "stable-supported-tools",
+        search: { turn: 1 },
       })
       .mockResolvedValueOnce({
-        supportedTools: secondSupportedTools,
+        search: { turn: 2 },
+      });
+    selectToolsMock
+      .mockResolvedValueOnce({
+        activeTools: { send_message: sendMessageTool },
+        activeToolNames: ["send_message"],
+        responseContext: { search: { turn: 1 } },
+      })
+      .mockResolvedValueOnce({
         activeTools: {
           send_message: sendMessageTool,
-          search_docs: secondSearchTool,
+          search_docs: firstSearchTool,
         },
-        experimentalContext: { search: { turn: 2 } },
-        signature: "stable-supported-tools",
+        activeToolNames: ["send_message", "search_docs"],
+        responseContext: { search: { turn: 2 } },
       });
 
     prepareRuntimeModelMock.mockImplementation(({ modelId }: { modelId: string }) => ({
@@ -324,19 +353,25 @@ describe("ChannelRuntime integration seams", () => {
     });
 
     expect(toolLoopAgentCtorMock).toHaveBeenCalledTimes(1);
-    expect(assembleToolsMock).toHaveBeenCalledTimes(2);
+    expect(compileToolsMock).toHaveBeenCalledTimes(1);
+    expect(buildResponseContextMock).toHaveBeenCalledTimes(2);
+    expect(selectToolsMock).toHaveBeenCalledTimes(2);
     expect(prepareRuntimeModelMock).toHaveBeenCalledTimes(1);
     expect(ctx["yesimbot.model"].resolve).not.toHaveBeenCalled();
     expect(prepareStepActiveTools).toEqual([["send_message"], ["send_message", "search_docs"]]);
     expect(toolLoopAgentInstances[0]?.tools.search_docs).toBe(firstSearchTool);
 
-    const firstRequest = assembleToolsMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    const firstRequest = compileToolsMock.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(firstRequest).toMatchObject({
-      hostInput: expect.objectContaining({ messageId: "msg-stable-1" }),
+      hostInput: expect.objectContaining({
+        channelId: "channel-1",
+        platform: "discord",
+        triggerEvents: expect.arrayContaining([
+          expect.objectContaining({ messageId: "msg-stable-1" }),
+        ]),
+      }),
       scope: "discord:channel-1",
-      toolSettings: { enabled: ["search_docs"] },
     });
-    expect(firstRequest.contextFactories).toBeUndefined();
     expect(firstRequest.runtime).toMatchObject({
       channelKey: "discord:channel-1",
       platform: "discord",
@@ -356,6 +391,12 @@ describe("ChannelRuntime integration seams", () => {
         execute: expect.any(Function),
       }),
     );
+
+    const firstSelectRequest = selectToolsMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(firstSelectRequest).toMatchObject({
+      toolSettings: { enabled: ["search_docs"] },
+      responseContext: { search: { turn: 1 } },
+    });
   });
 
   it("pipes plugin-owned extension context through prepareCall and prepareStep experimental_context", async () => {
@@ -370,29 +411,31 @@ describe("ChannelRuntime integration seams", () => {
     const observedPrepareCallContexts: unknown[] = [];
     const observedPrepareStepContexts: unknown[] = [];
 
-    assembleToolsMock.mockResolvedValue({
-      supportedTools: {
-        send_message: createTool("send_message"),
-        search_docs: createTool(
-          "search_docs",
-          vi.fn(async (_input, options: { experimental_context?: unknown }) => {
-            observedToolContexts.push(options.experimental_context);
-            return "ok";
-          }),
-        ),
+    const sendMessageTool = createTool("send_message");
+    const searchTool = createTool(
+      "search_docs",
+      vi.fn(async (_input, options: { experimental_context?: unknown }) => {
+        observedToolContexts.push(options.experimental_context);
+        return "ok";
+      }),
+    );
+
+    compileToolsMock.mockResolvedValue({
+      tools: {
+        send_message: sendMessageTool,
+        search_docs: searchTool,
       },
-      activeTools: {
-        send_message: createTool("send_message"),
-        search_docs: createTool(
-          "search_docs-active",
-          vi.fn(async (_input, options: { experimental_context?: unknown }) => {
-            observedToolContexts.push(options.experimental_context);
-            return "ok";
-          }),
-        ),
-      },
-      experimentalContext,
+      handles: {},
       signature: "context-tools",
+    });
+    buildResponseContextMock.mockResolvedValue(experimentalContext);
+    selectToolsMock.mockResolvedValue({
+      activeTools: {
+        send_message: sendMessageTool,
+        search_docs: searchTool,
+      },
+      activeToolNames: ["send_message", "search_docs"],
+      responseContext: experimentalContext,
     });
 
     prepareRuntimeModelMock.mockReturnValue({
@@ -439,21 +482,18 @@ describe("ChannelRuntime integration seams", () => {
       const { sessionManager, runtime } = createRuntime();
 
       if (errorMessage === "model_not_found") {
-        assembleToolsMock.mockResolvedValue({
-          supportedTools: {
+        compileToolsMock.mockResolvedValue({
+          tools: {
             send_message: createTool("send_message"),
           },
-          activeTools: {
-            send_message: createTool("send_message"),
-          },
-          experimentalContext: {},
+          handles: {},
           signature: "model-error",
         });
         prepareRuntimeModelMock.mockImplementation(() => {
           throw new Error("model_not_found");
         });
       } else {
-        assembleToolsMock.mockImplementation(() => {
+        compileToolsMock.mockImplementation(() => {
           throw new Error(errorMessage);
         });
       }

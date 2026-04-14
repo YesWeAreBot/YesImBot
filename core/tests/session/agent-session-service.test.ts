@@ -80,14 +80,22 @@ function createLoggerMock(): Logger {
 }
 
 interface PluginServiceMockOptions {
-  assembleTools?: (request: {
-    sendMessageTool?: Record<string, unknown>;
+  compileTools?: (request: { sendMessageTool?: Record<string, unknown> }) => Promise<{
+    tools: Record<string, unknown>;
+    handles: Record<string, unknown>;
+    signature: string;
+  }>;
+  buildResponseContext?: () => Promise<Record<string, unknown>>;
+  selectTools?: (request: {
+    runtime?: unknown;
+    scope?: string;
+    catalog: { tools: Record<string, unknown> };
+    responseContext: Record<string, unknown>;
     toolSettings?: { enabled?: string[] };
   }) => Promise<{
-    supportedTools: Record<string, unknown>;
     activeTools: Record<string, unknown>;
-    experimentalContext: Record<string, unknown>;
-    signature: string;
+    activeToolNames: string[];
+    responseContext: Record<string, unknown>;
   }>;
   getToolDefinitions?: () => unknown[];
   getInstructionContributors?: () => unknown[];
@@ -130,24 +138,39 @@ function createContextMock(
 
   if (pluginOptions !== null) {
     ctx["yesimbot.plugin"] = {
-      assembleTools: vi.fn(
-        pluginOptions.assembleTools ??
-          (async (request: {
-            sendMessageTool?: Record<string, unknown>;
-            toolSettings?: { enabled?: string[] };
-          }) => {
+      compileTools: vi.fn(
+        pluginOptions.compileTools ??
+          (async (request: { sendMessageTool?: Record<string, unknown> }) => {
             const sendMessageTool = request.sendMessageTool;
-            const supportedTools = sendMessageTool ? { send_message: sendMessageTool } : {};
-            const activeTools =
-              sendMessageTool && (request.toolSettings?.enabled?.includes("send_message") ?? true)
-                ? { send_message: sendMessageTool }
-                : {};
+            const tools = sendMessageTool ? { send_message: sendMessageTool } : {};
 
             return {
-              supportedTools,
+              tools,
+              handles: {},
+              signature: JSON.stringify(Object.keys(tools).sort()),
+            };
+          }),
+      ),
+      buildResponseContext: vi.fn(pluginOptions.buildResponseContext ?? (async () => ({}))),
+      selectTools: vi.fn(
+        pluginOptions.selectTools ??
+          (async (request: {
+            runtime?: unknown;
+            scope?: string;
+            catalog: { tools: Record<string, unknown> };
+            responseContext: Record<string, unknown>;
+            toolSettings?: { enabled?: string[] };
+          }) => {
+            const activeTools = Object.fromEntries(
+              Object.entries(request.catalog.tools).filter(([name]) => {
+                return request.toolSettings?.enabled?.includes(name) ?? true;
+              }),
+            );
+
+            return {
               activeTools,
-              experimentalContext: {},
-              signature: JSON.stringify(Object.keys(supportedTools).sort()),
+              activeToolNames: Object.keys(activeTools),
+              responseContext: request.responseContext,
             };
           }),
       ),

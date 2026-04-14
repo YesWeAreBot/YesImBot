@@ -1,7 +1,7 @@
 import { dirname } from "node:path";
 
 import type { ModelMessage } from "@ai-sdk/provider-utils";
-import type { IPluginService } from "@yesimbot/plugin-sdk";
+import type { IPluginService, ToolCatalog, ToolSelection } from "@yesimbot/plugin-sdk";
 import type { LanguageModel, OnFinishEvent, PrepareStepResult, ToolSet } from "ai";
 import { stepCountIs, ToolLoopAgent } from "ai";
 import { Bot, Context, Logger } from "koishi";
@@ -47,6 +47,14 @@ import type {
 // ChannelRuntime
 // ============================================================================
 
+type ResponseHostInput = {
+  triggerEvents: ChannelInput[];
+  responderId: string;
+  channelId: string;
+  platform: string;
+  startedAt: number;
+};
+
 /**
  * Per-channel runtime wrapping AI SDK ToolLoopAgent + SessionManager.
  *
@@ -77,7 +85,11 @@ export class ChannelRuntime {
   private cachedAgentSignature: string | null = null;
   private cachedPreparedModel: ReturnType<typeof prepareRuntimeModel> | null = null;
   private cachedPreparedModelSignature: string | null = null;
-  private currentSupportedToolSignature: string | null = null;
+  public currentSupportedToolSignature: string | null = null;
+  private currentToolCatalog: ToolCatalog | null = null;
+  private currentToolSelection: ToolSelection | null = null;
+  private pendingResponseInputs: ChannelInput[] = [];
+  private currentResponseContext: unknown;
   private currentToolExperimentalContext: unknown;
   private readonly responseStepProcessor: ResponseStepProcessor;
   private readonly willingnessJudge: WillingnessJudge;
@@ -347,6 +359,8 @@ export class ChannelRuntime {
       return;
     }
 
+    this.pendingResponseInputs.push(event);
+
     if (this.hasActiveTurn()) {
       this.markPendingFollowUp({
         observedAt: event.timestamp,
@@ -478,6 +492,20 @@ export class ChannelRuntime {
     };
   }
 
+  private getToolScope(): string | undefined {
+    return this.getChannelKey();
+  }
+
+  private buildResponseHostInput(): ResponseHostInput {
+    return {
+      triggerEvents: [...this.pendingResponseInputs],
+      responderId: (this.bot as { userId?: string } | undefined)?.userId ?? this.bot?.selfId ?? "",
+      channelId: this.options.channelId,
+      platform: this.options.platform,
+      startedAt: Date.now(),
+    };
+  }
+
   private createFollowUpReviewRecord(
     pendingFollowUp: MergedFollowUpOpportunity,
   ): FollowUpReviewRecord {
@@ -541,15 +569,48 @@ export class ChannelRuntime {
       channelId: options.channelId,
     });
     const pluginService = options.ctx["yesimbot.plugin"] as IPluginService | undefined;
-    const toolAssembly = pluginService?.assembleTools
-      ? await pluginService.assembleTools({
-          runtime: this.createToolRuntime(options.turnSettings, latestInput),
-          hostInput: latestInput,
-          scope: this.getChannelKey(),
-          toolSettings: options.settingsManager.getToolSettings?.(),
-          sendMessageTool,
-        })
+    const runtime = this.createToolRuntime(options.turnSettings, latestInput);
+    const responseHostInput = this.buildResponseHostInput();
+    if (responseHostInput.triggerEvents.length === 0 && latestInput) {
+      responseHostInput.triggerEvents = [latestInput];
+    }
+    this.pendingResponseInputs = [];
+    const toolLifecycle = pluginService?.compileTools
+      ? await (async () => {
+          if (!this.currentToolCatalog) {
+            this.currentToolCatalog = await pluginService.compileTools({
+              runtime,
+              scope: this.getToolScope(),
+              hostInput: responseHostInput,
+              sendMessageTool,
+            });
+          }
+
+          const catalog = this.currentToolCatalog;
+          const responseContext = await pluginService.buildResponseContext({
+            runtime,
+            scope: this.getToolScope(),
+            hostInput: responseHostInput,
+            catalog,
+          });
+          const toolSelection = await pluginService.selectTools({
+            runtime,
+            scope: this.getToolScope(),
+            catalog,
+            responseContext,
+            toolSettings: options.settingsManager.getToolSettings?.(),
+          });
+          this.currentToolSelection = toolSelection;
+
+          return {
+            supportedTools: catalog.tools,
+            activeTools: toolSelection.activeTools,
+            responseContext: toolSelection.responseContext,
+            signature: catalog.signature,
+          };
+        })()
       : (() => {
+          this.currentToolSelection = null;
           options.logger.warn(
             `[tools:${channelKey}] PluginService unavailable; continuing with send_message only`,
           );
@@ -557,13 +618,15 @@ export class ChannelRuntime {
           return {
             supportedTools: { send_message: sendMessageTool },
             activeTools: { send_message: sendMessageTool },
-            experimentalContext: {},
+            responseContext: {},
             signature: "no-plugin-service",
           };
         })();
-    const responseActiveTools = Object.keys(toolAssembly.activeTools);
+    const responseActiveTools =
+      this.currentToolSelection?.activeToolNames ?? Object.keys(toolLifecycle.activeTools);
     this.responseActiveTools = responseActiveTools;
-    this.currentToolExperimentalContext = toolAssembly.experimentalContext;
+    this.currentResponseContext = toolLifecycle.responseContext;
+    this.currentToolExperimentalContext = this.currentResponseContext;
 
     const preparedModel = this.getPreparedModel(
       options.turnSettings,
@@ -575,9 +638,9 @@ export class ChannelRuntime {
         : "raw";
 
     const agent = this.getOrCreateAgent(options.turnSettings, preparedModel.model, modelMode);
-    if (this.currentSupportedToolSignature !== toolAssembly.signature) {
-      this.syncAgentTools(agent, toolAssembly.supportedTools);
-      this.currentSupportedToolSignature = toolAssembly.signature;
+    if (this.currentSupportedToolSignature !== toolLifecycle.signature) {
+      this.syncAgentTools(agent, toolLifecycle.supportedTools);
+      this.currentSupportedToolSignature = toolLifecycle.signature;
     }
 
     options.logger.debug(
@@ -684,6 +747,7 @@ export class ChannelRuntime {
         this.abortController = null;
         this.currentTurnSettings = null;
         this.currentTurnInstructions = null;
+        this.currentResponseContext = undefined;
         this.currentToolExperimentalContext = undefined;
         this.currentProtocolRetry = false;
         this.runResponse(true).catch(() => {});
@@ -814,6 +878,7 @@ export class ChannelRuntime {
         this.currentTurnSettings = null;
         this.currentTurnInstructions = null;
         this.currentTurnFollowUpReview = null;
+        this.currentResponseContext = undefined;
         this.currentToolExperimentalContext = undefined;
         this.currentProtocolRetry = false;
         this.runResponse().catch(() => {});
@@ -824,6 +889,7 @@ export class ChannelRuntime {
       this.currentTurnSettings = null;
       this.currentTurnInstructions = null;
       this.currentTurnFollowUpReview = null;
+      this.currentResponseContext = undefined;
       this.currentToolExperimentalContext = undefined;
       this.currentProtocolRetry = false;
     }

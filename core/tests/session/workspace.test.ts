@@ -89,6 +89,49 @@ function createRuntime(basePath: string, scope = "discord:channel-1"): ToolRunti
   };
 }
 
+async function assembleToolsWithLifecycle(options: {
+  service: PluginService;
+  runtime: ToolRuntime;
+  scope: string;
+  hostInput?: unknown;
+  toolSettings?: {
+    enabled?: string[];
+    required?: string[];
+  };
+}) {
+  const sendMessageTool = createSendMessageTool({
+    bot: {
+      selfId: "bot-self",
+      sendMessage: async () => undefined,
+    } as never,
+    channelId: options.runtime.channelId,
+  });
+  const catalog = await options.service.compileTools({
+    runtime: options.runtime,
+    scope: options.scope,
+    sendMessageTool,
+  });
+  const responseContext = await options.service.buildResponseContext({
+    runtime: options.runtime,
+    hostInput: options.hostInput,
+    scope: options.scope,
+    catalog,
+  });
+  const selection = await options.service.selectTools({
+    runtime: options.runtime,
+    scope: options.scope,
+    catalog,
+    responseContext,
+    toolSettings: options.toolSettings,
+  });
+
+  return {
+    supportedTools: catalog.tools,
+    activeTools: selection.activeTools,
+    experimentalContext: selection.responseContext,
+  };
+}
+
 async function installWorkspacePlugin(options: {
   basePath: string;
   scope?: string;
@@ -134,7 +177,8 @@ describe("workspace", () => {
     const basePath = mkdtempSync(join(tmpdir(), "athena-workspace-fs-"));
     try {
       const { service } = await installWorkspacePlugin({ basePath });
-      const assembly = await service.assembleTools({
+      const assembly = await assembleToolsWithLifecycle({
+        service,
         runtime: createRuntime(basePath),
         hostInput: undefined,
         scope: "discord:channel-1",
@@ -150,13 +194,6 @@ describe("workspace", () => {
             "grep",
           ],
         },
-        sendMessageTool: createSendMessageTool({
-          bot: {
-            selfId: "bot-self",
-            sendMessage: async () => undefined,
-          } as never,
-          channelId: "channel-1",
-        }),
       });
 
       expect(assembly.supportedTools).toHaveProperty("read_file");
@@ -198,7 +235,8 @@ describe("workspace", () => {
 
       await plugin.init();
       await service.install(plugin, { scope: "discord:channel-1" });
-      const assembly = await service.assembleTools({
+      const assembly = await assembleToolsWithLifecycle({
+        service,
         runtime: createRuntime(basePath),
         hostInput: undefined,
         scope: "discord:channel-1",
@@ -238,7 +276,8 @@ describe("workspace", () => {
 
       await plugin.init();
       await service.install(plugin, { scope: "discord:channel-1" });
-      const assembly = await service.assembleTools({
+      const assembly = await assembleToolsWithLifecycle({
+        service,
         runtime: createRuntime(basePath),
         hostInput: undefined,
         scope: "discord:channel-1",
@@ -277,7 +316,8 @@ describe("workspace", () => {
           enableFilesystem: true,
         },
       });
-      const assembly = await service.assembleTools({
+      const assembly = await assembleToolsWithLifecycle({
+        service,
         runtime: createRuntime(basePath),
         hostInput: undefined,
         scope: "discord:channel-1",
@@ -315,7 +355,8 @@ describe("workspace", () => {
       await scopedPlugin.init();
       await service.install(scopedPlugin, { scope: "discord:channel-1" });
 
-      const scopedAssembly = await service.assembleTools({
+      const scopedAssembly = await assembleToolsWithLifecycle({
+        service,
         runtime: createRuntime(runtimeScopedPath),
         hostInput: undefined,
         scope: "discord:channel-1",
@@ -363,6 +404,56 @@ describe("workspace", () => {
         "global",
       );
       expect(existsSync(join(runtimeScopedPath, "workspace", "global.txt"))).toBe(false);
+    } finally {
+      await rm(basePath, { recursive: true, force: true });
+    }
+  });
+
+  it("uses namespaced response context when invoking workspace tools through PluginService", async () => {
+    const basePath = mkdtempSync(join(tmpdir(), "athena-workspace-invoke-context-"));
+    const runtimeScopedPath = join(basePath, "channels", "discord-channel-1");
+    const runtimeGlobalPath = join(basePath, "global-root");
+
+    try {
+      const ctx = createContextMock(basePath);
+      const service = new PluginService(ctx);
+      const plugin = new WorkspacePlugin(ctx, {
+        basePath: runtimeGlobalPath,
+        logger: ctx.logger("workspace"),
+        enableWorkspace: true,
+        enableFilesystem: true,
+      });
+      await plugin.init();
+      await service.install(plugin, { scope: "discord:channel-1" });
+
+      const runtime = createRuntime(runtimeScopedPath);
+      await service.compileTools({
+        runtime,
+        scope: "discord:channel-1",
+        sendMessageTool: createSendMessageTool({
+          bot: {
+            selfId: "bot-self",
+            sendMessage: async () => undefined,
+          } as never,
+          channelId: runtime.channelId,
+        }),
+      });
+
+      await service.invoke({
+        name: "write_file",
+        input: { path: "invoke.txt", content: "scoped" },
+        runtime,
+        hostInput: undefined,
+        scope: "discord:channel-1",
+        toolSettings: {
+          enabled: ["write_file"],
+        },
+      });
+
+      expect(readFileSync(join(runtimeScopedPath, "workspace", "invoke.txt"), "utf8")).toBe(
+        "scoped",
+      );
+      expect(existsSync(join(runtimeGlobalPath, "workspace", "invoke.txt"))).toBe(false);
     } finally {
       await rm(basePath, { recursive: true, force: true });
     }

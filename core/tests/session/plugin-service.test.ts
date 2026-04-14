@@ -20,13 +20,7 @@ vi.mock("koishi", () => {
   };
 });
 
-import {
-  Metadata,
-  YesImPlugin,
-  type RegisteredToolDefinition,
-  type ToolExtensionContext,
-  type ToolRuntime,
-} from "../../../packages/plugin-sdk/src/index";
+import { Metadata, YesImPlugin, type ToolRuntime } from "../../../packages/plugin-sdk/src/index";
 import { PluginService } from "../../src/services/plugin/service";
 
 function createLoggerMock(): Logger {
@@ -77,41 +71,8 @@ function createAiTool(label: string, execute?: AiTool["execute"]): AiTool {
   } as unknown as AiTool;
 }
 
-function createRegisteredToolDefinition(options: {
-  pluginName: string;
-  name: string;
-  execute?: (input: unknown, options: ToolExecutionOptions) => Promise<unknown> | unknown;
-  isSupported?: RegisteredToolDefinition["definition"]["isSupported"];
-  isAllowed?: RegisteredToolDefinition["definition"]["isAllowed"];
-  buildExtensionContext?: RegisteredToolDefinition["definition"]["buildExtensionContext"];
-}): RegisteredToolDefinition {
-  const execute = options.execute ?? (async () => options.name);
-  return {
-    pluginName: options.pluginName,
-    name: options.name,
-    definition: {
-      name: options.name,
-      description: `${options.pluginName}:${options.name}`,
-      inputSchema: {
-        type: "object",
-        additionalProperties: false,
-        properties: {},
-      },
-      isSupported: options.isSupported,
-      isAllowed: options.isAllowed,
-      buildExtensionContext: options.buildExtensionContext,
-      execute,
-    },
-    tool: createAiTool(options.name, execute as AiTool["execute"]),
-  };
-}
-
-function createPluginService(ctx: Context): PluginService {
-  return new PluginService(ctx);
-}
-
-@Metadata({ name: "search-fixture", description: "search fixture plugin" })
-class SearchFixturePlugin extends YesImPlugin {
+@Metadata({ name: "search", description: "search plugin fixture" })
+class SearchPlugin extends YesImPlugin {
   constructor(
     ctx: Context,
     private readonly executeSpy: ReturnType<typeof vi.fn>,
@@ -119,7 +80,7 @@ class SearchFixturePlugin extends YesImPlugin {
     super(ctx);
     this.registerTool({
       name: "search_docs",
-      description: "search fixture",
+      description: "search docs",
       inputSchema: {
         type: "object",
         additionalProperties: false,
@@ -128,269 +89,261 @@ class SearchFixturePlugin extends YesImPlugin {
         },
         required: ["query"],
       },
-      isSupported: ({ runtime }) => runtime.platform === "discord",
-      isAllowed: ({ extensionContext, enabledTools }) => {
-        const searchContext = extensionContext["search-fixture"] as { allow: boolean } | undefined;
-        return enabledTools.includes("search_docs") && searchContext?.allow === true;
-      },
-      buildExtensionContext: (hostInput: { allowSearch: boolean }, runtime: ToolRuntime) => ({
-        allow: hostInput.allowSearch,
-        channelKey: runtime.channelKey,
+      match: ({ runtime }) => runtime.platform === "discord",
+      extendResponse: (hostInput: { allowSearch?: boolean }) => ({
+        channelPolicy: hostInput.allowSearch === true ? "enabled" : "disabled",
       }),
+      enable: ({ responseContext }) => {
+        const context = responseContext.search?.search_docs as
+          | { channelPolicy?: "enabled" | "disabled" }
+          | undefined;
+        return context?.channelPolicy === "enabled";
+      },
       execute: async (input, options) => await this.executeSpy(input, options),
     });
   }
 }
 
-@Metadata({ name: "scoped-fixture", description: "scoped fixture plugin" })
-class ScopedFixturePlugin extends YesImPlugin {
-  constructor(
-    ctx: Context,
-    private readonly executeSpy: ReturnType<typeof vi.fn>,
-  ) {
+@Metadata({ name: "scoped", description: "scoped plugin fixture" })
+class ScopedPlugin extends YesImPlugin {
+  constructor(ctx: Context) {
     super(ctx);
     this.registerTool({
-      name: "scoped_lookup",
-      description: "scoped fixture",
+      name: "scoped_tool",
+      description: "scoped tool",
       inputSchema: {
         type: "object",
         additionalProperties: false,
         properties: {},
       },
-      isAllowed: ({ extensionContext, enabledTools }) => {
-        const scopedContext = extensionContext["scoped-fixture"] as
-          | { allowScoped: boolean }
-          | undefined;
-        return enabledTools.includes("scoped_lookup") && scopedContext?.allowScoped === true;
-      },
-      buildExtensionContext: (hostInput: { allowScoped: boolean }) => ({
-        allowScoped: hostInput.allowScoped,
-      }),
-      execute: async (input, options) => await this.executeSpy(input, options),
+      execute: async () => "scoped_tool",
     });
   }
 }
 
-describe("PluginService canonical tool seam", () => {
-  it("assembleTools derives buildExtensionContext for global and scoped definitions", async () => {
+@Metadata({ name: "reserved", description: "reserved name plugin" })
+class ReservedNamePlugin extends YesImPlugin {
+  constructor(ctx: Context) {
+    super(ctx);
+    this.registerTool({
+      name: "send_message",
+      description: "reserved tool",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {},
+      },
+      execute: async () => "reserved",
+    });
+  }
+}
+
+@Metadata({ name: "duplicate", description: "duplicate name plugin" })
+class DuplicateNamePlugin extends YesImPlugin {
+  constructor(ctx: Context) {
+    super(ctx);
+    this.registerTool({
+      name: "search_docs",
+      description: "duplicate tool",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {},
+      },
+      execute: async () => "duplicate",
+    });
+  }
+}
+
+describe("PluginService tool lifecycle", () => {
+  it("compiles one stable catalog per channel key and reuses bound tool handles", async () => {
     const ctx = createContextMock();
-    const service = createPluginService(ctx);
-    const executeSpy = vi.fn(async (input: unknown) => input);
+    const service = new PluginService(ctx);
+    const runtime = createToolRuntime();
+    const sendMessageTool = createAiTool("send_message");
 
-    await service.install(new SearchFixturePlugin(ctx, executeSpy));
-    await service.install(new ScopedFixturePlugin(ctx, executeSpy), {
-      scope: "discord:channel-1",
+    await service.install(
+      new SearchPlugin(
+        ctx,
+        vi.fn(async () => "search"),
+      ),
+    );
+
+    const first = await service.compileTools({
+      runtime,
+      scope: runtime.channelKey,
+      hostInput: {},
+      sendMessageTool,
+    });
+    const second = await service.compileTools({
+      runtime,
+      scope: runtime.channelKey,
+      hostInput: {},
+      sendMessageTool,
     });
 
-    const assembly = await (
-      service as PluginService & {
-        assembleTools: (request: unknown) => Promise<{
-          supportedTools: Record<string, unknown>;
-          activeTools: Record<string, unknown>;
-          experimentalContext: ToolExtensionContext;
-        }>;
-      }
-    ).assembleTools({
-      runtime: createToolRuntime(),
-      hostInput: { allowSearch: true, allowScoped: true },
-      scope: "discord:channel-1",
-      toolSettings: { enabled: ["search_docs", "scoped_lookup"] },
-    });
-
-    expect(Object.keys(assembly.supportedTools)).toEqual([
-      "send_message",
-      "search_docs",
-      "scoped_lookup",
-    ]);
-    expect(Object.keys(assembly.activeTools)).toEqual([
-      "send_message",
-      "search_docs",
-      "scoped_lookup",
-    ]);
-    expect(assembly.experimentalContext).toEqual({
-      "search-fixture": {
-        allow: true,
-        channelKey: "discord:channel-1",
-      },
-      "scoped-fixture": {
-        allowScoped: true,
-      },
-    });
+    expect(first.signature).toBe(second.signature);
+    expect(first.tools.search_docs).toBe(second.tools.search_docs);
   });
 
-  it("assembleTools still fails fast on reserved and duplicate tool names", async () => {
+  it("builds one response context per response start and selects tools from the cached catalog", async () => {
     const ctx = createContextMock();
-    const service = createPluginService(ctx);
-    const executeSpy = vi.fn(async (input: unknown) => input);
+    const service = new PluginService(ctx);
+    const runtime = createToolRuntime();
+    const sendMessageTool = createAiTool("send_message");
 
-    await service.install(new SearchFixturePlugin(ctx, executeSpy));
+    await service.install(
+      new SearchPlugin(
+        ctx,
+        vi.fn(async () => "search"),
+      ),
+    );
 
-    const assembleTools = (
-      service as PluginService & {
-        assembleTools: (request: unknown) => Promise<unknown>;
-      }
-    ).assembleTools.bind(service);
+    const catalog = await service.compileTools({
+      runtime,
+      scope: runtime.channelKey,
+      hostInput: {},
+      sendMessageTool,
+    });
+    const responseContext = await service.buildResponseContext({
+      runtime,
+      hostInput: { allowSearch: true },
+      catalog,
+    });
+    const selection = await service.selectTools({
+      runtime,
+      catalog,
+      responseContext,
+      toolSettings: { enabled: ["search_docs"] },
+    });
 
-    await expect(
-      assembleTools({
-        runtime: createToolRuntime(),
-        hostInput: {},
-        additionalToolDefinitions: [
-          createRegisteredToolDefinition({
-            pluginName: "manual-source",
-            name: "send_message",
-          }),
-        ],
-      }),
-    ).rejects.toThrow(/send_message/i);
-
-    await expect(
-      assembleTools({
-        runtime: createToolRuntime(),
-        hostInput: {},
-        additionalToolDefinitions: [
-          createRegisteredToolDefinition({
-            pluginName: "manual-source",
-            name: "search_docs",
-          }),
-        ],
-      }),
-    ).rejects.toThrow(/duplicate|search_docs/i);
+    expect(Object.keys(selection.activeTools)).toEqual(["send_message", "search_docs"]);
   });
 
-  it("invoke resolves the target tool through assembleTools instead of getToolSet", async () => {
+  it("rejects selection when a required tool cannot be enabled", async () => {
     const ctx = createContextMock();
-    const service = createPluginService(ctx);
+    const service = new PluginService(ctx);
+    const runtime = createToolRuntime();
+    const sendMessageTool = createAiTool("send_message");
+
+    await service.install(
+      new SearchPlugin(
+        ctx,
+        vi.fn(async () => "search"),
+      ),
+    );
+
+    const catalog = await service.compileTools({
+      runtime,
+      scope: runtime.channelKey,
+      hostInput: {},
+      sendMessageTool,
+    });
+
+    await expect(
+      service.selectTools({
+        runtime,
+        catalog,
+        responseContext: { search: { search_docs: { channelPolicy: "disabled" } } },
+        toolSettings: { enabled: ["search_docs"], required: ["search_docs"] },
+      }),
+    ).rejects.toThrow("Required tools unavailable: search_docs");
+  });
+
+  it("rejects reserved and duplicate tool names during catalog compilation", async () => {
+    const ctx = createContextMock();
+    const service = new PluginService(ctx);
+    const runtime = createToolRuntime();
+
+    await service.install(
+      new SearchPlugin(
+        ctx,
+        vi.fn(async () => "search"),
+      ),
+    );
+
+    const reservedNamePlugin = new ReservedNamePlugin(ctx);
+    const duplicateNamePlugin = new DuplicateNamePlugin(ctx);
+
+    await expect(
+      service.install(reservedNamePlugin, { scope: runtime.channelKey }),
+    ).rejects.toThrow("Reserved tool name: send_message");
+    await expect(
+      service.install(duplicateNamePlugin, { scope: runtime.channelKey }),
+    ).rejects.toThrow("Duplicate tool name: search_docs");
+  });
+
+  it("invalidates cached catalogs when provider visibility changes for a channel scope", async () => {
+    const ctx = createContextMock();
+    const service = new PluginService(ctx);
+    const runtime = createToolRuntime();
+    const sendMessageTool = createAiTool("send_message");
+
+    await service.install(
+      new SearchPlugin(
+        ctx,
+        vi.fn(async () => "search"),
+      ),
+    );
+
+    const first = await service.compileTools({
+      runtime,
+      scope: runtime.channelKey,
+      hostInput: {},
+      sendMessageTool,
+    });
+
+    const scopedPlugin = new ScopedPlugin(ctx);
+    await service.install(scopedPlugin, { scope: runtime.channelKey });
+
+    const second = await service.compileTools({
+      runtime,
+      scope: runtime.channelKey,
+      hostInput: {},
+      sendMessageTool,
+    });
+
+    expect(second).not.toBe(first);
+    expect(second.signature).toContain("scoped_tool");
+    expect(Object.keys(second.tools)).toContain("scoped_tool");
+  });
+
+  it("invokes tools through the contextual catalog path", async () => {
+    const ctx = createContextMock();
+    const service = new PluginService(ctx);
+    const runtime = createToolRuntime();
+    const sendMessageTool = createAiTool("send_message");
     const executeSpy = vi.fn(async (input: unknown, options: ToolExecutionOptions) => ({
       input,
       toolCallId: options.toolCallId,
+      context: options.experimental_context,
     }));
 
-    const assembleTools = vi.fn(async () => ({
-      supportedTools: {
-        send_message: createAiTool("send_message"),
-        search_docs: createAiTool("search_docs", executeSpy),
-      },
-      activeTools: {
-        send_message: createAiTool("send_message"),
-        search_docs: createAiTool("search_docs", executeSpy),
-      },
-      experimentalContext: {
-        "search-fixture": { allow: true },
-      },
-      signature: '["search_docs","send_message"]',
-    }));
-
-    Object.defineProperty(service, "assembleTools", {
-      value: assembleTools,
-      configurable: true,
-    });
-    Object.defineProperty(service, "getToolSet", {
-      value: vi.fn(() => {
-        throw new Error("invoke should not read getToolSet");
-      }),
-      configurable: true,
+    await service.install(new SearchPlugin(ctx, executeSpy));
+    await service.compileTools({
+      runtime,
+      scope: runtime.channelKey,
+      hostInput: {},
+      sendMessageTool,
     });
 
     await expect(
       service.invoke({
         name: "search_docs",
         input: { query: "athena" },
-        options: { toolCallId: "runtime:search_docs" },
-        runtime: createToolRuntime(),
-        hostInput: {},
-      }),
-    ).resolves.toEqual({
-      input: { query: "athena" },
-      toolCallId: "runtime:search_docs",
-    });
-
-    expect(assembleTools).toHaveBeenCalledOnce();
-    expect(executeSpy).toHaveBeenCalledOnce();
-  });
-
-  it("invoke only diverges from runtime execution on transport metadata such as generated toolCallId", async () => {
-    const ctx = createContextMock();
-    const service = createPluginService(ctx);
-    const seenToolCallIds: string[] = [];
-    const executeSpy = vi.fn(async (input: unknown, options: ToolExecutionOptions) => {
-      seenToolCallIds.push(options.toolCallId);
-      return { ok: true, input };
-    });
-
-    await service.install(new SearchFixturePlugin(ctx, executeSpy));
-
-    const assembly = await (
-      service as PluginService & {
-        assembleTools: (request: unknown) => Promise<{
-          activeTools: Record<string, { execute?: AiTool["execute"] }>;
-          experimentalContext: ToolExtensionContext;
-        }>;
-      }
-    ).assembleTools({
-      runtime: createToolRuntime(),
-      hostInput: { allowSearch: true },
-      toolSettings: { enabled: ["search_docs"] },
-      contextFactories: {
-        "search-fixture": (hostInput: { allowSearch: boolean }) => ({
-          allow: hostInput.allowSearch,
-        }),
-      },
-    });
-
-    const runtimeResult = await assembly.activeTools.search_docs?.execute?.(
-      { query: "athena" } as never,
-      {
-        toolCallId: "runtime:search_docs",
-        messages: [],
-        experimental_context: assembly.experimentalContext,
-      },
-    );
-    const manualResult = await service.invoke({
-      name: "search_docs",
-      input: { query: "athena" },
-      options: {},
-      runtime: createToolRuntime(),
-      hostInput: { allowSearch: true },
-      toolSettings: { enabled: ["search_docs"] },
-      contextFactories: {
-        "search-fixture": (hostInput: { allowSearch: boolean }) => ({
-          allow: hostInput.allowSearch,
-        }),
-      },
-    });
-
-    expect(runtimeResult).toEqual({ ok: true, input: { query: "athena" } });
-    expect(manualResult).toEqual(runtimeResult);
-    expect(seenToolCallIds[0]).toBe("runtime:search_docs");
-    expect(seenToolCallIds[1]).toMatch(/^manual:/);
-  });
-
-  it("invoke executes using derived buildExtensionContext without manual contextFactories", async () => {
-    const ctx = createContextMock();
-    const service = createPluginService(ctx);
-    const executeSpy = vi.fn(async (input: unknown, options: ToolExecutionOptions) => ({
-      input,
-      experimentalContext: options.experimental_context,
-    }));
-
-    await service.install(new SearchFixturePlugin(ctx, executeSpy));
-
-    await expect(
-      service.invoke({
-        name: "search_docs",
-        input: { query: "athena" },
-        options: {},
-        runtime: createToolRuntime(),
+        runtime,
+        scope: runtime.channelKey,
         hostInput: { allowSearch: true },
         toolSettings: { enabled: ["search_docs"] },
       }),
     ).resolves.toEqual({
       input: { query: "athena" },
-      experimentalContext: {
-        "search-fixture": {
-          allow: true,
-          channelKey: "discord:channel-1",
+      toolCallId: "invoke:search_docs",
+      context: {
+        search: {
+          search_docs: {
+            channelPolicy: "enabled",
+          },
         },
       },
     });

@@ -98,23 +98,35 @@ function createContextMock() {
       resolve: vi.fn((modelId: string) => ({ provider: "test", modelId })),
     },
     "yesimbot.plugin": {
-      assembleTools: vi.fn(
+      compileTools: vi.fn(async (request: { sendMessageTool?: Record<string, unknown> }) => {
+        const sendMessageTool = request.sendMessageTool;
+        const tools = sendMessageTool ? { send_message: sendMessageTool } : {};
+
+        return {
+          tools,
+          handles: {},
+          signature: JSON.stringify(Object.keys(tools).sort()),
+        };
+      }),
+      buildResponseContext: vi.fn(async () => ({})),
+      selectTools: vi.fn(
         async (request: {
-          sendMessageTool?: Record<string, unknown>;
+          runtime?: unknown;
+          scope?: string;
+          catalog: { tools: Record<string, unknown> };
           toolSettings?: { enabled?: string[] };
+          responseContext?: Record<string, unknown>;
         }) => {
-          const sendMessageTool = request.sendMessageTool;
-          const supportedTools = sendMessageTool ? { send_message: sendMessageTool } : {};
-          const activeTools =
-            sendMessageTool && (request.toolSettings?.enabled?.includes("send_message") ?? true)
-              ? { send_message: sendMessageTool }
-              : {};
+          const activeTools = Object.fromEntries(
+            Object.entries(request.catalog.tools).filter(([name]) => {
+              return request.toolSettings?.enabled?.includes(name) ?? true;
+            }),
+          );
 
           return {
-            supportedTools,
             activeTools,
-            experimentalContext: {},
-            signature: JSON.stringify(Object.keys(supportedTools).sort()),
+            activeToolNames: Object.keys(activeTools),
+            responseContext: request.responseContext ?? {},
           };
         },
       ),

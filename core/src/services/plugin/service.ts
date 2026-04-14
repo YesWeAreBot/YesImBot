@@ -1,20 +1,20 @@
-import type { Tool as AiTool, ToolExecutionOptions } from "@ai-sdk/provider-utils";
+import type { Tool as AiTool } from "@ai-sdk/provider-utils";
 import { YesImPlugin } from "@yesimbot/plugin-sdk";
 import type {
+  BuildResponseContextRequest,
+  CompileToolsRequest,
   IPluginService,
   RegisteredToolDefinition,
-  ToolAssemblyRequest,
-  ToolInvocationRequest,
+  ResponseContext,
+  SelectToolsRequest,
+  ToolCatalog,
+  ToolHandle,
+  ToolInvoke,
   ToolRuntime,
-  ToolSource,
+  ToolSelection,
 } from "@yesimbot/plugin-sdk";
+import type { ToolSet } from "ai";
 import { Context, Service } from "koishi";
-
-import {
-  buildToolAssembly,
-  type ToolAssemblyContextFactory,
-  type ToolAssemblyResult,
-} from "../session/runtime/tool-assembly";
 
 type InstructionContributorLike = {
   name: string;
@@ -25,9 +25,18 @@ export interface PluginServiceConfig {
   debugLevel?: number;
 }
 
+type ChannelToolState = {
+  channelKey: string;
+  scopeKey: string;
+  signature: string;
+  catalog: ToolCatalog;
+};
+
 export class PluginService extends Service<PluginServiceConfig> implements IPluginService {
   private static readonly RESERVED_TOOL_NAMES = new Set(["send_message"]);
   private plugins = new Map<string, Map<string, YesImPlugin>>();
+  private readonly channelTools = new Map<string, ChannelToolState>();
+  private readonly scopeIndex = new Map<string, Set<string>>();
 
   constructor(ctx: Context, config: PluginServiceConfig = {}) {
     super(ctx, "yesimbot.plugin", false);
@@ -37,7 +46,7 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
   }
 
   public async install(plugin: YesImPlugin, options?: { scope?: string }): Promise<void> {
-    const scope = options?.scope ?? "global";
+    const scope = this.normalizeScopeKey(options?.scope);
     const initializablePlugin = plugin as YesImPlugin & { init?: () => Promise<void> };
     await initializablePlugin.init?.();
     this.assertPluginToolDefinitions(plugin, scope);
@@ -47,15 +56,17 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
       this.plugins.set(scope, scopedPlugins);
     }
     scopedPlugins.set(plugin.metadata.name, plugin);
+    this.refreshProviderVisibility(options?.scope);
     this.logger.info(`Plugin installed: ${plugin.metadata.name} (scope=${scope})`);
   }
 
   public remove(name: string, options?: { scope?: string }): void {
-    const scope = options?.scope ?? "global";
+    const scope = this.normalizeScopeKey(options?.scope);
     this.plugins.get(scope)?.delete(name);
     if (this.plugins.get(scope)?.size === 0) {
       this.plugins.delete(scope);
     }
+    this.refreshProviderVisibility(options?.scope);
     this.logger.info(`Plugin removed: ${name} (scope=${scope})`);
   }
 
@@ -63,8 +74,8 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
     return [...(this.plugins.get("global")?.keys() ?? [])];
   }
 
-  public getToolDefinitions(): RegisteredToolDefinition[] {
-    return this.collectToolDefinitions();
+  public getToolDefinitions(scope?: string): RegisteredToolDefinition[] {
+    return this.collectToolDefinitions(scope);
   }
 
   public getToolSet(): Record<string, AiTool> {
@@ -74,75 +85,157 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
   public getInstructionContributors(scope?: string): InstructionContributorLike[] {
     const contributors: InstructionContributorLike[] = [];
     this.pushInstructionContributors("global", contributors);
-    if (scope && scope !== "global") {
-      this.pushInstructionContributors(scope, contributors);
+    const scopeKey = this.normalizeScopeKey(scope);
+    if (scopeKey !== "global") {
+      this.pushInstructionContributors(scopeKey, contributors);
     }
 
     return contributors;
   }
 
-  public async assembleTools<THostInput = unknown>(
-    request: ToolAssemblyRequest<THostInput>,
-  ): Promise<ToolAssemblyResult> {
-    const installedDefinitions = this.collectToolDefinitions(request.scope);
-    const sourceDefinitions = this.collectSourceToolDefinitions(request.sources);
-    const additionalDefinitions = request.additionalToolDefinitions ?? [];
-    const derivedContextFactories = this.buildDefinitionContextFactories<THostInput>([
-      ...installedDefinitions,
-      ...sourceDefinitions,
-      ...additionalDefinitions,
+  public async compileTools(request: CompileToolsRequest): Promise<ToolCatalog> {
+    const scopeKey = this.normalizeScopeKey(request.scope);
+    const catalogKey = this.getChannelCatalogKey(request.runtime.channelKey, request.scope);
+    const cached = this.channelTools.get(catalogKey);
+    if (cached) {
+      return cached.catalog;
+    }
+
+    const definitions = this.getToolDefinitions(request.scope);
+    const tools: ToolSet = {
+      send_message: request.sendMessageTool,
+    };
+    const handles: Record<string, ToolHandle> = {};
+
+    for (const definition of definitions) {
+      if (definition.definition.match?.({ runtime: request.runtime }) === false) {
+        continue;
+      }
+      if (PluginService.RESERVED_TOOL_NAMES.has(definition.name)) {
+        throw new Error(`Reserved tool name: ${definition.name}`);
+      }
+      if (tools[definition.name]) {
+        throw new Error(`Duplicate tool name: ${definition.name}`);
+      }
+      tools[definition.name] = definition.tool;
+      handles[definition.name] = {
+        pluginName: definition.pluginName,
+        name: definition.name,
+        definition: definition.definition,
+        tool: definition.tool,
+      };
+    }
+
+    const catalog = {
+      tools,
+      handles,
+      signature: JSON.stringify(Object.keys(tools).sort()),
+    } satisfies ToolCatalog;
+
+    this.channelTools.set(catalogKey, {
+      channelKey: request.runtime.channelKey,
+      scopeKey,
+      signature: catalog.signature,
+      catalog,
+    });
+
+    const scopedCatalogs = this.scopeIndex.get(scopeKey) ?? new Set<string>();
+    scopedCatalogs.add(catalogKey);
+    this.scopeIndex.set(scopeKey, scopedCatalogs);
+
+    return catalog;
+  }
+
+  public async buildResponseContext<THostInput = unknown>(
+    request: BuildResponseContextRequest<THostInput>,
+  ): Promise<ResponseContext> {
+    const responseContext: ResponseContext = {};
+
+    for (const handle of Object.values(request.catalog.handles)) {
+      const extension = handle.definition.extendResponse?.(request.hostInput, request.runtime);
+      if (extension === undefined) {
+        continue;
+      }
+      const pluginContext = (responseContext[handle.pluginName] ??= {});
+      pluginContext[handle.name] = {
+        ...(pluginContext[handle.name] ?? {}),
+        ...extension,
+      };
+    }
+
+    return responseContext;
+  }
+
+  public async selectTools(request: SelectToolsRequest): Promise<ToolSelection> {
+    const activeTools: ToolSet = { send_message: request.catalog.tools.send_message };
+    const requestedNames = new Set([
+      ...(request.toolSettings?.enabled ?? []),
+      ...(request.toolSettings?.required ?? []),
     ]);
 
-    this.assertToolDefinitions([
-      ...installedDefinitions,
-      ...sourceDefinitions,
-      ...additionalDefinitions,
-    ]);
+    for (const handle of Object.values(request.catalog.handles)) {
+      if (!requestedNames.has(handle.name)) {
+        continue;
+      }
+      if (
+        handle.definition.enable?.({
+          runtime: request.runtime,
+          responseContext: request.responseContext,
+          enabledTools: [...requestedNames],
+        }) === false
+      ) {
+        continue;
+      }
+      activeTools[handle.name] = request.catalog.tools[handle.name];
+    }
 
-    return buildToolAssembly({
+    const missingRequired = (request.toolSettings?.required ?? []).filter(
+      (name) => !(name in activeTools),
+    );
+    if (missingRequired.length > 0) {
+      throw new Error(`Required tools unavailable: ${missingRequired.join(", ")}`);
+    }
+
+    return {
+      activeTools,
+      activeToolNames: Object.keys(activeTools),
+      responseContext: request.responseContext,
+    };
+  }
+
+  public async invoke(request: ToolInvoke): Promise<unknown> {
+    const catalogKey = this.getChannelCatalogKey(request.runtime.channelKey, request.scope);
+    const catalog = this.channelTools.get(catalogKey)?.catalog;
+    if (!catalog) {
+      throw new Error(`Tool catalog not compiled for channel scope: ${catalogKey}`);
+    }
+    const responseContext = await this.buildResponseContext({
       runtime: request.runtime,
       hostInput: request.hostInput,
-      pluginToolDefinitions: installedDefinitions,
-      sourceToolDefinitions: [...sourceDefinitions, ...additionalDefinitions],
+      scope: request.scope,
+      catalog,
+    });
+    const selection = await this.selectTools({
+      runtime: request.runtime,
+      scope: request.scope,
+      catalog,
+      responseContext,
       toolSettings: request.toolSettings,
-      contextFactories: this.mergeContextFactories(
-        derivedContextFactories,
-        request.contextFactories,
-        request.sources,
-      ),
-      sendMessageTool: request.sendMessageTool,
+    });
+    const tool = selection.activeTools[request.name];
+    if (!tool?.execute) {
+      throw new Error(`Tool not found: ${request.name}`);
+    }
+    return tool.execute(request.input as never, {
+      toolCallId: request.options?.toolCallId ?? `invoke:${request.name}`,
+      messages: request.options?.messages ?? [],
+      abortSignal: request.options?.abortSignal,
+      experimental_context: responseContext,
     });
   }
 
-  public async invoke(request: ToolInvocationRequest): Promise<unknown>;
-  public async invoke(
-    name: string,
-    input: unknown,
-    options?: Partial<ToolExecutionOptions>,
-  ): Promise<unknown>;
-  public async invoke(
-    nameOrRequest: string | ToolInvocationRequest,
-    input?: unknown,
-    options?: Partial<ToolExecutionOptions>,
-  ): Promise<unknown> {
-    const request = this.normalizeInvocationRequest(nameOrRequest, input, options);
-    const assembly = await this.assembleTools(request);
-    const tool = assembly.activeTools[request.name];
-    if (!tool) {
-      if (request.name in assembly.supportedTools) {
-        throw new Error(`Tool is not active: ${request.name}`);
-      }
-
-      throw new Error(`Tool not found: ${request.name}`);
-    }
-
-    if (!tool.execute) throw new Error(`Tool is not executable: ${request.name}`);
-    return tool.execute(request.input as never, {
-      toolCallId: request.options?.toolCallId ?? `manual:${request.name}`,
-      messages: request.options?.messages ?? [],
-      abortSignal: request.options?.abortSignal,
-      experimental_context: assembly.experimentalContext,
-    });
+  private refreshProviderVisibility(scope?: string): void {
+    this.invalidateToolCatalogs(scope);
   }
 
   private assertPluginToolDefinitions(plugin: YesImPlugin, scope?: string): void {
@@ -152,50 +245,12 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
     ]);
   }
 
-  private buildDefinitionContextFactories<THostInput = unknown>(
-    definitions: RegisteredToolDefinition[],
-  ): Partial<Record<string, ToolAssemblyContextFactory<THostInput>>> | undefined {
-    const grouped = new Map<
-      string,
-      Array<NonNullable<RegisteredToolDefinition["definition"]["buildExtensionContext"]>>
-    >();
-
-    for (const definition of definitions) {
-      const factory = definition.definition.buildExtensionContext;
-      if (!factory) continue;
-      const existing = grouped.get(definition.pluginName) ?? [];
-      existing.push(factory);
-      grouped.set(definition.pluginName, existing);
-    }
-
-    if (grouped.size === 0) {
-      return undefined;
-    }
-
-    return Object.fromEntries(
-      [...grouped.entries()].map(([pluginName, factories]) => [
-        pluginName,
-        (hostInput: THostInput, runtime: ToolRuntime) => {
-          const merged: Record<string, unknown> = {};
-
-          for (const factory of factories) {
-            const value = factory(hostInput, runtime);
-            if (value !== undefined) {
-              Object.assign(merged, value);
-            }
-          }
-
-          return Object.keys(merged).length > 0 ? merged : undefined;
-        },
-      ]),
-    ) as Partial<Record<string, ToolAssemblyContextFactory<THostInput>>>;
-  }
-
   private collectToolDefinitions(scope?: string): RegisteredToolDefinition[] {
     const definitions: RegisteredToolDefinition[] = [];
     this.pushPluginDefinitions("global", definitions);
-    if (scope && scope !== "global") {
-      this.pushPluginDefinitions(scope, definitions);
+    const scopeKey = this.normalizeScopeKey(scope);
+    if (scopeKey !== "global") {
+      this.pushPluginDefinitions(scopeKey, definitions);
     }
     this.assertToolDefinitions(definitions);
     return definitions;
@@ -221,78 +276,30 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
     }
   }
 
-  private collectSourceToolDefinitions<THostInput = unknown>(
-    sources: ToolSource<THostInput>[] | undefined,
-  ): RegisteredToolDefinition[] {
-    return sources?.flatMap((source) => source.toolDefinitions) ?? [];
+  private normalizeScopeKey(scope?: string): string {
+    return scope ?? "global";
   }
 
-  private mergeContextFactories<THostInput = unknown>(
-    derivedFactories: Partial<Record<string, ToolAssemblyContextFactory<THostInput>>> | undefined,
-    requestFactories: ToolAssemblyRequest<THostInput>["contextFactories"],
-    sources: ToolSource<THostInput>[] | undefined,
-  ): Partial<Record<string, ToolAssemblyContextFactory<THostInput>>> | undefined {
-    const sourceFactories = Object.assign(
-      {},
-      ...(sources?.map((source) => source.contextFactories ?? {}) ?? []),
-    ) as Partial<Record<string, ToolAssemblyContextFactory<THostInput>>>;
-    const merged = {
-      ...derivedFactories,
-      ...sourceFactories,
-      ...requestFactories,
-    };
-
-    return Object.keys(merged).length > 0 ? merged : undefined;
+  private getChannelCatalogKey(channelKey: string, scope?: string): string {
+    return `${channelKey}:${this.normalizeScopeKey(scope)}`;
   }
 
-  private normalizeInvocationRequest(
-    nameOrRequest: string | ToolInvocationRequest,
-    input?: unknown,
-    options?: Partial<ToolExecutionOptions>,
-  ): ToolInvocationRequest {
-    if (typeof nameOrRequest !== "string") {
-      return {
-        ...nameOrRequest,
-        toolSettings: {
-          ...nameOrRequest.toolSettings,
-          enabled: [
-            ...new Set([...(nameOrRequest.toolSettings?.enabled ?? []), nameOrRequest.name]),
-          ],
-        },
-      };
+  private invalidateToolCatalogs(scope?: string): void {
+    if (scope === undefined) {
+      this.channelTools.clear();
+      this.scopeIndex.clear();
+      return;
     }
 
-    return {
-      name: nameOrRequest,
-      input,
-      options,
-      runtime: this.createDirectInvokeRuntime(),
-      hostInput: {},
-      toolSettings: {
-        enabled: [nameOrRequest],
-      },
-    };
-  }
-
-  private createDirectInvokeRuntime(): ToolRuntime {
-    return {
-      channelKey: "manual:direct",
-      platform: "manual",
-      channelId: "direct",
-      modelId: "manual:invoke",
-      basePath: this.ctx.baseDir,
-      turn: {
-        messageId: "manual:invoke",
-        timestamp: Date.now(),
-        isDirect: true,
-        atSelf: true,
-        isReplyToBot: false,
-      },
-    };
-  }
-
-  private ensureEnabledTool(name: string, enabledTools: string[]): string[] {
-    return [...new Set([...enabledTools, name])];
+    const scopeKey = this.normalizeScopeKey(scope);
+    const catalogKeys = this.scopeIndex.get(scopeKey);
+    if (!catalogKeys) {
+      return;
+    }
+    for (const catalogKey of catalogKeys) {
+      this.channelTools.delete(catalogKey);
+    }
+    this.scopeIndex.delete(scopeKey);
   }
 
   private assertToolDefinitions(definitions: RegisteredToolDefinition[]): void {
@@ -309,16 +316,12 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
     seen: Map<string, string>,
   ): void {
     if (PluginService.RESERVED_TOOL_NAMES.has(definition.name)) {
-      throw new Error(
-        `Tool name '${definition.name}' is reserved and cannot be registered by ${pluginName}`,
-      );
+      throw new Error(`Reserved tool name: ${definition.name}`);
     }
 
     const previousPlugin = seen.get(definition.name);
     if (previousPlugin) {
-      throw new Error(
-        `Duplicate tool name '${definition.name}' registered by ${previousPlugin} and ${pluginName}`,
-      );
+      throw new Error(`Duplicate tool name: ${definition.name}`);
     }
 
     seen.set(definition.name, pluginName);

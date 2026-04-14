@@ -1,10 +1,10 @@
-import { ToolDecoratorEntry, ToolDecoratorOptions, YesImToolDefinition } from "./types";
+import { ToolDecoratorEntry, ToolDecoratorOptions, ToolEntry } from "./types";
 
 export * from "./types";
 
 export function YesImTool<INPUT = unknown, OUTPUT = unknown>(
-  options: YesImToolDefinition<INPUT, OUTPUT>,
-): YesImToolDefinition<INPUT, OUTPUT> {
+  options: ToolEntry<INPUT, OUTPUT>,
+): ToolEntry<INPUT, OUTPUT> {
   return options;
 }
 

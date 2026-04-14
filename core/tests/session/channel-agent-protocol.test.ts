@@ -73,25 +73,38 @@ function createContextMock(toolSet: Record<string, unknown> = {}) {
     "yesimbot.plugin": {
       getToolSet: vi.fn(() => toolSet),
       getToolDefinitions: vi.fn(() => []),
-      assembleTools: vi.fn(
+      compileTools: vi.fn(async (request: { sendMessageTool?: Record<string, unknown> }) => {
+        const tools = {
+          ...(request.sendMessageTool ? { send_message: request.sendMessageTool } : {}),
+          ...toolSet,
+        };
+
+        return {
+          tools,
+          handles: {},
+          signature: JSON.stringify(Object.keys(tools).sort()),
+        };
+      }),
+      buildResponseContext: vi.fn(async () => ({})),
+      selectTools: vi.fn(
         async (request: {
-          sendMessageTool?: Record<string, unknown>;
+          runtime?: unknown;
+          scope?: string;
+          catalog: { tools: Record<string, unknown> };
           toolSettings?: { enabled?: string[] };
+          responseContext?: Record<string, unknown>;
         }) => {
-          const supportedTools = {
-            ...(request.sendMessageTool ? { send_message: request.sendMessageTool } : {}),
-            ...toolSet,
-          };
-          const enabled = new Set(request.toolSettings?.enabled ?? Object.keys(supportedTools));
+          const enabled = new Set(request.toolSettings?.enabled ?? []);
           const activeTools = Object.fromEntries(
-            Object.entries(supportedTools).filter(([name]) => enabled.has(name)),
+            Object.entries(request.catalog.tools).filter(([name]) => {
+              return name === "send_message" || enabled.size === 0 || enabled.has(name);
+            }),
           );
 
           return {
-            supportedTools,
             activeTools,
-            experimentalContext: {},
-            signature: JSON.stringify(Object.keys(supportedTools).sort()),
+            activeToolNames: Object.keys(activeTools),
+            responseContext: request.responseContext ?? {},
           };
         },
       ),
@@ -593,8 +606,8 @@ describe("ChannelRuntime protocol", () => {
   it("reserved send_message tool collision persists exception", async () => {
     const sessionManager = SessionManager.inMemory("discord:channel-1");
     const context = createContextMock();
-    context["yesimbot.plugin"].assembleTools.mockImplementationOnce(async () => {
-      throw new Error("Tool name reserved: send_message");
+    context["yesimbot.plugin"].compileTools.mockImplementationOnce(async () => {
+      throw new Error("Reserved tool name: send_message");
     });
     const bot = createBotMock();
     const agent = new ChannelRuntime(context as never, {
@@ -617,7 +630,7 @@ describe("ChannelRuntime protocol", () => {
         expect(responseStatus.materializationKey).toBe("response_status");
         expect(responseStatus.data).toMatchObject({ endReason: "exception" });
         expect((responseStatus.data as { error?: string }).error).toContain(
-          "Tool name reserved: send_message",
+          "Reserved tool name: send_message",
         );
       }
     });
@@ -668,10 +681,8 @@ describe("ChannelRuntime protocol", () => {
     await agent.receive(createChannelMessageInput({ messageId: "msg-project" }));
 
     await vi.waitFor(() => {
-      const channelMessages = sessionManager
-        .getTimeline()
-        .filter((record) => record.kind === "channel_message");
-      expect(channelMessages).toHaveLength(1);
+      expect(generateMock).toHaveBeenCalledTimes(1);
+      expect(agent.getResponseState()).toBe("idle");
     });
 
     const toolMessage = sessionManager

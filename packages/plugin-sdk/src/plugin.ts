@@ -1,36 +1,48 @@
 import type { Tool as AiTool, ToolExecutionOptions } from "@ai-sdk/provider-utils";
 import { tool as aiTool } from "@ai-sdk/provider-utils";
-import type { ToolSet } from "ai";
 import { Context } from "koishi";
 
 import { normalizeInputSchema } from "./schema";
 import { TOOL_DECORATOR_KEY, ToolDecoratorEntry } from "./tools";
 import {
+  ResponseContext,
+  ToolCatalog,
+  ToolEntry,
+  ToolSelection,
+  ToolSelectionSettings,
   RegisteredToolDefinition,
-  ToolAssemblyContextFactory,
-  ToolAssemblyResult,
-  ToolAssemblySettings,
-  ToolSource,
   ToolRuntime,
-  YesImToolDefinition,
 } from "./tools/types";
 
-export interface ToolAssemblyRequest<THostInput = unknown> {
+export interface CompileToolsRequest<THostInput = unknown> {
   runtime: ToolRuntime;
   hostInput: THostInput;
   scope?: string;
-  toolSettings?: ToolAssemblySettings;
-  contextFactories?: Partial<Record<string, ToolAssemblyContextFactory<THostInput>>>;
-  sources?: ToolSource<THostInput>[];
-  additionalToolDefinitions?: RegisteredToolDefinition[];
-  sendMessageTool?: ToolSet["send_message"];
+  sendMessageTool: AiTool;
 }
 
-export interface ToolInvocationRequest<
-  THostInput = unknown,
-> extends ToolAssemblyRequest<THostInput> {
+export interface BuildResponseContextRequest<THostInput = unknown> {
+  runtime: ToolRuntime;
+  hostInput: THostInput;
+  scope?: string;
+  catalog: ToolCatalog;
+}
+
+export interface SelectToolsRequest {
+  runtime: ToolRuntime;
+  scope?: string;
+  catalog: ToolCatalog;
+  responseContext: ResponseContext;
+  toolSettings?: ToolSelectionSettings;
+}
+
+export interface ToolInvoke<THostInput = unknown> {
   name: string;
   input: unknown;
+  runtime: ToolRuntime;
+  hostInput: THostInput;
+  scope?: string;
+  toolSettings?: ToolSelectionSettings;
   options?: Partial<ToolExecutionOptions>;
 }
 
@@ -38,11 +50,13 @@ export interface IPluginService {
   install(plugin: YesImPlugin, options?: { scope?: string }): Promise<void>;
   remove(name: string, options?: { scope?: string }): void;
   list(): string[];
-  getToolDefinitions(): RegisteredToolDefinition[];
-  getToolSet(): Record<string, AiTool>;
-  assembleTools(request: ToolAssemblyRequest): Promise<ToolAssemblyResult>;
-  invoke(request: ToolInvocationRequest): Promise<unknown>;
-  invoke(name: string, input: unknown, options?: Partial<ToolExecutionOptions>): Promise<unknown>;
+  getToolDefinitions(scope?: string): RegisteredToolDefinition[];
+  compileTools(request: CompileToolsRequest): Promise<ToolCatalog>;
+  buildResponseContext<THostInput = unknown>(
+    request: BuildResponseContextRequest<THostInput>,
+  ): Promise<ResponseContext>;
+  selectTools(request: SelectToolsRequest): Promise<ToolSelection>;
+  invoke(invoke: ToolInvoke): Promise<unknown>;
 }
 
 declare module "koishi" {
@@ -107,7 +121,7 @@ export class YesImPlugin {
     return [...this.toolDefinitions.values()];
   }
 
-  protected registerTool(definition: YesImToolDefinition): void {
+  protected registerTool(definition: ToolEntry): void {
     const inputSchema = normalizeInputSchema(definition.inputSchema);
     const tool = aiTool({
       description: definition.description,
@@ -148,16 +162,15 @@ export class YesImPlugin {
           description: entry.description,
           inputSchema: entry.inputSchema,
           builtin: entry.builtin,
-          isSupported: entry.isSupported,
-          isAllowed: entry.isAllowed,
-          buildExtensionContext: entry.buildExtensionContext,
+          match: entry.match,
+          enable: entry.enable,
+          extendResponse: entry.extendResponse,
           execute: async (input, options) =>
-            await (
-              handler as (
-                input: unknown,
-                options: ToolExecutionOptions,
-              ) => unknown | Promise<unknown>
-            ).call(this, input, options),
+            await (handler as (input: unknown, options: ToolExecutionOptions) => unknown).call(
+              this,
+              input,
+              options,
+            ),
         },
         tool,
       });
