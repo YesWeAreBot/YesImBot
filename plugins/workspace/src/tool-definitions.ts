@@ -1,22 +1,16 @@
-import { basename, dirname, isAbsolute, join, resolve } from "node:path";
-import { readdir, readFile, stat } from "node:fs/promises";
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
 
 import type { RegisteredToolDefinition } from "@yesimbot/plugin-sdk";
-import { jsonSchema } from "@ai-sdk/provider-utils";
 import type { ToolSet } from "ai";
 import type { Logger } from "koishi";
 
 import { LocalFilesystem } from "./filesystem";
-import {
-  createWorkspaceBoundaryError,
-  normalizeWorkspacePath,
-  withinBasePath,
-} from "./helpers";
 import { LocalSandbox } from "./sandbox";
 import type { WorkspacePluginConfig } from "./types";
 import { Workspace } from "./workspace";
 
-interface WorkspaceToolOptions {
+export interface WorkspaceToolOptions {
   channelDir: string;
   logger: Logger;
   config: WorkspacePluginConfig;
@@ -30,25 +24,8 @@ interface WorkspaceToolOptions {
   ) => LocalSandbox | undefined;
 }
 
-interface SkillInput {
-  name: string;
-}
-
-interface SkillReadInput {
-  name: string;
-  path: string;
-}
-
-interface SkillSearchInput {
-  query: string;
-  name?: string;
-  topK?: number;
-}
-
-interface SkillRecord {
-  name: string;
-  rootPath: string;
-  skillFile: string;
+interface WorkspaceExecutionContext {
+  workspaceRoot: string;
 }
 
 export async function buildWorkspacePluginToolDefinitions(
@@ -58,14 +35,19 @@ export async function buildWorkspacePluginToolDefinitions(
     return [];
   }
 
-  const workspaceRoot = join(options.channelDir, "workspace");
-  const filesystem = options.config.enableFilesystem === false
-    ? undefined
-    : (options.createFilesystem?.(workspaceRoot, options.config) ??
-      new LocalFilesystem({
-        basePath: workspaceRoot,
-        externalPath: options.config.externalPath,
-      }));
+  const workspaceRoot = getWorkspaceRoot({
+    channelDir: options.channelDir,
+    config: options.config,
+  });
+  ensureWorkspaceRoot(workspaceRoot);
+  const filesystem =
+    options.config.enableFilesystem === false
+      ? undefined
+      : (options.createFilesystem?.(workspaceRoot, options.config) ??
+        new LocalFilesystem({
+          basePath: workspaceRoot,
+          externalPath: options.config.externalPath,
+        }));
 
   const sandbox = options.config.enableSandbox
     ? (options.createSandbox?.(workspaceRoot, options.config) ??
@@ -80,258 +62,138 @@ export async function buildWorkspacePluginToolDefinitions(
 
   const toolSet: ToolSet = {
     ...(workspace.getAgentTools() as ToolSet),
-    ...(await buildSkillTools({
-      channelDir: options.channelDir,
-      config: options.config,
-      filesystem,
-    })),
   };
 
-  return toRegisteredToolDefinitions("workspace", toolSet);
-}
-
-async function buildSkillTools(options: {
-  channelDir: string;
-  config: WorkspacePluginConfig;
-  filesystem?: LocalFilesystem;
-}): Promise<ToolSet> {
-  if (!options.config.skills || options.config.skills.length === 0) {
-    return {};
-  }
-
-  return {
-    skill: {
-      description: "Load a skill by name.",
-      inputSchema: jsonSchema<SkillInput>({
-        type: "object",
-        additionalProperties: false,
-        properties: { name: { type: "string" } },
-        required: ["name"],
-      }),
-      execute: async (input) => {
-        const skill = await resolveSkill({
-          skills: options.config.skills,
-          channelDir: options.channelDir,
-          filesystem: options.filesystem,
-          name: input.name,
-        });
-        return {
-          name: skill.name,
-          content: await readFile(skill.skillFile, "utf8"),
-        };
-      },
-    },
-    skill_read: {
-      description: "Read a file under a skill directory.",
-      inputSchema: jsonSchema<SkillReadInput>({
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          name: { type: "string" },
-          path: { type: "string" },
-        },
-        required: ["name", "path"],
-      }),
-      execute: async (input) => {
-        const skill = await resolveSkill({
-          skills: options.config.skills,
-          channelDir: options.channelDir,
-          filesystem: options.filesystem,
-          name: input.name,
-        });
-        const relativePath = normalizeWorkspacePath(input.path);
-        const targetPath = resolve(skill.rootPath, relativePath);
-        if (!withinBasePath(targetPath, skill.rootPath)) {
-          throw createWorkspaceBoundaryError(input.path);
-        }
-
-        return {
-          name: skill.name,
-          path: input.path,
-          content: await readFile(targetPath, "utf8"),
-        };
-      },
-    },
-    skill_search: {
-      description: "Search text across loaded skills.",
-      inputSchema: jsonSchema<SkillSearchInput>({
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          query: { type: "string" },
-          name: { type: "string" },
-          topK: { type: "number" },
-        },
-        required: ["query"],
-      }),
-      execute: async (input) => ({
-        matches: await searchSkills({
-          skills: options.config.skills,
-          channelDir: options.channelDir,
-          filesystem: options.filesystem,
-          query: input.query,
-          name: input.name,
-          topK: input.topK,
-        }),
-      }),
-    },
-  };
-}
-
-function resolveSkillPath(options: {
-  path: string;
-  channelDir: string;
-  filesystem?: LocalFilesystem;
-}): string {
-  if (options.filesystem) {
-    return options.filesystem.resolvePath(options.path);
-  }
-
-  const workspaceRoot = resolve(options.channelDir, "workspace");
-  const candidates = isAbsolute(options.path)
-    ? [resolve(options.path), resolve(workspaceRoot, normalizeWorkspacePath(options.path))]
-    : [resolve(workspaceRoot, normalizeWorkspacePath(options.path))];
-
-  for (const candidatePath of candidates) {
-    if (withinBasePath(candidatePath, workspaceRoot)) {
-      return candidatePath;
-    }
-  }
-
-  throw createWorkspaceBoundaryError(options.path);
-}
-
-async function collectSkills(options: {
-  skills: string[];
-  channelDir: string;
-  filesystem?: LocalFilesystem;
-}): Promise<SkillRecord[]> {
-  const skillRoots = options.skills.map((skillPath) =>
-    resolveSkillPath({
-      path: skillPath,
-      channelDir: options.channelDir,
-      filesystem: options.filesystem,
-    }),
-  );
-  const records: SkillRecord[] = [];
-
-  for (const rootPath of skillRoots) {
-    const currentStat = await stat(rootPath);
-    if (currentStat.isFile() && basename(rootPath) === "SKILL.md") {
-      records.push({
-        name: basename(dirname(rootPath)),
-        rootPath: dirname(rootPath),
-        skillFile: rootPath,
-      });
-      continue;
-    }
-
-    const directSkillFile = join(rootPath, "SKILL.md");
-    try {
-      const directSkillStat = await stat(directSkillFile);
-      if (directSkillStat.isFile()) {
-        records.push({
-          name: basename(rootPath),
-          rootPath,
-          skillFile: directSkillFile,
-        });
-        continue;
-      }
-    } catch {}
-
-    const children = await readdir(rootPath, { withFileTypes: true });
-    for (const child of children) {
-      if (!child.isDirectory()) {
-        continue;
-      }
-
-      const skillRoot = join(rootPath, child.name);
-      const skillFile = join(skillRoot, "SKILL.md");
-      try {
-        const skillFileStat = await stat(skillFile);
-        if (skillFileStat.isFile()) {
-          records.push({
-            name: child.name,
-            rootPath: skillRoot,
-            skillFile,
-          });
-        }
-      } catch {}
-    }
-  }
-
-  return records;
-}
-
-async function resolveSkill(options: {
-  skills: string[];
-  channelDir: string;
-  filesystem?: LocalFilesystem;
-  name: string;
-}): Promise<SkillRecord> {
-  const skills = await collectSkills(options);
-  const skill = skills.find((item) => item.name === options.name || item.rootPath === resolve(options.name));
-  if (!skill) {
-    throw new Error(`Skill not found: ${options.name}`);
-  }
-  return skill;
-}
-
-async function searchSkills(options: {
-  skills: string[];
-  channelDir: string;
-  filesystem?: LocalFilesystem;
-  query: string;
-  name?: string;
-  topK?: number;
-}): Promise<Array<{ name: string; path: string; content: string }>> {
-  const skillRecords = await collectSkills(options);
-  const filteredSkills = options.name
-    ? skillRecords.filter((skill) => skill.name === options.name)
-    : skillRecords;
-  const topK = options.topK ?? 5;
-  const normalizedQuery = options.query.toLowerCase();
-  const matches: Array<{ name: string; path: string; content: string }> = [];
-
-  for (const skill of filteredSkills) {
-    const content = await readFile(skill.skillFile, "utf8");
-    if (content.toLowerCase().includes(normalizedQuery)) {
-      matches.push({
-        name: skill.name,
-        path: skill.skillFile,
-        content,
-      });
-    }
-
-    if (matches.length >= topK) {
-      break;
-    }
-  }
-
-  return matches;
+  return toRegisteredToolDefinitions("workspace", toolSet, options.config, options);
 }
 
 function toRegisteredToolDefinitions(
   pluginName: string,
   toolSet: ToolSet,
+  config: WorkspacePluginConfig,
+  options: WorkspaceToolOptions,
 ): RegisteredToolDefinition[] {
-  return Object.entries(toolSet).map(([name, tool]) => ({
-    pluginName,
-    name,
-    definition: {
+  return Object.entries(toolSet).map(([name, tool]) => {
+    const execute = createRuntimeAwareExecute(name, options, config);
+    return {
+      pluginName,
       name,
-      description: tool.description ?? `${pluginName}:${name}`,
-      inputSchema: tool.inputSchema,
-      isSupported: () => true,
-      isAllowed: ({ enabledTools }: { enabledTools: string[] }) => enabledTools.includes(name),
-      execute: async (input: unknown, executionOptions: Parameters<NonNullable<typeof tool.execute>>[1]) => {
-        if (!tool.execute) {
-          throw new Error(`Tool is not executable: ${name}`);
-        }
-
-        return await tool.execute(input, executionOptions);
+      definition: {
+        name,
+        description: tool.description ?? `${pluginName}:${name}`,
+        inputSchema: tool.inputSchema,
+        buildExtensionContext: (_hostInput, runtime) => ({
+          workspaceRoot: getWorkspaceRoot({
+            channelDir: options.channelDir,
+            runtimeBasePath: runtime.basePath,
+            config,
+          }),
+        }),
+        isSupported: ({ runtime }) => {
+          ensureWorkspaceRoot(
+            getWorkspaceRoot({
+              channelDir: options.channelDir,
+              runtimeBasePath: runtime.basePath,
+              config,
+            }),
+          );
+          return true;
+        },
+        isAllowed: ({ enabledTools }: { enabledTools: string[] }) => enabledTools.includes(name),
+        execute,
       },
-    },
-    tool,
-  }));
+      tool: {
+        ...tool,
+        execute,
+      },
+    };
+  });
+}
+
+function getWorkspaceRoot(options: {
+  channelDir: string;
+  runtimeBasePath?: string;
+  config: WorkspacePluginConfig;
+}): string {
+  const baseDir =
+    options.config.mode === "global"
+      ? options.channelDir
+      : (options.runtimeBasePath ?? options.channelDir);
+  return join(baseDir, "workspace");
+}
+
+function ensureWorkspaceRoot(workspaceRoot: string): void {
+  mkdirSync(workspaceRoot, { recursive: true });
+}
+
+function workspaceRootFallback(
+  options: WorkspaceToolOptions,
+  config: WorkspacePluginConfig,
+): string {
+  return getWorkspaceRoot({
+    channelDir: options.channelDir,
+    config,
+  });
+}
+
+function createRuntimeAwareExecute(
+  name: string,
+  options: WorkspaceToolOptions,
+  config: WorkspacePluginConfig,
+) {
+  return async (
+    input: unknown,
+    executionOptions: Parameters<NonNullable<ToolSet[string]["execute"]>>[1],
+  ) => {
+    const context = executionOptions.experimental_context as
+      | { workspace?: WorkspaceExecutionContext }
+      | undefined;
+    const currentWorkspaceRoot =
+      context?.workspace?.workspaceRoot ?? workspaceRootFallback(options, config);
+    const scopedTool = await createScopedTool(name, currentWorkspaceRoot, options, config);
+
+    if (!scopedTool.execute) {
+      throw new Error(`Tool is not executable: ${name}`);
+    }
+
+    return await scopedTool.execute(input, executionOptions);
+  };
+}
+
+async function createScopedTool(
+  name: string,
+  workspaceRoot: string,
+  options: WorkspaceToolOptions,
+  config: WorkspacePluginConfig,
+): Promise<ToolSet[string]> {
+  ensureWorkspaceRoot(workspaceRoot);
+  const filesystem =
+    config.enableFilesystem === false
+      ? undefined
+      : (options.createFilesystem?.(workspaceRoot, config) ??
+        new LocalFilesystem({
+          basePath: workspaceRoot,
+          externalPath: config.externalPath,
+        }));
+
+  const sandbox = config.enableSandbox
+    ? (options.createSandbox?.(workspaceRoot, config) ??
+      new LocalSandbox({
+        workingDirectory: workspaceRoot,
+        env: process.env,
+      }))
+    : undefined;
+
+  const workspace = new Workspace({ filesystem, sandbox });
+  await workspace.init();
+  const toolSet: ToolSet = {
+    ...(workspace.getAgentTools() as ToolSet),
+  };
+
+  const scopedTool = toolSet[name];
+  if (!scopedTool) {
+    throw new Error(`Tool not found in scoped workspace: ${name}`);
+  }
+
+  return scopedTool;
 }

@@ -1,6 +1,11 @@
 export { TIMELINE_RECORD_KINDS } from "./timeline-records";
 
-export type { ChannelInput, ChannelMessageInput, ChannelEventInput, ReplyReference } from "./channel-input";
+export type {
+  ChannelInput,
+  ChannelMessageInput,
+  ChannelEventInput,
+  ReplyReference,
+} from "./channel-input";
 export type { ChannelRawPayload, SenderMetadata } from "./channel-input";
 export type {
   AssistantMessageRecord,

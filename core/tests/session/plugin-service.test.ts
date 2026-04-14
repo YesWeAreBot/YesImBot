@@ -144,7 +144,10 @@ class SearchFixturePlugin extends YesImPlugin {
 
 @Metadata({ name: "scoped-fixture", description: "scoped fixture plugin" })
 class ScopedFixturePlugin extends YesImPlugin {
-  constructor(ctx: Context, private readonly executeSpy: ReturnType<typeof vi.fn>) {
+  constructor(
+    ctx: Context,
+    private readonly executeSpy: ReturnType<typeof vi.fn>,
+  ) {
     super(ctx);
     this.registerTool({
       name: "scoped_lookup",

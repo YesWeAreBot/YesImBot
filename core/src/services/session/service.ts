@@ -1,10 +1,12 @@
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { Bot, Context, Service, Session } from "koishi";
 
 import { resolveSenderIdentity, summarizeReplyContent } from "./channel-message";
+import type { InstructionContributor } from "./instruction-contributor";
+import { InstructionStateService } from "./instruction-state/service";
 import { ChannelRuntime } from "./runtime";
-import { ensureGlobalScaffold, hasExistingWorkspace, ensureWorkspaceScaffold } from "./scaffold";
 import { SessionManager } from "./session-manager";
 import {
   SettingsManager,
@@ -13,7 +15,6 @@ import {
   type SettingsIssue,
   type SettingsReloadMetadata,
 } from "./settings-manager";
-import { WorkspacePlugin } from "./workspace";
 import type {
   ChannelBootstrapResult,
   ChannelBootstrapStatus,
@@ -29,12 +30,11 @@ interface BootstrappedChannelRuntime {
   sessionManager: SessionManager;
   settingsManager: SettingsManager;
   status: Extract<ChannelBootstrapStatus, "restored" | "created">;
-  workspacePluginInstalled: boolean;
 }
 
 export interface ChannelSettingsReloadResult {
   channelKey: ChannelKey;
-  status: "reloaded" | "missing_workspace" | "failed";
+  status: "reloaded" | "failed";
   summary: string;
   metadata?: SettingsReloadMetadata;
   error?: string;
@@ -70,7 +70,6 @@ function buildDefaultSettings(config: AgentSessionServiceConfig): AthenaSessionS
     },
     prompts: {
       builtInInstructions: config.instructions,
-      attachedInstructionFiles: config.attachedInstructionFiles,
     },
   };
 }
@@ -101,7 +100,6 @@ export interface AgentSessionServiceConfig {
   judgeTimeoutMs?: number;
   basePath: string;
   instructions?: string;
-  attachedInstructionFiles?: string[];
   streaming?: boolean;
   maxSteps?: number;
   /** Base response timeout in ms. Default 60000. */
@@ -129,19 +127,23 @@ export interface AgentSessionServiceConfig {
  * 3. ChannelRuntime.receive() → persist, willingness check, maybe respond
  */
 export class AgentSessionService extends Service<AgentSessionServiceConfig> {
-  static inject = ["yesimbot.model", "yesimbot.plugin"];
+  static inject = ["yesimbot.model"];
 
   private agents: Map<ChannelKey, ChannelRuntime> = new Map();
   private bootstrapPromises: Map<ChannelKey, Promise<ChannelRuntime>> = new Map();
   /** TTL-based dedupe set for messageIds. Map<messageId, expiryTimestamp>. */
   private recentMessageIds: Map<string, number> = new Map();
   private readonly dedupeTtlMs = 120000;
+  private readonly instructionStateService: InstructionStateService;
 
   constructor(ctx: Context, config: AgentSessionServiceConfig) {
     super(ctx, "yesimbot.session", false);
     this.config = config;
     this.logger = ctx.logger("yesimbot.session");
     this.logger.level = config.logLevel ?? 2;
+    this.instructionStateService = new InstructionStateService(
+      join(this.ctx.baseDir, this.config.basePath),
+    );
   }
 
   // =========================================================================
@@ -194,7 +196,6 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
           return `No active agent for ${channelKey}.`;
         }
         agent.abort();
-        this.removeScopedWorkspacePlugin(channelKey);
         this.agents.delete(channelKey);
         return `Cleared agent session for ${channelKey}.`;
       });
@@ -233,9 +234,6 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
             resolvedChannelId,
             session?.bot,
           );
-          if (bootstrap.status === "missing_workspace") {
-            return `No active agent for ${channelKey}.`;
-          }
           if (bootstrap.status === "failed") {
             return `Failed to bootstrap ${channelKey}.`;
           }
@@ -305,39 +303,12 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
     // Abort all active agents
     for (const [key, agent] of this.agents) {
       agent.abort();
-      this.removeScopedWorkspacePlugin(key);
       this.logger.debug(`Aborted agent for ${key}`);
     }
     this.agents.clear();
     this.bootstrapPromises.clear();
     this.recentMessageIds.clear();
     this.logger.info("AgentSessionService stopped");
-  }
-
-  private async installScopedWorkspacePlugin(
-    channelKey: ChannelKey,
-    channelDir: string,
-    settingsManager: SettingsManager,
-  ): Promise<boolean> {
-    const pluginService = this.ctx["yesimbot.plugin"];
-    const workspaceSettings = settingsManager.getWorkspaceSettings();
-    if (!pluginService?.install || workspaceSettings?.enableWorkspace === false) {
-      return false;
-    }
-
-    const plugin = new WorkspacePlugin(this.ctx, {
-      basePath: channelDir,
-      settingsManager,
-      logger: this.ctx.logger("workspace"),
-    });
-
-    await pluginService.install(plugin, { scope: channelKey });
-
-    return true;
-  }
-
-  private removeScopedWorkspacePlugin(channelKey: ChannelKey): void {
-    this.ctx["yesimbot.plugin"]?.remove?.("workspace", { scope: channelKey });
   }
 
   // =========================================================================
@@ -430,14 +401,6 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
       };
     }
 
-    const channelDir = this.getChannelDir(platform, channelId);
-    if (!hasExistingWorkspace(channelDir)) {
-      return {
-        channelKey,
-        status: "missing_workspace",
-      };
-    }
-
     try {
       const runtime = await this.bootstrapChannelRuntime(platform, channelId);
       const agent = this.createChannelRuntime(runtime, bot);
@@ -477,18 +440,19 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
   ): Promise<BootstrappedChannelRuntime> {
     const channelKey: ChannelKey = `${platform}:${channelId}`;
 
-    const globalRoot = this.getGlobalRoot();
     const globalSettingsPath = this.getGlobalSettingsPath();
     const channelDir = this.getChannelDir(platform, channelId);
     const sessionDir = join(channelDir, "session");
-    const workspaceSettingsPath = this.getWorkspaceSettingsPath(channelDir);
+    const channelSettingsPath = this.getChannelSettingsPath(channelDir);
 
-    ensureGlobalScaffold(globalRoot);
-    ensureWorkspaceScaffold(channelDir, globalRoot);
+    this.instructionStateService.ensureGlobalState();
+    this.instructionStateService.ensureChannelState(platform, channelId);
+    mkdirSync(channelDir, { recursive: true });
+    mkdirSync(sessionDir, { recursive: true });
 
     const settingsManager = new SettingsManager({
       globalSettingsPath,
-      workspaceSettingsPath,
+      channelSettingsPath,
       defaults: buildDefaultSettings(this.config),
     });
     this.logReloadMetadata(channelKey, settingsManager.getReloadMetadata());
@@ -506,12 +470,6 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
       this.logger.debug(`Created new session for ${channelKey}`);
     }
 
-    const workspacePluginInstalled = await this.installScopedWorkspacePlugin(
-      channelKey,
-      channelDir,
-      settingsManager,
-    );
-
     return {
       channelKey,
       platform,
@@ -520,21 +478,32 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
       sessionManager,
       settingsManager,
       status,
-      workspacePluginInstalled,
     };
   }
 
   private createChannelRuntime(runtime: BootstrappedChannelRuntime, bot?: Bot): ChannelRuntime {
     const { channelDir, platform, channelId, sessionManager, settingsManager } = runtime;
+    const channelKey: ChannelKey = `${platform}:${channelId}`;
 
     return new ChannelRuntime(this.ctx, {
       bot,
       sessionManager,
       settingsManager,
+      instructionStateService: this.instructionStateService,
+      instructionContributors: this.getInstructionContributors(channelKey),
       platform,
       channelId,
       basePath: channelDir,
     });
+  }
+
+  private getInstructionContributors(channelKey: ChannelKey): InstructionContributor[] {
+    const pluginService = this.ctx["yesimbot.plugin"] as
+      | {
+          getInstructionContributors?: (scope?: string) => InstructionContributor[];
+        }
+      | undefined;
+    return pluginService?.getInstructionContributors?.(channelKey) ?? [];
   }
 
   private getChannelDir(platform: string, channelId: string): string {
@@ -549,7 +518,7 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
     return join(this.getGlobalRoot(), "settings.json");
   }
 
-  private getWorkspaceSettingsPath(channelDir: string): string {
+  private getChannelSettingsPath(channelDir: string): string {
     return join(channelDir, "settings.json");
   }
 
@@ -563,14 +532,6 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
     let agent = this.agents.get(channelKey);
     if (!agent) {
       const bootstrap = await this.bootstrapChannelForManagement(platform, channelId, bot);
-      if (bootstrap.status === "missing_workspace") {
-        return {
-          channelKey,
-          status: "missing_workspace",
-          summary: `No workspace found for ${channelKey}.`,
-        };
-      }
-
       if (bootstrap.status === "failed") {
         return {
           channelKey,
@@ -592,13 +553,7 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
     }
 
     try {
-      this.removeScopedWorkspacePlugin(channelKey);
       const metadata = agent.getSettingsManager().reload();
-      await this.installScopedWorkspacePlugin(
-        channelKey,
-        this.getChannelDir(platform, channelId),
-        agent.getSettingsManager() as SettingsManager,
-      );
       this.logReloadMetadata(channelKey, metadata);
       return {
         channelKey,
@@ -655,10 +610,10 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
       })
       .join(" > ");
 
-    const workspaceSource = this.describeSettingsSource(
-      "workspace",
-      metadata.sources.workspace.exists,
-      metadata.sources.workspace.valid,
+    const channelSource = this.describeSettingsSource(
+      "channel",
+      metadata.sources.channel.exists,
+      metadata.sources.channel.valid,
     );
     const globalSource = this.describeSettingsSource(
       "global",
@@ -669,7 +624,7 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
     const conflictSummary =
       metadata.conflicts.length > 0 ? `; overrides=${metadata.conflicts.length}` : "";
 
-    return `${channelKey}: precedence ${precedence}; ${workspaceSource}; ${globalSource}${issueSummary}${conflictSummary}`;
+    return `${channelKey}: precedence ${precedence}; ${channelSource}; ${globalSource}${issueSummary}${conflictSummary}`;
   }
 
   private describeSettingsSource(label: string, exists: boolean, valid: boolean): string {

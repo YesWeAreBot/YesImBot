@@ -45,7 +45,6 @@ vi.mock("koishi", () => {
   };
 });
 
-import { DefaultSessionResourceLoader } from "../../src/services/session/resource-loader";
 import { AgentSessionService } from "../../src/services/session/service";
 import { SessionManager } from "../../src/services/session/session-manager";
 
@@ -124,8 +123,13 @@ function createExistingWorkspace(baseDir: string, channelId = "channel-1"): void
   const globalRoot = join(baseDir, "athena");
   const channelDir = join(globalRoot, `discord-${channelId}`);
   const workspaceDir = join(channelDir, "workspace");
+  const stateRoot = join(globalRoot, "state");
 
   mkdirSync(workspaceDir, { recursive: true });
+  mkdirSync(join(stateRoot, "global", "instructions"), { recursive: true });
+  mkdirSync(join(stateRoot, "channels", "discord", "Y2hhbm5lbC0x", "instructions"), {
+    recursive: true,
+  });
   writeFileSync(
     join(globalRoot, "settings.json"),
     JSON.stringify({ model: "global-model" }, null, 2),
@@ -144,7 +148,7 @@ afterEach(() => {
 });
 
 describe("AgentSessionService settings bootstrap", () => {
-  it("scaffolds prompt files without auto-creating settings.json", async () => {
+  it("creates channel and instruction-state directories without auto-creating settings or prompt files", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "athena-settings-bootstrap-"));
     tempDirs.push(tempDir);
 
@@ -157,24 +161,28 @@ describe("AgentSessionService settings bootstrap", () => {
 
     const globalRoot = join(tempDir, "athena");
     const channelDir = join(globalRoot, "discord-channel-1");
-    const workspaceDir = join(channelDir, "workspace");
+    const stateRoot = join(globalRoot, "state");
+    const globalInstructionsDir = join(stateRoot, "global", "instructions");
+    const channelInstructionsDir = join(
+      stateRoot,
+      "channels",
+      "discord",
+      "Y2hhbm5lbC0x",
+      "instructions",
+    );
 
     const globalSettingsPath = join(globalRoot, "settings.json");
-    const globalSoulPath = join(globalRoot, "SOUL.md");
-    const globalAgentsPath = join(globalRoot, "AGENTS.md");
-    const workspaceSettingsPath = join(channelDir, "settings.json");
-    const workspaceSoulPath = join(workspaceDir, "SOUL.md");
-    const workspaceAgentsPath = join(workspaceDir, "AGENTS.md");
+    const channelSettingsPath = join(channelDir, "settings.json");
 
+    expect(existsSync(globalRoot)).toBe(true);
+    expect(existsSync(channelDir)).toBe(true);
+    expect(existsSync(globalInstructionsDir)).toBe(true);
+    expect(existsSync(channelInstructionsDir)).toBe(true);
     expect(existsSync(globalSettingsPath)).toBe(false);
-    expect(existsSync(globalSoulPath)).toBe(true);
-    expect(existsSync(globalAgentsPath)).toBe(true);
-    expect(existsSync(workspaceSettingsPath)).toBe(false);
-    expect(existsSync(workspaceSoulPath)).toBe(true);
-    expect(existsSync(workspaceAgentsPath)).toBe(true);
-
-    expect(readFileSync(workspaceSoulPath, "utf8")).toBe(readFileSync(globalSoulPath, "utf8"));
-    expect(readFileSync(workspaceAgentsPath, "utf8")).toBe(readFileSync(globalAgentsPath, "utf8"));
+    expect(existsSync(channelSettingsPath)).toBe(false);
+    expect(existsSync(join(globalRoot, "SOUL.md"))).toBe(false);
+    expect(existsSync(join(globalRoot, "AGENTS.md"))).toBe(false);
+    expect(existsSync(join(channelDir, "workspace"))).toBe(false);
   });
 
   it("does not overwrite existing workspace files", async () => {
@@ -314,220 +322,6 @@ describe("AgentSessionService settings bootstrap", () => {
         }),
       ]),
     );
-  });
-
-  it("resource loader rereads workspace prompt files on reload", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "athena-settings-lazy-resources-"));
-    tempDirs.push(tempDir);
-
-    const service = new AgentSessionService(createContextMock(tempDir), {
-      model: "model-a",
-      basePath: "athena",
-    });
-
-    const agent = await service.getOrCreateAgent("discord", "channel-1", createBotMock());
-    const channelDir = join(tempDir, "athena", "discord-channel-1");
-    const loader = new DefaultSessionResourceLoader({
-      channelDir,
-      settingsManager: agent.getSettingsManager(),
-      logger: createLoggerMock(),
-    });
-
-    const workspaceSoulPath = join(tempDir, "athena", "discord-channel-1", "workspace", "SOUL.md");
-
-    loader.reload();
-    const firstPrompt = loader.buildSystemPrompt();
-    expect(firstPrompt).toContain("send_message");
-    expect(firstPrompt).toContain("request_heartbeat");
-    expect(firstPrompt).toContain("已经完成当前任务，就不要请求 heartbeat");
-    expect(firstPrompt).toContain("## Project Context");
-    expect(firstPrompt).toContain("### SOUL.md");
-    expect(firstPrompt).not.toContain("<system-reminder");
-
-    const firstBuiltIn = loader.getSystemPrompt();
-
-    writeFileSync(workspaceSoulPath, "updated workspace soul\n", "utf8");
-
-    loader.reload();
-    const secondPrompt = loader.buildSystemPrompt();
-    expect(secondPrompt).toContain("updated workspace soul");
-    expect(secondPrompt).toContain("send_message");
-    expect(secondPrompt).not.toContain("<system-reminder");
-    expect(loader.getSystemPrompt()).toBe(firstBuiltIn);
-  });
-
-  it("loads configured attached instruction files from settings", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "athena-settings-custom-resource-files-"));
-    tempDirs.push(tempDir);
-
-    const globalRoot = join(tempDir, "athena");
-    const channelDir = join(globalRoot, "discord-channel-1");
-    const workspaceDir = join(channelDir, "workspace");
-    mkdirSync(workspaceDir, { recursive: true });
-    writeFileSync(
-      join(channelDir, "settings.json"),
-      JSON.stringify({ prompts: { attachedInstructionFiles: ["LOCAL.md"] } }, null, 2),
-      "utf8",
-    );
-    writeFileSync(join(workspaceDir, "SOUL.md"), "workspace soul\n", "utf8");
-    writeFileSync(join(workspaceDir, "LOCAL.md"), "workspace local\n", "utf8");
-
-    const service = new AgentSessionService(createContextMock(tempDir), {
-      model: "model-a",
-      basePath: "athena",
-    });
-
-    const agent = await service.getOrCreateAgent("discord", "channel-1", createBotMock());
-    const loader = new DefaultSessionResourceLoader({
-      channelDir: join(tempDir, "athena", "discord-channel-1"),
-      settingsManager: agent.getSettingsManager(),
-      logger: createLoggerMock(),
-    });
-
-    loader.reload();
-    const prompt = loader.buildSystemPrompt();
-    expect(prompt).toContain("## Project Context");
-    expect(prompt).toContain("### LOCAL.md");
-    expect(prompt).toContain("workspace local");
-    expect(prompt).not.toContain("workspace soul");
-    expect(prompt).not.toContain("<system-reminder");
-  });
-
-  it("allows promptResourceFilenames override to take precedence over settings", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "athena-settings-resource-override-"));
-    tempDirs.push(tempDir);
-
-    const globalRoot = join(tempDir, "athena");
-    const channelDir = join(globalRoot, "discord-channel-1");
-    const workspaceDir = join(channelDir, "workspace");
-    mkdirSync(workspaceDir, { recursive: true });
-    writeFileSync(
-      join(channelDir, "settings.json"),
-      JSON.stringify({ prompts: { attachedInstructionFiles: ["LOCAL.md"] } }, null, 2),
-      "utf8",
-    );
-    writeFileSync(join(workspaceDir, "LOCAL.md"), "workspace local\n", "utf8");
-    writeFileSync(join(workspaceDir, "OVERRIDE.md"), "workspace override\n", "utf8");
-
-    const service = new AgentSessionService(createContextMock(tempDir), {
-      model: "model-a",
-      basePath: "athena",
-    });
-
-    const agent = await service.getOrCreateAgent("discord", "channel-1", createBotMock());
-    const loader = new DefaultSessionResourceLoader({
-      channelDir: join(tempDir, "athena", "discord-channel-1"),
-      settingsManager: agent.getSettingsManager(),
-      logger: createLoggerMock(),
-      promptResourceFilenames: ["OVERRIDE.md"],
-    });
-
-    loader.reload();
-    const prompt = loader.buildSystemPrompt();
-    expect(prompt).toContain("## Project Context");
-    expect(prompt).toContain("### OVERRIDE.md");
-    expect(prompt).toContain("workspace override");
-    expect(prompt).not.toContain("workspace local");
-    expect(prompt).not.toContain("<system-reminder");
-  });
-
-  it("loads configured attached instruction files in deterministic order", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "athena-settings-attached-files-"));
-    tempDirs.push(tempDir);
-
-    const globalRoot = join(tempDir, "athena");
-    const channelDir = join(globalRoot, "discord-channel-1");
-    const workspaceDir = join(channelDir, "workspace");
-    mkdirSync(workspaceDir, { recursive: true });
-
-    writeFileSync(
-      join(channelDir, "settings.json"),
-      JSON.stringify(
-        {
-          prompts: {
-            attachedInstructionFiles: ["PERSONA.md", "SOUL.md", "EXTRA.md"],
-          },
-        },
-        null,
-        2,
-      ),
-      "utf8",
-    );
-    writeFileSync(join(workspaceDir, "SOUL.md"), "workspace soul\n", "utf8");
-    writeFileSync(join(workspaceDir, "PERSONA.md"), "workspace persona\n", "utf8");
-    writeFileSync(join(workspaceDir, "EXTRA.md"), "workspace extra\n", "utf8");
-    writeFileSync(join(workspaceDir, "AGENTS.md"), "workspace agents\n", "utf8");
-
-    const service = new AgentSessionService(createContextMock(tempDir), {
-      model: "model-a",
-      basePath: "athena",
-    });
-    const agent = await service.getOrCreateAgent("discord", "channel-1", createBotMock());
-    const loader = new DefaultSessionResourceLoader({
-      channelDir,
-      settingsManager: agent.getSettingsManager(),
-      logger: createLoggerMock(),
-    });
-    loader.reload();
-    const prompt = loader.buildSystemPrompt();
-
-    const personaIdx = prompt.indexOf("workspace persona");
-    const soulIdx = prompt.indexOf("workspace soul");
-    const extraIdx = prompt.indexOf("workspace extra");
-
-    expect(personaIdx).toBeGreaterThanOrEqual(0);
-    expect(soulIdx).toBeGreaterThan(personaIdx);
-    expect(extraIdx).toBeGreaterThan(soulIdx);
-    expect(prompt).not.toContain("workspace agents");
-    expect(prompt).not.toContain("<system-reminder");
-  });
-
-  it("supports overriding built-in instructions and loaded resources", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "athena-settings-loader-overrides-"));
-    tempDirs.push(tempDir);
-
-    const service = new AgentSessionService(createContextMock(tempDir), {
-      model: "model-a",
-      basePath: "athena",
-    });
-    const channelDir = join(tempDir, "athena", "discord-channel-1");
-    const workspaceDir = join(channelDir, "workspace");
-    mkdirSync(workspaceDir, { recursive: true });
-    writeFileSync(join(workspaceDir, "SOUL.md"), "workspace soul\n", "utf8");
-
-    const agent = await service.getOrCreateAgent("discord", "channel-1", createBotMock());
-    const loader = new DefaultSessionResourceLoader({
-      channelDir,
-      settingsManager: agent.getSettingsManager(),
-      logger: createLoggerMock(),
-      builtInInstructionsOverride: () => "override persona",
-      promptResourceTransform: (resource) =>
-        resource.source === "SOUL.md"
-          ? {
-              ...resource,
-              source: "SOUL.override.md",
-              content: `${resource.content}\nvia-transform`,
-            }
-          : resource,
-      promptResourcesOverride: (resources) => [
-        ...resources,
-        {
-          source: "MANUAL.md",
-          path: "<manual>",
-          content: "manual reminder",
-        },
-      ],
-    });
-    loader.reload();
-    const prompt = loader.buildSystemPrompt();
-
-    expect(prompt).toContain("override persona");
-    expect(prompt).not.toContain("workspace agents");
-    expect(prompt).not.toContain("<system-reminder");
-    expect(prompt).toContain("### SOUL.override.md");
-    expect(prompt).toContain("### MANUAL.md");
-    expect(prompt).toContain("via-transform");
-    expect(prompt).toContain("manual reminder");
   });
 
   it("bootstraps an existing workspace channel before the first user message without speaking", async () => {

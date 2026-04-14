@@ -16,6 +16,11 @@ import {
   type ToolAssemblyResult,
 } from "../session/runtime/tool-assembly";
 
+type InstructionContributorLike = {
+  name: string;
+  collect: (context: unknown) => Promise<unknown[]> | unknown[];
+};
+
 export interface PluginServiceConfig {
   debugLevel?: number;
 }
@@ -66,6 +71,16 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
     return Object.fromEntries(this.getToolDefinitions().map((d) => [d.name, d.tool]));
   }
 
+  public getInstructionContributors(scope?: string): InstructionContributorLike[] {
+    const contributors: InstructionContributorLike[] = [];
+    this.pushInstructionContributors("global", contributors);
+    if (scope && scope !== "global") {
+      this.pushInstructionContributors(scope, contributors);
+    }
+
+    return contributors;
+  }
+
   public async assembleTools<THostInput = unknown>(
     request: ToolAssemblyRequest<THostInput>,
   ): Promise<ToolAssemblyResult> {
@@ -88,7 +103,7 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
       runtime: request.runtime,
       hostInput: request.hostInput,
       pluginToolDefinitions: installedDefinitions,
-      workspaceToolDefinitions: [...sourceDefinitions, ...additionalDefinitions],
+      sourceToolDefinitions: [...sourceDefinitions, ...additionalDefinitions],
       toolSettings: request.toolSettings,
       contextFactories: this.mergeContextFactories(
         derivedContextFactories,
@@ -140,7 +155,10 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
   private buildDefinitionContextFactories<THostInput = unknown>(
     definitions: RegisteredToolDefinition[],
   ): Partial<Record<string, ToolAssemblyContextFactory<THostInput>>> | undefined {
-    const grouped = new Map<string, Array<NonNullable<RegisteredToolDefinition["definition"]["buildExtensionContext"]>>>();
+    const grouped = new Map<
+      string,
+      Array<NonNullable<RegisteredToolDefinition["definition"]["buildExtensionContext"]>>
+    >();
 
     for (const definition of definitions) {
       const factory = definition.definition.buildExtensionContext;
@@ -189,6 +207,20 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
     }
   }
 
+  private pushInstructionContributors(scope: string, out: InstructionContributorLike[]): void {
+    for (const plugin of this.plugins.get(scope)?.values() ?? []) {
+      const provider = plugin as YesImPlugin & {
+        getInstructionContributors?: () => InstructionContributorLike[];
+      };
+      const contributors = provider.getInstructionContributors?.();
+      if (!contributors || contributors.length === 0) {
+        continue;
+      }
+
+      out.push(...contributors);
+    }
+  }
+
   private collectSourceToolDefinitions<THostInput = unknown>(
     sources: ToolSource<THostInput>[] | undefined,
   ): RegisteredToolDefinition[] {
@@ -223,7 +255,9 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
         ...nameOrRequest,
         toolSettings: {
           ...nameOrRequest.toolSettings,
-          enabled: [...new Set([...nameOrRequest.toolSettings?.enabled ?? [], nameOrRequest.name])],
+          enabled: [
+            ...new Set([...(nameOrRequest.toolSettings?.enabled ?? []), nameOrRequest.name]),
+          ],
         },
       };
     }

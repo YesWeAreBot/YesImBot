@@ -24,15 +24,15 @@ vi.mock("koishi", () => {
 
 import { AgentSession } from "../../src/services/session/agent-session";
 import { serializeTimelineForCompaction } from "../../src/services/session/compaction/serialize";
-import type {
-  ChannelInput,
-  ChannelMessageInput,
-} from "../../src/services/session/types/index";
 import { ChannelRuntime } from "../../src/services/session/runtime";
 import { ResponseStepProcessor } from "../../src/services/session/runtime/response-step-processor";
 import { buildRuntimeModelMessages } from "../../src/services/session/runtime/response-step-processor";
-import { AgentSessionService, koishiSessionToChannelInput } from "../../src/services/session/service";
+import {
+  AgentSessionService,
+  koishiSessionToChannelInput,
+} from "../../src/services/session/service";
 import { SessionManager } from "../../src/services/session/session-manager";
+import type { ChannelInput, ChannelMessageInput } from "../../src/services/session/types/index";
 import { createTestSettingsManager } from "./test-settings-manager";
 
 function createLoggerMock(): Logger {
@@ -156,7 +156,9 @@ describe("typed runtime input wiring", () => {
       basePath: "/tmp/athena-channel-input",
     });
 
-    await runtime.receive(createChannelMessageInput({ isDirect: false, atSelf: false, isReplyToBot: false }));
+    await runtime.receive(
+      createChannelMessageInput({ isDirect: false, atSelf: false, isReplyToBot: false }),
+    );
 
     const timeline = sessionManager.getTimeline();
     expect(timeline[0]).toMatchObject({

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import type { TimelineRecord } from "../../../src/services/session/types/index";
 import {
   materializeTimeline,
   materializeTimelineRecord,
 } from "../../../src/services/session/materialize";
+import type { TimelineRecord } from "../../../src/services/session/types/index";
 
 describe("timeline materialization", () => {
   it("materializes channel_message from normalized metadata instead of durable text", () => {

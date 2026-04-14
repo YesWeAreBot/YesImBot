@@ -1,7 +1,7 @@
 import type { LanguageModel } from "ai";
 
-import type { TimelineRecord } from "../types/index";
 import { materializeTimeline } from "../materialize";
+import type { TimelineRecord } from "../types/index";
 import { findCutPoint, isCompactionRecordVisible } from "./cut-point";
 import { estimateContextTokens } from "./estimate";
 import { generateSummary, generateTurnPrefixSummary } from "./summarize";

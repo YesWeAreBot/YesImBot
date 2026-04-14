@@ -4,12 +4,7 @@ export type ChannelKey = `${string}:${string}`;
 
 export type NextAction = "idle" | "follow_up" | "blocked";
 
-export type ChannelBootstrapStatus =
-  | "ready"
-  | "restored"
-  | "created"
-  | "missing_workspace"
-  | "failed";
+export type ChannelBootstrapStatus = "ready" | "restored" | "created" | "failed";
 
 export interface ChannelBootstrapResult {
   channelKey: ChannelKey;

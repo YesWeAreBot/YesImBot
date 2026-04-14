@@ -2,49 +2,39 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { Logger } from "koishi";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
-import { DefaultSessionResourceLoader } from "../../src/services/session/resource-loader";
-import { SettingsManager } from "../../src/services/session/settings-manager";
+import { InstructionAssembler } from "../../src/services/session/instruction-assembler";
+import type { InstructionContributor } from "../../src/services/session/instruction-contributor";
+import {
+  AGENTS_FILE,
+  PERSONA_FILE,
+  TOOLS_FILE,
+  USER_FILE,
+} from "../../src/services/session/instruction-state/layout";
+import { InstructionStateService } from "../../src/services/session/instruction-state/service";
 
 const tempDirs: string[] = [];
 
-function createLoggerMock(): Logger {
-  return {
-    level: 2,
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  } as unknown as Logger;
-}
-
-function createLoaderSetup(settings: Record<string, unknown> = {}): {
-  channelDir: string;
-  loader: DefaultSessionResourceLoader;
+function createAssemblerSetup(options?: {
+  builtInInstructions?: string;
+  contributors?: InstructionContributor[];
+}): {
+  rootDir: string;
+  assembler: InstructionAssembler;
+  instructionStateService: InstructionStateService;
 } {
-  const tempDir = mkdtempSync(join(tmpdir(), "athena-system-prompt-loader-"));
+  const tempDir = mkdtempSync(join(tmpdir(), "athena-system-prompt-assembler-"));
   tempDirs.push(tempDir);
 
-  const channelDir = join(tempDir, "discord-channel-1");
-  const workspaceDir = join(channelDir, "workspace");
-  mkdirSync(workspaceDir, { recursive: true });
-
-  const settingsPath = join(channelDir, "settings.json");
-  writeFileSync(settingsPath, JSON.stringify(settings, null, 2), "utf8");
-
-  const settingsManager = new SettingsManager({
-    globalSettingsPath: join(tempDir, "settings.json"),
-    workspaceSettingsPath: settingsPath,
-  });
-  const loader = new DefaultSessionResourceLoader({
-    channelDir,
-    settingsManager,
-    logger: createLoggerMock(),
+  const instructionStateService = new InstructionStateService(tempDir);
+  const assembler = new InstructionAssembler({
+    instructionStateService,
+    getBuiltInInstructions: (fallback) => options?.builtInInstructions ?? fallback,
+    contributors: options?.contributors,
   });
 
-  return { channelDir, loader };
+  return { rootDir: tempDir, assembler, instructionStateService };
 }
 
 afterEach(() => {
@@ -53,59 +43,261 @@ afterEach(() => {
   }
 });
 
-describe("DefaultSessionResourceLoader system prompt assembly", () => {
-  it("uses built-in prompt text and appends configured resources in deterministic order", () => {
-    const { channelDir, loader } = createLoaderSetup({
-      prompts: {
-        builtInInstructions: "builtin prompt line",
-        attachedInstructionFiles: ["AGENTS.md", "SOUL.md", "CUSTOM.md"],
+describe("InstructionAssembler system prompt assembly", () => {
+  it("loads global/channel PERSONA and AGENTS in deterministic order with optional TOOLS", async () => {
+    const { rootDir, assembler, instructionStateService } = createAssemblerSetup({
+      builtInInstructions: "builtin prompt line",
+    });
+
+    instructionStateService.ensureGlobalState();
+    instructionStateService.ensureChannelState("discord", "channel-1");
+
+    const globalDir = instructionStateService.getGlobalInstructionsDir();
+    const channelDir = instructionStateService.getChannelInstructionsDir("discord", "channel-1");
+
+    writeFileSync(join(globalDir, PERSONA_FILE), "global persona\n", "utf8");
+    writeFileSync(join(globalDir, AGENTS_FILE), "global agents\n", "utf8");
+    writeFileSync(join(globalDir, TOOLS_FILE), "global tools\n", "utf8");
+    writeFileSync(join(channelDir, PERSONA_FILE), "channel persona\n", "utf8");
+    writeFileSync(join(channelDir, AGENTS_FILE), "channel agents\n", "utf8");
+    writeFileSync(join(channelDir, TOOLS_FILE), "channel tools\n", "utf8");
+
+    const workspaceDir = join(rootDir, "discord-channel-1", "workspace");
+    mkdirSync(workspaceDir, { recursive: true });
+    writeFileSync(
+      join(workspaceDir, PERSONA_FILE),
+      "workspace persona should be ignored\n",
+      "utf8",
+    );
+
+    const prompt = await assembler.buildSystemPrompt({
+      platform: "discord",
+      channelId: "channel-1",
+      turn: {
+        kind: "channel_message",
+        platform: "discord",
+        channelId: "channel-1",
+        messageId: "msg-1",
+        timestamp: 1713072000000,
+        content: "hello",
+        sender: {
+          userId: "user-1",
+          username: "alice",
+          nickname: "Alice",
+        },
+        isDirect: false,
+        atSelf: true,
+        isReplyToBot: false,
       },
     });
-    const workspaceDir = join(channelDir, "workspace");
 
-    writeFileSync(join(workspaceDir, "AGENTS.md"), "agents rules\n", "utf8");
-    writeFileSync(join(workspaceDir, "SOUL.md"), "soul persona\n", "utf8");
-    writeFileSync(join(workspaceDir, "CUSTOM.md"), "custom addenda\n", "utf8");
-
-    loader.reload();
-
-    const prompt = loader.buildSystemPrompt();
     expect(prompt).toContain("builtin prompt line");
-    expect(prompt).toContain("## Project Context");
-    expect(prompt).toContain("### AGENTS.md");
-    expect(prompt).toContain("### SOUL.md");
-    expect(prompt).toContain("### CUSTOM.md");
-    expect(prompt).toContain("agents rules");
-    expect(prompt).toContain("soul persona");
-    expect(prompt).toContain("custom addenda");
-    expect(prompt).not.toContain("<system-reminder");
+    expect(prompt).toContain("global persona");
+    expect(prompt).toContain("global agents");
+    expect(prompt).toContain("global tools");
+    expect(prompt).toContain("channel persona");
+    expect(prompt).toContain("channel agents");
+    expect(prompt).toContain("channel tools");
+    expect(prompt).not.toContain("workspace persona should be ignored");
 
-    const agentsIdx = prompt.indexOf("agents rules");
-    const soulIdx = prompt.indexOf("soul persona");
-    const customIdx = prompt.indexOf("custom addenda");
-    expect(agentsIdx).toBeGreaterThanOrEqual(0);
-    expect(soulIdx).toBeGreaterThan(agentsIdx);
-    expect(customIdx).toBeGreaterThan(soulIdx);
+    const globalPersonaIndex = prompt.indexOf("global persona");
+    const globalAgentsIndex = prompt.indexOf("global agents");
+    const globalToolsIndex = prompt.indexOf("global tools");
+    const channelPersonaIndex = prompt.indexOf("channel persona");
+    const channelAgentsIndex = prompt.indexOf("channel agents");
+    const channelToolsIndex = prompt.indexOf("channel tools");
+
+    expect(globalPersonaIndex).toBeGreaterThanOrEqual(0);
+    expect(globalAgentsIndex).toBeGreaterThan(globalPersonaIndex);
+    expect(globalToolsIndex).toBeGreaterThan(globalAgentsIndex);
+    expect(channelPersonaIndex).toBeGreaterThan(globalToolsIndex);
+    expect(channelAgentsIndex).toBeGreaterThan(channelPersonaIndex);
+    expect(channelToolsIndex).toBeGreaterThan(channelAgentsIndex);
   });
 
-  it("skips empty resource files when appending prompt content", () => {
-    const { channelDir, loader } = createLoaderSetup({
-      prompts: {
-        attachedInstructionFiles: ["SOUL.md", "AGENTS.md"],
+  it("loads USER.md only for private/direct turns", async () => {
+    const { assembler, instructionStateService } = createAssemblerSetup();
+    const userDir = instructionStateService.ensureUserState("discord", "user-1");
+    writeFileSync(join(userDir, USER_FILE), "private profile\n", "utf8");
+
+    const baseTurn = {
+      kind: "channel_message" as const,
+      platform: "discord",
+      channelId: "channel-1",
+      messageId: "msg-1",
+      timestamp: 1713072000000,
+      content: "hello",
+      sender: {
+        userId: "user-1",
+        username: "alice",
+      },
+      atSelf: false,
+      isReplyToBot: false,
+    };
+
+    const groupPrompt = await assembler.buildSystemPrompt({
+      platform: "discord",
+      channelId: "channel-1",
+      turn: {
+        ...baseTurn,
+        isDirect: false,
       },
     });
-    const workspaceDir = join(channelDir, "workspace");
+    expect(groupPrompt).not.toContain("private profile");
 
-    writeFileSync(join(workspaceDir, "SOUL.md"), "   \n", "utf8");
-    writeFileSync(join(workspaceDir, "AGENTS.md"), "agents rules\n", "utf8");
+    const directPrompt = await assembler.buildSystemPrompt({
+      platform: "discord",
+      channelId: "channel-1",
+      turn: {
+        ...baseTurn,
+        isDirect: true,
+      },
+    });
+    expect(directPrompt).toContain("private profile");
+    const runtimeIndex = directPrompt.indexOf("## Runtime Environment");
+    const userIndex = directPrompt.indexOf("private profile");
+    expect(runtimeIndex).toBeGreaterThanOrEqual(0);
+    expect(userIndex).toBeGreaterThan(runtimeIndex);
+  });
 
-    loader.reload();
+  it("includes runtime environment block", async () => {
+    const { assembler } = createAssemblerSetup();
+    const prompt = await assembler.buildSystemPrompt({
+      platform: "discord",
+      channelId: "channel-1",
+      turn: {
+        kind: "channel_message",
+        platform: "discord",
+        channelId: "channel-1",
+        messageId: "msg-env-1",
+        timestamp: 1713072000000,
+        content: "hello",
+        sender: {
+          userId: "user-1",
+          username: "alice",
+          nickname: "Alice",
+          identity: "title:moderator",
+        },
+        isDirect: false,
+        atSelf: true,
+        isReplyToBot: true,
+        replyTo: {
+          username: "yesimbot",
+          nickname: "Athena",
+          summary: "quoted",
+        },
+      },
+    });
 
-    const prompt = loader.buildSystemPrompt();
-    expect(prompt).not.toContain("<system-reminder");
-    expect(prompt).not.toContain("SOUL.md");
-    expect(prompt).toContain("## Project Context");
-    expect(prompt).toContain("### AGENTS.md");
-    expect(prompt).toContain("agents rules");
+    expect(prompt).toContain("## Runtime Environment");
+    expect(prompt).toContain("Platform: discord");
+    expect(prompt).toContain("Conversation type: group");
+    expect(prompt).toContain("Mentioned bot: yes");
+    expect(prompt).toContain("Reply-to-bot: yes");
+    expect(prompt).toContain("Participant identity: title:moderator");
+  });
+
+  it("skips TOOLS.md when absent without placeholder sections", async () => {
+    const { assembler, instructionStateService } = createAssemblerSetup({
+      builtInInstructions: "builtin prompt line",
+    });
+
+    instructionStateService.ensureGlobalState();
+    instructionStateService.ensureChannelState("discord", "channel-1");
+
+    const globalDir = instructionStateService.getGlobalInstructionsDir();
+    const channelDir = instructionStateService.getChannelInstructionsDir("discord", "channel-1");
+
+    writeFileSync(join(globalDir, PERSONA_FILE), "global persona\n", "utf8");
+    writeFileSync(join(globalDir, AGENTS_FILE), "global agents\n", "utf8");
+    writeFileSync(join(channelDir, PERSONA_FILE), "channel persona\n", "utf8");
+    writeFileSync(join(channelDir, AGENTS_FILE), "channel agents\n", "utf8");
+
+    const prompt = await assembler.buildSystemPrompt({
+      platform: "discord",
+      channelId: "channel-1",
+      turn: {
+        kind: "channel_message",
+        platform: "discord",
+        channelId: "channel-1",
+        messageId: "msg-no-tools-1",
+        timestamp: 1713072000000,
+        content: "hello",
+        sender: {
+          userId: "user-1",
+          username: "alice",
+        },
+        isDirect: false,
+        atSelf: false,
+        isReplyToBot: false,
+      },
+    });
+
+    expect(prompt).not.toContain("Global TOOLS.md");
+    expect(prompt).not.toContain("Channel TOOLS.md");
+    expect(prompt).not.toContain("## Project Context");
+
+    const globalAgentsIndex = prompt.indexOf("global agents");
+    const channelPersonaIndex = prompt.indexOf("channel persona");
+    expect(globalAgentsIndex).toBeGreaterThanOrEqual(0);
+    expect(channelPersonaIndex).toBeGreaterThan(globalAgentsIndex);
+  });
+
+  it("sorts contributor blocks deterministically by layer, priority, and key", async () => {
+    const contributors: InstructionContributor[] = [
+      {
+        name: "zeta",
+        collect: async () => [
+          {
+            key: "beta",
+            title: "Zeta Beta",
+            content: "zeta beta",
+            layer: "extension",
+            priority: 0,
+          },
+        ],
+      },
+      {
+        name: "alpha",
+        collect: async () => [
+          {
+            key: "alpha",
+            title: "Alpha Alpha",
+            content: "alpha alpha",
+            layer: "extension",
+            priority: 0,
+          },
+        ],
+      },
+    ];
+    const { assembler } = createAssemblerSetup({ contributors });
+    const prompt = await assembler.buildSystemPrompt({
+      platform: "discord",
+      channelId: "channel-1",
+      turn: {
+        kind: "channel_message",
+        platform: "discord",
+        channelId: "channel-1",
+        messageId: "msg-order-1",
+        timestamp: 1713072000000,
+        content: "hello",
+        sender: {
+          userId: "user-1",
+          username: "alice",
+        },
+        isDirect: false,
+        atSelf: false,
+        isReplyToBot: false,
+      },
+    });
+
+    const alphaIndex = prompt.indexOf("alpha alpha");
+    const zetaIndex = prompt.indexOf("zeta beta");
+    const runtimeIndex = prompt.indexOf("## Runtime Environment");
+    expect(runtimeIndex).toBeGreaterThanOrEqual(0);
+    expect(alphaIndex).toBeGreaterThan(runtimeIndex);
+    expect(zetaIndex).toBeGreaterThan(runtimeIndex);
+    expect(alphaIndex).toBeGreaterThanOrEqual(0);
+    expect(zetaIndex).toBeGreaterThan(alphaIndex);
   });
 });

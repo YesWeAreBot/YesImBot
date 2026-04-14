@@ -27,20 +27,11 @@ export interface AthenaSessionSettings extends Record<string, unknown> {
   };
   prompts?: {
     builtInInstructions?: string;
-    attachedInstructionFiles?: string[];
   };
 }
 
-export interface AthenaWorkspaceSettings extends AthenaSessionSettings {
+export interface AthenaChannelSettings extends AthenaSessionSettings {
   useGlobal?: boolean;
-}
-
-export interface WorkspacePluginSettings {
-  enableWorkspace?: boolean;
-  enableSandbox?: boolean;
-  enableFilesystem?: boolean;
-  externalPath?: string[];
-  skills?: string[];
 }
 
 export interface JsonSchemaDefinition {
@@ -108,21 +99,17 @@ export const ATHENA_SESSION_SETTINGS_JSON_SCHEMA: JsonSchemaDefinition = {
       additionalProperties: false,
       properties: {
         builtInInstructions: { type: "string" },
-        attachedInstructionFiles: {
-          type: "array",
-          items: { type: "string" },
-        },
       },
     },
     useGlobal: {
       deprecated: true,
-      description: "Deprecated. Ignored by Athena. Workspace settings always layer over global.",
+      description: "Deprecated. Ignored by Athena. Channel settings always layer over global.",
     },
   },
 };
 
 export interface SettingsIssue {
-  scope: "global" | "workspace";
+  scope: "global" | "channel";
   path: string;
   code:
     | "invalid-json"
@@ -136,7 +123,7 @@ export interface SettingsIssue {
 }
 
 export interface SettingsConflict {
-  scope: "global" | "workspace";
+  scope: "global" | "channel";
   path: string;
   filePath: string;
   baseValue: unknown;
@@ -158,7 +145,7 @@ export interface SettingsReloadMetadata {
   precedence: string[];
   sources: {
     global: SettingsFileSnapshot<AthenaSessionSettings>;
-    workspace: SettingsFileSnapshot<AthenaWorkspaceSettings>;
+    channel: SettingsFileSnapshot<AthenaChannelSettings>;
   };
   effectiveSettings: AthenaSessionSettings;
   conflicts: SettingsConflict[];
@@ -233,22 +220,13 @@ const SESSION_SETTINGS_RULES: SettingsRuleMap = {
     kind: "object",
     properties: {
       builtInInstructions: { kind: "string" },
-      attachedInstructionFiles: { kind: "string-array" },
     },
   },
   useGlobal: {
     kind: "deprecated",
     message:
-      "Deprecated key 'useGlobal' is ignored. Workspace settings always layer over global settings.",
+      "Deprecated key 'useGlobal' is ignored. Channel settings always layer over global settings.",
   },
-};
-
-const WORKSPACE_PLUGIN_SETTINGS_RULES: SettingsRuleMap = {
-  enableWorkspace: { kind: "boolean" },
-  enableSandbox: { kind: "boolean" },
-  enableFilesystem: { kind: "boolean" },
-  externalPath: { kind: "string-array" },
-  skills: { kind: "string-array" },
 };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -277,7 +255,7 @@ function cloneSettings<T extends Record<string, unknown>>(value: T): T {
 
 function loadSettingsSnapshot<T extends object>(
   filePath: string,
-  scope: "global" | "workspace",
+  scope: "global" | "channel",
 ): SettingsFileSnapshot<T> {
   if (!existsSync(filePath)) {
     return {
@@ -348,7 +326,7 @@ function loadSettingsSnapshot<T extends object>(
 
 function validateSettingsObject<T extends object>(
   raw: Record<string, unknown>,
-  scope: "global" | "workspace",
+  scope: "global" | "channel",
   filePath: string,
   rules: SettingsRuleMap,
   parentPath: string,
@@ -498,29 +476,6 @@ function validateSettingsObject<T extends object>(
   };
 }
 
-function getWorkspacePluginSettingsFromSource(
-  snapshot: SettingsFileSnapshot<AthenaWorkspaceSettings>,
-): WorkspacePluginSettings | undefined {
-  const rawWorkspace = snapshot.rawSettings.workspace;
-  if (!isPlainObject(rawWorkspace)) {
-    return undefined;
-  }
-
-  const validation = validateSettingsObject<WorkspacePluginSettings>(
-    rawWorkspace,
-    "workspace",
-    snapshot.path,
-    WORKSPACE_PLUGIN_SETTINGS_RULES,
-    "workspace",
-  );
-
-  if (Object.keys(validation.settings).length === 0) {
-    return undefined;
-  }
-
-  return validation.settings;
-}
-
 export function readSettingsFile(filePath: string): Record<string, unknown> {
   return loadSettingsSnapshot<Record<string, unknown>>(filePath, "global").settings;
 }
@@ -545,7 +500,7 @@ export function deepMergeSettings<T extends Record<string, unknown>>(base: T, ov
   return result as T;
 }
 
-export function stripUseGlobal(settings: AthenaWorkspaceSettings): AthenaSessionSettings {
+export function stripUseGlobal(settings: AthenaChannelSettings): AthenaSessionSettings {
   const { useGlobal: _, ...rest } = settings;
   return rest;
 }
@@ -580,7 +535,7 @@ function areSettingsValuesEqual(left: unknown, right: unknown): boolean {
 }
 
 function collectConflicts(
-  scope: "global" | "workspace",
+  scope: "global" | "channel",
   filePath: string,
   appliedPaths: string[],
   overrides: Record<string, unknown>,
@@ -611,19 +566,19 @@ function collectConflicts(
 
 export interface SettingsManagerOptions {
   globalSettingsPath: string;
-  workspaceSettingsPath: string;
+  channelSettingsPath: string;
   defaults?: AthenaSessionSettings;
 }
 
 export class SettingsManager {
   private readonly globalSettingsPath: string;
-  private readonly workspaceSettingsPath: string;
+  private readonly channelSettingsPath: string;
   private readonly defaults: AthenaSessionSettings;
   private metadata: SettingsReloadMetadata;
 
   constructor(options: SettingsManagerOptions) {
     this.globalSettingsPath = options.globalSettingsPath;
-    this.workspaceSettingsPath = options.workspaceSettingsPath;
+    this.channelSettingsPath = options.channelSettingsPath;
     this.defaults = cloneSettings(options.defaults ?? {});
     this.metadata = this.buildReloadMetadata();
   }
@@ -632,8 +587,8 @@ export class SettingsManager {
     return this.metadata.sources.global.settings;
   }
 
-  loadWorkspaceSettings(): AthenaWorkspaceSettings {
-    return this.metadata.sources.workspace.settings;
+  loadChannelSettings(): AthenaChannelSettings {
+    return this.metadata.sources.channel.settings;
   }
 
   usesGlobalSettings(): boolean {
@@ -673,48 +628,40 @@ export class SettingsManager {
     return this.metadata.effectiveSettings.response;
   }
 
-  getWorkspaceSettings(): WorkspacePluginSettings | undefined {
-    return getWorkspacePluginSettingsFromSource(this.metadata.sources.workspace);
-  }
-
   getBuiltInInstructions(fallback?: string): string | undefined {
     return this.metadata.effectiveSettings.prompts?.builtInInstructions ?? fallback;
   }
 
-  getPromptResourceFilenames(fallback?: string[]): string[] | undefined {
-    return this.metadata.effectiveSettings.prompts?.attachedInstructionFiles ?? fallback;
-  }
-
   private buildReloadMetadata(): SettingsReloadMetadata {
     const global = loadSettingsSnapshot<AthenaSessionSettings>(this.globalSettingsPath, "global");
-    const workspace = loadSettingsSnapshot<AthenaWorkspaceSettings>(
-      this.workspaceSettingsPath,
-      "workspace",
+    const channel = loadSettingsSnapshot<AthenaChannelSettings>(
+      this.channelSettingsPath,
+      "channel",
     );
 
     const defaults = cloneSettings(this.defaults);
     const globalSettings = cloneSettings(global.settings);
-    const workspaceSettings = stripUseGlobal(cloneSettings(workspace.settings));
+    const channelSettings = stripUseGlobal(cloneSettings(channel.settings));
     const defaultsWithGlobal = deepMergeSettings(defaults, globalSettings);
-    const effectiveSettings = deepMergeSettings(defaultsWithGlobal, workspaceSettings);
+    const effectiveSettings = deepMergeSettings(defaultsWithGlobal, channelSettings);
     const conflicts = [
       ...collectConflicts("global", global.path, global.appliedPaths, globalSettings, defaults),
       ...collectConflicts(
-        "workspace",
-        workspace.path,
-        workspace.appliedPaths,
-        workspaceSettings,
+        "channel",
+        channel.path,
+        channel.appliedPaths,
+        channelSettings,
         defaultsWithGlobal,
       ),
     ];
-    const issues = [...global.issues, ...workspace.issues];
+    const issues = [...global.issues, ...channel.issues];
 
     return {
       reloadedAt: Date.now(),
-      precedence: ["workspace", "global", "koishi-config"],
+      precedence: ["channel", "global", "koishi-config"],
       sources: {
         global,
-        workspace,
+        channel,
       },
       effectiveSettings,
       conflicts,

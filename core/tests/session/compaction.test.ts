@@ -10,7 +10,6 @@ import {
   shouldCompact,
 } from "../../src/services/session/compaction/index.ts";
 import { serializeTimelineForCompaction } from "../../src/services/session/compaction/serialize";
-import type { TimelineRecord } from "../../src/services/session/types/index";
 import {
   AgentAssistantMessage,
   AgentCustomMessage,
@@ -18,6 +17,7 @@ import {
   AgentToolMessage,
   AgentUserMessage,
 } from "../../src/services/session/session-manager";
+import type { TimelineRecord } from "../../src/services/session/types/index";
 
 const DEFAULT_COMPACTION_SETTINGS = {
   enabled: true,

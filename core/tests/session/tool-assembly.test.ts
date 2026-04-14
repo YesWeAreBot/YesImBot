@@ -9,7 +9,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildToolAssembly,
   type ToolAssemblyContextFactory,
-  type ToolAssemblyWorkspaceContributor,
+  type ToolAssemblySourceContributor,
 } from "../../src/services/session/runtime/tool-assembly";
 
 function createToolRuntime(overrides: Partial<ToolRuntime> = {}): ToolRuntime {
@@ -71,13 +71,13 @@ function createPluginToolDefinition(options: {
   };
 }
 
-function createWorkspaceContributor(name: string): ToolAssemblyWorkspaceContributor {
+function createSourceContributor(name: string): ToolAssemblySourceContributor {
   return {
-    pluginName: "workspace",
+    pluginName: "source-fixture",
     name,
     definition: {
       name,
-      description: `workspace:${name}`,
+      description: `source:${name}`,
       inputSchema: {
         type: "object",
         additionalProperties: false,
@@ -107,7 +107,7 @@ describe("buildToolAssembly", () => {
       runtime,
       hostInput: { allowSearch: true },
       pluginToolDefinitions: [search],
-      workspaceToolDefinitions: [],
+      sourceToolDefinitions: [],
       toolSettings: {},
       contextFactories: {
         "search-service": ((hostInput: { allowSearch: boolean }) => ({
@@ -126,7 +126,7 @@ describe("buildToolAssembly", () => {
       runtime,
       hostInput: { allowSearch: true },
       pluginToolDefinitions: [search],
-      workspaceToolDefinitions: [],
+      sourceToolDefinitions: [],
       toolSettings: {
         enabled: ["search_docs"],
       },
@@ -160,13 +160,13 @@ describe("buildToolAssembly", () => {
       "delete",
       "mkdir",
       "execute_command",
-    ].map(createWorkspaceContributor);
+    ].map(createSourceContributor);
 
     const assembly = buildToolAssembly({
       runtime,
       hostInput: {},
       pluginToolDefinitions: [],
-      workspaceToolDefinitions: contributors,
+      sourceToolDefinitions: contributors,
       toolSettings: {
         enabled: ["read_file", "execute_command"],
       },
@@ -203,7 +203,7 @@ describe("buildToolAssembly", () => {
       runtime,
       hostInput: {},
       pluginToolDefinitions: [optionalMissing],
-      workspaceToolDefinitions: [],
+      sourceToolDefinitions: [],
       toolSettings: {
         enabled: ["optional_search"],
       },
@@ -217,7 +217,7 @@ describe("buildToolAssembly", () => {
         runtime,
         hostInput: {},
         pluginToolDefinitions: [optionalMissing],
-        workspaceToolDefinitions: [],
+        sourceToolDefinitions: [],
         toolSettings: {
           required: ["optional_search"],
         },
@@ -235,7 +235,7 @@ describe("buildToolAssembly", () => {
             isSupported: () => true,
           }),
         ],
-        workspaceToolDefinitions: [],
+        sourceToolDefinitions: [],
         toolSettings: {},
       }),
     ).toThrow(/send_message/i);
@@ -251,7 +251,7 @@ describe("buildToolAssembly", () => {
             isSupported: () => true,
           }),
         ],
-        workspaceToolDefinitions: [createWorkspaceContributor("search_docs")],
+        sourceToolDefinitions: [createSourceContributor("search_docs")],
         toolSettings: {},
       }),
     ).toThrow(/duplicate|search_docs/i);
@@ -286,7 +286,7 @@ describe("buildToolAssembly", () => {
       runtime,
       hostInput: { allowSearch: false },
       pluginToolDefinitions: [search],
-      workspaceToolDefinitions: [],
+      sourceToolDefinitions: [],
       toolSettings,
       contextFactories,
     });
@@ -295,7 +295,7 @@ describe("buildToolAssembly", () => {
       runtime,
       hostInput: { allowSearch: true },
       pluginToolDefinitions: [search],
-      workspaceToolDefinitions: [],
+      sourceToolDefinitions: [],
       toolSettings,
       contextFactories,
     });
@@ -335,7 +335,7 @@ describe("buildToolAssembly", () => {
       runtime,
       hostInput: { authorRoles: ["admin"] },
       pluginToolDefinitions: [unsupported],
-      workspaceToolDefinitions: [],
+      sourceToolDefinitions: [],
       toolSettings: {
         enabled: ["manage_group"],
       },

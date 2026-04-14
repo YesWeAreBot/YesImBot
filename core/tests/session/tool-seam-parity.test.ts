@@ -191,34 +191,31 @@ describe("runtime/direct tool seam parity", () => {
       new URL("../../src/services/plugin/service.ts", import.meta.url),
       "utf8",
     );
-    const workspacePluginSource = readFileSync(
-      new URL("../../src/services/session/workspace/plugin.ts", import.meta.url),
+    const workspacePackageEntrySource = readFileSync(
+      new URL("../../../plugins/workspace/src/index.ts", import.meta.url),
       "utf8",
     );
-    const workspaceToolsSource = readFileSync(
-      new URL("../../src/services/session/runtime/workspace-tools.ts", import.meta.url),
+    const workspacePackageToolDefinitionsSource = readFileSync(
+      new URL("../../../plugins/workspace/src/tool-definitions.ts", import.meta.url),
       "utf8",
     );
 
     expect(serviceSource).toContain('from "@yesimbot/plugin-sdk"');
-    expect(workspacePluginSource).toContain('from "@yesimbot/plugin-sdk"');
-    expect(workspaceToolsSource).toContain('from "@yesimbot/plugin-sdk"');
+    expect(workspacePackageEntrySource).toContain('from "@yesimbot/plugin-sdk"');
+    expect(workspacePackageToolDefinitionsSource).toContain('from "@yesimbot/plugin-sdk"');
     expect(serviceSource).toMatch(/import\s*\{\s*YesImPlugin\s*\}\s*from "@yesimbot\/plugin-sdk";/);
     expect(serviceSource).toMatch(
       /import type\s*\{[\s\S]*IPluginService[\s\S]*RegisteredToolDefinition[\s\S]*ToolAssemblyRequest[\s\S]*ToolInvocationRequest[\s\S]*ToolRuntime[\s\S]*ToolSource[\s\S]*\}\s*from "@yesimbot\/plugin-sdk";/,
     );
-    expect(workspacePluginSource).toMatch(
+    expect(workspacePackageEntrySource).toMatch(
       /import\s*\{\s*Metadata,\s*YesImPlugin\s*\}\s*from "@yesimbot\/plugin-sdk";/,
     );
-    expect(workspacePluginSource).toMatch(
+    expect(workspacePackageToolDefinitionsSource).toMatch(
       /import type\s*\{\s*RegisteredToolDefinition\s*\}\s*from "@yesimbot\/plugin-sdk";/,
     );
-    expect(workspaceToolsSource).toMatch(
-      /import type\s*\{\s*RegisteredToolDefinition\s*\}\s*from "@yesimbot\/plugin-sdk";/,
-    );
-    expect(serviceSource).not.toContain('packages/plugin-sdk/src/index');
-    expect(workspacePluginSource).not.toContain('packages/plugin-sdk/src/index');
-    expect(workspaceToolsSource).not.toContain('packages/plugin-sdk/src/index');
+    expect(serviceSource).not.toContain("packages/plugin-sdk/src/index");
+    expect(workspacePackageEntrySource).not.toContain("packages/plugin-sdk/src/index");
+    expect(workspacePackageToolDefinitionsSource).not.toContain("packages/plugin-sdk/src/index");
   });
 
   it("keeps supportedTools, activeTools, experimentalContext, and execution semantics aligned", async () => {

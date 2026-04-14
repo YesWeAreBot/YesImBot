@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -90,7 +90,10 @@ function createExistingWorkspace(baseDir: string, channelId = "channel-1"): void
   const workspaceDir = join(channelDir, "workspace");
 
   mkdirSync(globalRoot, { recursive: true });
-  writeFileSync(join(globalRoot, "settings.json"), JSON.stringify({ model: "test:model" }, null, 2));
+  writeFileSync(
+    join(globalRoot, "settings.json"),
+    JSON.stringify({ model: "test:model" }, null, 2),
+  );
   mkdirSync(workspaceDir, { recursive: true });
   writeFileSync(join(channelDir, "settings.json"), JSON.stringify({ useGlobal: true }, null, 2));
 }
@@ -103,142 +106,96 @@ function createBotMock(selfId = "bot-self"): Bot {
 }
 
 describe("workspace plugin lifecycle", () => {
-  it("bootstrap awaits scoped workspace plugin installation before returning", async () => {
+  it("core bootstrap does not install a scoped workspace plugin", async () => {
     const baseDir = mkdtempSync(join(tmpdir(), "athena-workspace-bootstrap-"));
     try {
       const { ctx, install } = createContextMock(baseDir);
+      const service = new AgentSessionService(ctx, {
+        model: "test:model",
+        basePath: "sessions",
+      });
+
+      await expect(
+        service.getOrCreateAgent("discord", "channel-1", createBotMock()),
+      ).resolves.toBeDefined();
+
+      expect(install).not.toHaveBeenCalled();
+      expect(service.getActiveChannels()).toEqual(["discord:channel-1"]);
+    } finally {
+      await rm(baseDir, { recursive: true, force: true });
+    }
+  });
+
+  it("core bootstrap does not create workspace directories or prompt files", async () => {
+    const baseDir = mkdtempSync(join(tmpdir(), "athena-workspace-scaffold-"));
+    try {
+      const { ctx } = createContextMock(baseDir);
+      const service = new AgentSessionService(ctx, {
+        model: "test:model",
+        basePath: "sessions",
+      });
+
+      await expect(
+        service.getOrCreateAgent("discord", "channel-1", createBotMock()),
+      ).resolves.toBeDefined();
+
+      const globalRoot = join(baseDir, "sessions");
+      const channelDir = join(globalRoot, "discord-channel-1");
+
+      expect(existsSync(globalRoot)).toBe(true);
+      expect(existsSync(channelDir)).toBe(true);
+      expect(existsSync(join(channelDir, "session"))).toBe(true);
+      expect(existsSync(join(channelDir, "workspace"))).toBe(false);
+      expect(existsSync(join(globalRoot, "SOUL.md"))).toBe(false);
+      expect(existsSync(join(globalRoot, "AGENTS.md"))).toBe(false);
+    } finally {
+      await rm(baseDir, { recursive: true, force: true });
+    }
+  });
+
+  it("settings reload does not remove or reinstall a scoped workspace plugin", async () => {
+    const baseDir = mkdtempSync(join(tmpdir(), "athena-workspace-reload-"));
+    try {
+      const { ctx, install, remove } = createContextMock(baseDir);
       createExistingWorkspace(baseDir);
       const service = new AgentSessionService(ctx, {
         model: "test:model",
         basePath: "sessions",
-        enableWorkspace: true,
-        enableFilesystem: true,
-      });
-
-      let resolveInstall!: () => void;
-      install.mockImplementationOnce(
-        () =>
-          new Promise<void>((resolve) => {
-            resolveInstall = resolve;
-          }),
-      );
-
-      let settled = false;
-      const bootstrapPromise = service
-        .bootstrapChannelForManagement("discord", "channel-1", createBotMock())
-        .then((result) => {
-          settled = true;
-          return result;
-        });
-
-      await Promise.resolve();
-
-      expect(install).toHaveBeenCalledWith(expect.anything(), { scope: "discord:channel-1" });
-      expect(settled).toBe(false);
-
-      resolveInstall();
-
-      await expect(bootstrapPromise).resolves.toMatchObject({
-        channelKey: "discord:channel-1",
-        status: "created",
-      });
-      expect(settled).toBe(true);
-    } finally {
-      await rm(baseDir, { recursive: true, force: true });
-    }
-  });
-
-  it("reload waits for scoped workspace removal and reinstall before completing", async () => {
-    const baseDir = mkdtempSync(join(tmpdir(), "athena-workspace-reload-"));
-    try {
-      const { ctx, install, remove } = createContextMock(baseDir);
-      const service = new AgentSessionService(ctx, {
-        model: "test:model",
-        basePath: "sessions",
-        enableWorkspace: true,
-        enableFilesystem: true,
       });
 
       await service.getOrCreateAgent("discord", "channel-1", createBotMock());
-      await vi.waitFor(() => {
-        expect(install).toHaveBeenCalled();
-      });
       install.mockClear();
       remove.mockClear();
 
-      let resolveInstall!: () => void;
-      install.mockImplementationOnce(
-        () =>
-          new Promise<void>((resolve) => {
-            resolveInstall = resolve;
-          }),
-      );
-
-      let settled = false;
-      const reloadPromise = service.reloadChannelSettings("discord", "channel-1", createBotMock()).then((result) => {
-        settled = true;
-        return result;
-      });
-
-      await Promise.resolve();
-
-      expect(remove).toHaveBeenCalledWith("workspace", { scope: "discord:channel-1" });
-      expect(install).toHaveBeenCalledWith(expect.anything(), { scope: "discord:channel-1" });
-      expect(remove.mock.invocationCallOrder[0]).toBeLessThan(install.mock.invocationCallOrder[0]);
-      expect(settled).toBe(false);
-
-      resolveInstall();
-
-      await expect(reloadPromise).resolves.toMatchObject({
+      await expect(
+        service.reloadChannelSettings("discord", "channel-1", createBotMock()),
+      ).resolves.toMatchObject({
         channelKey: "discord:channel-1",
         status: "reloaded",
       });
-      expect(settled).toBe(true);
+
+      expect(remove).not.toHaveBeenCalled();
+      expect(install).not.toHaveBeenCalled();
     } finally {
       await rm(baseDir, { recursive: true, force: true });
     }
   });
 
-  it("dispose removes scoped workspace plugin", async () => {
+  it("service stop does not remove a scoped workspace plugin", async () => {
     const baseDir = mkdtempSync(join(tmpdir(), "athena-workspace-dispose-"));
     try {
       const { ctx, remove } = createContextMock(baseDir);
       const service = new AgentSessionService(ctx, {
         model: "test:model",
         basePath: "sessions",
-        enableWorkspace: true,
-        enableFilesystem: true,
       });
 
       const runtime = await service.getOrCreateAgent("discord", "channel-1", createBotMock());
       expect(runtime).toBeDefined();
 
-      await vi.waitFor(() => {
-        expect(remove).not.toHaveBeenCalled();
-      });
-
       await (service as unknown as { stop(): Promise<void> }).stop();
 
-      expect(remove).toHaveBeenCalledWith("workspace", { scope: "discord:channel-1" });
-    } finally {
-      await rm(baseDir, { recursive: true, force: true });
-    }
-  });
-
-  it("disabled workspace settings skip scoped workspace plugin installation", async () => {
-    const baseDir = mkdtempSync(join(tmpdir(), "athena-workspace-disabled-"));
-    try {
-      const { ctx, install } = createContextMock(baseDir);
-      const service = new AgentSessionService(ctx, {
-        model: "test:model",
-        basePath: "sessions",
-        enableWorkspace: false,
-        enableFilesystem: true,
-      });
-
-      await service.getOrCreateAgent("discord", "channel-1", createBotMock());
-
-      expect(install).not.toHaveBeenCalled();
+      expect(remove).not.toHaveBeenCalled();
     } finally {
       await rm(baseDir, { recursive: true, force: true });
     }

@@ -98,24 +98,26 @@ function createContextMock() {
       resolve: vi.fn((modelId: string) => ({ provider: "test", modelId })),
     },
     "yesimbot.plugin": {
-      assembleTools: vi.fn(async (request: {
-        sendMessageTool?: Record<string, unknown>;
-        toolSettings?: { enabled?: string[] };
-      }) => {
-        const sendMessageTool = request.sendMessageTool;
-        const supportedTools = sendMessageTool ? { send_message: sendMessageTool } : {};
-        const activeTools =
-          sendMessageTool && (request.toolSettings?.enabled?.includes("send_message") ?? true)
-            ? { send_message: sendMessageTool }
-            : {};
+      assembleTools: vi.fn(
+        async (request: {
+          sendMessageTool?: Record<string, unknown>;
+          toolSettings?: { enabled?: string[] };
+        }) => {
+          const sendMessageTool = request.sendMessageTool;
+          const supportedTools = sendMessageTool ? { send_message: sendMessageTool } : {};
+          const activeTools =
+            sendMessageTool && (request.toolSettings?.enabled?.includes("send_message") ?? true)
+              ? { send_message: sendMessageTool }
+              : {};
 
-        return {
-          supportedTools,
-          activeTools,
-          experimentalContext: {},
-          signature: JSON.stringify(Object.keys(supportedTools).sort()),
-        };
-      }),
+          return {
+            supportedTools,
+            activeTools,
+            experimentalContext: {},
+            signature: JSON.stringify(Object.keys(supportedTools).sort()),
+          };
+        },
+      ),
       getToolDefinitions: vi.fn(() => []),
     },
   };

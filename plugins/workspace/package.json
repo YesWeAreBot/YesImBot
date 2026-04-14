@@ -10,7 +10,6 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
       "require": "./dist/index.cjs"
     },
     "./package.json": "./package.json"
@@ -26,6 +25,9 @@
     "lint": "oxlint",
     "pub": "yarn npm publish --access public",
     "typecheck": "tsc --noEmit && echo 'TypeScript typecheck passed!'"
+  },
+  "dependencies": {
+    "@ai-sdk/provider-utils": "^4.0.0"
   },
   "devDependencies": {
     "@yesimbot/plugin-sdk": "workspace:^",

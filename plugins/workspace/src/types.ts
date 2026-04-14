@@ -85,19 +85,12 @@ export interface WorkspacePluginConfig {
   enableSandbox?: boolean;
   enableFilesystem?: boolean;
   externalPath?: string[];
-  skills?: string[];
-}
-
-export interface WorkspaceSettingsManager {
-  getWorkspaceSettings(): WorkspacePluginConfig | undefined;
-  getBuiltInInstructions?(fallback?: string): string | undefined;
-  getPromptResourceFilenames?(fallback?: string[]): string[] | undefined;
 }
 
 export interface WorkspacePluginOptions {
   basePath: string;
-  settingsManager?: WorkspaceSettingsManager;
   logger: Logger;
+  config?: WorkspacePluginConfig;
   createFilesystem?: (
     workspaceRoot: string,
     config: WorkspacePluginConfig,

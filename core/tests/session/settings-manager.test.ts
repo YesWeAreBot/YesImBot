@@ -10,7 +10,7 @@ import { SettingsManager } from "../../src/services/session/settings-manager";
 interface TestPaths {
   rootDir: string;
   globalSettingsPath: string;
-  workspaceSettingsPath: string;
+  channelSettingsPath: string;
 }
 
 function createTestPaths(prefix: string): TestPaths {
@@ -18,19 +18,19 @@ function createTestPaths(prefix: string): TestPaths {
   return {
     rootDir,
     globalSettingsPath: join(rootDir, "settings.json"),
-    workspaceSettingsPath: join(rootDir, "workspace.settings.json"),
+    channelSettingsPath: join(rootDir, "channel.settings.json"),
   };
 }
 
 describe("SettingsManager", () => {
-  it("falls back to global settings when workspace settings are absent", async () => {
+  it("falls back to global settings when channel settings are absent", async () => {
     const paths = createTestPaths("athena-settings-global-fallback-");
     try {
       writeFileSync(paths.globalSettingsPath, JSON.stringify({ model: "global-model" }), "utf8");
 
       const manager = new SettingsManager({
         globalSettingsPath: paths.globalSettingsPath,
-        workspaceSettingsPath: paths.workspaceSettingsPath,
+        channelSettingsPath: paths.channelSettingsPath,
       });
 
       expect(manager.resolveSettings()).toEqual({ model: "global-model" });
@@ -54,7 +54,7 @@ describe("SettingsManager", () => {
       );
 
       writeFileSync(
-        paths.workspaceSettingsPath,
+        paths.channelSettingsPath,
         JSON.stringify({
           judge: {
             timeoutMs: 3000,
@@ -65,7 +65,7 @@ describe("SettingsManager", () => {
 
       const manager = new SettingsManager({
         globalSettingsPath: paths.globalSettingsPath,
-        workspaceSettingsPath: paths.workspaceSettingsPath,
+        channelSettingsPath: paths.channelSettingsPath,
       });
 
       expect(manager.resolveSettings()).toEqual({
@@ -79,8 +79,8 @@ describe("SettingsManager", () => {
     }
   });
 
-  it("ignores extracted workspace array overrides", async () => {
-    const paths = createTestPaths("athena-settings-ignore-workspace-array-");
+  it("ignores extracted channel array overrides", async () => {
+    const paths = createTestPaths("athena-settings-ignore-channel-array-");
     try {
       writeFileSync(
         paths.globalSettingsPath,
@@ -93,7 +93,7 @@ describe("SettingsManager", () => {
       );
 
       writeFileSync(
-        paths.workspaceSettingsPath,
+        paths.channelSettingsPath,
         JSON.stringify({
           workspace: {
             externalPath: ["/local-only"],
@@ -104,7 +104,7 @@ describe("SettingsManager", () => {
 
       const manager = new SettingsManager({
         globalSettingsPath: paths.globalSettingsPath,
-        workspaceSettingsPath: paths.workspaceSettingsPath,
+        channelSettingsPath: paths.channelSettingsPath,
       });
 
       expect(manager.resolveSettings()).toEqual({});
@@ -118,7 +118,7 @@ describe("SettingsManager", () => {
           expect.objectContaining({
             code: "unknown-key",
             path: "workspace",
-            scope: "workspace",
+            scope: "channel",
           }),
         ]),
       );
@@ -127,13 +127,14 @@ describe("SettingsManager", () => {
     }
   });
 
-  it("supports configurable prompt resource filenames via prompts.attachedInstructionFiles", async () => {
+  it("ignores legacy prompts.attachedInstructionFiles and keeps builtInInstructions", async () => {
     const paths = createTestPaths("athena-settings-prompt-files-");
     try {
       writeFileSync(
         paths.globalSettingsPath,
         JSON.stringify({
           prompts: {
+            builtInInstructions: "global instructions",
             attachedInstructionFiles: ["SOUL.md", "AGENTS.md"],
           },
         }),
@@ -141,9 +142,10 @@ describe("SettingsManager", () => {
       );
 
       writeFileSync(
-        paths.workspaceSettingsPath,
+        paths.channelSettingsPath,
         JSON.stringify({
           prompts: {
+            builtInInstructions: "channel instructions",
             attachedInstructionFiles: ["PERSONA.md"],
           },
         }),
@@ -152,21 +154,35 @@ describe("SettingsManager", () => {
 
       const manager = new SettingsManager({
         globalSettingsPath: paths.globalSettingsPath,
-        workspaceSettingsPath: paths.workspaceSettingsPath,
+        channelSettingsPath: paths.channelSettingsPath,
       });
 
       expect(manager.resolveSettings()).toEqual({
         prompts: {
-          attachedInstructionFiles: ["PERSONA.md"],
+          builtInInstructions: "channel instructions",
         },
       });
-      expect(manager.getPromptResourceFilenames(["DEFAULT.md"])).toEqual(["PERSONA.md"]);
+      expect(manager.getBuiltInInstructions()).toBe("channel instructions");
+      expect(manager.getReloadMetadata().issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: "unknown-key",
+            path: "prompts.attachedInstructionFiles",
+            scope: "global",
+          }),
+          expect.objectContaining({
+            code: "unknown-key",
+            path: "prompts.attachedInstructionFiles",
+            scope: "channel",
+          }),
+        ]),
+      );
     } finally {
       await rm(paths.rootDir, { recursive: true, force: true });
     }
   });
 
-  it("ignores deprecated useGlobal and still layers workspace over global", async () => {
+  it("ignores deprecated useGlobal and still layers channel over global", async () => {
     const paths = createTestPaths("athena-settings-use-global-false-");
     try {
       writeFileSync(
@@ -179,21 +195,21 @@ describe("SettingsManager", () => {
       );
 
       writeFileSync(
-        paths.workspaceSettingsPath,
+        paths.channelSettingsPath,
         JSON.stringify({
           useGlobal: false,
-          model: "workspace-model",
+          model: "channel-model",
         }),
         "utf8",
       );
 
       const manager = new SettingsManager({
         globalSettingsPath: paths.globalSettingsPath,
-        workspaceSettingsPath: paths.workspaceSettingsPath,
+        channelSettingsPath: paths.channelSettingsPath,
       });
 
       expect(manager.resolveSettings()).toEqual({
-        model: "workspace-model",
+        model: "channel-model",
         judge: {
           enabled: true,
         },
@@ -203,7 +219,7 @@ describe("SettingsManager", () => {
           expect.objectContaining({
             code: "deprecated-key",
             path: "useGlobal",
-            scope: "workspace",
+            scope: "channel",
           }),
         ]),
       );
@@ -217,17 +233,17 @@ describe("SettingsManager", () => {
     try {
       writeFileSync(paths.globalSettingsPath, JSON.stringify({ model: "global-model" }), "utf8");
       writeFileSync(
-        paths.workspaceSettingsPath,
-        JSON.stringify({ useGlobal: true, model: "workspace-model" }),
+        paths.channelSettingsPath,
+        JSON.stringify({ useGlobal: true, model: "channel-model" }),
         "utf8",
       );
 
       const manager = new SettingsManager({
         globalSettingsPath: paths.globalSettingsPath,
-        workspaceSettingsPath: paths.workspaceSettingsPath,
+        channelSettingsPath: paths.channelSettingsPath,
       });
 
-      expect(manager.resolveSettings()).toEqual({ model: "workspace-model" });
+      expect(manager.resolveSettings()).toEqual({ model: "channel-model" });
       expect("useGlobal" in manager.resolveSettings()).toBe(false);
     } finally {
       await rm(paths.rootDir, { recursive: true, force: true });
@@ -238,11 +254,11 @@ describe("SettingsManager", () => {
     const paths = createTestPaths("athena-settings-malformed-");
     try {
       writeFileSync(paths.globalSettingsPath, "{invalid", "utf8");
-      writeFileSync(paths.workspaceSettingsPath, "{broken", "utf8");
+      writeFileSync(paths.channelSettingsPath, "{broken", "utf8");
 
       const manager = new SettingsManager({
         globalSettingsPath: paths.globalSettingsPath,
-        workspaceSettingsPath: paths.workspaceSettingsPath,
+        channelSettingsPath: paths.channelSettingsPath,
       });
 
       expect(manager.resolveSettings()).toEqual({});
@@ -261,14 +277,14 @@ describe("SettingsManager", () => {
         "utf8",
       );
       writeFileSync(
-        paths.workspaceSettingsPath,
+        paths.channelSettingsPath,
         JSON.stringify({ response: { maxSteps: 5 } }),
         "utf8",
       );
 
       const manager = new SettingsManager({
         globalSettingsPath: paths.globalSettingsPath,
-        workspaceSettingsPath: paths.workspaceSettingsPath,
+        channelSettingsPath: paths.channelSettingsPath,
         defaults: {
           model: "fallback-model",
           response: { maxSteps: 3 },
@@ -286,7 +302,7 @@ describe("SettingsManager", () => {
             path: "response.maxSteps",
           }),
           expect.objectContaining({
-            scope: "workspace",
+            scope: "channel",
             path: "response.maxSteps",
           }),
         ]),
@@ -296,11 +312,11 @@ describe("SettingsManager", () => {
     }
   });
 
-  it("rejects workspace override keys after extraction", async () => {
-    const paths = createTestPaths("athena-settings-reject-workspace-overrides-");
+  it("rejects channel override keys after extraction", async () => {
+    const paths = createTestPaths("athena-settings-reject-channel-overrides-");
     try {
       writeFileSync(
-        paths.workspaceSettingsPath,
+        paths.channelSettingsPath,
         JSON.stringify({
           workspace: {
             enableWorkspace: false,
@@ -311,7 +327,7 @@ describe("SettingsManager", () => {
 
       const manager = new SettingsManager({
         globalSettingsPath: paths.globalSettingsPath,
-        workspaceSettingsPath: paths.workspaceSettingsPath,
+        channelSettingsPath: paths.channelSettingsPath,
       });
 
       expect(manager.resolveSettings()).toEqual({});
@@ -320,7 +336,7 @@ describe("SettingsManager", () => {
           expect.objectContaining({
             code: "unknown-key",
             path: "workspace",
-            scope: "workspace",
+            scope: "channel",
           }),
         ]),
       );
@@ -329,17 +345,16 @@ describe("SettingsManager", () => {
     }
   });
 
-  it("returns raw workspace plugin settings through the compatibility bridge", async () => {
-    const paths = createTestPaths("athena-settings-workspace-bridge-");
+  it("ignores workspace plugin compatibility bridge keys in channel settings", async () => {
+    const paths = createTestPaths("athena-settings-workspace-bridge-removed-");
     try {
       writeFileSync(
-        paths.workspaceSettingsPath,
+        paths.channelSettingsPath,
         JSON.stringify({
           workspace: {
             enableWorkspace: false,
             enableSandbox: true,
             externalPath: ["/tmp/external"],
-            skills: ["/skills"],
           },
         }),
         "utf8",
@@ -347,16 +362,53 @@ describe("SettingsManager", () => {
 
       const manager = new SettingsManager({
         globalSettingsPath: paths.globalSettingsPath,
-        workspaceSettingsPath: paths.workspaceSettingsPath,
+        channelSettingsPath: paths.channelSettingsPath,
       });
 
       expect(manager.resolveSettings()).toEqual({});
-      expect(manager.getWorkspaceSettings()).toEqual({
-        enableWorkspace: false,
-        enableSandbox: true,
-        externalPath: ["/tmp/external"],
-        skills: ["/skills"],
+      expect(manager.getReloadMetadata().issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: "unknown-key",
+            path: "workspace",
+            scope: "channel",
+          }),
+        ]),
+      );
+    } finally {
+      await rm(paths.rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("surfaces workspace-bridge-like keys as unknown channel settings", async () => {
+    const paths = createTestPaths("athena-settings-invalid-workspace-bridge-removed-");
+    try {
+      writeFileSync(
+        paths.channelSettingsPath,
+        JSON.stringify({
+          workspace: {
+            enableWorkspace: "nope",
+            externalPath: ["/tmp/external", 123],
+          },
+        }),
+        "utf8",
+      );
+
+      const manager = new SettingsManager({
+        globalSettingsPath: paths.globalSettingsPath,
+        channelSettingsPath: paths.channelSettingsPath,
       });
+
+      expect(manager.resolveSettings()).toEqual({});
+      expect(manager.getReloadMetadata().issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: "unknown-key",
+            path: "workspace",
+            scope: "channel",
+          }),
+        ]),
+      );
     } finally {
       await rm(paths.rootDir, { recursive: true, force: true });
     }

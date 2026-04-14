@@ -1,15 +1,13 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { Context, Logger } from "koishi";
+import WorkspacePlugin, { LocalFilesystem, LocalSandbox } from "koishi-plugin-yesimbot-workspace";
 import { describe, expect, it, vi } from "vitest";
 
-import WorkspacePlugin, {
-  LocalFilesystem,
-  LocalSandbox,
-} from "koishi-plugin-yesimbot-workspace";
+import { buildWorkspacePluginToolDefinitions } from "../../../plugins/workspace/src/tool-definitions";
 
 vi.mock("koishi", () => {
   const createChain = () => ({
@@ -47,7 +45,6 @@ vi.mock("koishi", () => {
 
 import { PluginService } from "../../src/services/plugin/service";
 import { createSendMessageTool } from "../../src/services/session/runtime/send-message-tool";
-import { SettingsManager } from "../../src/services/session/settings-manager";
 import type { ToolRuntime } from "../../src/services/session/types";
 
 function createLoggerMock(): Logger {
@@ -75,29 +72,6 @@ function createToolOptions() {
   };
 }
 
-interface WorkspaceManagerPaths {
-  basePath: string;
-  globalSettingsPath: string;
-  workspaceSettingsPath: string;
-}
-
-function createWorkspaceManagerPaths(basePath: string): WorkspaceManagerPaths {
-  return {
-    basePath,
-    globalSettingsPath: join(basePath, "settings.json"),
-    workspaceSettingsPath: join(basePath, "workspace.settings.json"),
-  };
-}
-
-function createWorkspaceSettingsManager(basePath: string, workspaceSettings: Record<string, unknown>) {
-  const paths = createWorkspaceManagerPaths(basePath);
-  writeFileSync(paths.workspaceSettingsPath, JSON.stringify({ workspace: workspaceSettings }), "utf8");
-  return new SettingsManager({
-    globalSettingsPath: paths.globalSettingsPath,
-    workspaceSettingsPath: paths.workspaceSettingsPath,
-  });
-}
-
 function createRuntime(basePath: string, scope = "discord:channel-1"): ToolRuntime {
   return {
     channelKey: scope,
@@ -118,35 +92,34 @@ function createRuntime(basePath: string, scope = "discord:channel-1"): ToolRunti
 async function installWorkspacePlugin(options: {
   basePath: string;
   scope?: string;
-  workspaceSettings?: {
+  config?: {
     enableWorkspace?: boolean;
     enableFilesystem?: boolean;
     enableSandbox?: boolean;
-    skills?: string[];
   };
 }) {
   const ctx = createContextMock(options.basePath);
   const service = new PluginService(ctx);
-  const settingsManager = createWorkspaceSettingsManager(options.basePath, {
+  const config = {
     enableWorkspace: true,
     enableFilesystem: true,
-    ...options.workspaceSettings,
-  });
+    ...options.config,
+  };
 
   const plugin = new WorkspacePlugin(ctx, {
     basePath: options.basePath,
-    settingsManager,
+    config,
     logger: ctx.logger("workspace"),
   });
 
   await plugin.init();
   await service.install(plugin, { scope: options.scope ?? "discord:channel-1" });
 
-  return { ctx, service, plugin, settingsManager } as {
+  return { ctx, service, plugin, config } as {
     ctx: Context;
     service: PluginService;
     plugin: WorkspacePlugin;
-    settingsManager: typeof settingsManager;
+    config: typeof config;
   };
 }
 
@@ -166,7 +139,16 @@ describe("workspace", () => {
         hostInput: undefined,
         scope: "discord:channel-1",
         toolSettings: {
-          enabled: ["read_file", "write_file", "edit_file", "list_files", "delete", "file_stat", "mkdir", "grep"],
+          enabled: [
+            "read_file",
+            "write_file",
+            "edit_file",
+            "list_files",
+            "delete",
+            "file_stat",
+            "mkdir",
+            "grep",
+          ],
         },
         sendMessageTool: createSendMessageTool({
           bot: {
@@ -201,10 +183,10 @@ describe("workspace", () => {
       const service = new PluginService(ctx);
       const plugin = new WorkspacePlugin(ctx, {
         basePath,
-        settingsManager: createWorkspaceSettingsManager(basePath, {
+        config: {
           enableWorkspace: true,
           enableFilesystem: true,
-        }),
+        },
         logger: ctx.logger("workspace"),
         createFilesystem: (workspaceRoot, workspaceSettings) =>
           new LocalFilesystem({
@@ -245,11 +227,11 @@ describe("workspace", () => {
       const service = new PluginService(ctx);
       const plugin = new WorkspacePlugin(ctx, {
         basePath,
-        settingsManager: createWorkspaceSettingsManager(basePath, {
+        config: {
           enableWorkspace: true,
           enableFilesystem: true,
           enableSandbox: true,
-        }),
+        },
         logger: ctx.logger("workspace"),
         createSandbox: (workspaceRoot) => new LocalSandbox({ workingDirectory: workspaceRoot }),
       });
@@ -285,24 +267,14 @@ describe("workspace", () => {
     }
   });
 
-  it("keeps skill tools available from the canonical scoped plugin seam", async () => {
-    const basePath = mkdtempSync(join(tmpdir(), "athena-runtime-skills-"));
+  it("does not expose skill tools even when explicitly enabled by tool settings", async () => {
+    const basePath = mkdtempSync(join(tmpdir(), "athena-runtime-skills-disabled-"));
     try {
-      const workspaceDir = join(basePath, "workspace");
-      const skillsRoot = join(workspaceDir, "skills");
-      const skillRoot = join(skillsRoot, "code-review");
-      const skillFile = join(skillRoot, "SKILL.md");
-      const referenceFile = join(skillRoot, "references", "guide.md");
-      mkdirSync(join(skillRoot, "references"), { recursive: true });
-      writeFileSync(skillFile, "# Code Review\nAlways review carefully.", { encoding: "utf8" });
-      writeFileSync(referenceFile, "Use references for checks.", { encoding: "utf8" });
-
       const { service } = await installWorkspacePlugin({
         basePath,
-        workspaceSettings: {
+        config: {
           enableWorkspace: true,
           enableFilesystem: true,
-          skills: ["/skills"],
         },
       });
       const assembly = await service.assembleTools({
@@ -314,87 +286,83 @@ describe("workspace", () => {
         },
       });
 
-      expect(assembly.supportedTools).toHaveProperty("skill");
-      expect(assembly.supportedTools).toHaveProperty("skill_read");
-      expect(assembly.supportedTools).toHaveProperty("skill_search");
-
-      const skillResult = await assembly.activeTools.skill.execute?.({ name: "code-review" }, createToolOptions());
-      expect(skillResult).toMatchObject({
-        name: "code-review",
-      });
-
-      const readResult = await assembly.activeTools.skill_read.execute?.(
-        { name: "code-review", path: "references/guide.md" },
-        createToolOptions(),
-      );
-      expect(readResult).toMatchObject({
-        content: "Use references for checks.",
-      });
-
-      const searchResult = await assembly.activeTools.skill_search.execute?.(
-        { query: "review" },
-        createToolOptions(),
-      );
-      expect(searchResult).toMatchObject({
-        matches: [
-          {
-            name: "code-review",
-          },
-        ],
-      });
+      expect(assembly.supportedTools).not.toHaveProperty("skill");
+      expect(assembly.supportedTools).not.toHaveProperty("skill_read");
+      expect(assembly.supportedTools).not.toHaveProperty("skill_search");
+      expect(assembly.activeTools).not.toHaveProperty("skill");
+      expect(assembly.activeTools).not.toHaveProperty("skill_read");
+      expect(assembly.activeTools).not.toHaveProperty("skill_search");
     } finally {
       await rm(basePath, { recursive: true, force: true });
     }
   });
 
-  it("bridges raw workspace settings from SettingsManager into the scoped workspace plugin seam", async () => {
-    const basePath = mkdtempSync(join(tmpdir(), "athena-workspace-bridge-runtime-"));
-    try {
-      const workspaceDir = join(basePath, "workspace");
-      const skillsRoot = join(workspaceDir, "skills");
-      const skillRoot = join(skillsRoot, "code-review");
-      mkdirSync(skillRoot, { recursive: true });
-      writeFileSync(join(basePath, "workspace.settings.json"), JSON.stringify({
-        workspace: {
-          enableWorkspace: true,
-          enableFilesystem: true,
-          skills: ["/skills"],
-        },
-      }), "utf8");
-      writeFileSync(join(skillRoot, "SKILL.md"), "# Code Review\nBridge works.", "utf8");
+  it("defaults to scoped mode and can switch to global mode during tool execution", async () => {
+    const basePath = mkdtempSync(join(tmpdir(), "athena-workspace-mode-"));
+    const runtimeScopedPath = join(basePath, "channels", "discord-channel-1");
+    const runtimeGlobalPath = join(basePath, "global-root");
 
+    try {
       const ctx = createContextMock(basePath);
       const service = new PluginService(ctx);
-      const settingsManager = new SettingsManager({
-        globalSettingsPath: join(basePath, "settings.json"),
-        workspaceSettingsPath: join(basePath, "workspace.settings.json"),
-      });
-      const plugin = new WorkspacePlugin(ctx, {
-        basePath,
-        settingsManager,
-        logger: ctx.logger("workspace"),
-      });
 
-      await plugin.init();
-      await service.install(plugin, { scope: "discord:channel-1" });
-      const assembly = await service.assembleTools({
-        runtime: createRuntime(basePath),
+      const scopedPlugin = new WorkspacePlugin(ctx, {
+        basePath: runtimeGlobalPath,
+        logger: ctx.logger("workspace"),
+        enableWorkspace: true,
+        enableFilesystem: true,
+      });
+      await scopedPlugin.init();
+      await service.install(scopedPlugin, { scope: "discord:channel-1" });
+
+      const scopedAssembly = await service.assembleTools({
+        runtime: createRuntime(runtimeScopedPath),
         hostInput: undefined,
         scope: "discord:channel-1",
         toolSettings: {
-          enabled: ["skill"],
+          enabled: ["write_file"],
         },
       });
-
-      expect(settingsManager.resolveSettings()).toEqual({});
-      expect(assembly.supportedTools).toHaveProperty("skill");
-      const skillResult = await assembly.activeTools.skill.execute?.(
-        { name: "code-review" },
-        createToolOptions(),
+      await scopedAssembly.activeTools.write_file.execute?.(
+        { path: "scope.txt", content: "scoped" },
+        {
+          ...createToolOptions(),
+          experimental_context: scopedAssembly.experimentalContext,
+        },
       );
-      expect(skillResult).toMatchObject({
-        name: "code-review",
+
+      expect(readFileSync(join(runtimeScopedPath, "workspace", "scope.txt"), "utf8")).toBe(
+        "scoped",
+      );
+      expect(existsSync(join(runtimeGlobalPath, "workspace", "scope.txt"))).toBe(false);
+
+      const globalDefinitions = await buildWorkspacePluginToolDefinitions({
+        channelDir: runtimeGlobalPath,
+        logger: createLoggerMock(),
+        config: {
+          mode: "global",
+          enableWorkspace: true,
+          enableFilesystem: true,
+        },
       });
+      const globalExecute = globalDefinitions.find((definition) => definition.name === "write_file")
+        ?.tool.execute;
+      await globalExecute?.(
+        { path: "global.txt", content: "global" },
+        {
+          ...createToolOptions(),
+          experimental_context: {
+            workspace: {
+              workspaceRoot: join(runtimeGlobalPath, "workspace"),
+            },
+          },
+        },
+      );
+
+      expect(readFileSync(join(runtimeGlobalPath, "workspace", "global.txt"), "utf8")).toBe(
+        "global",
+      );
+      expect(existsSync(join(runtimeScopedPath, "workspace", "global.txt"))).toBe(false);
     } finally {
       await rm(basePath, { recursive: true, force: true });
     }

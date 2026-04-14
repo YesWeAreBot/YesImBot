@@ -1,3 +1,5 @@
+import { dirname } from "node:path";
+
 import type { ModelMessage } from "@ai-sdk/provider-utils";
 import type { IPluginService } from "@yesimbot/plugin-sdk";
 import type { LanguageModel, OnFinishEvent, PrepareStepResult, ToolSet } from "ai";
@@ -7,8 +9,8 @@ import { Bot, Context, Logger } from "koishi";
 import { AgentSession } from "../agent-session";
 import { compact, prepareCompaction, shouldCompact } from "../compaction";
 import { estimateContextTokens } from "../compaction/estimate";
-import type { ChannelInput, ChannelMessageInput, TimelineRecord } from "../types/index";
-import { DefaultSessionResourceLoader } from "../resource-loader";
+import { InstructionAssembler } from "../instruction-assembler";
+import { InstructionStateService } from "../instruction-state/service";
 import type { SessionManager } from "../session-manager";
 import type {
   FollowUpReviewRecord,
@@ -16,6 +18,7 @@ import type {
   ResponseStatusReason,
   ResponseStatusRecord,
 } from "../types";
+import type { ChannelInput, ChannelMessageInput, TimelineRecord } from "../types/index";
 import {
   createDefaultWillingnessJudge,
   evaluateRuntimeWillingnessHeuristic,
@@ -79,6 +82,7 @@ export class ChannelRuntime {
   private readonly responseStepProcessor: ResponseStepProcessor;
   private readonly willingnessJudge: WillingnessJudge;
   private readonly logger: Logger;
+  private readonly instructionAssembler: InstructionAssembler;
 
   constructor(
     private ctx: Context,
@@ -96,6 +100,14 @@ export class ChannelRuntime {
       platform: options.platform,
       channelId: options.channelId,
       logger: this.logger,
+    });
+    const instructionStateService =
+      options.instructionStateService ?? new InstructionStateService(dirname(options.basePath));
+    this.instructionAssembler = new InstructionAssembler({
+      instructionStateService,
+      getBuiltInInstructions: (fallback) =>
+        options.settingsManager.getBuiltInInstructions(fallback) ?? fallback,
+      contributors: options.instructionContributors,
     });
   }
 
@@ -500,34 +512,55 @@ export class ChannelRuntime {
     options: RuntimeTurnExecutionOptions,
   ): Promise<RuntimeTurnExecutionResult> {
     const channelKey = `${options.platform}:${options.channelId}`;
-    const resourceLoader = new DefaultSessionResourceLoader({
-      channelDir: options.basePath,
-      settingsManager: options.settingsManager,
-      logger: options.logger,
+    const latestInput = this.getLatestChannelMessageInput();
+    const instructions = await this.instructionAssembler.buildSystemPrompt({
+      platform: options.platform,
+      channelId: options.channelId,
+      turn: latestInput ?? {
+        kind: "channel_message",
+        platform: options.platform,
+        channelId: options.channelId,
+        messageId: createRuntimeRecordId(),
+        timestamp: Date.now(),
+        content: "",
+        sender: {
+          userId: "unknown-user",
+          username: "unknown-user",
+        },
+        isDirect: false,
+        atSelf: false,
+        isReplyToBot: false,
+      },
     });
-    resourceLoader.reload();
-
-    const instructions = resourceLoader.buildSystemPrompt();
     this.currentTurnInstructions = instructions;
     this.currentProtocolRetry = options.protocolRetry;
     const modelMessages = this.buildRuntimeMessages(instructions, options.protocolRetry);
 
-    const latestInput = this.getLatestChannelMessageInput();
-    const pluginService = options.ctx["yesimbot.plugin"] as IPluginService | undefined;
-    if (!pluginService?.assembleTools) {
-      throw new Error("PluginService assembleTools() unavailable for runtime tool assembly");
-    }
-
-    const toolAssembly = await pluginService.assembleTools({
-      runtime: this.createToolRuntime(options.turnSettings, latestInput),
-      hostInput: latestInput,
-      scope: this.getChannelKey(),
-      toolSettings: options.settingsManager.getToolSettings?.(),
-      sendMessageTool: createSendMessageTool({
-        bot: options.bot,
-        channelId: options.channelId,
-      }),
+    const sendMessageTool = createSendMessageTool({
+      bot: options.bot,
+      channelId: options.channelId,
     });
+    const pluginService = options.ctx["yesimbot.plugin"] as IPluginService | undefined;
+    const toolAssembly = pluginService?.assembleTools
+      ? await pluginService.assembleTools({
+          runtime: this.createToolRuntime(options.turnSettings, latestInput),
+          hostInput: latestInput,
+          scope: this.getChannelKey(),
+          toolSettings: options.settingsManager.getToolSettings?.(),
+          sendMessageTool,
+        })
+      : (() => {
+          options.logger.warn(
+            `[tools:${channelKey}] PluginService unavailable; continuing with send_message only`,
+          );
+
+          return {
+            supportedTools: { send_message: sendMessageTool },
+            activeTools: { send_message: sendMessageTool },
+            experimentalContext: {},
+            signature: "no-plugin-service",
+          };
+        })();
     const responseActiveTools = Object.keys(toolAssembly.activeTools);
     this.responseActiveTools = responseActiveTools;
     this.currentToolExperimentalContext = toolAssembly.experimentalContext;

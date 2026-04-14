@@ -16,13 +16,13 @@ import { join, resolve } from "node:path";
 import type { AssistantModelMessage, ModelMessage, ToolModelMessage } from "@ai-sdk/provider-utils";
 import { JSONValue } from "ai";
 
+import { materializeTimeline } from "./materialize";
 import type {
   AssistantMessageRecord,
   ChannelMessageRecord,
   TimelineRecord,
   ToolMessageRecord,
 } from "./types/index";
-import { materializeTimeline } from "./materialize";
 import type { ChannelBootstrapStatus, ChannelKey, ReplyReference } from "./types/index";
 
 // ============================================================================

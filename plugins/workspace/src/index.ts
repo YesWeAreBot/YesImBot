@@ -8,6 +8,8 @@ import type { WorkspacePluginConfig, WorkspacePluginOptions } from "./types";
 export { LocalFilesystem } from "./filesystem";
 export { LocalSandbox } from "./sandbox";
 export { Workspace } from "./workspace";
+export { buildWorkspacePluginToolDefinitions } from "./tool-definitions";
+export type { WorkspaceToolOptions } from "./tool-definitions";
 export type * from "./types";
 
 @Metadata({
@@ -29,8 +31,9 @@ export default class WorkspacePlugin extends YesImPlugin {
     enableWorkspace: Schema.boolean().default(true),
     enableSandbox: Schema.boolean().default(false),
     enableFilesystem: Schema.boolean().default(true),
-    externalPath: Schema.array(Schema.path({ allowCreate: true })).role("table").default([]),
-    skills: Schema.array(Schema.path({ allowCreate: true })).role("table").default([]),
+    externalPath: Schema.array(Schema.path({ allowCreate: true }))
+      .role("table")
+      .default([]),
   });
 
   constructor(ctx: Context, config: WorkspacePluginConfig | WorkspacePluginOptions) {
@@ -41,7 +44,7 @@ export default class WorkspacePlugin extends YesImPlugin {
       this.logger = config.logger;
       this.options = config;
       this.config = {
-        ...config.settingsManager?.getWorkspaceSettings(),
+        ...config.config,
       };
       return;
     }

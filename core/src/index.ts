@@ -28,9 +28,6 @@ export const Config = Schema.object({
     "data/yesimbot/agents",
   ),
   instructions: Schema.string().role("textarea"),
-  attachedInstructionFiles: Schema.array(Schema.string())
-    .default(["SOUL.md", "AGENTS.md", "PERSONA.md"])
-    .description("Workspace instruction filenames appended to the system prompt"),
   streaming: Schema.boolean().default(false).description("Enable streaming responses"),
   maxSteps: Schema.number().default(20),
   baseTimeoutMs: Schema.number().default(60000).description("Base response timeout in ms"),

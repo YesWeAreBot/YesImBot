@@ -73,26 +73,28 @@ function createContextMock(toolSet: Record<string, unknown> = {}) {
     "yesimbot.plugin": {
       getToolSet: vi.fn(() => toolSet),
       getToolDefinitions: vi.fn(() => []),
-      assembleTools: vi.fn(async (request: {
-        sendMessageTool?: Record<string, unknown>;
-        toolSettings?: { enabled?: string[] };
-      }) => {
-        const supportedTools = {
-          ...(request.sendMessageTool ? { send_message: request.sendMessageTool } : {}),
-          ...toolSet,
-        };
-        const enabled = new Set(request.toolSettings?.enabled ?? Object.keys(supportedTools));
-        const activeTools = Object.fromEntries(
-          Object.entries(supportedTools).filter(([name]) => enabled.has(name)),
-        );
+      assembleTools: vi.fn(
+        async (request: {
+          sendMessageTool?: Record<string, unknown>;
+          toolSettings?: { enabled?: string[] };
+        }) => {
+          const supportedTools = {
+            ...(request.sendMessageTool ? { send_message: request.sendMessageTool } : {}),
+            ...toolSet,
+          };
+          const enabled = new Set(request.toolSettings?.enabled ?? Object.keys(supportedTools));
+          const activeTools = Object.fromEntries(
+            Object.entries(supportedTools).filter(([name]) => enabled.has(name)),
+          );
 
-        return {
-          supportedTools,
-          activeTools,
-          experimentalContext: {},
-          signature: JSON.stringify(Object.keys(supportedTools).sort()),
-        };
-      }),
+          return {
+            supportedTools,
+            activeTools,
+            experimentalContext: {},
+            signature: JSON.stringify(Object.keys(supportedTools).sort()),
+          };
+        },
+      ),
     },
   };
 }

@@ -78,24 +78,26 @@ function createContextMock() {
       resolve: vi.fn(() => ({ provider: "test", modelId: "test:model" })),
     },
     "yesimbot.plugin": {
-      assembleTools: vi.fn(async (request: {
-        sendMessageTool?: Record<string, unknown>;
-        toolSettings?: { enabled?: string[] };
-      }) => {
-        const sendMessageTool = request.sendMessageTool;
-        const supportedTools = sendMessageTool ? { send_message: sendMessageTool } : {};
-        const activeTools =
-          sendMessageTool && (request.toolSettings?.enabled?.includes("send_message") ?? true)
-            ? { send_message: sendMessageTool }
-            : {};
+      assembleTools: vi.fn(
+        async (request: {
+          sendMessageTool?: Record<string, unknown>;
+          toolSettings?: { enabled?: string[] };
+        }) => {
+          const sendMessageTool = request.sendMessageTool;
+          const supportedTools = sendMessageTool ? { send_message: sendMessageTool } : {};
+          const activeTools =
+            sendMessageTool && (request.toolSettings?.enabled?.includes("send_message") ?? true)
+              ? { send_message: sendMessageTool }
+              : {};
 
-        return {
-          supportedTools,
-          activeTools,
-          experimentalContext: {},
-          signature: JSON.stringify(Object.keys(supportedTools).sort()),
-        };
-      }),
+          return {
+            supportedTools,
+            activeTools,
+            experimentalContext: {},
+            signature: JSON.stringify(Object.keys(supportedTools).sort()),
+          };
+        },
+      ),
       getToolDefinitions: vi.fn(() => []),
     },
   };
@@ -211,16 +213,8 @@ function createMutableSettingsManager(): MutableSettingsManager {
     getResponseSettings() {
       return responseSettings;
     },
-    getWorkspaceSettings() {
-      return {
-        enableWorkspace: false,
-      };
-    },
     getBuiltInInstructions(): string {
       return "test instructions";
-    },
-    getPromptResourceFilenames() {
-      return undefined;
     },
     setResponseSettings(nextResponseSettings): void {
       responseSettings = nextResponseSettings;
@@ -812,9 +806,7 @@ describe("ChannelRuntime state machine", () => {
         })
         .mockResolvedValueOnce();
 
-      await timeoutAgent.receive(
-        createChannelMessageInput({ messageId: "msg-recover-timeout-1" }),
-      );
+      await timeoutAgent.receive(createChannelMessageInput({ messageId: "msg-recover-timeout-1" }));
 
       await vi.waitFor(() => {
         expect(timeoutAgent.getResponseState()).toBe("idle");
@@ -1034,9 +1026,7 @@ describe("ChannelRuntime state machine", () => {
 
       const firstReceive = agent.receive(createChannelMessageInput({ messageId: "msg-queue-1" }));
       await Promise.resolve();
-      const secondReceive = agent.receive(
-        createChannelMessageInput({ messageId: "msg-queue-2" }),
-      );
+      const secondReceive = agent.receive(createChannelMessageInput({ messageId: "msg-queue-2" }));
 
       await vi.waitFor(() => {
         expect(generateMock).toHaveBeenCalledTimes(1);

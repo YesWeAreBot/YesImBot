@@ -1,10 +1,6 @@
 import type { AssistantModelMessage, ToolModelMessage } from "@ai-sdk/provider-utils";
 
-import type {
-  ChannelEventInput,
-  ChannelMessageInput,
-  ChannelRawPayload,
-} from "./channel-input";
+import type { ChannelEventInput, ChannelMessageInput, ChannelRawPayload } from "./channel-input";
 
 export const TIMELINE_RECORD_KINDS = [
   "channel_message",
@@ -32,14 +28,16 @@ export interface TimelineRecordBase {
   materialization: TimelineRecordMaterialization;
 }
 
-export interface ChannelMessageRecord<TRaw extends ChannelRawPayload | undefined = undefined>
-  extends TimelineRecordBase {
+export interface ChannelMessageRecord<
+  TRaw extends ChannelRawPayload | undefined = undefined,
+> extends TimelineRecordBase {
   kind: "channel_message";
   message: ChannelMessageInput<TRaw>;
 }
 
-export interface ChannelEventRecord<TRaw extends ChannelRawPayload | undefined = undefined>
-  extends TimelineRecordBase {
+export interface ChannelEventRecord<
+  TRaw extends ChannelRawPayload | undefined = undefined,
+> extends TimelineRecordBase {
   kind: "channel_event";
   event: ChannelEventInput<TRaw>;
 }
@@ -54,15 +52,17 @@ export interface ToolMessageRecord extends TimelineRecordBase {
   message: ToolModelMessage;
 }
 
-export interface StateChangeRecord<TData extends ChannelRawPayload | undefined = undefined>
-  extends TimelineRecordBase {
+export interface StateChangeRecord<
+  TData extends ChannelRawPayload | undefined = undefined,
+> extends TimelineRecordBase {
   kind: "state_change";
   stateType: string;
   data?: TData;
 }
 
-export interface SystemNoticeRecord<TData extends ChannelRawPayload | undefined = undefined>
-  extends TimelineRecordBase {
+export interface SystemNoticeRecord<
+  TData extends ChannelRawPayload | undefined = undefined,
+> extends TimelineRecordBase {
   kind: "system_notice";
   subType: string;
   materializationKey: string;

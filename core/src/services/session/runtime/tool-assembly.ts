@@ -19,13 +19,13 @@ export type ToolAssemblyContextFactory<THostInput = unknown> = (
   runtime: ToolRuntime,
 ) => Record<string, unknown> | undefined;
 
-export type ToolAssemblyWorkspaceContributor = RegisteredToolDefinition;
+export type ToolAssemblySourceContributor = RegisteredToolDefinition;
 
 export interface BuildToolAssemblyOptions<THostInput = unknown> {
   runtime: ToolRuntime;
   hostInput: THostInput;
   pluginToolDefinitions: RegisteredToolDefinition[];
-  workspaceToolDefinitions: ToolAssemblyWorkspaceContributor[];
+  sourceToolDefinitions: ToolAssemblySourceContributor[];
   toolSettings?: ToolAssemblySettings;
   contextFactories?: Partial<Record<string, ToolAssemblyContextFactory<THostInput>>>;
   sendMessageTool?: ToolSet[typeof SEND_MESSAGE_TOOL];
@@ -39,7 +39,7 @@ export interface ToolAssemblyResult {
 }
 
 interface NormalizedToolEntry {
-  source: "plugin" | "workspace";
+  source: "plugin" | "source";
   definition: RegisteredToolDefinition;
 }
 
@@ -50,7 +50,7 @@ export function buildToolAssembly<THostInput = unknown>(
   const requiredTools = [...new Set(options.toolSettings?.required ?? [])];
   const normalizedDefinitions = normalizeToolDefinitions(
     options.pluginToolDefinitions,
-    options.workspaceToolDefinitions,
+    options.sourceToolDefinitions,
   );
   const experimentalContext: ToolExtensionContext = {};
   const builtContextPlugins = new Set<string>();
@@ -103,7 +103,7 @@ export function buildToolAssembly<THostInput = unknown>(
 
 function normalizeToolDefinitions(
   pluginToolDefinitions: RegisteredToolDefinition[],
-  workspaceToolDefinitions: RegisteredToolDefinition[],
+  sourceToolDefinitions: RegisteredToolDefinition[],
 ): NormalizedToolEntry[] {
   const seen = new Set<string>();
   const normalized: NormalizedToolEntry[] = [];
@@ -112,8 +112,8 @@ function normalizeToolDefinitions(
     normalized.push(registerToolDefinition(definition, seen, "plugin"));
   }
 
-  for (const definition of workspaceToolDefinitions) {
-    normalized.push(registerToolDefinition(definition, seen, "workspace"));
+  for (const definition of sourceToolDefinitions) {
+    normalized.push(registerToolDefinition(definition, seen, "source"));
   }
 
   return normalized;
@@ -122,7 +122,7 @@ function normalizeToolDefinitions(
 function registerToolDefinition(
   definition: RegisteredToolDefinition,
   seen: Set<string>,
-  source: "plugin" | "workspace",
+  source: "plugin" | "source",
 ): NormalizedToolEntry {
   if (definition.name === SEND_MESSAGE_TOOL) {
     throw new Error(`Tool name reserved: ${SEND_MESSAGE_TOOL}`);

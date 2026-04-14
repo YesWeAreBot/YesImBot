@@ -1,5 +1,7 @@
 import type { ModelMessage } from "@ai-sdk/provider-utils";
 
+import { materializeTimeline } from "./materialize";
+import { SessionManager } from "./session-manager";
 import type {
   AssistantMessageRecord,
   ChannelRawPayload,
@@ -10,8 +12,6 @@ import type {
   TimelineRecord,
   ToolMessageRecord,
 } from "./types/index";
-import { materializeTimeline } from "./materialize";
-import { SessionManager } from "./session-manager";
 
 export class AgentSession {
   readonly sessionManager: SessionManager;

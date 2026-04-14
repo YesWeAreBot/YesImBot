@@ -1,6 +1,7 @@
-import { ToolLoopAgent, ToolSet } from "ai";
 import type { Bot, Context, Logger } from "koishi";
 
+import type { InstructionContributor } from "../instruction-contributor";
+import type { InstructionStateService } from "../instruction-state/service";
 import type { SessionManager } from "../session-manager";
 import { SettingsReloadMetadata } from "../settings-manager";
 import type { NextAction } from "../types/index";
@@ -41,23 +42,15 @@ export interface ChannelRuntimeSettingsManager {
         chunkTimeoutMs?: number;
       }
     | undefined;
-  getWorkspaceSettings():
-    | {
-        enableWorkspace?: boolean;
-        enableSandbox?: boolean;
-        enableFilesystem?: boolean;
-        externalPath?: string[];
-        skills?: string[];
-      }
-    | undefined;
   getBuiltInInstructions(fallback?: string): string | undefined;
-  getPromptResourceFilenames(fallback?: string[]): string[] | undefined;
 }
 
 export interface ChannelRuntimeOptions {
   bot?: Bot;
   sessionManager: SessionManager;
   settingsManager: ChannelRuntimeSettingsManager;
+  instructionStateService?: InstructionStateService;
+  instructionContributors?: InstructionContributor[];
   willingnessJudge?: WillingnessJudge;
   platform: string;
   channelId: string;
