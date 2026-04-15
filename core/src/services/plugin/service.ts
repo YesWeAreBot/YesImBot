@@ -10,7 +10,6 @@ import type {
   ToolCatalog,
   ToolHandle,
   ToolInvoke,
-  ToolRuntime,
   ToolSelection,
 } from "@yesimbot/plugin-sdk";
 import type { ToolSet } from "ai";
@@ -47,8 +46,6 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
 
   public async install(plugin: YesImPlugin, options?: { scope?: string }): Promise<void> {
     const scope = this.normalizeScopeKey(options?.scope);
-    const initializablePlugin = plugin as YesImPlugin & { init?: () => Promise<void> };
-    await initializablePlugin.init?.();
     this.assertPluginToolDefinitions(plugin, scope);
     let scopedPlugins = this.plugins.get(scope);
     if (!scopedPlugins) {
@@ -168,32 +165,17 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
 
   public async selectTools(request: SelectToolsRequest): Promise<ToolSelection> {
     const activeTools: ToolSet = { send_message: request.catalog.tools.send_message };
-    const requestedNames = new Set([
-      ...(request.toolSettings?.enabled ?? []),
-      ...(request.toolSettings?.required ?? []),
-    ]);
 
     for (const handle of Object.values(request.catalog.handles)) {
-      if (!requestedNames.has(handle.name)) {
-        continue;
-      }
       if (
         handle.definition.enable?.({
           runtime: request.runtime,
           responseContext: request.responseContext,
-          enabledTools: [...requestedNames],
         }) === false
       ) {
         continue;
       }
       activeTools[handle.name] = request.catalog.tools[handle.name];
-    }
-
-    const missingRequired = (request.toolSettings?.required ?? []).filter(
-      (name) => !(name in activeTools),
-    );
-    if (missingRequired.length > 0) {
-      throw new Error(`Required tools unavailable: ${missingRequired.join(", ")}`);
     }
 
     return {
@@ -220,7 +202,6 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
       scope: request.scope,
       catalog,
       responseContext,
-      toolSettings: request.toolSettings,
     });
     const tool = selection.activeTools[request.name];
     if (!tool?.execute) {

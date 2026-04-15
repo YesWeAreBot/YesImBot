@@ -228,9 +228,7 @@ describe("ChannelRuntime handleStepFinish", () => {
             sendMessage: vi.fn(),
           } as never,
           sessionManager: SessionManager.inMemory("discord:channel-1"),
-          settingsManager: createTestSettingsManager({
-            tools: { enabled: ["send_message"] },
-          }),
+          settingsManager: createTestSettingsManager({}),
           platform: "discord",
           channelId: "channel-1",
           basePath: "/tmp/athena-runtime-step-finish",

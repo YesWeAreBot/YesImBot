@@ -5,17 +5,9 @@ import { Context, Schema } from "koishi";
 import { buildWorkspacePluginToolDefinitions } from "./tool-definitions";
 import type { WorkspacePluginConfig, WorkspacePluginOptions } from "./types";
 
-export { LocalFilesystem } from "./filesystem";
-export { LocalSandbox } from "./sandbox";
-export { Workspace } from "./workspace";
-export { buildWorkspacePluginToolDefinitions } from "./tool-definitions";
-export type { WorkspaceToolOptions } from "./tool-definitions";
-export type * from "./types";
-
 @Metadata({
   name: "workspace",
   description: "Workspace tool provider",
-  managedLifecycle: true,
 })
 export default class WorkspacePlugin extends YesImPlugin {
   private readonly channelDir: string;
@@ -62,7 +54,7 @@ export default class WorkspacePlugin extends YesImPlugin {
     return super.getToolDefinitions();
   }
 
-  async init(): Promise<void> {
+  override async init(): Promise<void> {
     if (this.initialized) {
       return;
     }

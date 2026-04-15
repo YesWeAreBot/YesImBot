@@ -41,6 +41,72 @@ function createContextMock(): Context {
   } as unknown as Context;
 }
 
+function createLifecycleContextMock(): {
+  ctx: Context;
+  readyHandlers: Array<() => Promise<void>>;
+} {
+  const readyHandlers: Array<() => Promise<void>> = [];
+  const ctx = {
+    ...createContextMock(),
+    on: vi.fn((event: string, handler: () => Promise<void>) => {
+      if (event === "ready") {
+        readyHandlers.push(handler);
+      }
+    }),
+  } as unknown as Context;
+
+  return { ctx, readyHandlers };
+}
+
+function createImmediateReadyContextMock(): {
+  ctx: Context;
+  readyTasks: Array<Promise<void>>;
+} {
+  const readyTasks: Array<Promise<void>> = [];
+  const ctx = {
+    ...createContextMock(),
+    on: vi.fn((event: string, handler: () => Promise<void>) => {
+      if (event === "ready") {
+        readyTasks.push(handler());
+      }
+    }),
+  } as unknown as Context;
+
+  return { ctx, readyTasks };
+}
+
+@Metadata({ name: "concurrent-lifecycle", description: "concurrent lifecycle fixture" })
+class ConcurrentLifecyclePlugin extends YesImPlugin {
+  constructor(
+    ctx: Context,
+    private readonly initSpy: ReturnType<typeof vi.fn>,
+  ) {
+    super(ctx);
+  }
+
+  override async init(): Promise<void> {
+    await this.initSpy();
+  }
+}
+
+@Metadata({ name: "constructor-config", description: "constructor config race fixture" })
+class ConstructorConfigPlugin extends YesImPlugin {
+  private config!: { enableWorkspace: boolean };
+
+  constructor(
+    ctx: Context,
+    config: { enableWorkspace: boolean },
+    private readonly initSpy: ReturnType<typeof vi.fn>,
+  ) {
+    super(ctx);
+    this.config = config;
+  }
+
+  override async init(): Promise<void> {
+    await this.initSpy(this.config.enableWorkspace);
+  }
+}
+
 function createToolRuntime(overrides: Partial<ToolRuntime> = {}): ToolRuntime {
   return {
     channelKey: "discord:channel-1",
@@ -104,6 +170,23 @@ class SearchPlugin extends YesImPlugin {
   }
 }
 
+@Metadata({ name: "always-on", description: "always on tool fixture" })
+class AlwaysOnPlugin extends YesImPlugin {
+  constructor(ctx: Context) {
+    super(ctx);
+    this.registerTool({
+      name: "always_on",
+      description: "always on",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {},
+      },
+      execute: async () => "always-on",
+    });
+  }
+}
+
 @Metadata({ name: "scoped", description: "scoped plugin fixture" })
 class ScopedPlugin extends YesImPlugin {
   constructor(ctx: Context) {
@@ -156,6 +239,49 @@ class DuplicateNamePlugin extends YesImPlugin {
 }
 
 describe("PluginService tool lifecycle", () => {
+  it("defers ready lifecycle until subclass constructor fields are assigned", async () => {
+    const { ctx, readyTasks } = createImmediateReadyContextMock();
+    const installSpy = vi.fn(async () => undefined);
+    const initSpy = vi.fn(async () => undefined);
+    (ctx as unknown as { "yesimbot.plugin": { install: typeof installSpy } })["yesimbot.plugin"] = {
+      install: installSpy,
+    };
+
+    const plugin = new ConstructorConfigPlugin(ctx, { enableWorkspace: true }, initSpy);
+    void plugin;
+
+    await expect(Promise.all(readyTasks)).resolves.toEqual([undefined]);
+    expect(initSpy).toHaveBeenCalledWith(true);
+    expect(initSpy).toHaveBeenCalledTimes(1);
+    expect(installSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("runs plugin init/install only once under concurrent ready handlers", async () => {
+    const { ctx, readyHandlers } = createLifecycleContextMock();
+    let releaseInit!: () => void;
+    const initGate = new Promise<void>((resolve) => {
+      releaseInit = resolve;
+    });
+    const initSpy = vi.fn(async () => {
+      await initGate;
+    });
+    const installSpy = vi.fn(async () => undefined);
+    (ctx as unknown as { "yesimbot.plugin": { install: typeof installSpy } })["yesimbot.plugin"] = {
+      install: installSpy,
+    };
+
+    const plugin = new ConcurrentLifecyclePlugin(ctx, initSpy);
+    void plugin;
+
+    const firstReady = readyHandlers[0]!();
+    const secondReady = readyHandlers[0]!();
+    releaseInit();
+    await Promise.all([firstReady, secondReady]);
+
+    expect(initSpy).toHaveBeenCalledTimes(1);
+    expect(installSpy).toHaveBeenCalledTimes(1);
+  });
+
   it("compiles one stable catalog per channel key and reuses bound tool handles", async () => {
     const ctx = createContextMock();
     const service = new PluginService(ctx);
@@ -186,7 +312,7 @@ describe("PluginService tool lifecycle", () => {
     expect(first.tools.search_docs).toBe(second.tools.search_docs);
   });
 
-  it("builds one response context per response start and selects tools from the cached catalog", async () => {
+  it("builds one response context per response start and selects gated tools from the cached catalog", async () => {
     const ctx = createContextMock();
     const service = new PluginService(ctx);
     const runtime = createToolRuntime();
@@ -214,13 +340,12 @@ describe("PluginService tool lifecycle", () => {
       runtime,
       catalog,
       responseContext,
-      toolSettings: { enabled: ["search_docs"] },
     });
 
     expect(Object.keys(selection.activeTools)).toEqual(["send_message", "search_docs"]);
   });
 
-  it("rejects selection when a required tool cannot be enabled", async () => {
+  it("drops tools that fail response-time gating", async () => {
     const ctx = createContextMock();
     const service = new PluginService(ctx);
     const runtime = createToolRuntime();
@@ -240,14 +365,36 @@ describe("PluginService tool lifecycle", () => {
       sendMessageTool,
     });
 
-    await expect(
-      service.selectTools({
-        runtime,
-        catalog,
-        responseContext: { search: { search_docs: { channelPolicy: "disabled" } } },
-        toolSettings: { enabled: ["search_docs"], required: ["search_docs"] },
-      }),
-    ).rejects.toThrow("Required tools unavailable: search_docs");
+    const selection = await service.selectTools({
+      runtime,
+      catalog,
+      responseContext: { search: { search_docs: { channelPolicy: "disabled" } } },
+    });
+
+    expect(Object.keys(selection.activeTools)).toEqual(["send_message"]);
+  });
+
+  it("keeps tools without enable gating active by default", async () => {
+    const ctx = createContextMock();
+    const service = new PluginService(ctx);
+    const runtime = createToolRuntime();
+    const sendMessageTool = createAiTool("send_message");
+
+    await service.install(new AlwaysOnPlugin(ctx));
+
+    const catalog = await service.compileTools({
+      runtime,
+      scope: runtime.channelKey,
+      hostInput: {},
+      sendMessageTool,
+    });
+    const selection = await service.selectTools({
+      runtime,
+      catalog,
+      responseContext: {},
+    });
+
+    expect(Object.keys(selection.activeTools)).toEqual(["send_message", "always_on"]);
   });
 
   it("rejects reserved and duplicate tool names during catalog compilation", async () => {
@@ -334,7 +481,6 @@ describe("PluginService tool lifecycle", () => {
         runtime,
         scope: runtime.channelKey,
         hostInput: { allowSearch: true },
-        toolSettings: { enabled: ["search_docs"] },
       }),
     ).resolves.toEqual({
       input: { query: "athena" },

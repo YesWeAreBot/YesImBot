@@ -85,9 +85,9 @@ class SearchFixturePlugin extends YesImPlugin {
       },
       match: ({ runtime }) => runtime.platform === "discord",
       extendResponse: () => ({ channelPolicy: "enabled" }),
-      enable: ({ responseContext, enabledTools }) => {
+      enable: ({ responseContext }) => {
         const policy = responseContext.search?.search?.channelPolicy;
-        return enabledTools.includes("search") && policy === "enabled";
+        return policy === "enabled";
       },
       execute: async () => "search",
     });
@@ -121,7 +121,6 @@ describe("runtime tool seam parity", () => {
       scope: runtime.channelKey,
       catalog,
       responseContext,
-      toolSettings: { enabled: ["search"] },
     });
 
     expect(Object.keys(catalog.tools)).toContain("send_message");
@@ -147,7 +146,6 @@ describe("runtime tool seam parity", () => {
       scope: runtime.channelKey,
       catalog,
       responseContext: { search: { search: { channelPolicy: "enabled" } } },
-      toolSettings: { enabled: ["search"] },
     });
 
     expect(Object.keys(catalog.tools)).toContain("search");

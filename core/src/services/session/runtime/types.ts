@@ -11,12 +11,6 @@ export interface ChannelRuntimeSettingsManager {
   reload(): SettingsReloadMetadata;
   getReloadMetadata(): SettingsReloadMetadata;
   getModel(): string | undefined;
-  getToolSettings():
-    | {
-        enabled?: string[];
-        required?: string[];
-      }
-    | undefined;
   getJudgeSettings():
     | {
         model?: string;

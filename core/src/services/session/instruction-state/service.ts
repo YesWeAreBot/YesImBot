@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 import {
+  getChannelStateDir,
   getChannelInstructionsDir,
   getChannelMetaPath,
   getGlobalInstructionsDir,
@@ -19,6 +20,10 @@ export class InstructionStateService {
 
   getChannelInstructionsDir(platform: string, channelId: string): string {
     return getChannelInstructionsDir(this.basePath, platform, channelId);
+  }
+
+  getChannelStateDir(platform: string, channelId: string): string {
+    return getChannelStateDir(this.basePath, platform, channelId);
   }
 
   getUserInstructionsDir(platform: string, userId: string): string {

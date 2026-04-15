@@ -28,10 +28,9 @@ export default class SearchPlugin extends YesImPlugin {
   constructor(ctx: Context, config: SearchPluginConfig) {
     super(ctx);
     this.config = config;
-    this.ctx.on("ready", async () => this.start());
   }
 
-  private async start(): Promise<void> {
+  override async init(): Promise<void> {
     const backend: SearchBackend = new TavilyBackend(this.ctx, this.config);
     this.registerTool({
       name: "search",

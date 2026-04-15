@@ -17,7 +17,6 @@ export type {
   ToolHandle,
   ToolMatchContext,
   ToolSelection,
-  ToolSelectionSettings,
   ToolRuntime,
   ToolRuntimeTurn,
 } from "./tools";

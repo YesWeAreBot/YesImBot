@@ -140,7 +140,6 @@ export async function buildSkillPluginToolDefinitions(
         name: "skill",
         description: skillTool.description ?? "Load a skill by name.",
         inputSchema: skillTool.inputSchema,
-        enable: ({ enabledTools }) => enabledTools.includes("skill"),
         execute: async (input, _options) => await executeSkillTool(input as SkillToolInput),
       },
       tool: skillTool,
@@ -152,7 +151,6 @@ export async function buildSkillPluginToolDefinitions(
         name: "skill_read",
         description: skillReadTool.description ?? "Read a file under a skill directory.",
         inputSchema: skillReadTool.inputSchema,
-        enable: ({ enabledTools }) => enabledTools.includes("skill_read"),
         execute: async (input, _options) => await executeSkillReadTool(input as SkillReadToolInput),
       },
       tool: skillReadTool,
@@ -164,7 +162,6 @@ export async function buildSkillPluginToolDefinitions(
         name: "skill_search",
         description: skillSearchTool.description ?? "Search text across loaded skills.",
         inputSchema: skillSearchTool.inputSchema,
-        enable: ({ enabledTools }) => enabledTools.includes("skill_search"),
         execute: async (input, _options) =>
           await executeSkillSearchTool(input as SkillSearchToolInput),
       },

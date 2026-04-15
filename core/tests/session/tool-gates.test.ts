@@ -75,7 +75,6 @@ class SearchFixturePlugin extends YesImPlugin {
     private readonly captures: {
       matchedRuntime?: ToolRuntime;
       enabledContext?: ResponseContext;
-      enabledTools?: string[];
     } = {},
   ) {
     super(ctx);
@@ -91,12 +90,11 @@ class SearchFixturePlugin extends YesImPlugin {
         this.captures.matchedRuntime = runtime;
         return runtime.platform === "discord" && !("authorRoles" in runtime);
       },
-      enable: ({ responseContext, enabledTools }) => {
+      enable: ({ responseContext }) => {
         this.captures.enabledContext = responseContext;
-        this.captures.enabledTools = [...enabledTools];
         const searchContext = responseContext.search?.[toolName];
 
-        return enabledTools.includes(toolName) && searchContext?.channelPolicy === "enabled";
+        return searchContext?.channelPolicy === "enabled";
       },
       execute: async () => "ok",
     });
@@ -133,11 +131,10 @@ class GroupManagementFixturePlugin extends YesImPlugin {
         properties: {},
       },
       match: ({ runtime }) => runtime.platform === "discord" && !("manage" in runtime),
-      enable: ({ responseContext, enabledTools }) => {
+      enable: ({ responseContext }) => {
         const groupContext = responseContext["group-management"]?.["group-management"];
 
         return (
-          enabledTools.includes("group-management") &&
           groupContext?.authorRoles.includes("admin") === true &&
           groupContext.selfRoles.includes("owner") &&
           groupContext.manage.kick
@@ -193,12 +190,11 @@ describe("explicit tool gate contract", () => {
     expect(captures.matchedRuntime).not.toHaveProperty("manage");
   });
 
-  it("evaluates enable from the current ResponseContext plus enabledTools", async () => {
+  it("evaluates enable from the current ResponseContext only", async () => {
     const ctx = createContextMock();
     const service = createPluginService(ctx);
     const captures: {
       enabledContext?: ResponseContext;
-      enabledTools?: string[];
     } = {};
     const plugin = new SearchFixturePlugin(ctx, "search", captures);
 
@@ -212,18 +208,9 @@ describe("explicit tool gate contract", () => {
     };
     const definition = service.getToolDefinitions().find((tool) => tool.name === "search");
 
-    expect(definition?.definition.enable?.({ runtime, responseContext, enabledTools: [] })).toBe(
-      false,
-    );
-    expect(
-      definition?.definition.enable?.({
-        runtime,
-        responseContext,
-        enabledTools: ["search"],
-      }),
-    ).toBe(true);
+    expect(definition?.definition.enable?.({ runtime, responseContext: {} })).toBe(false);
+    expect(definition?.definition.enable?.({ runtime, responseContext })).toBe(true);
     expect(captures.enabledContext).toEqual(responseContext);
-    expect(captures.enabledTools).toEqual(["search"]);
   });
 
   it("exposes response-scoped gating through the renamed lifecycle contracts", async () => {
@@ -239,7 +226,6 @@ describe("explicit tool gate contract", () => {
       definition?.definition.enable?.({
         runtime,
         responseContext: { search: { search: { channelPolicy: "enabled" } } },
-        enabledTools: ["search"],
       }),
     ).toBe(true);
   });
@@ -291,7 +277,6 @@ describe("explicit tool gate contract", () => {
       definition?.definition.enable?.({
         runtime,
         responseContext,
-        enabledTools: ["group-management"],
       }),
     ).toBe(true);
   });

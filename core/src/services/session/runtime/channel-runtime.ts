@@ -598,7 +598,6 @@ export class ChannelRuntime {
             scope: this.getToolScope(),
             catalog,
             responseContext,
-            toolSettings: options.settingsManager.getToolSettings?.(),
           });
           this.currentToolSelection = toolSelection;
 

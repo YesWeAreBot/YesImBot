@@ -127,7 +127,7 @@ export interface AgentSessionServiceConfig {
  * 3. ChannelRuntime.receive() → persist, willingness check, maybe respond
  */
 export class AgentSessionService extends Service<AgentSessionServiceConfig> {
-  static inject = ["yesimbot.model"];
+  static inject = ["yesimbot.model", "yesimbot.plugin"];
 
   private agents: Map<ChannelKey, ChannelRuntime> = new Map();
   private bootstrapPromises: Map<ChannelKey, Promise<ChannelRuntime>> = new Map();
@@ -442,7 +442,7 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
 
     const globalSettingsPath = this.getGlobalSettingsPath();
     const channelDir = this.getChannelDir(platform, channelId);
-    const sessionDir = join(channelDir, "session");
+    const sessionDir = this.getSessionDir(platform, channelId);
     const channelSettingsPath = this.getChannelSettingsPath(channelDir);
 
     this.instructionStateService.ensureGlobalState();
@@ -508,6 +508,10 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
 
   private getChannelDir(platform: string, channelId: string): string {
     return join(this.ctx.baseDir, this.config.basePath, `${platform}-${channelId}`);
+  }
+
+  private getSessionDir(platform: string, channelId: string): string {
+    return join(this.instructionStateService.getChannelStateDir(platform, channelId), "session");
   }
 
   private getGlobalRoot(): string {

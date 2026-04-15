@@ -35,7 +35,6 @@ export interface ToolMatchContext {
 
 export interface ToolEnableContext extends ToolMatchContext {
   responseContext: ResponseContext;
-  enabledTools: string[];
 }
 
 export interface ToolEntry<INPUT = unknown, OUTPUT = unknown> {
@@ -57,11 +56,6 @@ export interface RegisteredToolDefinition<INPUT = unknown, OUTPUT = unknown> {
   name: string;
   definition: ToolEntry<INPUT, OUTPUT>;
   tool: AiTool;
-}
-
-export interface ToolSelectionSettings {
-  enabled?: string[];
-  required?: string[];
 }
 
 export interface ToolHandle<INPUT = unknown, OUTPUT = unknown> {

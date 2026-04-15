@@ -6,6 +6,8 @@ import { join } from "node:path";
 import type { Bot, Context, Logger } from "koishi";
 import { describe, expect, it, vi } from "vitest";
 
+import { getChannelStateDir } from "../../src/services/session/instruction-state/layout";
+
 vi.mock("ai", () => {
   class ToolLoopAgent {
     readonly tools: Record<string, unknown> = {};
@@ -141,10 +143,11 @@ describe("workspace plugin lifecycle", () => {
 
       const globalRoot = join(baseDir, "sessions");
       const channelDir = join(globalRoot, "discord-channel-1");
+      const channelStateDir = getChannelStateDir(globalRoot, "discord", "channel-1");
 
       expect(existsSync(globalRoot)).toBe(true);
       expect(existsSync(channelDir)).toBe(true);
-      expect(existsSync(join(channelDir, "session"))).toBe(true);
+      expect(existsSync(join(channelStateDir, "session"))).toBe(true);
       expect(existsSync(join(channelDir, "workspace"))).toBe(false);
       expect(existsSync(join(globalRoot, "SOUL.md"))).toBe(false);
       expect(existsSync(join(globalRoot, "AGENTS.md"))).toBe(false);

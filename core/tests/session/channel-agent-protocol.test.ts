@@ -91,15 +91,9 @@ function createContextMock(toolSet: Record<string, unknown> = {}) {
           runtime?: unknown;
           scope?: string;
           catalog: { tools: Record<string, unknown> };
-          toolSettings?: { enabled?: string[] };
           responseContext?: Record<string, unknown>;
         }) => {
-          const enabled = new Set(request.toolSettings?.enabled ?? []);
-          const activeTools = Object.fromEntries(
-            Object.entries(request.catalog.tools).filter(([name]) => {
-              return name === "send_message" || enabled.size === 0 || enabled.has(name);
-            }),
-          );
+          const activeTools = request.catalog.tools;
 
           return {
             activeTools,

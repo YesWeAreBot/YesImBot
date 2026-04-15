@@ -119,7 +119,6 @@ function toRegisteredToolDefinitions(
           );
           return true;
         },
-        enable: ({ enabledTools }) => enabledTools.includes(name),
         execute,
       },
       tool: {

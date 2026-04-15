@@ -52,9 +52,14 @@ export default class McpClientPlugin extends YesImPlugin {
   constructor(ctx: Context, config: McpClientConfig) {
     super(ctx);
     this.config = config;
+  }
 
-    ctx.on("ready", async () => this.start());
-    ctx.on("dispose", async () => this.dispose());
+  override async init(): Promise<void> {
+    await this.start();
+  }
+
+  override async cleanup(): Promise<void> {
+    await this.dispose();
   }
 
   private async start(): Promise<void> {

@@ -4,9 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { Context, Logger } from "koishi";
-import WorkspacePlugin, { LocalFilesystem, LocalSandbox } from "koishi-plugin-yesimbot-workspace";
+import WorkspacePlugin from "koishi-plugin-yesimbot-workspace";
 import { describe, expect, it, vi } from "vitest";
 
+import { LocalFilesystem } from "../../../plugins/workspace/src/filesystem";
+import { LocalSandbox } from "../../../plugins/workspace/src/sandbox";
 import { buildWorkspacePluginToolDefinitions } from "../../../plugins/workspace/src/tool-definitions";
 
 vi.mock("koishi", () => {
@@ -94,10 +96,6 @@ async function assembleToolsWithLifecycle(options: {
   runtime: ToolRuntime;
   scope: string;
   hostInput?: unknown;
-  toolSettings?: {
-    enabled?: string[];
-    required?: string[];
-  };
 }) {
   const sendMessageTool = createSendMessageTool({
     bot: {
@@ -122,7 +120,6 @@ async function assembleToolsWithLifecycle(options: {
     scope: options.scope,
     catalog,
     responseContext,
-    toolSettings: options.toolSettings,
   });
 
   return {
@@ -182,18 +179,6 @@ describe("workspace", () => {
         runtime: createRuntime(basePath),
         hostInput: undefined,
         scope: "discord:channel-1",
-        toolSettings: {
-          enabled: [
-            "read_file",
-            "write_file",
-            "edit_file",
-            "list_files",
-            "delete",
-            "file_stat",
-            "mkdir",
-            "grep",
-          ],
-        },
       });
 
       expect(assembly.supportedTools).toHaveProperty("read_file");
@@ -240,9 +225,6 @@ describe("workspace", () => {
         runtime: createRuntime(basePath),
         hostInput: undefined,
         scope: "discord:channel-1",
-        toolSettings: {
-          enabled: ["read_file", "list_files", "file_stat", "grep"],
-        },
       });
 
       expect(assembly.supportedTools).toHaveProperty("read_file");
@@ -281,9 +263,6 @@ describe("workspace", () => {
         runtime: createRuntime(basePath),
         hostInput: undefined,
         scope: "discord:channel-1",
-        toolSettings: {
-          enabled: ["execute_command"],
-        },
       });
 
       expect(assembly.supportedTools).toHaveProperty("execute_command");
@@ -306,7 +285,7 @@ describe("workspace", () => {
     }
   });
 
-  it("does not expose skill tools even when explicitly enabled by tool settings", async () => {
+  it("does not expose skill tools when the skill plugin is absent", async () => {
     const basePath = mkdtempSync(join(tmpdir(), "athena-runtime-skills-disabled-"));
     try {
       const { service } = await installWorkspacePlugin({
@@ -321,9 +300,6 @@ describe("workspace", () => {
         runtime: createRuntime(basePath),
         hostInput: undefined,
         scope: "discord:channel-1",
-        toolSettings: {
-          enabled: ["skill", "skill_read", "skill_search"],
-        },
       });
 
       expect(assembly.supportedTools).not.toHaveProperty("skill");
@@ -360,9 +336,6 @@ describe("workspace", () => {
         runtime: createRuntime(runtimeScopedPath),
         hostInput: undefined,
         scope: "discord:channel-1",
-        toolSettings: {
-          enabled: ["write_file"],
-        },
       });
       await scopedAssembly.activeTools.write_file.execute?.(
         { path: "scope.txt", content: "scoped" },
@@ -445,9 +418,6 @@ describe("workspace", () => {
         runtime,
         hostInput: undefined,
         scope: "discord:channel-1",
-        toolSettings: {
-          enabled: ["write_file"],
-        },
       });
 
       expect(readFileSync(join(runtimeScopedPath, "workspace", "invoke.txt"), "utf8")).toBe(

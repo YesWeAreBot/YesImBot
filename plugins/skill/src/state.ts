@@ -186,7 +186,7 @@ function createSkillBoundaryError(path: string): Error {
 }
 
 function extractSkillDescription(content: string): string {
-  const lines = content
+  const lines = stripMarkdownFrontmatter(content)
     .split(/\r?\n/g)
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
@@ -200,4 +200,19 @@ function extractSkillDescription(content: string): string {
   }
 
   return "No summary provided.";
+}
+
+function stripMarkdownFrontmatter(content: string): string {
+  const lines = content.split(/\r?\n/g);
+  if (lines[0]?.trim() !== "---") {
+    return content;
+  }
+
+  for (let index = 1; index < lines.length; index += 1) {
+    if (lines[index]?.trim() === "---") {
+      return lines.slice(index + 1).join("\n");
+    }
+  }
+
+  return content;
 }

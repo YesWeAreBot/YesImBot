@@ -413,4 +413,38 @@ describe("SettingsManager", () => {
       await rm(paths.rootDir, { recursive: true, force: true });
     }
   });
+
+  it("ignores legacy tools visibility settings and reports them as unknown keys", async () => {
+    const paths = createTestPaths("athena-settings-tools-legacy-");
+    try {
+      writeFileSync(
+        paths.globalSettingsPath,
+        JSON.stringify({
+          tools: {
+            enabled: ["search_docs"],
+            required: ["search_docs"],
+          },
+        }),
+        "utf8",
+      );
+
+      const manager = new SettingsManager({
+        globalSettingsPath: paths.globalSettingsPath,
+        channelSettingsPath: paths.channelSettingsPath,
+      });
+
+      expect(manager.resolveSettings()).toEqual({});
+      expect(manager.getReloadMetadata().issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: "unknown-key",
+            path: "tools",
+            scope: "global",
+          }),
+        ]),
+      );
+    } finally {
+      await rm(paths.rootDir, { recursive: true, force: true });
+    }
+  });
 });

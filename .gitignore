@@ -171,12 +171,12 @@ yarn-error.log
 .agents/
 .claude/
 .opencode/
+.vscode/
 .worktrees/
 references/
 yarn.lock
-.DS_Store
-Thumbs.db
-*.tmp
-*.swp
-.vscode/
-.idea/
+
+## graphify
+graphify-out/
+.graphify_cached.json
+.graphify_uncached.txt

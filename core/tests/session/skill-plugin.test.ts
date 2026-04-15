@@ -4,8 +4,9 @@ import { join } from "node:path";
 
 import type { Context, Logger } from "koishi";
 import SkillPlugin from "koishi-plugin-yesimbot-skill";
-import { buildWorkspacePluginToolDefinitions } from "koishi-plugin-yesimbot-workspace";
 import { describe, expect, it, vi } from "vitest";
+
+import { buildWorkspacePluginToolDefinitions } from "../../../plugins/workspace/src/tool-definitions";
 
 vi.mock("koishi", () => {
   const createChain = () => ({
@@ -65,6 +66,29 @@ function createContextMock(baseDir: string): Context {
   } as unknown as Context;
 }
 
+function createLifecycleContextMock(baseDir: string): {
+  ctx: Context;
+  readyHandlers: Array<() => unknown | Promise<unknown>>;
+  disposeHandlers: Array<() => unknown | Promise<unknown>>;
+} {
+  const readyHandlers: Array<() => unknown | Promise<unknown>> = [];
+  const disposeHandlers: Array<() => unknown | Promise<unknown>> = [];
+
+  const ctx = {
+    ...createContextMock(baseDir),
+    on: vi.fn((event: string, handler: () => unknown | Promise<unknown>) => {
+      if (event === "ready") {
+        readyHandlers.push(handler);
+      }
+      if (event === "dispose") {
+        disposeHandlers.push(handler);
+      }
+    }),
+  } as unknown as Context;
+
+  return { ctx, readyHandlers, disposeHandlers };
+}
+
 function createRuntime(basePath: string, messageId = "msg-1"): ToolRuntime {
   return {
     channelKey: "discord:channel-1",
@@ -87,10 +111,6 @@ async function assembleToolsWithLifecycle(options: {
   runtime: ToolRuntime;
   scope: string;
   hostInput?: unknown;
-  toolSettings?: {
-    enabled?: string[];
-    required?: string[];
-  };
 }) {
   const catalog = await options.service.compileTools({
     runtime: options.runtime,
@@ -114,7 +134,6 @@ async function assembleToolsWithLifecycle(options: {
     scope: options.scope,
     catalog,
     responseContext,
-    toolSettings: options.toolSettings,
   });
 
   return {
@@ -192,25 +211,48 @@ describe("skill plugin", () => {
       );
       writeFileSync(join(skillRoot, "references", "guide.md"), "Guide content", "utf8");
 
-      const ctx = createContextMock(baseDir);
+      const { ctx, readyHandlers } = createLifecycleContextMock(baseDir);
       const service = new PluginService(ctx);
+      (ctx as unknown as { "yesimbot.plugin": PluginService })["yesimbot.plugin"] = service;
       const plugin = new SkillPlugin(ctx, { skills: ["skills"] });
-      await plugin.init();
-      await service.install(plugin, { scope: "discord:channel-1" });
+      void plugin;
+
+      await readyHandlers[0]?.();
 
       const assembly = await assembleToolsWithLifecycle({
         service,
         runtime: createRuntime(baseDir, "msg-2"),
         hostInput: {},
         scope: "discord:channel-1",
-        toolSettings: {
-          enabled: ["skill", "skill_read", "skill_search"],
-        },
       });
 
       expect(assembly.supportedTools).toHaveProperty("skill");
       expect(assembly.supportedTools).toHaveProperty("skill_read");
       expect(assembly.supportedTools).toHaveProperty("skill_search");
+      expect(service.getInstructionContributors("discord:channel-1")).toHaveLength(1);
+    } finally {
+      rmSync(baseDir, { recursive: true, force: true });
+    }
+  });
+
+  it("removes skill plugin from registry on dispose", async () => {
+    const baseDir = mkdtempSync(join(tmpdir(), "athena-skill-lifecycle-dispose-"));
+    try {
+      const skillsRoot = join(baseDir, "skills");
+      const skillRoot = join(skillsRoot, "code-review");
+      mkdirSync(skillRoot, { recursive: true });
+      writeFileSync(join(skillRoot, "SKILL.md"), "# Code Review\nReview skill", "utf8");
+
+      const { ctx, readyHandlers, disposeHandlers } = createLifecycleContextMock(baseDir);
+      const service = new PluginService(ctx);
+      (ctx as unknown as { "yesimbot.plugin": PluginService })["yesimbot.plugin"] = service;
+      new SkillPlugin(ctx, { skills: ["skills"] });
+
+      await readyHandlers[0]?.();
+      expect(service.list()).toContain("skill");
+
+      await disposeHandlers[0]?.();
+      expect(service.list()).not.toContain("skill");
     } finally {
       rmSync(baseDir, { recursive: true, force: true });
     }
@@ -268,6 +310,68 @@ describe("skill plugin", () => {
     }
   });
 
+  it("uses markdown body instead of frontmatter separators for skill descriptions", async () => {
+    const baseDir = mkdtempSync(join(tmpdir(), "athena-skill-frontmatter-"));
+    try {
+      const skillsRoot = join(baseDir, "skills");
+      const skillRoot = join(skillsRoot, "ai-sdk");
+      mkdirSync(skillRoot, { recursive: true });
+      writeFileSync(
+        join(skillRoot, "SKILL.md"),
+        [
+          "---",
+          'name: "ai-sdk"',
+          "description: metadata should not be rendered",
+          "---",
+          "",
+          "Build AI-powered features with the Vercel AI SDK.",
+          "",
+          "# Details",
+          "More content below.",
+        ].join("\n"),
+        "utf8",
+      );
+
+      const ctx = createContextMock(baseDir);
+      const plugin = new SkillPlugin(ctx, { skills: ["skills"] });
+      await plugin.init();
+
+      const instructionStateService = new InstructionStateService(baseDir);
+      const contributors = plugin.getInstructionContributors() as InstructionContributor[];
+      const assembler = new InstructionAssembler({
+        instructionStateService,
+        getBuiltInInstructions: (fallback) => fallback,
+        contributors,
+      });
+
+      const prompt = await assembler.buildSystemPrompt({
+        platform: "discord",
+        channelId: "channel-1",
+        turn: {
+          kind: "channel_message",
+          platform: "discord",
+          channelId: "channel-1",
+          messageId: "msg-frontmatter-1",
+          timestamp: Date.now(),
+          content: "hello",
+          sender: {
+            userId: "user-1",
+            username: "alice",
+          },
+          isDirect: false,
+          atSelf: false,
+          isReplyToBot: false,
+        },
+      });
+
+      expect(prompt).toContain("- **ai-sdk** — Build AI-powered features with the Vercel AI SDK.");
+      expect(prompt).not.toContain("- **ai-sdk** — ---");
+      expect(prompt).not.toContain("metadata should not be rendered");
+    } finally {
+      rmSync(baseDir, { recursive: true, force: true });
+    }
+  });
+
   it("rejects skill_read path traversal even without workspace access", async () => {
     const baseDir = mkdtempSync(join(tmpdir(), "athena-skill-traversal-"));
     try {
@@ -294,9 +398,6 @@ describe("skill plugin", () => {
           runtime,
           hostInput: {},
           scope: "discord:channel-1",
-          toolSettings: {
-            enabled: ["skill_read"],
-          },
         }),
       ).rejects.toThrow(/outside configured skill root/i);
     } finally {
@@ -334,9 +435,6 @@ describe("skill plugin", () => {
           runtime,
           hostInput: {},
           scope: "discord:channel-1",
-          toolSettings: {
-            enabled: ["skill_read"],
-          },
         }),
       ).rejects.toThrow(/outside configured skill root/i);
     } finally {
@@ -364,9 +462,6 @@ describe("skill plugin", () => {
           runtime,
           hostInput: {},
           scope: "discord:channel-1",
-          toolSettings: {
-            enabled: ["skill"],
-          },
         }),
       ).rejects.toThrow(/Skill not found: code-review/);
     } finally {
@@ -403,9 +498,6 @@ describe("skill plugin", () => {
           runtime: skillRuntime,
           hostInput: {},
           scope: "discord:channel-1",
-          toolSettings: {
-            enabled: ["skill"],
-          },
         }),
       ).rejects.toThrow(/outside configured skill root/i);
 
@@ -418,9 +510,6 @@ describe("skill plugin", () => {
           runtime: createRuntime(baseDir, "msg-8"),
           hostInput: {},
           scope: "discord:channel-1",
-          toolSettings: {
-            enabled: ["skill_search"],
-          },
         }),
       ).resolves.toEqual({ matches: [] });
 

@@ -25,7 +25,6 @@ export interface SkillPluginConfig {
 @Metadata({
   name: "skill",
   description: "Skill index and runtime skill tools",
-  managedLifecycle: true,
 })
 export default class SkillPlugin extends YesImPlugin {
   static name = "skill";
@@ -54,7 +53,7 @@ export default class SkillPlugin extends YesImPlugin {
     return super.getToolDefinitions();
   }
 
-  async init(): Promise<void> {
+  override async init(): Promise<void> {
     if (this.initialized) {
       return;
     }

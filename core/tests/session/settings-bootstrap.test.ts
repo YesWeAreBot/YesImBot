@@ -45,6 +45,7 @@ vi.mock("koishi", () => {
   };
 });
 
+import { getChannelStateDir } from "../../src/services/session/instruction-state/layout";
 import { AgentSessionService } from "../../src/services/session/service";
 import { SessionManager } from "../../src/services/session/session-manager";
 
@@ -329,7 +330,10 @@ describe("AgentSessionService settings bootstrap", () => {
     tempDirs.push(tempDir);
     createExistingWorkspace(tempDir);
 
-    const sessionDir = join(tempDir, "athena", "discord-channel-1", "session");
+    const sessionDir = join(
+      getChannelStateDir(join(tempDir, "athena"), "discord", "channel-1"),
+      "session",
+    );
     const seededSession = SessionManager.create("discord:channel-1", sessionDir, "global-model");
     seededSession.appendTimelineRecord({
       id: "persisted-channel-message",

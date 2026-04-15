@@ -94,14 +94,9 @@ function createContextMock() {
           runtime?: unknown;
           scope?: string;
           catalog: { tools: Record<string, unknown> };
-          toolSettings?: { enabled?: string[] };
           responseContext?: Record<string, unknown>;
         }) => {
-          const activeTools = Object.fromEntries(
-            Object.entries(request.catalog.tools).filter(([name]) => {
-              return request.toolSettings?.enabled?.includes(name) ?? true;
-            }),
-          );
+          const activeTools = request.catalog.tools;
 
           return {
             activeTools,
@@ -166,10 +161,6 @@ function listTimelineStates(sessionManager: SessionManager, stateType: string) {
   return sessionManager
     .getTimeline()
     .filter((record) => record.kind === "state_change" && record.stateType === stateType);
-}
-
-function findTimelineState(sessionManager: SessionManager, stateType: string) {
-  return listTimelineStates(sessionManager, stateType)[0];
 }
 
 function listResponseStatusNotices(sessionManager: SessionManager) {

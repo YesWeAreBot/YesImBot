@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -91,7 +91,6 @@ interface PluginServiceMockOptions {
     scope?: string;
     catalog: { tools: Record<string, unknown> };
     responseContext: Record<string, unknown>;
-    toolSettings?: { enabled?: string[] };
   }) => Promise<{
     activeTools: Record<string, unknown>;
     activeToolNames: string[];
@@ -159,13 +158,8 @@ function createContextMock(
             scope?: string;
             catalog: { tools: Record<string, unknown> };
             responseContext: Record<string, unknown>;
-            toolSettings?: { enabled?: string[] };
           }) => {
-            const activeTools = Object.fromEntries(
-              Object.entries(request.catalog.tools).filter(([name]) => {
-                return request.toolSettings?.enabled?.includes(name) ?? true;
-              }),
-            );
+            const activeTools = request.catalog.tools;
 
             return {
               activeTools,
@@ -682,7 +676,7 @@ describe("AgentSessionService", () => {
         expect(generateMock).toHaveBeenCalledTimes(1);
       });
 
-      expect(AgentSessionService.inject).toEqual(["yesimbot.model"]);
+      expect(AgentSessionService.inject).toEqual(["yesimbot.model", "yesimbot.plugin"]);
       const logger = ctx.logger("session") as unknown as ReturnType<typeof createLoggerMock>;
       expect(logger.warn).toHaveBeenCalledWith(
         "[tools:discord:channel-1] PluginService unavailable; continuing with send_message only",
@@ -748,6 +742,41 @@ describe("AgentSessionService", () => {
   });
 
   describe("output delivery", () => {
+    it("stores channel sessions under the encoded state tree", async () => {
+      const baseDir = mkdtempSync(join(tmpdir(), "athena-session-state-"));
+      tempDirs.push(baseDir);
+
+      const ctx = createContextMock(baseDir);
+      const service = new AgentSessionService(ctx, {
+        model: "test:model",
+        basePath: "data/yesimbot/agents",
+      });
+
+      generateMock.mockResolvedValueOnce();
+
+      await service.receive(
+        createChannelMessageInput({
+          channelId: "channel/with:special#chars",
+          isDirect: true,
+          messageId: "session-path-msg-1",
+        }),
+      );
+
+      const sessionDir = join(
+        baseDir,
+        "data/yesimbot/agents/state/channels/discord/Y2hhbm5lbC93aXRoOnNwZWNpYWwjY2hhcnM",
+        "session",
+      );
+
+      expect(existsSync(sessionDir)).toBe(true);
+      expect(readdirSync(sessionDir).some((name) => name.endsWith(".jsonl"))).toBe(true);
+      expect(
+        existsSync(
+          join(baseDir, "data/yesimbot/agents/discord-channel/with:special#chars/session"),
+        ),
+      ).toBe(false);
+    });
+
     it("channel-local delivery", async () => {
       const tempDir = mkdtempSync(join(tmpdir(), "athena-channel-route-"));
       tempDirs.push(tempDir);

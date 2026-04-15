@@ -2,10 +2,6 @@ import { existsSync, readFileSync } from "node:fs";
 
 export interface AthenaSessionSettings extends Record<string, unknown> {
   model?: string;
-  tools?: {
-    enabled?: string[];
-    required?: string[];
-  };
   judge?: {
     model?: string;
     enabled?: boolean;
@@ -48,20 +44,6 @@ export const ATHENA_SESSION_SETTINGS_JSON_SCHEMA: JsonSchemaDefinition = {
     model: {
       type: "string",
       description: "Override the chat model id for this scope.",
-    },
-    tools: {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        enabled: {
-          type: "array",
-          items: { type: "string" },
-        },
-        required: {
-          type: "array",
-          items: { type: "string" },
-        },
-      },
     },
     judge: {
       type: "object",
@@ -181,13 +163,6 @@ type SettingsRuleMap = Record<string, SettingsRule>;
 
 const SESSION_SETTINGS_RULES: SettingsRuleMap = {
   model: { kind: "string" },
-  tools: {
-    kind: "object",
-    properties: {
-      enabled: { kind: "string-array" },
-      required: { kind: "string-array" },
-    },
-  },
   judge: {
     kind: "object",
     properties: {
@@ -610,10 +585,6 @@ export class SettingsManager {
 
   getModel(): string | undefined {
     return this.metadata.effectiveSettings.model;
-  }
-
-  getToolSettings(): AthenaSessionSettings["tools"] {
-    return this.metadata.effectiveSettings.tools;
   }
 
   getJudgeSettings(): AthenaSessionSettings["judge"] {

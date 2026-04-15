@@ -394,7 +394,6 @@ describe("ChannelRuntime integration seams", () => {
 
     const firstSelectRequest = selectToolsMock.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(firstSelectRequest).toMatchObject({
-      toolSettings: { enabled: ["search_docs"] },
       responseContext: { search: { turn: 1 } },
     });
   });
@@ -470,7 +469,6 @@ describe("ChannelRuntime integration seams", () => {
 
   it.each([
     ["invalid model resolution", "model_not_found", /model_not_found/],
-    ["missing required tool", "tools.required missing active tool: search_docs", /search_docs/],
     [
       "assembly conflict",
       "Duplicate explicit tool name: search_docs",

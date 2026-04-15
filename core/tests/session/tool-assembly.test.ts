@@ -85,11 +85,11 @@ class SearchPlugin extends YesImPlugin {
       },
       match: ({ runtime }) => runtime.platform === "discord",
       extendResponse: () => ({ channelPolicy: "enabled" }),
-      enable: ({ responseContext, enabledTools }) => {
+      enable: ({ responseContext }) => {
         const context = responseContext.search?.search as
           | { channelPolicy?: "enabled" | "disabled" }
           | undefined;
-        return enabledTools.includes("search") && context?.channelPolicy === "enabled";
+        return context?.channelPolicy === "enabled";
       },
       execute: async () => "search",
     });
@@ -116,7 +116,6 @@ describe("PluginService tool lifecycle", () => {
       scope: runtime.channelKey,
       catalog,
       responseContext: { search: { search: { channelPolicy: "enabled" } } },
-      toolSettings: { enabled: ["search"] },
     });
 
     expect(Object.keys(catalog.tools)).toContain("search");

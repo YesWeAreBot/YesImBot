@@ -9,7 +9,6 @@ import {
   ToolCatalog,
   ToolEntry,
   ToolSelection,
-  ToolSelectionSettings,
   RegisteredToolDefinition,
   ToolRuntime,
 } from "./tools/types";
@@ -33,7 +32,6 @@ export interface SelectToolsRequest {
   scope?: string;
   catalog: ToolCatalog;
   responseContext: ResponseContext;
-  toolSettings?: ToolSelectionSettings;
 }
 
 export interface ToolInvoke<THostInput = unknown> {
@@ -42,7 +40,6 @@ export interface ToolInvoke<THostInput = unknown> {
   runtime: ToolRuntime;
   hostInput: THostInput;
   scope?: string;
-  toolSettings?: ToolSelectionSettings;
   options?: Partial<ToolExecutionOptions>;
 }
 
@@ -69,7 +66,6 @@ export interface PluginMetadata {
   name: string;
   description: string;
   builtin?: boolean;
-  managedLifecycle?: boolean;
 }
 
 const METADATA_KEY = Symbol("yesimbot.plugin.metadata");
@@ -87,6 +83,8 @@ export class YesImPlugin {
   public readonly ctx: Context;
   public readonly metadata: PluginMetadata;
   protected toolDefinitions: Map<string, RegisteredToolDefinition> = new Map();
+  private lifecycleInitialized = false;
+  private lifecycleInitializeTask: Promise<void> | null = null;
 
   constructor(ctx: Context) {
     this.ctx = ctx;
@@ -97,19 +95,47 @@ export class YesImPlugin {
     this.metadata = meta;
     this.registerDecoratedTools();
 
-    if (this.metadata.managedLifecycle !== true) {
-      ctx.on("ready", async () => {
-        const pluginService = ctx["yesimbot.plugin"] as IPluginService | undefined;
-        if (!pluginService) return;
-        await pluginService.install(this);
-      });
+    ctx.on("ready", async () => {
+      await Promise.resolve();
 
-      ctx.on("dispose", async () => {
+      if (this.lifecycleInitialized) {
+        return;
+      }
+
+      if (this.lifecycleInitializeTask) {
+        await this.lifecycleInitializeTask;
+        return;
+      }
+
+      this.lifecycleInitializeTask = (async () => {
+        await this.init();
+        this.lifecycleInitialized = true;
+
         const pluginService = ctx["yesimbot.plugin"] as IPluginService | undefined;
-        pluginService?.remove(this.metadata.name);
-      });
-    }
+        if (!pluginService) {
+          return;
+        }
+
+        await pluginService.install(this);
+      })();
+
+      try {
+        await this.lifecycleInitializeTask;
+      } finally {
+        this.lifecycleInitializeTask = null;
+      }
+    });
+
+    ctx.on("dispose", async () => {
+      const pluginService = ctx["yesimbot.plugin"] as IPluginService | undefined;
+      pluginService?.remove(this.metadata.name);
+      await this.cleanup();
+    });
   }
+
+  async init(): Promise<void> {}
+
+  async cleanup(): Promise<void> {}
 
   public getTools(): Map<string, AiTool> {
     return new Map(
