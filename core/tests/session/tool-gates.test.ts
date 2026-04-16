@@ -92,7 +92,7 @@ class SearchFixturePlugin extends YesImPlugin {
       },
       enable: ({ responseContext }) => {
         this.captures.enabledContext = responseContext;
-        const searchContext = responseContext.search?.[toolName];
+        const searchContext = responseContext.search;
 
         return searchContext?.channelPolicy === "enabled";
       },
@@ -132,23 +132,24 @@ class GroupManagementFixturePlugin extends YesImPlugin {
       },
       match: ({ runtime }) => runtime.platform === "discord" && !("manage" in runtime),
       enable: ({ responseContext }) => {
-        const groupContext = responseContext["group-management"]?.["group-management"];
+        const groupContext = responseContext["group-management"];
 
         return (
-          groupContext?.authorRoles.includes("admin") === true &&
-          groupContext.selfRoles.includes("owner") &&
-          groupContext.manage.kick
+          groupContext?.authorRoles?.includes("admin") === true &&
+          groupContext?.selfRoles?.includes("owner") &&
+          groupContext?.manage?.kick
         );
       },
       execute: async () => "managed",
     });
   }
 
-  public createResponseContext(hostInput: GroupHostInput): Record<string, unknown> {
+  override buildContext<THostInput>(request: { hostInput: THostInput }): Record<string, unknown> {
+    const host = request.hostInput as GroupHostInput;
     return {
-      authorRoles: [...hostInput.koishiSession.author.roles],
-      selfRoles: [...hostInput.koishiSession.self.roles],
-      manage: hostInput.koishiSession.bot.manage,
+      authorRoles: [...host.koishiSession.author.roles],
+      selfRoles: [...host.koishiSession.self.roles],
+      manage: host.koishiSession.bot.manage,
     };
   }
 }
@@ -203,7 +204,7 @@ describe("explicit tool gate contract", () => {
     const runtime = createToolRuntime();
     const responseContext: ResponseContext = {
       search: {
-        search: { channelPolicy: "enabled" },
+        channelPolicy: "enabled",
       },
     };
     const definition = service.getToolDefinitions().find((tool) => tool.name === "search");
@@ -225,7 +226,7 @@ describe("explicit tool gate contract", () => {
     expect(
       definition?.definition.enable?.({
         runtime,
-        responseContext: { search: { search: { channelPolicy: "enabled" } } },
+        responseContext: { search: { channelPolicy: "enabled" } },
       }),
     ).toBe(true);
   });
@@ -240,18 +241,12 @@ describe("explicit tool gate contract", () => {
     const runtime = createToolRuntime();
     const responseContext: ResponseContext = {
       "group-management": {
-        "group-management": plugin.createResponseContext({
-          koishiSession: {
-            author: { roles: ["admin"] },
-            self: { roles: ["owner"] },
-            bot: {
-              manage: {
-                kick: true,
-                ban: true,
-              },
-            },
-          },
-        }),
+        authorRoles: ["admin"],
+        selfRoles: ["owner"],
+        manage: {
+          kick: true,
+          ban: true,
+        },
       },
     };
     const definition = service
@@ -260,13 +255,11 @@ describe("explicit tool gate contract", () => {
 
     expect(responseContext).toMatchObject({
       "group-management": {
-        "group-management": {
-          authorRoles: ["admin"],
-          selfRoles: ["owner"],
-          manage: {
-            kick: true,
-            ban: true,
-          },
+        authorRoles: ["admin"],
+        selfRoles: ["owner"],
+        manage: {
+          kick: true,
+          ban: true,
         },
       },
     });

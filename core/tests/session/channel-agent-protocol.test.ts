@@ -73,27 +73,21 @@ function createContextMock(toolSet: Record<string, unknown> = {}) {
     "yesimbot.plugin": {
       getToolSet: vi.fn(() => toolSet),
       getToolDefinitions: vi.fn(() => []),
-      compileTools: vi.fn(async (request: { sendMessageTool?: Record<string, unknown> }) => {
-        const tools = {
-          ...(request.sendMessageTool ? { send_message: request.sendMessageTool } : {}),
-          ...toolSet,
-        };
-
-        return {
-          tools,
-          handles: {},
-          signature: JSON.stringify(Object.keys(tools).sort()),
-        };
-      }),
-      buildResponseContext: vi.fn(async () => ({})),
+      compileTools: vi.fn(async () => ({
+        tools: toolSet,
+        handles: {},
+        signature: JSON.stringify(Object.keys(toolSet).sort()),
+      })),
+      buildContext: vi.fn(async () => ({})),
       selectTools: vi.fn(
         async (request: {
           runtime?: unknown;
           scope?: string;
           catalog: { tools: Record<string, unknown> };
           responseContext?: Record<string, unknown>;
+          builtinTools?: Record<string, unknown>;
         }) => {
-          const activeTools = request.catalog.tools;
+          const activeTools = { ...(request.builtinTools ?? {}), ...request.catalog.tools };
 
           return {
             activeTools,

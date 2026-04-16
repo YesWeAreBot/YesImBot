@@ -10,7 +10,7 @@ import type { SearchBackend, SearchPluginConfig } from "./types";
   name: "search",
   description: "Web search tool",
 })
-export default class SearchPlugin extends YesImPlugin {
+export default class SearchPlugin extends YesImPlugin<SearchPluginConfig> {
   static name = "search";
   static inject = ["yesimbot.plugin"];
   static Config: Schema<SearchPluginConfig> = Schema.object({
@@ -23,14 +23,12 @@ export default class SearchPlugin extends YesImPlugin {
     "zh-CN": zhCN,
     "en-US": enUS,
   });
-  private config: SearchPluginConfig;
 
   constructor(ctx: Context, config: SearchPluginConfig) {
-    super(ctx);
-    this.config = config;
+    super(ctx, config);
   }
 
-  override async init(): Promise<void> {
+  override async start(): Promise<void> {
     const backend: SearchBackend = new TavilyBackend(this.ctx, this.config);
     this.registerTool({
       name: "search",

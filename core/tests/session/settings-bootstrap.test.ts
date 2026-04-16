@@ -45,7 +45,10 @@ vi.mock("koishi", () => {
   };
 });
 
-import { getChannelStateDir } from "../../src/services/session/instruction-state/layout";
+import {
+  getChannelStateDir,
+  getUserStateDir,
+} from "../../src/services/session/instruction-state/layout";
 import { AgentSessionService } from "../../src/services/session/service";
 import { SessionManager } from "../../src/services/session/session-manager";
 
@@ -113,6 +116,20 @@ function createContextWithLogger(baseDir: string): { ctx: Context; logger: Logge
   };
 }
 
+async function activateChannel(
+  service: AgentSessionService,
+  bot: Bot,
+  messageId: string,
+): Promise<void> {
+  generateMock.mockResolvedValueOnce();
+  await service.receive(
+    createChannelMessageInput(bot, {
+      messageId,
+    }),
+    bot,
+  );
+}
+
 function createBotMock(selfId = "bot-self"): Bot {
   return {
     selfId,
@@ -120,10 +137,31 @@ function createBotMock(selfId = "bot-self"): Bot {
   } as unknown as Bot;
 }
 
+function createChannelMessageInput(bot: Bot, overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    kind: "channel_message" as const,
+    platform: "discord",
+    channelId: "channel-1",
+    sender: {
+      userId: "user-1",
+      username: "alice",
+      nickname: "Alice",
+    },
+    content: "hello",
+    isDirect: false,
+    atSelf: false,
+    isReplyToBot: false,
+    messageId: "settings-msg-1",
+    timestamp: Date.now(),
+    bot,
+    ...overrides,
+  };
+}
+
 function createExistingWorkspace(baseDir: string, channelId = "channel-1"): void {
   const globalRoot = join(baseDir, "athena");
-  const channelDir = join(globalRoot, `discord-${channelId}`);
-  const workspaceDir = join(channelDir, "workspace");
+  const channelStateDir = getChannelStateDir(globalRoot, "discord", channelId);
+  const workspaceDir = join(channelStateDir, "workspace");
   const stateRoot = join(globalRoot, "state");
 
   mkdirSync(workspaceDir, { recursive: true });
@@ -135,7 +173,7 @@ function createExistingWorkspace(baseDir: string, channelId = "channel-1"): void
     join(globalRoot, "settings.json"),
     JSON.stringify({ model: "global-model" }, null, 2),
   );
-  writeFileSync(join(channelDir, "settings.json"), JSON.stringify({ useGlobal: true }, null, 2));
+  writeFileSync(join(channelStateDir, "settings.json"), JSON.stringify({}, null, 2));
   writeFileSync(join(workspaceDir, "SOUL.md"), "workspace soul\n", "utf8");
   writeFileSync(join(workspaceDir, "AGENTS.md"), "workspace agents\n", "utf8");
 }
@@ -149,7 +187,7 @@ afterEach(() => {
 });
 
 describe("AgentSessionService settings bootstrap", () => {
-  it("creates channel and instruction-state directories without auto-creating settings or prompt files", async () => {
+  it("creates state directories on the first user message without auto-creating settings or prompt files", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "athena-settings-bootstrap-"));
     tempDirs.push(tempDir);
 
@@ -157,33 +195,57 @@ describe("AgentSessionService settings bootstrap", () => {
       model: "global-model",
       basePath: "athena",
     });
+    const bot = createBotMock();
 
-    await service.getOrCreateAgent("discord", "channel-1", createBotMock());
+    await service.receive(createChannelMessageInput(bot), bot);
 
     const globalRoot = join(tempDir, "athena");
-    const channelDir = join(globalRoot, "discord-channel-1");
+    const channelStateDir = getChannelStateDir(globalRoot, "discord", "channel-1");
     const stateRoot = join(globalRoot, "state");
     const globalInstructionsDir = join(stateRoot, "global", "instructions");
-    const channelInstructionsDir = join(
-      stateRoot,
-      "channels",
-      "discord",
-      "Y2hhbm5lbC0x",
-      "instructions",
-    );
+    const channelInstructionsDir = join(channelStateDir, "instructions");
 
     const globalSettingsPath = join(globalRoot, "settings.json");
-    const channelSettingsPath = join(channelDir, "settings.json");
+    const channelSettingsPath = join(channelStateDir, "settings.json");
 
     expect(existsSync(globalRoot)).toBe(true);
-    expect(existsSync(channelDir)).toBe(true);
+    expect(existsSync(join(globalRoot, "discord-channel-1"))).toBe(false);
     expect(existsSync(globalInstructionsDir)).toBe(true);
     expect(existsSync(channelInstructionsDir)).toBe(true);
     expect(existsSync(globalSettingsPath)).toBe(false);
     expect(existsSync(channelSettingsPath)).toBe(false);
     expect(existsSync(join(globalRoot, "SOUL.md"))).toBe(false);
     expect(existsSync(join(globalRoot, "AGENTS.md"))).toBe(false);
-    expect(existsSync(join(channelDir, "workspace"))).toBe(false);
+    expect(existsSync(join(channelStateDir, "workspace"))).toBe(false);
+  });
+
+  it("loads direct-message settings from the user state path only", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "athena-settings-direct-user-state-"));
+    tempDirs.push(tempDir);
+
+    const globalRoot = join(tempDir, "athena");
+    const userStateDir = getUserStateDir(globalRoot, "discord", "user-1");
+    mkdirSync(userStateDir, { recursive: true });
+    writeFileSync(
+      join(userStateDir, "settings.json"),
+      JSON.stringify({ response: { maxSteps: 2 } }),
+      "utf8",
+    );
+
+    const service = new AgentSessionService(createContextMock(tempDir), {
+      model: "global-model",
+      basePath: "athena",
+    });
+    const bot = createBotMock();
+
+    await service.receive(createChannelMessageInput(bot, { isDirect: true }), bot);
+
+    const activeChannel = service.getActiveChannels()[0];
+    const agent = activeChannel ? service.getAgent(activeChannel) : undefined;
+
+    expect(agent?.getSettingsManager().getResponseSettings()?.maxSteps).toBe(2);
+    expect(existsSync(getChannelStateDir(globalRoot, "discord", "channel-1"))).toBe(false);
+    expect(existsSync(join(userStateDir, "session"))).toBe(true);
   });
 
   it("does not overwrite existing workspace files", async () => {
@@ -191,11 +253,15 @@ describe("AgentSessionService settings bootstrap", () => {
     tempDirs.push(tempDir);
 
     const globalRoot = join(tempDir, "athena");
-    const channelDir = join(globalRoot, "discord-channel-1");
-    const workspaceDir = join(channelDir, "workspace");
+    const channelStateDir = getChannelStateDir(globalRoot, "discord", "channel-1");
+    const workspaceDir = join(channelStateDir, "workspace");
     mkdirSync(workspaceDir, { recursive: true });
 
-    writeFileSync(join(channelDir, "settings.json"), JSON.stringify({ useGlobal: false }), "utf8");
+    writeFileSync(
+      join(channelStateDir, "settings.json"),
+      JSON.stringify({ response: { maxSteps: 2 } }),
+      "utf8",
+    );
     writeFileSync(join(workspaceDir, "SOUL.md"), "workspace soul\n", "utf8");
     writeFileSync(join(workspaceDir, "AGENTS.md"), "workspace agents\n", "utf8");
 
@@ -204,10 +270,11 @@ describe("AgentSessionService settings bootstrap", () => {
       basePath: "athena",
     });
 
-    await service.getOrCreateAgent("discord", "channel-1", createBotMock());
+    const bot = createBotMock();
+    await activateChannel(service, bot, "settings-no-overwrite-msg-1");
 
-    expect(readFileSync(join(channelDir, "settings.json"), "utf8")).toBe(
-      JSON.stringify({ useGlobal: false }),
+    expect(readFileSync(join(channelStateDir, "settings.json"), "utf8")).toBe(
+      JSON.stringify({ response: { maxSteps: 2 } }),
     );
     expect(readFileSync(join(workspaceDir, "SOUL.md"), "utf8")).toBe("workspace soul\n");
     expect(readFileSync(join(workspaceDir, "AGENTS.md"), "utf8")).toBe("workspace agents\n");
@@ -243,11 +310,11 @@ describe("AgentSessionService settings bootstrap", () => {
       "utf8",
     );
 
-    const channelDir = join(globalRoot, "discord-channel-1");
-    const workspaceDir = join(channelDir, "workspace");
+    const channelStateDir = getChannelStateDir(globalRoot, "discord", "channel-1");
+    const workspaceDir = join(channelStateDir, "workspace");
     mkdirSync(workspaceDir, { recursive: true });
     writeFileSync(
-      join(channelDir, "settings.json"),
+      join(channelStateDir, "settings.json"),
       JSON.stringify(
         {
           judge: {
@@ -274,8 +341,11 @@ describe("AgentSessionService settings bootstrap", () => {
       maxSteps: 3,
     });
 
-    const agent = await service.getOrCreateAgent("discord", "channel-1", createBotMock());
-    const settingsManager = agent.getSettingsManager();
+    const bot = createBotMock();
+    await activateChannel(service, bot, "settings-options-msg-1");
+    const agent = service.getAgent("discord:channel-1");
+    expect(agent).toBeDefined();
+    const settingsManager = agent!.getSettingsManager();
 
     expect(settingsManager.getModel()).toBe("global-model");
     expect(settingsManager.getJudgeSettings()?.model).toBe("judge-local");
@@ -295,11 +365,11 @@ describe("AgentSessionService settings bootstrap", () => {
       "utf8",
     );
 
-    const channelDir = join(globalRoot, "discord-channel-1");
-    const workspaceDir = join(channelDir, "workspace");
+    const channelStateDir = getChannelStateDir(globalRoot, "discord", "channel-1");
+    const workspaceDir = join(channelStateDir, "workspace");
     mkdirSync(workspaceDir, { recursive: true });
     writeFileSync(
-      join(channelDir, "settings.json"),
+      join(channelStateDir, "settings.json"),
       JSON.stringify({ useGlobal: false, response: { maxSteps: 4 } }, null, 2),
       "utf8",
     );
@@ -310,8 +380,11 @@ describe("AgentSessionService settings bootstrap", () => {
       maxSteps: 2,
     });
 
-    const agent = await service.getOrCreateAgent("discord", "channel-1", createBotMock());
-    const settingsManager = agent.getSettingsManager();
+    const bot = createBotMock();
+    await activateChannel(service, bot, "settings-use-global-msg-1");
+    const agent = service.getAgent("discord:channel-1");
+    expect(agent).toBeDefined();
+    const settingsManager = agent!.getSettingsManager();
 
     expect(settingsManager.getModel()).toBe("global-model");
     expect(settingsManager.getResponseSettings()?.maxSteps).toBe(4);
@@ -325,7 +398,7 @@ describe("AgentSessionService settings bootstrap", () => {
     );
   });
 
-  it("bootstraps an existing workspace channel before the first user message without speaking", async () => {
+  it("restores an existing workspace channel on the first user message without speaking", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "athena-pre-message-bootstrap-"));
     tempDirs.push(tempDir);
     createExistingWorkspace(tempDir);
@@ -384,37 +457,48 @@ describe("AgentSessionService settings bootstrap", () => {
       basePath: "athena",
     });
 
-    const result = await service.bootstrapChannelForManagement("discord", "channel-1", bot);
+    await service.receive(
+      createChannelMessageInput(bot, {
+        content: "wake runtime",
+        messageId: "settings-msg-restore-1",
+      }),
+      bot,
+    );
     const runtime = service.getAgent("discord:channel-1");
     const timeline = runtime?.sessionManager.getTimeline() ?? [];
 
-    expect(result).toMatchObject({
-      channelKey: "discord:channel-1",
-      status: "restored",
-    });
     expect(service.getActiveChannels()).toEqual(["discord:channel-1"]);
     expect(runtime).toBeDefined();
-    expect(timeline).toEqual([
-      expect.objectContaining({
-        kind: "channel_message",
-        message: expect.objectContaining({
-          content: "persisted hello before restart",
+    expect(timeline).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "channel_message",
+          message: expect.objectContaining({
+            content: "persisted hello before restart",
+          }),
         }),
-      }),
-      expect.objectContaining({
-        kind: "system_notice",
-        materializationKey: "response_status",
-        data: expect.objectContaining({
-          error: "seeded failure",
-          endReason: "exception",
+        expect.objectContaining({
+          kind: "system_notice",
+          materializationKey: "response_status",
+          data: expect.objectContaining({
+            error: "seeded failure",
+            endReason: "exception",
+          }),
         }),
-      }),
-    ]);
+        expect.objectContaining({
+          kind: "channel_message",
+          message: expect.objectContaining({
+            content: "wake runtime",
+            messageId: "settings-msg-restore-1",
+          }),
+        }),
+      ]),
+    );
     expect(bot.sendMessage).not.toHaveBeenCalled();
     expect(generateMock).not.toHaveBeenCalled();
   });
 
-  it("keeps bootstrap failures channel-local and logs the channel identifier", async () => {
+  it("surfaces restore failures on the first user message and leaves the channel inactive", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "athena-pre-message-failure-"));
     tempDirs.push(tempDir);
     createExistingWorkspace(tempDir);
@@ -430,18 +514,11 @@ describe("AgentSessionService settings bootstrap", () => {
       throw new Error("settings broke");
     });
 
-    const result = await service.bootstrapChannelForManagement("discord", "channel-1", bot);
-
-    expect(result).toMatchObject({
-      channelKey: "discord:channel-1",
-      status: "failed",
-      error: "settings broke",
-    });
+    await expect(service.receive(createChannelMessageInput(bot), bot)).rejects.toThrow(
+      "settings broke",
+    );
     expect(service.getActiveChannels()).toEqual([]);
     expect(bot.sendMessage).not.toHaveBeenCalled();
-    expect(logger.error).toHaveBeenCalledWith(
-      expect.stringContaining("discord:channel-1"),
-      expect.any(Error),
-    );
+    expect(logger.error).not.toHaveBeenCalled();
   });
 });

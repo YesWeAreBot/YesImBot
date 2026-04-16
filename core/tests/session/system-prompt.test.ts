@@ -115,9 +115,12 @@ describe("InstructionAssembler system prompt assembly", () => {
     expect(channelToolsIndex).toBeGreaterThan(channelAgentsIndex);
   });
 
-  it("loads USER.md only for private/direct turns", async () => {
+  it("loads all private/direct instructions from the user state path", async () => {
     const { assembler, instructionStateService } = createAssemblerSetup();
     const userDir = instructionStateService.ensureUserState("discord", "user-1");
+    writeFileSync(join(userDir, PERSONA_FILE), "direct persona\n", "utf8");
+    writeFileSync(join(userDir, AGENTS_FILE), "direct agents\n", "utf8");
+    writeFileSync(join(userDir, TOOLS_FILE), "direct tools\n", "utf8");
     writeFileSync(join(userDir, USER_FILE), "private profile\n", "utf8");
 
     const baseTurn = {
@@ -143,6 +146,9 @@ describe("InstructionAssembler system prompt assembly", () => {
         isDirect: false,
       },
     });
+    expect(groupPrompt).not.toContain("direct persona");
+    expect(groupPrompt).not.toContain("direct agents");
+    expect(groupPrompt).not.toContain("direct tools");
     expect(groupPrompt).not.toContain("private profile");
 
     const directPrompt = await assembler.buildSystemPrompt({
@@ -153,6 +159,9 @@ describe("InstructionAssembler system prompt assembly", () => {
         isDirect: true,
       },
     });
+    expect(directPrompt).toContain("direct persona");
+    expect(directPrompt).toContain("direct agents");
+    expect(directPrompt).toContain("direct tools");
     expect(directPrompt).toContain("private profile");
     const runtimeIndex = directPrompt.indexOf("## Runtime Environment");
     const userIndex = directPrompt.indexOf("private profile");

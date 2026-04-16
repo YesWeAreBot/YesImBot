@@ -107,9 +107,8 @@ async function assembleToolsWithLifecycle(options: {
   const catalog = await options.service.compileTools({
     runtime: options.runtime,
     scope: options.scope,
-    sendMessageTool,
   });
-  const responseContext = await options.service.buildResponseContext({
+  const responseContext = await options.service.buildContext({
     runtime: options.runtime,
     hostInput: options.hostInput,
     scope: options.scope,
@@ -120,6 +119,7 @@ async function assembleToolsWithLifecycle(options: {
     scope: options.scope,
     catalog,
     responseContext,
+    builtinTools: { send_message: sendMessageTool },
   });
 
   return {
@@ -152,7 +152,7 @@ async function installWorkspacePlugin(options: {
     logger: ctx.logger("workspace"),
   });
 
-  await plugin.init();
+  await plugin.start();
   await service.install(plugin, { scope: options.scope ?? "discord:channel-1" });
 
   return { ctx, service, plugin, config } as {
@@ -218,7 +218,7 @@ describe("workspace", () => {
           }),
       });
 
-      await plugin.init();
+      await plugin.start();
       await service.install(plugin, { scope: "discord:channel-1" });
       const assembly = await assembleToolsWithLifecycle({
         service,
@@ -256,7 +256,7 @@ describe("workspace", () => {
         createSandbox: (workspaceRoot) => new LocalSandbox({ workingDirectory: workspaceRoot }),
       });
 
-      await plugin.init();
+      await plugin.start();
       await service.install(plugin, { scope: "discord:channel-1" });
       const assembly = await assembleToolsWithLifecycle({
         service,
@@ -328,7 +328,7 @@ describe("workspace", () => {
         enableWorkspace: true,
         enableFilesystem: true,
       });
-      await scopedPlugin.init();
+      await scopedPlugin.start();
       await service.install(scopedPlugin, { scope: "discord:channel-1" });
 
       const scopedAssembly = await assembleToolsWithLifecycle({
@@ -382,6 +382,44 @@ describe("workspace", () => {
     }
   });
 
+  it("uses an explicit global workspace root when configured", async () => {
+    const basePath = mkdtempSync(join(tmpdir(), "athena-workspace-global-root-"));
+    const runtimeGlobalPath = join(basePath, "global-root");
+    const explicitGlobalWorkspaceRoot = join(basePath, "shared-workspace");
+
+    try {
+      const definitions = await buildWorkspacePluginToolDefinitions({
+        channelDir: runtimeGlobalPath,
+        logger: createLoggerMock(),
+        config: {
+          mode: "global",
+          enableWorkspace: true,
+          enableFilesystem: true,
+          globalWorkspacePath: explicitGlobalWorkspaceRoot,
+        } as never,
+      });
+      const globalExecute = definitions.find((definition) => definition.name === "write_file")?.tool
+        .execute;
+
+      await globalExecute?.(
+        { path: "global.txt", content: "global" },
+        {
+          ...createToolOptions(),
+          experimental_context: {
+            workspace: {
+              workspaceRoot: explicitGlobalWorkspaceRoot,
+            },
+          },
+        },
+      );
+
+      expect(readFileSync(join(explicitGlobalWorkspaceRoot, "global.txt"), "utf8")).toBe("global");
+      expect(existsSync(join(runtimeGlobalPath, "workspace", "global.txt"))).toBe(false);
+    } finally {
+      await rm(basePath, { recursive: true, force: true });
+    }
+  });
+
   it("uses namespaced response context when invoking workspace tools through PluginService", async () => {
     const basePath = mkdtempSync(join(tmpdir(), "athena-workspace-invoke-context-"));
     const runtimeScopedPath = join(basePath, "channels", "discord-channel-1");
@@ -396,20 +434,13 @@ describe("workspace", () => {
         enableWorkspace: true,
         enableFilesystem: true,
       });
-      await plugin.init();
+      await plugin.start();
       await service.install(plugin, { scope: "discord:channel-1" });
 
       const runtime = createRuntime(runtimeScopedPath);
       await service.compileTools({
         runtime,
         scope: "discord:channel-1",
-        sendMessageTool: createSendMessageTool({
-          bot: {
-            selfId: "bot-self",
-            sendMessage: async () => undefined,
-          } as never,
-          channelId: runtime.channelId,
-        }),
       });
 
       await service.invoke({

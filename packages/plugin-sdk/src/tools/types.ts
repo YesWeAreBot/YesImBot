@@ -24,9 +24,7 @@ export interface ToolRuntime {
 }
 
 export interface ResponseContext {
-  [pluginName: string]: {
-    [toolName: string]: Record<string, unknown>;
-  };
+  [pluginName: string]: Record<string, unknown>;
 }
 
 export interface ToolMatchContext {
@@ -44,10 +42,6 @@ export interface ToolEntry<INPUT = unknown, OUTPUT = unknown> {
   builtin?: boolean;
   match?: (context: ToolMatchContext) => boolean;
   enable?: (context: ToolEnableContext) => boolean;
-  extendResponse?: (
-    hostInput: unknown,
-    runtime: ToolRuntime,
-  ) => Record<string, unknown> | undefined;
   execute: (input: INPUT, options: ToolExecutionOptions) => PromiseLike<OUTPUT> | OUTPUT;
 }
 
@@ -84,10 +78,15 @@ export interface ToolDecoratorOptions {
   builtin?: boolean;
   match?: ToolEntry["match"];
   enable?: ToolEntry["enable"];
-  extendResponse?: ToolEntry["extendResponse"];
   needsApproval?: AiTool["needsApproval"];
 }
 
 export interface ToolDecoratorEntry extends ToolDecoratorOptions {
   methodKey: string;
+}
+
+export interface InstructionProvider {
+  name: string;
+  shouldApply?(context: unknown): boolean | Promise<boolean>;
+  collect(context: unknown): unknown[] | Promise<unknown[]>;
 }

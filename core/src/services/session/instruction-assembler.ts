@@ -135,17 +135,20 @@ export class InstructionAssembler {
     }
 
     const globalDir = this.instructionStateService.getGlobalInstructionsDir();
-    const channelDir = this.instructionStateService.getChannelInstructionsDir(
-      input.platform,
-      input.channelId,
-    );
+    const scopedDir = input.turn.isDirect
+      ? this.instructionStateService.getUserInstructionsDir(
+          input.platform,
+          input.turn.sender.userId,
+        )
+      : this.instructionStateService.getChannelInstructionsDir(input.platform, input.channelId);
+    const scopedLabel = input.turn.isDirect ? "User" : "Channel";
 
     const globalPersona = readOptionalInstructionFile(join(globalDir, PERSONA_FILE));
     const globalAgents = readOptionalInstructionFile(join(globalDir, AGENTS_FILE));
     const globalTools = readOptionalInstructionFile(join(globalDir, TOOLS_FILE));
-    const channelPersona = readOptionalInstructionFile(join(channelDir, PERSONA_FILE));
-    const channelAgents = readOptionalInstructionFile(join(channelDir, AGENTS_FILE));
-    const channelTools = readOptionalInstructionFile(join(channelDir, TOOLS_FILE));
+    const scopedPersona = readOptionalInstructionFile(join(scopedDir, PERSONA_FILE));
+    const scopedAgents = readOptionalInstructionFile(join(scopedDir, AGENTS_FILE));
+    const scopedTools = readOptionalInstructionFile(join(scopedDir, TOOLS_FILE));
 
     if (globalPersona) {
       blocks.push({
@@ -177,31 +180,31 @@ export class InstructionAssembler {
       });
     }
 
-    if (channelPersona) {
+    if (scopedPersona) {
       blocks.push({
-        key: "channel.persona",
-        title: `Channel ${PERSONA_FILE}`,
-        content: channelPersona,
+        key: "state.persona",
+        title: `${scopedLabel} ${PERSONA_FILE}`,
+        content: scopedPersona,
         layer: "identity",
         priority: 20,
       });
     }
 
-    if (channelAgents) {
+    if (scopedAgents) {
       blocks.push({
-        key: "channel.agents",
-        title: `Channel ${AGENTS_FILE}`,
-        content: channelAgents,
+        key: "state.agents",
+        title: `${scopedLabel} ${AGENTS_FILE}`,
+        content: scopedAgents,
         layer: "behavior",
         priority: 20,
       });
     }
 
-    if (channelTools) {
+    if (scopedTools) {
       blocks.push({
-        key: "channel.tools",
-        title: `Channel ${TOOLS_FILE}`,
-        content: channelTools,
+        key: "state.tools",
+        title: `${scopedLabel} ${TOOLS_FILE}`,
+        content: scopedTools,
         layer: "environment",
         priority: 20,
       });
@@ -212,11 +215,7 @@ export class InstructionAssembler {
     const trailingBlocks: InstructionBlock[] = [];
 
     if (input.turn.isDirect) {
-      const userDir = this.instructionStateService.getUserInstructionsDir(
-        input.platform,
-        input.turn.sender.userId,
-      );
-      const userInstruction = readOptionalInstructionFile(join(userDir, USER_FILE));
+      const userInstruction = readOptionalInstructionFile(join(scopedDir, USER_FILE));
       if (userInstruction) {
         trailingBlocks.push({
           key: "user.user",

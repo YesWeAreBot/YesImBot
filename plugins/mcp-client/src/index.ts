@@ -3,10 +3,10 @@ import { Metadata, YesImPlugin } from "@yesimbot/plugin-sdk";
 import { Context, Schema } from "koishi";
 
 import { connectMcpServer } from "./adapters/transports";
-import type { McpClientConfig, McpClientTransport, McpServer } from "./types";
+import type { McpClientConfig, McpClientTransport } from "./types";
 
 @Metadata({ name: "mcp-client", description: "MCP protocol client" })
-export default class McpClientPlugin extends YesImPlugin {
+export default class McpClientPlugin extends YesImPlugin<McpClientConfig> {
   static name = "mcp-client";
   static inject = ["yesimbot.plugin"];
   static Config: Schema<McpClientConfig> = Schema.object({
@@ -46,23 +46,14 @@ export default class McpClientPlugin extends YesImPlugin {
     ),
   });
 
-  private config: McpClientConfig;
   private transports: Map<string, McpClientTransport> = new Map();
   private clients: Map<string, Client> = new Map();
   constructor(ctx: Context, config: McpClientConfig) {
-    super(ctx);
+    super(ctx, config);
     this.config = config;
   }
 
-  override async init(): Promise<void> {
-    await this.start();
-  }
-
-  override async cleanup(): Promise<void> {
-    await this.dispose();
-  }
-
-  private async start(): Promise<void> {
+  override async start(): Promise<void> {
     this.ctx.logger.info("初始化 MCP 客户端...");
     for (const [name, server] of Object.entries(this.config.mcpServers)) {
       try {
@@ -103,7 +94,7 @@ export default class McpClientPlugin extends YesImPlugin {
     this.ctx.logger.success("MCP 客户端初始化完成");
   }
 
-  private async dispose(): Promise<void> {
+  override async dispose(): Promise<void> {
     this.ctx.logger.info("清理 MCP 客户端...");
     for (const [name, client] of this.clients.entries()) {
       try {

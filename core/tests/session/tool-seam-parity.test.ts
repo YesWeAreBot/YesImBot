@@ -84,13 +84,16 @@ class SearchFixturePlugin extends YesImPlugin {
         properties: {},
       },
       match: ({ runtime }) => runtime.platform === "discord",
-      extendResponse: () => ({ channelPolicy: "enabled" }),
       enable: ({ responseContext }) => {
-        const policy = responseContext.search?.search?.channelPolicy;
+        const policy = responseContext.search?.channelPolicy;
         return policy === "enabled";
       },
       execute: async () => "search",
     });
+  }
+
+  override buildContext(): Record<string, unknown> {
+    return { channelPolicy: "enabled" };
   }
 }
 
@@ -106,10 +109,8 @@ describe("runtime tool seam parity", () => {
     const catalog = await service.compileTools({
       runtime,
       scope: runtime.channelKey,
-      hostInput: {},
-      sendMessageTool,
     });
-    const responseContext = await service.buildResponseContext({
+    const responseContext = await service.buildContext({
       runtime,
       scope: runtime.channelKey,
       hostInput: {},
@@ -121,9 +122,10 @@ describe("runtime tool seam parity", () => {
       scope: runtime.channelKey,
       catalog,
       responseContext,
+      builtinTools: { send_message: sendMessageTool },
     });
 
-    expect(Object.keys(catalog.tools)).toContain("send_message");
+    expect(Object.keys(catalog.tools)).not.toContain("send_message");
     expect(selection.activeToolNames).toContain("send_message");
   });
 
@@ -137,15 +139,14 @@ describe("runtime tool seam parity", () => {
 
     const catalog = await service.compileTools({
       runtime,
-      hostInput: {},
       scope: runtime.channelKey,
-      sendMessageTool,
     });
     const enabled = await service.selectTools({
       runtime,
       scope: runtime.channelKey,
       catalog,
-      responseContext: { search: { search: { channelPolicy: "enabled" } } },
+      responseContext: { search: { channelPolicy: "enabled" } },
+      builtinTools: { send_message: sendMessageTool },
     });
 
     expect(Object.keys(catalog.tools)).toContain("search");

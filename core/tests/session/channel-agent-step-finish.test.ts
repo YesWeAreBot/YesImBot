@@ -187,11 +187,11 @@ describe("ChannelRuntime handleStepFinish", () => {
         channelId: "channel-1",
       });
       const compileToolsSpy = vi.fn(async () => ({
-        tools: { send_message: sendMessageTool },
+        tools: {},
         handles: {},
         signature: "compiled-once-signature",
       }));
-      const buildResponseContextSpy = vi.fn(async () => ({}));
+      const buildContextSpy = vi.fn(async () => ({}));
       const selectToolsSpy = vi.fn(async () => ({
         activeTools: { send_message: sendMessageTool },
         activeToolNames: ["send_message"],
@@ -212,7 +212,7 @@ describe("ChannelRuntime handleStepFinish", () => {
           },
           "yesimbot.plugin": {
             compileTools: compileToolsSpy,
-            buildResponseContext: buildResponseContextSpy,
+            buildContext: buildContextSpy,
             selectTools: selectToolsSpy,
             getToolDefinitions: vi.fn(() => []),
             install: vi.fn(),
@@ -249,7 +249,7 @@ describe("ChannelRuntime handleStepFinish", () => {
 
       expect(runtime.currentSupportedToolSignature).toBe(firstSignature);
       expect(compileToolsSpy).toHaveBeenCalledTimes(1);
-      expect(buildResponseContextSpy).toHaveBeenCalledTimes(2);
+      expect(buildContextSpy).toHaveBeenCalledTimes(2);
       expect(syncAgentToolsSpy).toHaveBeenCalledTimes(1);
       expect(selectToolsSpy).toHaveBeenCalledTimes(2);
     });

@@ -1,10 +1,12 @@
 import type { Tool as AiTool, ToolExecutionOptions } from "@ai-sdk/provider-utils";
 import { tool as aiTool } from "@ai-sdk/provider-utils";
+import type { ToolSet } from "ai";
 import { Context } from "koishi";
 
 import { normalizeInputSchema } from "./schema";
 import { TOOL_DECORATOR_KEY, ToolDecoratorEntry } from "./tools";
 import {
+  InstructionProvider,
   ResponseContext,
   ToolCatalog,
   ToolEntry,
@@ -13,14 +15,12 @@ import {
   ToolRuntime,
 } from "./tools/types";
 
-export interface CompileToolsRequest<THostInput = unknown> {
+export interface CompileToolsRequest {
   runtime: ToolRuntime;
-  hostInput: THostInput;
   scope?: string;
-  sendMessageTool: AiTool;
 }
 
-export interface BuildResponseContextRequest<THostInput = unknown> {
+export interface BuildContextRequest<THostInput = unknown> {
   runtime: ToolRuntime;
   hostInput: THostInput;
   scope?: string;
@@ -32,6 +32,7 @@ export interface SelectToolsRequest {
   scope?: string;
   catalog: ToolCatalog;
   responseContext: ResponseContext;
+  builtinTools?: ToolSet;
 }
 
 export interface ToolInvoke<THostInput = unknown> {
@@ -48,10 +49,9 @@ export interface IPluginService {
   remove(name: string, options?: { scope?: string }): void;
   list(): string[];
   getToolDefinitions(scope?: string): RegisteredToolDefinition[];
+  getInstructions(scope?: string): InstructionProvider[];
   compileTools(request: CompileToolsRequest): Promise<ToolCatalog>;
-  buildResponseContext<THostInput = unknown>(
-    request: BuildResponseContextRequest<THostInput>,
-  ): Promise<ResponseContext>;
+  buildContext<THostInput>(request: BuildContextRequest<THostInput>): Promise<ResponseContext>;
   selectTools(request: SelectToolsRequest): Promise<ToolSelection>;
   invoke(invoke: ToolInvoke): Promise<unknown>;
 }
@@ -79,15 +79,18 @@ export function Metadata(meta: PluginMetadata): ClassDecorator {
   };
 }
 
-export class YesImPlugin {
+export class YesImPlugin<TConfig = unknown> {
   public readonly ctx: Context;
+  public config: TConfig;
   public readonly metadata: PluginMetadata;
   protected toolDefinitions: Map<string, RegisteredToolDefinition> = new Map();
   private lifecycleInitialized = false;
   private lifecycleInitializeTask: Promise<void> | null = null;
 
-  constructor(ctx: Context) {
+  constructor(ctx: Context, config: TConfig = {} as TConfig) {
     this.ctx = ctx;
+    this.config = config;
+
     const meta = Reflect.get(this, METADATA_KEY) as PluginMetadata | undefined;
     if (!meta) {
       throw new Error("Plugin class must be decorated with @Metadata");
@@ -129,13 +132,17 @@ export class YesImPlugin {
     ctx.on("dispose", async () => {
       const pluginService = ctx["yesimbot.plugin"] as IPluginService | undefined;
       pluginService?.remove(this.metadata.name);
-      await this.cleanup();
+      await this.dispose();
     });
   }
 
-  async init(): Promise<void> {}
+  async start(): Promise<void> {}
 
-  async cleanup(): Promise<void> {}
+  async dispose(): Promise<void> {}
+
+  async init(): Promise<void> {
+    await this.start();
+  }
 
   public getTools(): Map<string, AiTool> {
     return new Map(
@@ -145,6 +152,16 @@ export class YesImPlugin {
 
   public getToolDefinitions(): RegisteredToolDefinition[] {
     return [...this.toolDefinitions.values()];
+  }
+
+  public getInstructions(): InstructionProvider[] {
+    return [];
+  }
+
+  public buildContext<THostInput>(
+    _request: BuildContextRequest<THostInput>,
+  ): Record<string, unknown> | undefined {
+    return undefined;
   }
 
   protected registerTool(definition: ToolEntry): void {
@@ -190,7 +207,6 @@ export class YesImPlugin {
           builtin: entry.builtin,
           match: entry.match,
           enable: entry.enable,
-          extendResponse: entry.extendResponse,
           execute: async (input, options) =>
             await (handler as (input: unknown, options: ToolExecutionOptions) => unknown).call(
               this,

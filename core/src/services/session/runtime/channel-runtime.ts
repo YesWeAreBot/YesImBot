@@ -119,7 +119,7 @@ export class ChannelRuntime {
       instructionStateService,
       getBuiltInInstructions: (fallback) =>
         options.settingsManager.getBuiltInInstructions(fallback) ?? fallback,
-      contributors: options.instructionContributors,
+      contributors: options.instructions,
     });
   }
 
@@ -568,6 +568,7 @@ export class ChannelRuntime {
       bot: options.bot,
       channelId: options.channelId,
     });
+    const builtinTools = { send_message: sendMessageTool } satisfies ToolSet;
     const pluginService = options.ctx["yesimbot.plugin"] as IPluginService | undefined;
     const runtime = this.createToolRuntime(options.turnSettings, latestInput);
     const responseHostInput = this.buildResponseHostInput();
@@ -581,13 +582,11 @@ export class ChannelRuntime {
             this.currentToolCatalog = await pluginService.compileTools({
               runtime,
               scope: this.getToolScope(),
-              hostInput: responseHostInput,
-              sendMessageTool,
             });
           }
 
           const catalog = this.currentToolCatalog;
-          const responseContext = await pluginService.buildResponseContext({
+          const responseContext = await pluginService.buildContext({
             runtime,
             scope: this.getToolScope(),
             hostInput: responseHostInput,
@@ -598,14 +597,19 @@ export class ChannelRuntime {
             scope: this.getToolScope(),
             catalog,
             responseContext,
+            builtinTools,
           });
           this.currentToolSelection = toolSelection;
+          const supportedTools = {
+            ...builtinTools,
+            ...catalog.tools,
+          } satisfies ToolSet;
 
           return {
-            supportedTools: catalog.tools,
+            supportedTools,
             activeTools: toolSelection.activeTools,
             responseContext: toolSelection.responseContext,
-            signature: catalog.signature,
+            signature: JSON.stringify(Object.keys(supportedTools).sort()),
           };
         })()
       : (() => {
@@ -615,10 +619,10 @@ export class ChannelRuntime {
           );
 
           return {
-            supportedTools: { send_message: sendMessageTool },
-            activeTools: { send_message: sendMessageTool },
+            supportedTools: builtinTools,
+            activeTools: builtinTools,
             responseContext: {},
-            signature: "no-plugin-service",
+            signature: JSON.stringify(Object.keys(builtinTools).sort()),
           };
         })();
     const responseActiveTools =

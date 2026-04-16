@@ -24,28 +24,17 @@ export interface WorkspaceToolOptions {
   ) => LocalSandbox | undefined;
 }
 
-interface WorkspaceExecutionContext {
-  workspaceRoot: string;
-}
-
 function resolveWorkspaceRootFromContext(
-  context:
-    | { workspace?: WorkspaceExecutionContext | Record<string, WorkspaceExecutionContext> }
-    | undefined,
+  context: { workspace?: Record<string, unknown> } | undefined,
 ): string | undefined {
   const workspaceContext = context?.workspace;
   if (!workspaceContext) {
     return undefined;
   }
-  if (
-    typeof workspaceContext === "object" &&
-    workspaceContext !== null &&
-    "workspaceRoot" in workspaceContext &&
-    typeof workspaceContext.workspaceRoot === "string"
-  ) {
+  if (typeof workspaceContext.workspaceRoot === "string") {
     return workspaceContext.workspaceRoot;
   }
-  return Object.values(workspaceContext).find((entry) => entry?.workspaceRoot)?.workspaceRoot;
+  return undefined;
 }
 
 export async function buildWorkspacePluginToolDefinitions(
@@ -102,13 +91,6 @@ function toRegisteredToolDefinitions(
         name,
         description: tool.description ?? `${pluginName}:${name}`,
         inputSchema: tool.inputSchema,
-        extendResponse: (_hostInput, runtime) => ({
-          workspaceRoot: getWorkspaceRoot({
-            channelDir: options.channelDir,
-            runtimeBasePath: runtime.basePath,
-            config,
-          }),
-        }),
         match: ({ runtime }) => {
           ensureWorkspaceRoot(
             getWorkspaceRoot({
@@ -129,16 +111,16 @@ function toRegisteredToolDefinitions(
   });
 }
 
-function getWorkspaceRoot(options: {
+export function getWorkspaceRoot(options: {
   channelDir: string;
   runtimeBasePath?: string;
   config: WorkspacePluginConfig;
 }): string {
-  const baseDir =
-    options.config.mode === "global"
-      ? options.channelDir
-      : (options.runtimeBasePath ?? options.channelDir);
-  return join(baseDir, "workspace");
+  if (options.config.mode === "global") {
+    return options.config.globalWorkspacePath ?? join(options.channelDir, "workspace");
+  }
+
+  return join(options.runtimeBasePath ?? options.channelDir, "workspace");
 }
 
 function ensureWorkspaceRoot(workspaceRoot: string): void {
@@ -165,7 +147,7 @@ function createRuntimeAwareExecute(
     executionOptions: Parameters<NonNullable<ToolSet[string]["execute"]>>[1],
   ) => {
     const context = executionOptions.experimental_context as
-      | { workspace?: WorkspaceExecutionContext | Record<string, WorkspaceExecutionContext> }
+      | { workspace?: Record<string, unknown> }
       | undefined;
     const currentWorkspaceRoot =
       resolveWorkspaceRootFromContext(context) ?? workspaceRootFallback(options, config);

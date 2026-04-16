@@ -6,7 +6,10 @@ import { join } from "node:path";
 import type { Bot, Context, Logger } from "koishi";
 import { describe, expect, it, vi } from "vitest";
 
-import { getChannelStateDir } from "../../src/services/session/instruction-state/layout";
+import {
+  getChannelStateDir,
+  getUserStateDir,
+} from "../../src/services/session/instruction-state/layout";
 
 vi.mock("ai", () => {
   class ToolLoopAgent {
@@ -88,8 +91,8 @@ function createContextMock(baseDir: string) {
 
 function createExistingWorkspace(baseDir: string, channelId = "channel-1"): void {
   const globalRoot = join(baseDir, "sessions");
-  const channelDir = join(globalRoot, `discord-${channelId}`);
-  const workspaceDir = join(channelDir, "workspace");
+  const channelStateDir = getChannelStateDir(globalRoot, "discord", channelId);
+  const workspaceDir = join(channelStateDir, "workspace");
 
   mkdirSync(globalRoot, { recursive: true });
   writeFileSync(
@@ -97,7 +100,7 @@ function createExistingWorkspace(baseDir: string, channelId = "channel-1"): void
     JSON.stringify({ model: "test:model" }, null, 2),
   );
   mkdirSync(workspaceDir, { recursive: true });
-  writeFileSync(join(channelDir, "settings.json"), JSON.stringify({ useGlobal: true }, null, 2));
+  writeFileSync(join(channelStateDir, "settings.json"), JSON.stringify({}, null, 2));
 }
 
 function createBotMock(selfId = "bot-self"): Bot {
@@ -107,8 +110,28 @@ function createBotMock(selfId = "bot-self"): Bot {
   } as unknown as Bot;
 }
 
+function createChannelMessageInput(bot: Bot) {
+  return {
+    kind: "channel_message" as const,
+    platform: "discord",
+    channelId: "channel-1",
+    sender: {
+      userId: "user-1",
+      username: "alice",
+      nickname: "Alice",
+    },
+    content: "hello",
+    isDirect: true,
+    atSelf: true,
+    isReplyToBot: true,
+    messageId: "workspace-msg-1",
+    timestamp: Date.now(),
+    bot,
+  };
+}
+
 describe("workspace plugin lifecycle", () => {
-  it("core bootstrap does not install a scoped workspace plugin", async () => {
+  it("receiving a message does not install a scoped workspace plugin", async () => {
     const baseDir = mkdtempSync(join(tmpdir(), "athena-workspace-bootstrap-"));
     try {
       const { ctx, install } = createContextMock(baseDir);
@@ -117,9 +140,8 @@ describe("workspace plugin lifecycle", () => {
         basePath: "sessions",
       });
 
-      await expect(
-        service.getOrCreateAgent("discord", "channel-1", createBotMock()),
-      ).resolves.toBeDefined();
+      const bot = createBotMock();
+      await service.receive(createChannelMessageInput(bot), bot);
 
       expect(install).not.toHaveBeenCalled();
       expect(service.getActiveChannels()).toEqual(["discord:channel-1"]);
@@ -128,7 +150,7 @@ describe("workspace plugin lifecycle", () => {
     }
   });
 
-  it("core bootstrap does not create workspace directories or prompt files", async () => {
+  it("receiving a message creates only state directories, not legacy workspace scaffolding", async () => {
     const baseDir = mkdtempSync(join(tmpdir(), "athena-workspace-scaffold-"));
     try {
       const { ctx } = createContextMock(baseDir);
@@ -136,18 +158,19 @@ describe("workspace plugin lifecycle", () => {
         model: "test:model",
         basePath: "sessions",
       });
+      const bot = createBotMock();
 
-      await expect(
-        service.getOrCreateAgent("discord", "channel-1", createBotMock()),
-      ).resolves.toBeDefined();
+      await service.receive(createChannelMessageInput(bot), bot);
 
       const globalRoot = join(baseDir, "sessions");
       const channelDir = join(globalRoot, "discord-channel-1");
       const channelStateDir = getChannelStateDir(globalRoot, "discord", "channel-1");
+      const userStateDir = getUserStateDir(globalRoot, "discord", "user-1");
 
       expect(existsSync(globalRoot)).toBe(true);
-      expect(existsSync(channelDir)).toBe(true);
-      expect(existsSync(join(channelStateDir, "session"))).toBe(true);
+      expect(existsSync(channelDir)).toBe(false);
+      expect(existsSync(channelStateDir)).toBe(false);
+      expect(existsSync(join(userStateDir, "session"))).toBe(true);
       expect(existsSync(join(channelDir, "workspace"))).toBe(false);
       expect(existsSync(join(globalRoot, "SOUL.md"))).toBe(false);
       expect(existsSync(join(globalRoot, "AGENTS.md"))).toBe(false);
@@ -165,8 +188,9 @@ describe("workspace plugin lifecycle", () => {
         model: "test:model",
         basePath: "sessions",
       });
+      const bot = createBotMock();
 
-      await service.getOrCreateAgent("discord", "channel-1", createBotMock());
+      await service.receive(createChannelMessageInput(bot), bot);
       install.mockClear();
       remove.mockClear();
 
@@ -184,6 +208,31 @@ describe("workspace plugin lifecycle", () => {
     }
   });
 
+  it("settings reload does not bootstrap an inactive channel", async () => {
+    const baseDir = mkdtempSync(join(tmpdir(), "athena-workspace-reload-inactive-"));
+    try {
+      const { ctx, install, remove } = createContextMock(baseDir);
+      const service = new AgentSessionService(ctx, {
+        model: "test:model",
+        basePath: "sessions",
+      });
+
+      await expect(
+        service.reloadChannelSettings("discord", "channel-1", createBotMock()),
+      ).resolves.toMatchObject({
+        channelKey: "discord:channel-1",
+        status: "failed",
+        summary: "No active agent for discord:channel-1.",
+      });
+
+      expect(service.getActiveChannels()).toEqual([]);
+      expect(remove).not.toHaveBeenCalled();
+      expect(install).not.toHaveBeenCalled();
+    } finally {
+      await rm(baseDir, { recursive: true, force: true });
+    }
+  });
+
   it("service stop does not remove a scoped workspace plugin", async () => {
     const baseDir = mkdtempSync(join(tmpdir(), "athena-workspace-dispose-"));
     try {
@@ -193,7 +242,9 @@ describe("workspace plugin lifecycle", () => {
         basePath: "sessions",
       });
 
-      const runtime = await service.getOrCreateAgent("discord", "channel-1", createBotMock());
+      const bot = createBotMock();
+      await service.receive(createChannelMessageInput(bot), bot);
+      const runtime = service.getAgent("discord:channel-1");
       expect(runtime).toBeDefined();
 
       await (service as unknown as { stop(): Promise<void> }).stop();

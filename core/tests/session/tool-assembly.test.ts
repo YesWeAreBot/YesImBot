@@ -84,15 +84,18 @@ class SearchPlugin extends YesImPlugin {
         properties: {},
       },
       match: ({ runtime }) => runtime.platform === "discord",
-      extendResponse: () => ({ channelPolicy: "enabled" }),
       enable: ({ responseContext }) => {
-        const context = responseContext.search?.search as
+        const context = responseContext.search as
           | { channelPolicy?: "enabled" | "disabled" }
           | undefined;
         return context?.channelPolicy === "enabled";
       },
       execute: async () => "search",
     });
+  }
+
+  override buildContext(): Record<string, unknown> {
+    return { channelPolicy: "enabled" };
   }
 }
 
@@ -107,15 +110,14 @@ describe("PluginService tool lifecycle", () => {
 
     const catalog = await service.compileTools({
       runtime,
-      hostInput: {},
       scope: runtime.channelKey,
-      sendMessageTool,
     });
     const enabled = await service.selectTools({
       runtime,
       scope: runtime.channelKey,
       catalog,
-      responseContext: { search: { search: { channelPolicy: "enabled" } } },
+      responseContext: { search: { channelPolicy: "enabled" } },
+      builtinTools: { send_message: sendMessageTool },
     });
 
     expect(Object.keys(catalog.tools)).toContain("search");

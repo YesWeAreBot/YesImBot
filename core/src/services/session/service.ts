@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { Bot, Context, Service, Session } from "koishi";
 
 import { resolveSenderIdentity, summarizeReplyContent } from "./channel-message";
-import type { InstructionContributor } from "./instruction-contributor";
 import { InstructionStateService } from "./instruction-state/service";
 import { ChannelRuntime } from "./runtime";
 import { SessionManager } from "./session-manager";
@@ -15,22 +14,7 @@ import {
   type SettingsIssue,
   type SettingsReloadMetadata,
 } from "./settings-manager";
-import type {
-  ChannelBootstrapResult,
-  ChannelBootstrapStatus,
-  ChannelMessageInput,
-  ChannelKey,
-} from "./types/index";
-
-interface BootstrappedChannelRuntime {
-  channelKey: ChannelKey;
-  channelDir: string;
-  platform: string;
-  channelId: string;
-  sessionManager: SessionManager;
-  settingsManager: SettingsManager;
-  status: Extract<ChannelBootstrapStatus, "restored" | "created">;
-}
+import type { ChannelMessageInput, ChannelKey } from "./types/index";
 
 export interface ChannelSettingsReloadResult {
   channelKey: ChannelKey;
@@ -130,7 +114,7 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
   static inject = ["yesimbot.model", "yesimbot.plugin"];
 
   private agents: Map<ChannelKey, ChannelRuntime> = new Map();
-  private bootstrapPromises: Map<ChannelKey, Promise<ChannelRuntime>> = new Map();
+  private pendingAgentCreations: Map<ChannelKey, Promise<ChannelRuntime>> = new Map();
   /** TTL-based dedupe set for messageIds. Map<messageId, expiryTimestamp>. */
   private recentMessageIds: Map<string, number> = new Map();
   private readonly dedupeTtlMs = 120000;
@@ -227,18 +211,7 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
         const resolvedChannelId = channelId;
 
         const channelKey: ChannelKey = `${resolvedPlatform}:${resolvedChannelId}`;
-        let agent = this.agents.get(channelKey);
-        if (!agent) {
-          const bootstrap = await this.bootstrapChannelForManagement(
-            resolvedPlatform,
-            resolvedChannelId,
-            session?.bot,
-          );
-          if (bootstrap.status === "failed") {
-            return `Failed to bootstrap ${channelKey}.`;
-          }
-          agent = this.agents.get(channelKey);
-        }
+        const agent = this.agents.get(channelKey);
         if (!agent) {
           return `No active agent for ${channelKey}.`;
         }
@@ -306,7 +279,7 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
       this.logger.debug(`Aborted agent for ${key}`);
     }
     this.agents.clear();
-    this.bootstrapPromises.clear();
+    this.pendingAgentCreations.clear();
     this.recentMessageIds.clear();
     this.logger.info("AgentSessionService stopped");
   }
@@ -329,7 +302,8 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
       return;
     }
 
-    const agent = await this.getOrCreateAgent(input.platform, input.channelId, routeBot);
+    this.recordInstructionState(input);
+    const agent = await this.getOrCreateAgent(input, routeBot);
     await agent.receive(input);
   }
 
@@ -361,7 +335,8 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
   // =========================================================================
 
   /** Get an existing agent or create a new one for the channel. */
-  async getOrCreateAgent(platform: string, channelId: string, bot?: Bot): Promise<ChannelRuntime> {
+  private async getOrCreateAgent(input: ChannelMessageInput, bot?: Bot): Promise<ChannelRuntime> {
+    const { platform, channelId } = input;
     const channelKey: ChannelKey = `${platform}:${channelId}`;
     const existing = this.agents.get(channelKey);
     if (existing) {
@@ -369,85 +344,34 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
       return existing;
     }
 
-    const pending = this.bootstrapPromises.get(channelKey);
+    const pending = this.pendingAgentCreations.get(channelKey);
     if (pending) {
       const agent = await pending;
       agent.bindBot(bot);
       return agent;
     }
 
-    const bootstrapPromise = this.createAndStoreAgent(channelKey, platform, channelId, bot).finally(
-      () => {
-        this.bootstrapPromises.delete(channelKey);
-      },
-    );
-    this.bootstrapPromises.set(channelKey, bootstrapPromise);
+    const creationPromise = this.createAndStoreAgent(channelKey, input, bot).finally(() => {
+      this.pendingAgentCreations.delete(channelKey);
+    });
+    this.pendingAgentCreations.set(channelKey, creationPromise);
 
-    return bootstrapPromise;
-  }
-
-  async bootstrapChannelForManagement(
-    platform: string,
-    channelId: string,
-    bot?: Bot,
-  ): Promise<ChannelBootstrapResult> {
-    const channelKey: ChannelKey = `${platform}:${channelId}`;
-    const existing = this.agents.get(channelKey);
-    if (existing) {
-      existing.bindBot(bot);
-      return {
-        channelKey,
-        status: "ready",
-      };
-    }
-
-    try {
-      const runtime = await this.bootstrapChannelRuntime(platform, channelId);
-      const agent = this.createChannelRuntime(runtime, bot);
-
-      this.agents.set(channelKey, agent);
-      return {
-        channelKey,
-        status: runtime.status,
-      };
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.error(`Failed to bootstrap channel ${channelKey} for management:`, error);
-      return {
-        channelKey,
-        status: "failed",
-        error: message,
-      };
-    }
+    return creationPromise;
   }
 
   private async createAndStoreAgent(
     channelKey: ChannelKey,
-    platform: string,
-    channelId: string,
+    input: ChannelMessageInput,
     bot?: Bot,
   ): Promise<ChannelRuntime> {
-    const runtime = await this.bootstrapChannelRuntime(platform, channelId);
-    const agent = this.createChannelRuntime(runtime, bot);
-
-    this.agents.set(channelKey, agent);
-    return agent;
-  }
-
-  private async bootstrapChannelRuntime(
-    platform: string,
-    channelId: string,
-  ): Promise<BootstrappedChannelRuntime> {
-    const channelKey: ChannelKey = `${platform}:${channelId}`;
-
+    const { platform, channelId } = input;
     const globalSettingsPath = this.getGlobalSettingsPath();
-    const channelDir = this.getChannelDir(platform, channelId);
-    const sessionDir = this.getSessionDir(platform, channelId);
-    const channelSettingsPath = this.getChannelSettingsPath(channelDir);
+    const basePath = this.getRuntimeStateDir(input);
+    const sessionDir = join(basePath, "session");
+    const channelSettingsPath = this.getRuntimeSettingsPath(input);
 
     this.instructionStateService.ensureGlobalState();
-    this.instructionStateService.ensureChannelState(platform, channelId);
-    mkdirSync(channelDir, { recursive: true });
+    this.ensureRuntimeState(input);
     mkdirSync(sessionDir, { recursive: true });
 
     const settingsManager = new SettingsManager({
@@ -470,48 +394,51 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
       this.logger.debug(`Created new session for ${channelKey}`);
     }
 
-    return {
-      channelKey,
-      platform,
-      channelId,
-      channelDir,
-      sessionManager,
-      settingsManager,
-      status,
-    };
-  }
-
-  private createChannelRuntime(runtime: BootstrappedChannelRuntime, bot?: Bot): ChannelRuntime {
-    const { channelDir, platform, channelId, sessionManager, settingsManager } = runtime;
-    const channelKey: ChannelKey = `${platform}:${channelId}`;
-
-    return new ChannelRuntime(this.ctx, {
+    const agent = new ChannelRuntime(this.ctx, {
       bot,
       sessionManager,
       settingsManager,
       instructionStateService: this.instructionStateService,
-      instructionContributors: this.getInstructionContributors(channelKey),
+      instructions: this.collectInstructions(channelKey),
       platform,
       channelId,
-      basePath: channelDir,
+      basePath,
     });
+
+    this.agents.set(channelKey, agent);
+    return agent;
   }
 
-  private getInstructionContributors(channelKey: ChannelKey): InstructionContributor[] {
-    const pluginService = this.ctx["yesimbot.plugin"] as
-      | {
-          getInstructionContributors?: (scope?: string) => InstructionContributor[];
-        }
-      | undefined;
-    return pluginService?.getInstructionContributors?.(channelKey) ?? [];
+  private collectInstructions(channelKey: ChannelKey) {
+    const pluginService = this.ctx["yesimbot.plugin"];
+    return (pluginService?.getInstructions?.(channelKey) as never) ?? [];
   }
 
-  private getChannelDir(platform: string, channelId: string): string {
-    return join(this.ctx.baseDir, this.config.basePath, `${platform}-${channelId}`);
+  private getRuntimeStateDir(
+    input: Pick<ChannelMessageInput, "platform" | "channelId" | "isDirect" | "sender">,
+  ): string {
+    if (input.isDirect) {
+      return this.instructionStateService.getUserStateDir(input.platform, input.sender.userId);
+    }
+
+    return this.instructionStateService.getChannelStateDir(input.platform, input.channelId);
   }
 
-  private getSessionDir(platform: string, channelId: string): string {
-    return join(this.instructionStateService.getChannelStateDir(platform, channelId), "session");
+  private ensureRuntimeState(
+    input: Pick<ChannelMessageInput, "platform" | "channelId" | "isDirect" | "sender">,
+  ): void {
+    if (input.isDirect) {
+      this.instructionStateService.ensureUserState(input.platform, input.sender.userId);
+      return;
+    }
+
+    this.instructionStateService.ensureChannelState(input.platform, input.channelId);
+  }
+
+  private getRuntimeSettingsPath(
+    input: Pick<ChannelMessageInput, "platform" | "channelId" | "isDirect" | "sender">,
+  ): string {
+    return join(this.getRuntimeStateDir(input), "settings.json");
   }
 
   private getGlobalRoot(): string {
@@ -522,37 +449,19 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
     return join(this.getGlobalRoot(), "settings.json");
   }
 
-  private getChannelSettingsPath(channelDir: string): string {
-    return join(channelDir, "settings.json");
-  }
-
   async reloadChannelSettings(
     platform: string,
     channelId: string,
-    bot?: Bot,
+    _bot?: Bot,
   ): Promise<ChannelSettingsReloadResult> {
     const channelKey: ChannelKey = `${platform}:${channelId}`;
 
-    let agent = this.agents.get(channelKey);
-    if (!agent) {
-      const bootstrap = await this.bootstrapChannelForManagement(platform, channelId, bot);
-      if (bootstrap.status === "failed") {
-        return {
-          channelKey,
-          status: "failed",
-          error: bootstrap.error,
-          summary: `Failed to bootstrap ${channelKey} for settings reload${bootstrap.error ? `: ${bootstrap.error}` : "."}`,
-        };
-      }
-
-      agent = this.agents.get(channelKey);
-    }
-
+    const agent = this.agents.get(channelKey);
     if (!agent) {
       return {
         channelKey,
         status: "failed",
-        summary: `Failed to load agent for ${channelKey}.`,
+        summary: `No active agent for ${channelKey}.`,
       };
     }
 
@@ -677,6 +586,29 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
   /** Get an existing agent (without creating). */
   getAgent(channelKey: ChannelKey): ChannelRuntime | undefined {
     return this.agents.get(channelKey);
+  }
+
+  private recordInstructionState(input: ChannelMessageInput): void {
+    this.instructionStateService.ensureGlobalState();
+    if (!input.isDirect) {
+      this.instructionStateService.ensureChannelState(input.platform, input.channelId);
+      this.instructionStateService.writeChannelMeta({
+        platform: input.platform,
+        channelId: input.channelId,
+        channelName: undefined,
+        kind: "group",
+      });
+      return;
+    }
+
+    this.instructionStateService.ensureUserState(input.platform, input.sender.userId);
+    this.instructionStateService.writeUserMeta({
+      platform: input.platform,
+      userId: input.sender.userId,
+      username: input.sender.username,
+      displayName: input.sender.nickname ?? input.sender.username,
+      kind: "private-user",
+    });
   }
 
   /** List all active channel keys. */

@@ -1,4 +1,5 @@
 import { Metadata, YesImPlugin } from "@yesimbot/plugin-sdk";
+import type { InstructionProvider } from "@yesimbot/plugin-sdk";
 import type { Context } from "koishi";
 import { Schema } from "koishi";
 
@@ -13,11 +14,6 @@ interface InstructionBlock {
   priority: number;
 }
 
-interface InstructionContributor {
-  name: string;
-  collect: (_context: unknown) => Promise<InstructionBlock[]>;
-}
-
 export interface SkillPluginConfig {
   skills: string[];
 }
@@ -26,7 +22,7 @@ export interface SkillPluginConfig {
   name: "skill",
   description: "Skill index and runtime skill tools",
 })
-export default class SkillPlugin extends YesImPlugin {
+export default class SkillPlugin extends YesImPlugin<SkillPluginConfig> {
   static name = "skill";
   static inject = ["yesimbot.plugin"];
   static Config: Schema<SkillPluginConfig> = Schema.object({
@@ -36,28 +32,13 @@ export default class SkillPlugin extends YesImPlugin {
   });
 
   private readonly baseDir: string;
-  private readonly config: SkillPluginConfig;
-  private initialized = false;
 
   constructor(ctx: Context, config: SkillPluginConfig) {
-    super(ctx);
+    super(ctx, config);
     this.baseDir = ctx.baseDir;
-    this.config = config;
   }
 
-  override getToolDefinitions() {
-    if (!this.initialized) {
-      throw new Error("SkillPlugin tool definitions accessed before init()");
-    }
-
-    return super.getToolDefinitions();
-  }
-
-  override async init(): Promise<void> {
-    if (this.initialized) {
-      return;
-    }
-
+  override async start(): Promise<void> {
     const definitions = await buildSkillPluginToolDefinitions({
       baseDir: this.baseDir,
       skills: this.config.skills,
@@ -65,11 +46,9 @@ export default class SkillPlugin extends YesImPlugin {
     for (const definition of definitions) {
       this.registerToolDefinition(definition);
     }
-
-    this.initialized = true;
   }
 
-  getInstructionContributors(): InstructionContributor[] {
+  override getInstructions(): InstructionProvider[] {
     return [
       {
         name: "skill",
@@ -98,7 +77,7 @@ export default class SkillPlugin extends YesImPlugin {
               layer: "extension",
               priority: 60,
             },
-          ];
+          ] as unknown[];
         },
       },
     ];

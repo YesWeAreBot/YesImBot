@@ -204,7 +204,7 @@ describe("typed runtime input wiring", () => {
 
     await service.receive(channelMessageInput);
 
-    expect(getOrCreateAgentSpy).toHaveBeenCalledWith("discord", "channel-1", undefined);
+    expect(getOrCreateAgentSpy).toHaveBeenCalledWith(channelMessageInput, undefined);
     expect(agentReceive).toHaveBeenCalledWith(channelMessageInput);
   });
 

@@ -156,17 +156,21 @@ class SearchPlugin extends YesImPlugin {
         required: ["query"],
       },
       match: ({ runtime }) => runtime.platform === "discord",
-      extendResponse: (hostInput: { allowSearch?: boolean }) => ({
-        channelPolicy: hostInput.allowSearch === true ? "enabled" : "disabled",
-      }),
       enable: ({ responseContext }) => {
-        const context = responseContext.search?.search_docs as
+        const context = responseContext.search as
           | { channelPolicy?: "enabled" | "disabled" }
           | undefined;
         return context?.channelPolicy === "enabled";
       },
       execute: async (input, options) => await this.executeSpy(input, options),
     });
+  }
+
+  override buildContext<THostInput>(request: { hostInput: THostInput }): Record<string, unknown> {
+    const host = request.hostInput as { allowSearch?: boolean };
+    return {
+      channelPolicy: host.allowSearch === true ? "enabled" : "disabled",
+    };
   }
 }
 
@@ -286,7 +290,7 @@ describe("PluginService tool lifecycle", () => {
     const ctx = createContextMock();
     const service = new PluginService(ctx);
     const runtime = createToolRuntime();
-    const sendMessageTool = createAiTool("send_message");
+    const _sendMessageTool = createAiTool("send_message");
 
     await service.install(
       new SearchPlugin(
@@ -298,14 +302,10 @@ describe("PluginService tool lifecycle", () => {
     const first = await service.compileTools({
       runtime,
       scope: runtime.channelKey,
-      hostInput: {},
-      sendMessageTool,
     });
     const second = await service.compileTools({
       runtime,
       scope: runtime.channelKey,
-      hostInput: {},
-      sendMessageTool,
     });
 
     expect(first.signature).toBe(second.signature);
@@ -316,7 +316,7 @@ describe("PluginService tool lifecycle", () => {
     const ctx = createContextMock();
     const service = new PluginService(ctx);
     const runtime = createToolRuntime();
-    const sendMessageTool = createAiTool("send_message");
+    const _sendMessageTool = createAiTool("send_message");
 
     await service.install(
       new SearchPlugin(
@@ -328,10 +328,8 @@ describe("PluginService tool lifecycle", () => {
     const catalog = await service.compileTools({
       runtime,
       scope: runtime.channelKey,
-      hostInput: {},
-      sendMessageTool,
     });
-    const responseContext = await service.buildResponseContext({
+    const responseContext = await service.buildContext({
       runtime,
       hostInput: { allowSearch: true },
       catalog,
@@ -340,6 +338,7 @@ describe("PluginService tool lifecycle", () => {
       runtime,
       catalog,
       responseContext,
+      builtinTools: { send_message: _sendMessageTool },
     });
 
     expect(Object.keys(selection.activeTools)).toEqual(["send_message", "search_docs"]);
@@ -349,7 +348,7 @@ describe("PluginService tool lifecycle", () => {
     const ctx = createContextMock();
     const service = new PluginService(ctx);
     const runtime = createToolRuntime();
-    const sendMessageTool = createAiTool("send_message");
+    const _sendMessageTool = createAiTool("send_message");
 
     await service.install(
       new SearchPlugin(
@@ -361,14 +360,13 @@ describe("PluginService tool lifecycle", () => {
     const catalog = await service.compileTools({
       runtime,
       scope: runtime.channelKey,
-      hostInput: {},
-      sendMessageTool,
     });
 
     const selection = await service.selectTools({
       runtime,
       catalog,
-      responseContext: { search: { search_docs: { channelPolicy: "disabled" } } },
+      responseContext: { search: { channelPolicy: "disabled" } },
+      builtinTools: { send_message: _sendMessageTool },
     });
 
     expect(Object.keys(selection.activeTools)).toEqual(["send_message"]);
@@ -378,20 +376,19 @@ describe("PluginService tool lifecycle", () => {
     const ctx = createContextMock();
     const service = new PluginService(ctx);
     const runtime = createToolRuntime();
-    const sendMessageTool = createAiTool("send_message");
+    const _sendMessageTool = createAiTool("send_message");
 
     await service.install(new AlwaysOnPlugin(ctx));
 
     const catalog = await service.compileTools({
       runtime,
       scope: runtime.channelKey,
-      hostInput: {},
-      sendMessageTool,
     });
     const selection = await service.selectTools({
       runtime,
       catalog,
       responseContext: {},
+      builtinTools: { send_message: _sendMessageTool },
     });
 
     expect(Object.keys(selection.activeTools)).toEqual(["send_message", "always_on"]);
@@ -424,7 +421,7 @@ describe("PluginService tool lifecycle", () => {
     const ctx = createContextMock();
     const service = new PluginService(ctx);
     const runtime = createToolRuntime();
-    const sendMessageTool = createAiTool("send_message");
+    const _sendMessageTool = createAiTool("send_message");
 
     await service.install(
       new SearchPlugin(
@@ -436,8 +433,6 @@ describe("PluginService tool lifecycle", () => {
     const first = await service.compileTools({
       runtime,
       scope: runtime.channelKey,
-      hostInput: {},
-      sendMessageTool,
     });
 
     const scopedPlugin = new ScopedPlugin(ctx);
@@ -446,8 +441,6 @@ describe("PluginService tool lifecycle", () => {
     const second = await service.compileTools({
       runtime,
       scope: runtime.channelKey,
-      hostInput: {},
-      sendMessageTool,
     });
 
     expect(second).not.toBe(first);
@@ -459,7 +452,7 @@ describe("PluginService tool lifecycle", () => {
     const ctx = createContextMock();
     const service = new PluginService(ctx);
     const runtime = createToolRuntime();
-    const sendMessageTool = createAiTool("send_message");
+    const _sendMessageTool = createAiTool("send_message");
     const executeSpy = vi.fn(async (input: unknown, options: ToolExecutionOptions) => ({
       input,
       toolCallId: options.toolCallId,
@@ -470,8 +463,6 @@ describe("PluginService tool lifecycle", () => {
     await service.compileTools({
       runtime,
       scope: runtime.channelKey,
-      hostInput: {},
-      sendMessageTool,
     });
 
     await expect(
@@ -487,9 +478,7 @@ describe("PluginService tool lifecycle", () => {
       toolCallId: "invoke:search_docs",
       context: {
         search: {
-          search_docs: {
-            channelPolicy: "enabled",
-          },
+          channelPolicy: "enabled",
         },
       },
     });

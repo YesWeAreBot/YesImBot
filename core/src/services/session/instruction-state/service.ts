@@ -6,6 +6,7 @@ import {
   getChannelInstructionsDir,
   getChannelMetaPath,
   getGlobalInstructionsDir,
+  getUserStateDir,
   getUserInstructionsDir,
   getUserMetaPath,
 } from "./layout";
@@ -24,6 +25,10 @@ export class InstructionStateService {
 
   getChannelStateDir(platform: string, channelId: string): string {
     return getChannelStateDir(this.basePath, platform, channelId);
+  }
+
+  getUserStateDir(platform: string, userId: string): string {
+    return getUserStateDir(this.basePath, platform, userId);
   }
 
   getUserInstructionsDir(platform: string, userId: string): string {

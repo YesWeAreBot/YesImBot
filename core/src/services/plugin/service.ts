@@ -1,9 +1,10 @@
 import type { Tool as AiTool } from "@ai-sdk/provider-utils";
 import { YesImPlugin } from "@yesimbot/plugin-sdk";
 import type {
-  BuildResponseContextRequest,
+  BuildContextRequest,
   CompileToolsRequest,
   IPluginService,
+  InstructionProvider,
   RegisteredToolDefinition,
   ResponseContext,
   SelectToolsRequest,
@@ -14,11 +15,6 @@ import type {
 } from "@yesimbot/plugin-sdk";
 import type { ToolSet } from "ai";
 import { Context, Service } from "koishi";
-
-type InstructionContributorLike = {
-  name: string;
-  collect: (context: unknown) => Promise<unknown[]> | unknown[];
-};
 
 export interface PluginServiceConfig {
   debugLevel?: number;
@@ -79,15 +75,14 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
     return Object.fromEntries(this.getToolDefinitions().map((d) => [d.name, d.tool]));
   }
 
-  public getInstructionContributors(scope?: string): InstructionContributorLike[] {
-    const contributors: InstructionContributorLike[] = [];
-    this.pushInstructionContributors("global", contributors);
+  public getInstructions(scope?: string): InstructionProvider[] {
+    const providers: InstructionProvider[] = [];
+    this.pushInstructions("global", providers);
     const scopeKey = this.normalizeScopeKey(scope);
     if (scopeKey !== "global") {
-      this.pushInstructionContributors(scopeKey, contributors);
+      this.pushInstructions(scopeKey, providers);
     }
-
-    return contributors;
+    return providers;
   }
 
   public async compileTools(request: CompileToolsRequest): Promise<ToolCatalog> {
@@ -99,9 +94,7 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
     }
 
     const definitions = this.getToolDefinitions(request.scope);
-    const tools: ToolSet = {
-      send_message: request.sendMessageTool,
-    };
+    const tools: ToolSet = {};
     const handles: Record<string, ToolHandle> = {};
 
     for (const definition of definitions) {
@@ -143,19 +136,18 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
     return catalog;
   }
 
-  public async buildResponseContext<THostInput = unknown>(
-    request: BuildResponseContextRequest<THostInput>,
+  public async buildContext<THostInput>(
+    request: BuildContextRequest<THostInput>,
   ): Promise<ResponseContext> {
     const responseContext: ResponseContext = {};
 
-    for (const handle of Object.values(request.catalog.handles)) {
-      const extension = handle.definition.extendResponse?.(request.hostInput, request.runtime);
+    for (const plugin of this.collectPlugins(request.scope)) {
+      const extension = plugin.buildContext(request);
       if (extension === undefined) {
         continue;
       }
-      const pluginContext = (responseContext[handle.pluginName] ??= {});
-      pluginContext[handle.name] = {
-        ...(pluginContext[handle.name] ?? {}),
+      responseContext[plugin.metadata.name] = {
+        ...(responseContext[plugin.metadata.name] ?? {}),
         ...extension,
       };
     }
@@ -164,7 +156,7 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
   }
 
   public async selectTools(request: SelectToolsRequest): Promise<ToolSelection> {
-    const activeTools: ToolSet = { send_message: request.catalog.tools.send_message };
+    const activeTools: ToolSet = { ...(request.builtinTools ?? {}) };
 
     for (const handle of Object.values(request.catalog.handles)) {
       if (
@@ -191,7 +183,7 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
     if (!catalog) {
       throw new Error(`Tool catalog not compiled for channel scope: ${catalogKey}`);
     }
-    const responseContext = await this.buildResponseContext({
+    const responseContext = await this.buildContext({
       runtime: request.runtime,
       hostInput: request.hostInput,
       scope: request.scope,
@@ -237,23 +229,35 @@ export class PluginService extends Service<PluginServiceConfig> implements IPlug
     return definitions;
   }
 
+  private collectPlugins(scope?: string): YesImPlugin[] {
+    const plugins: YesImPlugin[] = [];
+    this.pushPlugins("global", plugins);
+    const scopeKey = this.normalizeScopeKey(scope);
+    if (scopeKey !== "global") {
+      this.pushPlugins(scopeKey, plugins);
+    }
+    return plugins;
+  }
+
   private pushPluginDefinitions(scope: string, out: RegisteredToolDefinition[]): void {
     for (const plugin of this.plugins.get(scope)?.values() ?? []) {
       out.push(...plugin.getToolDefinitions());
     }
   }
 
-  private pushInstructionContributors(scope: string, out: InstructionContributorLike[]): void {
+  private pushPlugins(scope: string, out: YesImPlugin[]): void {
     for (const plugin of this.plugins.get(scope)?.values() ?? []) {
-      const provider = plugin as YesImPlugin & {
-        getInstructionContributors?: () => InstructionContributorLike[];
-      };
-      const contributors = provider.getInstructionContributors?.();
-      if (!contributors || contributors.length === 0) {
+      out.push(plugin);
+    }
+  }
+
+  private pushInstructions(scope: string, out: InstructionProvider[]): void {
+    for (const plugin of this.plugins.get(scope)?.values() ?? []) {
+      const providers = plugin.getInstructions();
+      if (!providers || providers.length === 0) {
         continue;
       }
-
-      out.push(...contributors);
+      out.push(...providers);
     }
   }
 

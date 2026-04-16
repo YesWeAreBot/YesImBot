@@ -44,7 +44,7 @@ export interface ChannelRuntimeOptions {
   sessionManager: SessionManager;
   settingsManager: ChannelRuntimeSettingsManager;
   instructionStateService?: InstructionStateService;
-  instructionContributors?: InstructionContributor[];
+  instructions?: InstructionContributor[];
   willingnessJudge?: WillingnessJudge;
   platform: string;
   channelId: string;

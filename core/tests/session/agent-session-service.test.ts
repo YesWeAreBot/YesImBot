@@ -1,4 +1,12 @@
-import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -54,6 +62,12 @@ vi.mock("koishi", () => {
   };
 });
 
+import {
+  getChannelMetaPath,
+  getChannelStateDir,
+  getUserMetaPath,
+  getUserStateDir,
+} from "../../src/services/session/instruction-state/layout";
 import { ChannelRuntime } from "../../src/services/session/runtime";
 import { AgentSessionService } from "../../src/services/session/service";
 import { SessionManager } from "../../src/services/session/session-manager";
@@ -80,24 +94,25 @@ function createLoggerMock(): Logger {
 }
 
 interface PluginServiceMockOptions {
-  compileTools?: (request: { sendMessageTool?: Record<string, unknown> }) => Promise<{
+  compileTools?: () => Promise<{
     tools: Record<string, unknown>;
     handles: Record<string, unknown>;
     signature: string;
   }>;
-  buildResponseContext?: () => Promise<Record<string, unknown>>;
+  buildContext?: () => Promise<Record<string, unknown>>;
   selectTools?: (request: {
     runtime?: unknown;
     scope?: string;
     catalog: { tools: Record<string, unknown> };
     responseContext: Record<string, unknown>;
+    builtinTools?: Record<string, unknown>;
   }) => Promise<{
     activeTools: Record<string, unknown>;
     activeToolNames: string[];
     responseContext: Record<string, unknown>;
   }>;
   getToolDefinitions?: () => unknown[];
-  getInstructionContributors?: () => unknown[];
+  getInstructions?: () => unknown[];
   install?: (plugin: unknown, options?: { scope?: string }) => Promise<void>;
   remove?: (name: string, options?: { scope?: string }) => void;
 }
@@ -139,18 +154,13 @@ function createContextMock(
     ctx["yesimbot.plugin"] = {
       compileTools: vi.fn(
         pluginOptions.compileTools ??
-          (async (request: { sendMessageTool?: Record<string, unknown> }) => {
-            const sendMessageTool = request.sendMessageTool;
-            const tools = sendMessageTool ? { send_message: sendMessageTool } : {};
-
-            return {
-              tools,
-              handles: {},
-              signature: JSON.stringify(Object.keys(tools).sort()),
-            };
-          }),
+          (async () => ({
+            tools: {},
+            handles: {},
+            signature: "[]",
+          })),
       ),
-      buildResponseContext: vi.fn(pluginOptions.buildResponseContext ?? (async () => ({}))),
+      buildContext: vi.fn(pluginOptions.buildContext ?? (async () => ({}))),
       selectTools: vi.fn(
         pluginOptions.selectTools ??
           (async (request: {
@@ -158,8 +168,9 @@ function createContextMock(
             scope?: string;
             catalog: { tools: Record<string, unknown> };
             responseContext: Record<string, unknown>;
+            builtinTools?: Record<string, unknown>;
           }) => {
-            const activeTools = request.catalog.tools;
+            const activeTools = { ...(request.builtinTools ?? {}), ...request.catalog.tools };
 
             return {
               activeTools,
@@ -169,7 +180,7 @@ function createContextMock(
           }),
       ),
       getToolDefinitions: vi.fn(pluginOptions.getToolDefinitions ?? (() => [])),
-      getInstructionContributors: vi.fn(pluginOptions.getInstructionContributors ?? (() => [])),
+      getInstructions: vi.fn(pluginOptions.getInstructions ?? (() => [])),
       install: vi.fn(pluginOptions.install ?? (async () => undefined)),
       remove: vi.fn(pluginOptions.remove ?? (() => undefined)),
     };
@@ -272,6 +283,58 @@ afterEach(() => {
 
 describe("AgentSessionService", () => {
   describe("event ingress", () => {
+    it("creates only user-scoped state on the first direct message", async () => {
+      const tempDir = mkdtempSync(join(tmpdir(), "athena-state-meta-on-message-"));
+      tempDirs.push(tempDir);
+      const ctx = createContextMock(tempDir);
+      const service = new AgentSessionService(ctx, {
+        model: "test:model",
+        basePath: "sessions",
+      });
+      const bot = createBotMock();
+      const globalRoot = join(tempDir, "sessions");
+      const legacyChannelDir = join(globalRoot, "discord-channel-1");
+
+      mkdirSync(legacyChannelDir, { recursive: true });
+      writeFileSync(join(legacyChannelDir, "stale.txt"), "legacy", "utf8");
+
+      generateMock.mockResolvedValueOnce();
+
+      await service.receive(
+        createChannelMessageInput({
+          bot,
+          isDirect: true,
+          messageId: "state-meta-msg-1",
+          sender: {
+            userId: "user-42",
+            username: "alice",
+            nickname: "Alice",
+          },
+        }),
+        bot,
+      );
+
+      const channelStateDir = getChannelStateDir(globalRoot, "discord", "channel-1");
+      const userStateDir = getUserStateDir(globalRoot, "discord", "user-42");
+      const userMeta = JSON.parse(
+        readFileSync(getUserMetaPath(globalRoot, "discord", "user-42"), "utf8"),
+      );
+
+      expect(existsSync(channelStateDir)).toBe(false);
+      expect(existsSync(getChannelMetaPath(globalRoot, "discord", "channel-1"))).toBe(false);
+      expect(existsSync(userStateDir)).toBe(true);
+      expect(existsSync(join(userStateDir, "session"))).toBe(true);
+      expect(existsSync(legacyChannelDir)).toBe(true);
+      expect(readFileSync(join(legacyChannelDir, "stale.txt"), "utf8")).toBe("legacy");
+      expect(userMeta).toEqual({
+        platform: "discord",
+        userId: "user-42",
+        username: "alice",
+        displayName: "Alice",
+        kind: "private-user",
+      });
+    });
+
     it("instruction runtime environment block is included in generated system prompt", async () => {
       const tempDir = mkdtempSync(join(tmpdir(), "athena-instruction-runtime-environment-"));
       tempDirs.push(tempDir);
@@ -691,7 +754,7 @@ describe("AgentSessionService", () => {
       const tempDir = mkdtempSync(join(tmpdir(), "athena-skill-contributor-service-"));
       tempDirs.push(tempDir);
       const ctx = createContextMock(tempDir, {
-        getInstructionContributors: () => [
+        getInstructions: () => [
           {
             name: "skill",
             collect: async () => [
@@ -742,7 +805,7 @@ describe("AgentSessionService", () => {
   });
 
   describe("output delivery", () => {
-    it("stores channel sessions under the encoded state tree", async () => {
+    it("stores direct-message sessions under the encoded user state tree", async () => {
       const baseDir = mkdtempSync(join(tmpdir(), "athena-session-state-"));
       tempDirs.push(baseDir);
 
@@ -764,7 +827,7 @@ describe("AgentSessionService", () => {
 
       const sessionDir = join(
         baseDir,
-        "data/yesimbot/agents/state/channels/discord/Y2hhbm5lbC93aXRoOnNwZWNpYWwjY2hhcnM",
+        "data/yesimbot/agents/state/users/discord/dXNlci0x",
         "session",
       );
 
@@ -800,7 +863,14 @@ describe("AgentSessionService", () => {
 
       await service.receive(event, bot);
 
-      expect(routeSpy).toHaveBeenCalledWith("discord", "origin-channel", bot);
+      expect(routeSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          platform: "discord",
+          channelId: "origin-channel",
+          messageId: "route-msg-1",
+        }),
+        bot,
+      );
       expect(agentReceive).toHaveBeenCalledWith(
         expect.objectContaining({
           kind: "channel_message",
@@ -916,47 +986,7 @@ describe("AgentSessionService", () => {
         model: "test:model",
         basePath: "sessions",
       });
-
-      const bootstrap = await restartedService.bootstrapChannelForManagement(
-        "discord",
-        "channel-restart",
-        restartBot,
-      );
-
-      const restoredRuntime = restartedService.getAgent("discord:channel-restart");
-      const restoredTimeline = restoredRuntime?.sessionManager.getTimeline() ?? [];
-
-      expect(bootstrap).toMatchObject({
-        channelKey: "discord:channel-restart",
-        status: "restored",
-      });
-      expect(restartedService.getActiveChannels()).toEqual(["discord:channel-restart"]);
-      expect(restoredRuntime).toBeDefined();
-      expect(
-        restoredTimeline.some(
-          (record) =>
-            record.kind === "system_notice" &&
-            record.materializationKey === "response_status" &&
-            record.data?.endReason === "exception",
-        ),
-      ).toBe(true);
-      expect(
-        restoredTimeline.some(
-          (record) =>
-            record.kind === "tool_message" &&
-            record.message.content.some(
-              (part) =>
-                part.type === "tool-result" &&
-                part.toolCallId === "restart-tool-call" &&
-                part.output.value === "Session interrupted before tool execution completed",
-            ),
-        ),
-      ).toBe(true);
-      expect(
-        restoredRuntime?.sessionManager.getModelMessages().some((message) => {
-          return typeof message.content === "string" && message.content.includes("response_status");
-        }) ?? false,
-      ).toBe(false);
+      expect(restartedService.getActiveChannels()).toEqual([]);
 
       generateMock.mockResolvedValueOnce();
 
@@ -980,7 +1010,32 @@ describe("AgentSessionService", () => {
       const resumedTimeline = resumedRuntime?.sessionManager.getTimeline() ?? [];
 
       expect(restartedService.getActiveChannels()).toEqual(["discord:channel-restart"]);
-      expect(resumedRuntime).toBe(restoredRuntime);
+      expect(resumedRuntime).toBeDefined();
+      expect(
+        resumedTimeline.some(
+          (record) =>
+            record.kind === "system_notice" &&
+            record.materializationKey === "response_status" &&
+            record.data?.endReason === "exception",
+        ),
+      ).toBe(true);
+      expect(
+        resumedTimeline.some(
+          (record) =>
+            record.kind === "tool_message" &&
+            record.message.content.some(
+              (part) =>
+                part.type === "tool-result" &&
+                part.toolCallId === "restart-tool-call" &&
+                part.output.value === "Session interrupted before tool execution completed",
+            ),
+        ),
+      ).toBe(true);
+      expect(
+        resumedRuntime?.sessionManager.getModelMessages().some((message) => {
+          return typeof message.content === "string" && message.content.includes("response_status");
+        }) ?? false,
+      ).toBe(false);
       expect(
         resumedTimeline.filter((record) => {
           return (
@@ -1062,7 +1117,7 @@ describe("AgentSessionService", () => {
       expect(runCompaction).toHaveBeenCalledWith(4096);
     });
 
-    it("bootstraps a channel for compaction without requiring an existing workspace", async () => {
+    it("requires an active channel for compaction", async () => {
       const tempDir = mkdtempSync(join(tmpdir(), "athena-pre-message-compact-"));
       tempDirs.push(tempDir);
 
@@ -1082,7 +1137,7 @@ describe("AgentSessionService", () => {
             channel: "channel-1",
           },
         }),
-      ).resolves.toBe("No compaction needed for discord:channel-1: session is empty.");
+      ).resolves.toBe("No active agent for discord:channel-1.");
     });
   });
 
@@ -1098,12 +1153,17 @@ describe("AgentSessionService", () => {
       });
 
       await startService(service);
-      await expect(
-        service.bootstrapChannelForManagement("discord", "channel-1", createBotMock()),
-      ).resolves.toMatchObject({
-        channelKey: "discord:channel-1",
-        status: "created",
-      });
+      generateMock.mockResolvedValueOnce();
+      await service.receive(
+        createChannelMessageInput({
+          bot: createBotMock(),
+          isDirect: true,
+          atSelf: true,
+          isReplyToBot: true,
+          messageId: "clear-msg-1",
+        }),
+        createBotMock(),
+      );
 
       const clearAction = commands.get("agent.clear");
       expect(clearAction).toBeDefined();
@@ -1123,12 +1183,19 @@ describe("AgentSessionService", () => {
         ].remove,
       ).not.toHaveBeenCalled();
 
-      await expect(
-        service.bootstrapChannelForManagement("discord", "channel-1", createBotMock()),
-      ).resolves.toMatchObject({
-        channelKey: "discord:channel-1",
-        status: "created",
-      });
+      generateMock.mockResolvedValueOnce();
+      await service.receive(
+        createChannelMessageInput({
+          bot: createBotMock(),
+          isDirect: true,
+          atSelf: true,
+          isReplyToBot: true,
+          messageId: "clear-msg-2",
+        }),
+        createBotMock(),
+      );
+
+      expect(service.getAgent("discord:channel-1")).toBeDefined();
     });
   });
 });

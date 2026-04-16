@@ -112,18 +112,18 @@ async function assembleToolsWithLifecycle(options: {
   scope: string;
   hostInput?: unknown;
 }) {
+  const sendMessageTool = createSendMessageTool({
+    bot: {
+      selfId: "bot-self",
+      sendMessage: async () => undefined,
+    } as never,
+    channelId: options.runtime.channelId,
+  });
   const catalog = await options.service.compileTools({
     runtime: options.runtime,
     scope: options.scope,
-    sendMessageTool: createSendMessageTool({
-      bot: {
-        selfId: "bot-self",
-        sendMessage: async () => undefined,
-      } as never,
-      channelId: options.runtime.channelId,
-    }),
   });
-  const responseContext = await options.service.buildResponseContext({
+  const responseContext = await options.service.buildContext({
     runtime: options.runtime,
     hostInput: options.hostInput,
     scope: options.scope,
@@ -134,6 +134,7 @@ async function assembleToolsWithLifecycle(options: {
     scope: options.scope,
     catalog,
     responseContext,
+    builtinTools: { send_message: sendMessageTool },
   });
 
   return {
@@ -147,13 +148,6 @@ async function precompileForInvoke(service: PluginService, runtime: ToolRuntime,
   await service.compileTools({
     runtime,
     scope,
-    sendMessageTool: createSendMessageTool({
-      bot: {
-        selfId: "bot-self",
-        sendMessage: async () => undefined,
-      } as never,
-      channelId: runtime.channelId,
-    }),
   });
 }
 
@@ -229,7 +223,7 @@ describe("skill plugin", () => {
       expect(assembly.supportedTools).toHaveProperty("skill");
       expect(assembly.supportedTools).toHaveProperty("skill_read");
       expect(assembly.supportedTools).toHaveProperty("skill_search");
-      expect(service.getInstructionContributors("discord:channel-1")).toHaveLength(1);
+      expect(service.getInstructions("discord:channel-1")).toHaveLength(1);
     } finally {
       rmSync(baseDir, { recursive: true, force: true });
     }
@@ -272,10 +266,10 @@ describe("skill plugin", () => {
 
       const ctx = createContextMock(baseDir);
       const plugin = new SkillPlugin(ctx, { skills: ["skills"] });
-      await plugin.init();
+      await plugin.start();
 
       const instructionStateService = new InstructionStateService(baseDir);
-      const contributors = plugin.getInstructionContributors() as InstructionContributor[];
+      const contributors = plugin.getInstructions() as unknown as InstructionContributor[];
       const assembler = new InstructionAssembler({
         instructionStateService,
         getBuiltInInstructions: (fallback) => fallback,
@@ -334,10 +328,10 @@ describe("skill plugin", () => {
 
       const ctx = createContextMock(baseDir);
       const plugin = new SkillPlugin(ctx, { skills: ["skills"] });
-      await plugin.init();
+      await plugin.start();
 
       const instructionStateService = new InstructionStateService(baseDir);
-      const contributors = plugin.getInstructionContributors() as InstructionContributor[];
+      const contributors = plugin.getInstructions() as unknown as InstructionContributor[];
       const assembler = new InstructionAssembler({
         instructionStateService,
         getBuiltInInstructions: (fallback) => fallback,
@@ -383,7 +377,7 @@ describe("skill plugin", () => {
       const ctx = createContextMock(baseDir);
       const service = new PluginService(ctx);
       const plugin = new SkillPlugin(ctx, { skills: ["skills"] });
-      await plugin.init();
+      await plugin.start();
       await service.install(plugin, { scope: "discord:channel-1" });
       const runtime = createRuntime(baseDir, "msg-4");
       await precompileForInvoke(service, runtime, "discord:channel-1");
@@ -420,7 +414,7 @@ describe("skill plugin", () => {
       const ctx = createContextMock(baseDir);
       const service = new PluginService(ctx);
       const plugin = new SkillPlugin(ctx, { skills: ["skills"] });
-      await plugin.init();
+      await plugin.start();
       await service.install(plugin, { scope: "discord:channel-1" });
       const runtime = createRuntime(baseDir, "msg-5");
       await precompileForInvoke(service, runtime, "discord:channel-1");
@@ -448,7 +442,7 @@ describe("skill plugin", () => {
       const ctx = createContextMock(baseDir);
       const service = new PluginService(ctx);
       const plugin = new SkillPlugin(ctx, { skills: ["missing-skills-root"] });
-      await plugin.init();
+      await plugin.start();
       await service.install(plugin, { scope: "discord:channel-1" });
       const runtime = createRuntime(baseDir, "msg-6");
       await precompileForInvoke(service, runtime, "discord:channel-1");
@@ -484,7 +478,7 @@ describe("skill plugin", () => {
       const ctx = createContextMock(baseDir);
       const service = new PluginService(ctx);
       const plugin = new SkillPlugin(ctx, { skills: ["skills"] });
-      await plugin.init();
+      await plugin.start();
       await service.install(plugin, { scope: "discord:channel-1" });
       const skillRuntime = createRuntime(baseDir, "msg-7");
       await precompileForInvoke(service, skillRuntime, "discord:channel-1");
@@ -514,7 +508,7 @@ describe("skill plugin", () => {
       ).resolves.toEqual({ matches: [] });
 
       const instructionStateService = new InstructionStateService(baseDir);
-      const contributors = plugin.getInstructionContributors() as InstructionContributor[];
+      const contributors = plugin.getInstructions() as unknown as InstructionContributor[];
       const assembler = new InstructionAssembler({
         instructionStateService,
         getBuiltInInstructions: (fallback) => fallback,

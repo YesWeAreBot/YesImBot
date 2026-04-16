@@ -81,6 +81,7 @@ export type WorkspaceToolSet = Record<string, AiTool>;
 
 export interface WorkspacePluginConfig {
   mode?: "scoped" | "global";
+  globalWorkspacePath?: string;
   enableWorkspace?: boolean;
   enableSandbox?: boolean;
   enableFilesystem?: boolean;

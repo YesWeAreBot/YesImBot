@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   compileToolsMock,
-  buildResponseContextMock,
+  buildContextMock,
   selectToolsMock,
   prepareRuntimeModelMock,
   toolLoopAgentCtorMock,
@@ -13,7 +13,7 @@ const {
   toolLoopAgentInstances,
 } = vi.hoisted(() => ({
   compileToolsMock: vi.fn(),
-  buildResponseContextMock: vi.fn(),
+  buildContextMock: vi.fn(),
   selectToolsMock: vi.fn(),
   prepareRuntimeModelMock: vi.fn(),
   toolLoopAgentCtorMock: vi.fn(),
@@ -102,7 +102,7 @@ function createContextMock() {
     },
     "yesimbot.plugin": {
       compileTools: compileToolsMock,
-      buildResponseContext: buildResponseContextMock,
+      buildContext: buildContextMock,
       selectTools: selectToolsMock,
       getToolSet: vi.fn(() => ({})),
       getToolDefinitions: vi.fn(() => []),
@@ -245,17 +245,18 @@ async function runPrepareHooks(payload: {
 describe("ChannelRuntime integration seams", () => {
   beforeEach(() => {
     compileToolsMock.mockReset();
-    buildResponseContextMock.mockReset();
+    buildContextMock.mockReset();
     selectToolsMock.mockReset();
-    buildResponseContextMock.mockResolvedValue({});
+    buildContextMock.mockResolvedValue({});
     selectToolsMock.mockImplementation(
       async (request: {
         runtime?: unknown;
         scope?: string;
         catalog: { tools: ToolSet };
         responseContext?: unknown;
+        builtinTools?: ToolSet;
       }) => {
-        const activeTools = request.catalog.tools;
+        const activeTools = { ...(request.builtinTools ?? {}), ...request.catalog.tools };
         return {
           activeTools,
           activeToolNames: Object.keys(activeTools),
@@ -285,18 +286,17 @@ describe("ChannelRuntime integration seams", () => {
     const { ctx, runtime } = createRuntime();
     const sendMessageTool = createTool("send_message");
     const firstSearchTool = createTool("search_docs");
-    const supportedTools = {
-      send_message: sendMessageTool,
+    const pluginTools = {
       search_docs: firstSearchTool,
     } satisfies ToolSet;
     const prepareStepActiveTools: string[][] = [];
 
     compileToolsMock.mockResolvedValue({
-      tools: supportedTools,
+      tools: pluginTools,
       handles: {},
       signature: "stable-supported-tools",
     });
-    buildResponseContextMock
+    buildContextMock
       .mockResolvedValueOnce({
         search: { turn: 1 },
       })
@@ -344,6 +344,7 @@ describe("ChannelRuntime integration seams", () => {
 
     const firstAgentTools = toolLoopAgentInstances[0]?.tools;
     expect(firstAgentTools).toBeTruthy();
+    expect(firstAgentTools?.send_message).toBeTruthy();
     expect(firstAgentTools?.search_docs).toBe(firstSearchTool);
 
     await runtime.receive(createChannelMessageInput({ messageId: "msg-stable-2" }));
@@ -354,25 +355,21 @@ describe("ChannelRuntime integration seams", () => {
 
     expect(toolLoopAgentCtorMock).toHaveBeenCalledTimes(1);
     expect(compileToolsMock).toHaveBeenCalledTimes(1);
-    expect(buildResponseContextMock).toHaveBeenCalledTimes(2);
+    expect(buildContextMock).toHaveBeenCalledTimes(2);
     expect(selectToolsMock).toHaveBeenCalledTimes(2);
     expect(prepareRuntimeModelMock).toHaveBeenCalledTimes(1);
     expect(ctx["yesimbot.model"].resolve).not.toHaveBeenCalled();
     expect(prepareStepActiveTools).toEqual([["send_message"], ["send_message", "search_docs"]]);
+    expect(toolLoopAgentInstances[0]?.tools.send_message).toBeTruthy();
     expect(toolLoopAgentInstances[0]?.tools.search_docs).toBe(firstSearchTool);
 
-    const firstRequest = compileToolsMock.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(firstRequest).toMatchObject({
-      hostInput: expect.objectContaining({
-        channelId: "channel-1",
-        platform: "discord",
-        triggerEvents: expect.arrayContaining([
-          expect.objectContaining({ messageId: "msg-stable-1" }),
-        ]),
-      }),
+    const firstCompileRequest = compileToolsMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(firstCompileRequest).toMatchObject({
       scope: "discord:channel-1",
     });
-    expect(firstRequest.runtime).toMatchObject({
+    expect(firstCompileRequest).not.toHaveProperty("sendMessageTool");
+    expect(firstCompileRequest).not.toHaveProperty("hostInput");
+    expect(firstCompileRequest.runtime).toMatchObject({
       channelKey: "discord:channel-1",
       platform: "discord",
       channelId: "channel-1",
@@ -384,16 +381,12 @@ describe("ChannelRuntime integration seams", () => {
         isReplyToBot: false,
       }),
     });
-    expect(firstRequest.sendMessageTool).toEqual(
-      expect.objectContaining({
-        description: expect.any(String),
-        inputSchema: expect.any(Object),
-        execute: expect.any(Function),
-      }),
-    );
 
     const firstSelectRequest = selectToolsMock.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(firstSelectRequest).toMatchObject({
+      builtinTools: expect.objectContaining({
+        send_message: expect.any(Object),
+      }),
       responseContext: { search: { turn: 1 } },
     });
   });
@@ -421,13 +414,12 @@ describe("ChannelRuntime integration seams", () => {
 
     compileToolsMock.mockResolvedValue({
       tools: {
-        send_message: sendMessageTool,
         search_docs: searchTool,
       },
       handles: {},
       signature: "context-tools",
     });
-    buildResponseContextMock.mockResolvedValue(experimentalContext);
+    buildContextMock.mockResolvedValue(experimentalContext);
     selectToolsMock.mockResolvedValue({
       activeTools: {
         send_message: sendMessageTool,
