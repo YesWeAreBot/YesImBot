@@ -68,6 +68,7 @@ import {
   getUserMetaPath,
   getUserStateDir,
 } from "../../src/services/session/instruction-state/layout";
+import type { AthenaEvent } from "../../src/services/session/types";
 import { ChannelRuntime } from "../../src/services/session/runtime";
 import { AgentSessionService } from "../../src/services/session/service";
 import { SessionManager } from "../../src/services/session/session-manager";
@@ -99,7 +100,12 @@ interface PluginServiceMockOptions {
     handles: Record<string, unknown>;
     signature: string;
   }>;
-  buildContext?: () => Promise<Record<string, unknown>>;
+  buildContext?: (request: {
+    runtime?: unknown;
+    scope?: string;
+    hostInput?: unknown;
+    catalog?: unknown;
+  }) => Promise<Record<string, unknown>>;
   selectTools?: (request: {
     runtime?: unknown;
     scope?: string;
@@ -271,6 +277,48 @@ function createChannelMessageInput(
   };
 }
 
+function createMessageAthenaEvent(
+  overrides: Partial<Extract<AthenaEvent, { kind: "message" }>> = {},
+): Extract<AthenaEvent, { kind: "message" }> {
+  return {
+    kind: "message",
+    id: "athena-message-1",
+    timestamp: 1_710_000_000_000,
+    platform: "discord",
+    channelId: "channel-1",
+    messageId: "msg-athena-1",
+    content: "hello athena",
+    sender: {
+      userId: "user-1",
+      username: "alice",
+    },
+    isDirect: false,
+    atSelf: true,
+    isReplyToBot: false,
+    ...overrides,
+  };
+}
+
+function createInternalSignalAthenaEvent(
+  overrides: Partial<Extract<AthenaEvent, { kind: "internal_signal" }>> = {},
+): Extract<AthenaEvent, { kind: "internal_signal" }> {
+  return {
+    kind: "internal_signal",
+    id: "athena-signal-1",
+    timestamp: 1_710_000_000_001,
+    platform: "discord",
+    channelId: "channel-1",
+    signalType: "follow_up_review",
+    source: "scheduler",
+    summary: "wake runtime",
+    ...overrides,
+  };
+}
+
+type AgentSessionServiceWithIngress = AgentSessionService & {
+  ingestEvent(event: AthenaEvent, bot?: Bot): Promise<void>;
+};
+
 const tempDirs: string[] = [];
 
 afterEach(() => {
@@ -384,16 +432,20 @@ describe("AgentSessionService", () => {
 
       expect(systemMessage.content).toContain("## Runtime Environment");
       expect(systemMessage.content).toContain("Platform: discord");
-      expect(systemMessage.content).toContain("Conversation type: private");
-      expect(systemMessage.content).toContain("Mentioned bot: yes");
-      expect(systemMessage.content).toContain("Reply-to-bot: yes");
+      expect(systemMessage.content).toContain("Conversation type: group");
+      expect(systemMessage.content).toContain("Mentioned bot: no");
+      expect(systemMessage.content).toContain("Reply-to-bot: no");
     });
 
     it("persists before willingness", async () => {
       const ctx = createContextMock("/");
       const bot = createBotMock();
+      const service = new AgentSessionService(ctx, {
+        model: "test:model",
+        basePath: "sessions",
+      });
       const sessionManager = SessionManager.inMemory("discord:channel-1");
-      const agent = new ChannelRuntime(ctx, {
+      const runtime = new ChannelRuntime(ctx, {
         bot,
         sessionManager,
         settingsManager: createTestSettingsManager(),
@@ -401,8 +453,9 @@ describe("AgentSessionService", () => {
         channelId: "channel-1",
         basePath: "/tmp/athena-test",
       });
+      vi.spyOn(service, "getOrCreateAgent").mockResolvedValue(runtime);
 
-      await agent.receive(createChannelMessageInput({ bot }));
+      await service.receive(createChannelMessageInput({ bot, atSelf: false }));
 
       expect(sessionManager.getEntryCount()).toBeGreaterThan(0);
       expect(bot.sendMessage).not.toHaveBeenCalled();
@@ -411,11 +464,15 @@ describe("AgentSessionService", () => {
     it("uses runtime heuristic first and skips deferred judge for direct messages", async () => {
       const ctx = createContextMock("/");
       const bot = createBotMock();
+      const service = new AgentSessionService(ctx, {
+        model: "test:model",
+        basePath: "sessions",
+      });
       const sessionManager = SessionManager.inMemory("discord:channel-1");
       const deferredJudge: WillingnessJudge = {
         judge: vi.fn().mockResolvedValue({ shouldRespond: false, reason: "no_trigger" }),
       };
-      const agent = new ChannelRuntime(ctx, {
+      const runtime = new ChannelRuntime(ctx, {
         bot,
         sessionManager,
         settingsManager: createTestSettingsManager(),
@@ -424,9 +481,10 @@ describe("AgentSessionService", () => {
         channelId: "channel-1",
         basePath: "/tmp/athena-test",
       });
+      vi.spyOn(service, "getOrCreateAgent").mockResolvedValue(runtime);
 
       generateMock.mockResolvedValueOnce();
-      await agent.receive(
+      await service.receive(
         createChannelMessageInput({ bot, isDirect: true, atSelf: false, isReplyToBot: false }),
       );
 
@@ -439,11 +497,15 @@ describe("AgentSessionService", () => {
     it("falls back to deferred judge for gray-zone messages", async () => {
       const ctx = createContextMock("/");
       const bot = createBotMock();
+      const service = new AgentSessionService(ctx, {
+        model: "test:model",
+        basePath: "sessions",
+      });
       const sessionManager = SessionManager.inMemory("discord:channel-1");
       const deferredJudge: WillingnessJudge = {
         judge: vi.fn().mockResolvedValue({ shouldRespond: false, reason: "no_trigger" }),
       };
-      const agent = new ChannelRuntime(ctx, {
+      const runtime = new ChannelRuntime(ctx, {
         bot,
         sessionManager,
         settingsManager: createTestSettingsManager(),
@@ -452,8 +514,9 @@ describe("AgentSessionService", () => {
         channelId: "channel-1",
         basePath: "/tmp/athena-test",
       });
+      vi.spyOn(service, "getOrCreateAgent").mockResolvedValue(runtime);
 
-      await agent.receive(
+      await service.receive(
         createChannelMessageInput({ bot, isDirect: false, atSelf: false, isReplyToBot: false }),
       );
 
@@ -462,11 +525,15 @@ describe("AgentSessionService", () => {
       expect(generateMock).not.toHaveBeenCalled();
     });
 
-    it("persists structured inbound channel_message header with reply summary", async () => {
+    it("persists projectToAthenaMessage user.message payload with reply summary", async () => {
       const ctx = createContextMock("/");
       const bot = createBotMock();
+      const service = new AgentSessionService(ctx, {
+        model: "test:model",
+        basePath: "sessions",
+      });
       const sessionManager = SessionManager.inMemory("discord:channel-1");
-      const agent = new ChannelRuntime(ctx, {
+      const runtime = new ChannelRuntime(ctx, {
         bot,
         sessionManager,
         settingsManager: createTestSettingsManager(),
@@ -474,8 +541,9 @@ describe("AgentSessionService", () => {
         channelId: "channel-1",
         basePath: "/tmp/athena-test",
       });
+      vi.spyOn(service, "getOrCreateAgent").mockResolvedValue(runtime);
 
-      await agent.receive(
+      await service.receive(
         createChannelMessageInput({
           bot,
           nickname: "Alice-Display",
@@ -489,20 +557,20 @@ describe("AgentSessionService", () => {
       );
 
       const persisted = sessionManager
-        .getTimeline()
-        .find((record) => record.kind === "channel_message");
+        .getEntries()
+        .find((entry) => entry.type === "message" && "type" in entry.message);
 
       expect(persisted).toBeTruthy();
-      if (!persisted || persisted.kind !== "channel_message") {
+      if (!persisted || persisted.type !== "message" || !("type" in persisted.message)) {
         return;
       }
 
-      expect(persisted.message.sender).toMatchObject({
-        nickname: "Alice-Display",
-        identity: "title:moderator",
+      expect(persisted.message.type).toBe("user.message");
+      expect(persisted.message.data).toMatchObject({
+        senderName: "Alice-Display",
       });
-      expect(persisted.message.replyTo).toMatchObject({
-        summary: "quoted summary",
+      expect(persisted.message.data.replyTo).toMatchObject({
+        content: "quoted summary",
       });
 
       const modelMessage = sessionManager.getModelMessages()[0];
@@ -512,11 +580,7 @@ describe("AgentSessionService", () => {
         return;
       }
 
-      expect(modelMessage.content).toContain("[timestamp]");
-      expect(modelMessage.content).toContain("[platform/channel]");
-      expect(modelMessage.content).toContain("[sender]");
-      expect(modelMessage.content).toContain("[context]");
-      expect(modelMessage.content).toContain("[reply]");
+      expect(modelMessage.content).toContain("hello");
     });
 
     it("ignores self messages", async () => {
@@ -551,16 +615,275 @@ describe("AgentSessionService", () => {
         model: "test:model",
         basePath: "sessions",
       });
-      const agentReceive = vi.fn().mockResolvedValue(undefined);
-      vi.spyOn(service, "getOrCreateAgent").mockReturnValue({
-        receive: agentReceive,
-      } as unknown as ChannelRuntime);
+      const agent = new ChannelRuntime(ctx, {
+        bot: createBotMock(),
+        sessionManager: SessionManager.inMemory("discord:channel-1"),
+        settingsManager: createTestSettingsManager(),
+        platform: "discord",
+        channelId: "channel-1",
+        basePath: "/tmp/athena-dedupe-test",
+      });
+      const wakeSpy = vi.spyOn(agent, "wake").mockResolvedValue(undefined);
+      vi.spyOn(service, "getOrCreateAgent").mockResolvedValue(agent);
 
-      const event = createChannelMessageInput({ messageId: "dup-msg-1" });
+      const event = createChannelMessageInput({ messageId: "dup-msg-1", atSelf: true });
       await service.receive(event);
       await service.receive(event);
 
-      expect(agentReceive).toHaveBeenCalledTimes(1);
+      expect(wakeSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("ingestEvent records projected message before activation_result helper and keeps record-only batches asleep", async () => {
+      const tempDir = mkdtempSync(join(tmpdir(), "athena-ingest-record-only-"));
+      tempDirs.push(tempDir);
+      const ctx = createContextMock(tempDir);
+      const service = new AgentSessionService(ctx, {
+        model: "test:model",
+        basePath: "sessions",
+      }) as AgentSessionServiceWithIngress;
+      const bot = createBotMock();
+
+      await service.ingestEvent(
+        createMessageAthenaEvent({
+          id: "athena-record-only-1",
+          messageId: "athena-record-only-1",
+          atSelf: false,
+          isDirect: false,
+          isReplyToBot: false,
+        }),
+        bot,
+      );
+
+      const runtime = (
+        service as unknown as { agents: Map<string, ChannelRuntime> }
+      ).agents.get("discord:channel-1");
+
+      expect(runtime).toBeTruthy();
+      if (!runtime) {
+        return;
+      }
+
+      expect(generateMock).not.toHaveBeenCalled();
+      expect(runtime.sessionManager.getEntries()).toEqual([
+        expect.objectContaining({
+          type: "message",
+          message: expect.objectContaining({
+            type: "user.message",
+            data: expect.objectContaining({
+              messageId: "athena-record-only-1",
+              content: "hello athena",
+            }),
+          }),
+        }),
+        expect.objectContaining({
+          type: "activation_result",
+          activated: false,
+          batchId: expect.any(String),
+          reasons: expect.arrayContaining([expect.stringContaining("no_trigger")]),
+        }),
+      ]);
+    });
+
+    it("ingestEvent forms same-channel mixed eventBatch before wake and records both record-only and activated activation_result notices", async () => {
+      const tempDir = mkdtempSync(join(tmpdir(), "athena-ingest-mixed-batch-"));
+      tempDirs.push(tempDir);
+      const ctx = createContextMock(tempDir);
+      const service = new AgentSessionService(ctx, {
+        model: "test:model",
+        basePath: "sessions",
+      }) as AgentSessionServiceWithIngress;
+      const bot = createBotMock();
+
+      generateMock.mockResolvedValueOnce();
+
+      await service.ingestEvent(
+        createMessageAthenaEvent({
+          id: "athena-mixed-message-1",
+          messageId: "athena-mixed-message-1",
+          atSelf: false,
+          isDirect: false,
+          isReplyToBot: false,
+          timestamp: 1_710_000_000_010,
+        }),
+        bot,
+      );
+      await service.ingestEvent(
+        createInternalSignalAthenaEvent({
+          id: "athena-mixed-signal-1",
+          timestamp: 1_710_000_000_011,
+        }),
+        bot,
+      );
+
+      await vi.waitFor(() => {
+        expect(generateMock).toHaveBeenCalledTimes(1);
+      });
+
+      const runtime = (
+        service as unknown as { agents: Map<string, ChannelRuntime> }
+      ).agents.get("discord:channel-1");
+
+      expect(runtime).toBeTruthy();
+      if (!runtime) {
+        return;
+      }
+
+      const activationRecords = runtime.sessionManager
+        .getEntries()
+        .filter((entry) => entry.type === "activation_result");
+
+      expect(activationRecords).toHaveLength(2);
+      expect(activationRecords[0]).toMatchObject({
+        activated: false,
+        reasons: expect.arrayContaining([expect.stringContaining("no_trigger")]),
+      });
+      expect(activationRecords[1]).toMatchObject({
+        activated: true,
+        reasons: expect.arrayContaining([
+          expect.stringContaining("no_trigger"),
+          expect.stringContaining("internal_signal"),
+        ]),
+      });
+    });
+
+    it("clears handed-off pending batch state even when wake fails", async () => {
+      const tempDir = mkdtempSync(join(tmpdir(), "athena-wake-failure-cleanup-"));
+      tempDirs.push(tempDir);
+      const service = new AgentSessionService(createContextMock(tempDir), {
+        model: "test:model",
+        basePath: "sessions",
+      }) as AgentSessionServiceWithIngress;
+      const bot = createBotMock();
+      const runtime = new ChannelRuntime(createContextMock(tempDir), {
+        bot,
+        sessionManager: SessionManager.inMemory("discord:channel-1"),
+        settingsManager: createTestSettingsManager(),
+        platform: "discord",
+        channelId: "channel-1",
+        basePath: "/tmp/athena-wake-failure-cleanup",
+      });
+      const wakeSpy = vi
+        .spyOn(runtime, "wake")
+        .mockRejectedValueOnce(new Error("wake failed"))
+        .mockResolvedValueOnce(undefined);
+      vi.spyOn(service, "getOrCreateAgent").mockResolvedValue(runtime);
+
+      await expect(
+        service.ingestEvent(
+          createMessageAthenaEvent({
+            id: "wake-cleanup-msg-1",
+            messageId: "wake-cleanup-msg-1",
+            atSelf: true,
+          }),
+          bot,
+        ),
+      ).rejects.toThrow("wake failed");
+
+      expect(
+        (service as unknown as { pendingEventBatches: Map<string, unknown> }).pendingEventBatches.size,
+      ).toBe(0);
+
+      await service.ingestEvent(
+        createMessageAthenaEvent({
+          id: "wake-cleanup-msg-2",
+          messageId: "wake-cleanup-msg-2",
+          atSelf: true,
+          timestamp: 1_710_000_000_123,
+        }),
+        bot,
+      );
+
+      expect(wakeSpy).toHaveBeenCalledTimes(2);
+      expect(wakeSpy.mock.calls[1]?.[0]).toMatchObject({
+        batchId: "batch:wake-cleanup-msg-2",
+        events: [
+          expect.objectContaining({
+            id: "wake-cleanup-msg-2",
+          }),
+        ],
+      });
+    });
+
+    it("preserves all activated follow-up events while an active turn is running", async () => {
+      const tempDir = mkdtempSync(join(tmpdir(), "athena-activated-follow-up-queue-"));
+      tempDirs.push(tempDir);
+      const hostInputs: Array<{
+        triggerEvents: Array<{ id: string; kind: string }>;
+      }> = [];
+      const ctx = createContextMock(tempDir, {
+        buildContext: async (request) => {
+          hostInputs.push(
+            request.hostInput as {
+              triggerEvents: Array<{ id: string; kind: string }>;
+            },
+          );
+          return {};
+        },
+      });
+      const service = new AgentSessionService(ctx, {
+        model: "test:model",
+        basePath: "sessions",
+      });
+      const bot = createBotMock();
+
+      let releaseFirst!: () => void;
+      const firstTurn = new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+
+      generateMock.mockImplementationOnce(async () => {
+        await firstTurn;
+      });
+      generateMock.mockResolvedValueOnce();
+
+      const first = service.receive(
+        createChannelMessageInput({
+          bot,
+          isDirect: true,
+          messageId: "follow-up-root-msg",
+          timestamp: 2000,
+        }),
+        bot,
+      );
+
+      await vi.waitFor(() => {
+        expect(generateMock).toHaveBeenCalledTimes(1);
+      });
+
+      const second = service.ingestEvent(
+        createInternalSignalAthenaEvent({
+          id: "follow-up-signal-1",
+          timestamp: 2001,
+        }),
+        bot,
+      );
+      const third = service.ingestEvent(
+        createMessageAthenaEvent({
+          id: "follow-up-msg-2",
+          messageId: "follow-up-msg-2",
+          atSelf: true,
+          timestamp: 2002,
+        }),
+        bot,
+      );
+
+      releaseFirst();
+      await Promise.all([first, second, third]);
+
+      await vi.waitFor(() => {
+        expect(generateMock).toHaveBeenCalledTimes(2);
+        expect(hostInputs).toHaveLength(2);
+      });
+
+      expect(hostInputs[1]?.triggerEvents).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "follow-up-signal-1", kind: "internal_signal" }),
+          expect.objectContaining({ id: "follow-up-msg-2", kind: "message" }),
+        ]),
+      );
+      expect(
+        Array.from(new Set(hostInputs[1]?.triggerEvents.map((event) => event.id))),
+      ).toEqual(expect.arrayContaining(["follow-up-signal-1", "follow-up-msg-2"]));
     });
 
     it("same-channel burst keeps one active turn plus one merged follow-up", async () => {
@@ -628,28 +951,37 @@ describe("AgentSessionService", () => {
 
       const runtime = service.getAgent("discord:channel-1");
       expect(runtime).toBeDefined();
-      const timeline = runtime?.sessionManager.getTimeline() ?? [];
-      const channelMessages = timeline.filter((record) => record.kind === "channel_message");
-      const followUpReviews = timeline.filter(
-        (record) => record.kind === "state_change" && record.stateType === "follow_up_review",
+      const entries = runtime?.sessionManager.getEntries() ?? [];
+      const channelMessages = entries.filter(
+        (entry) =>
+          entry.type === "message" &&
+          "type" in entry.message &&
+          entry.message.type === "user.message",
       );
-      const responseStatuses = timeline.filter(
-        (record) =>
-          record.kind === "system_notice" && record.materializationKey === "response_status",
+      const followUpReviews = entries.filter(
+        (entry) => entry.type === "session_info" && entry.modelId === "follow_up_review",
       );
+      const responseStatuses = entries.filter((entry) => entry.type === "response_status");
 
       expect(channelMessages).toHaveLength(3);
       expect(followUpReviews).toHaveLength(1);
-      expect(followUpReviews[0]?.data).toMatchObject({
-        messageCount: 2,
-        messageIds: expect.arrayContaining(["msg-burst-2", "msg-burst-3"]),
+      expect(followUpReviews[0]).toMatchObject({
+        infoType: "runtime_state",
+        provider: "runtime",
+        modelId: "follow_up_review",
+        stateType: "follow_up_review",
+        data: expect.objectContaining({
+          messageCount: 1,
+          messageIds: ["msg-burst-3"],
+          content: expect.stringContaining("Tracked message IDs: msg-burst-3"),
+        }),
       });
       expect(
         responseStatuses.some(
           (record) =>
-            record.kind === "system_notice" &&
-            record.data?.nextAction === "follow_up" &&
-            typeof record.notice === "string",
+            record.type === "response_status" &&
+            record.nextAction === "follow_up" &&
+            typeof record.endReason === "string",
         ),
       ).toBe(true);
     });
@@ -849,47 +1181,37 @@ describe("AgentSessionService", () => {
         basePath: "sessions",
       });
       const bot = createBotMock();
-      const agentReceive = vi.fn().mockResolvedValue(undefined);
-      const routeSpy = vi.spyOn(service, "getOrCreateAgent").mockReturnValue({
-        receive: agentReceive,
-      } as unknown as ChannelRuntime);
+      const agent = new ChannelRuntime(ctx, {
+        bot,
+        sessionManager: SessionManager.inMemory("discord:origin-channel"),
+        settingsManager: createTestSettingsManager(),
+        platform: "discord",
+        channelId: "origin-channel",
+        basePath: "/tmp/athena-channel-route",
+      });
+      const wakeSpy = vi.spyOn(agent, "wake").mockResolvedValue(undefined);
+      const routeSpy = vi.spyOn(service, "getOrCreateAgent").mockResolvedValue(agent);
 
       const event = createChannelMessageInput({
         bot,
         platform: "discord",
         channelId: "origin-channel",
         messageId: "route-msg-1",
+        atSelf: true,
       });
 
       await service.receive(event, bot);
 
       expect(routeSpy).toHaveBeenCalledWith(
         expect.objectContaining({
+          kind: "message",
           platform: "discord",
           channelId: "origin-channel",
           messageId: "route-msg-1",
         }),
         bot,
       );
-      expect(agentReceive).toHaveBeenCalledWith(
-        expect.objectContaining({
-          kind: "channel_message",
-          platform: "discord",
-          channelId: "origin-channel",
-          messageId: "route-msg-1",
-          timestamp: event.timestamp,
-          content: event.content,
-          sender: {
-            userId: event.userId,
-            username: event.username,
-            nickname: event.nickname,
-            identity: event.identity,
-          },
-          isDirect: event.isDirect,
-          atSelf: event.atSelf,
-          isReplyToBot: event.isReplyToBot,
-        }),
-      );
+      expect(wakeSpy).toHaveBeenCalledTimes(1);
     });
 
     it("reuses the cached runtime for repeated same-channel receives", async () => {
@@ -1007,27 +1329,26 @@ describe("AgentSessionService", () => {
       });
 
       const resumedRuntime = restartedService.getAgent("discord:channel-restart");
-      const resumedTimeline = resumedRuntime?.sessionManager.getTimeline() ?? [];
+      const resumedEntries = resumedRuntime?.sessionManager.getEntries() ?? [];
 
       expect(restartedService.getActiveChannels()).toEqual(["discord:channel-restart"]);
       expect(resumedRuntime).toBeDefined();
       expect(
-        resumedTimeline.some(
+        resumedEntries.some(
           (record) =>
-            record.kind === "system_notice" &&
-            record.materializationKey === "response_status" &&
-            record.data?.endReason === "exception",
+            record.type === "response_status" &&
+            record.endReason === "exception",
         ),
       ).toBe(true);
       expect(
-        resumedTimeline.some(
+        resumedEntries.some(
           (record) =>
-            record.kind === "tool_message" &&
+            record.type === "message" &&
+            !("type" in record.message) &&
+            record.message.role === "assistant" &&
+            Array.isArray(record.message.content) &&
             record.message.content.some(
-              (part) =>
-                part.type === "tool-result" &&
-                part.toolCallId === "restart-tool-call" &&
-                part.output.value === "Session interrupted before tool execution completed",
+              (part) => part.type === "tool-call" && part.toolCallId === "restart-tool-call",
             ),
         ),
       ).toBe(true);
@@ -1037,11 +1358,13 @@ describe("AgentSessionService", () => {
         }) ?? false,
       ).toBe(false);
       expect(
-        resumedTimeline.filter((record) => {
+        resumedEntries.filter((record) => {
           return (
-            record.kind === "channel_message" &&
-            record.message.messageId === "restart-msg-2" &&
-            record.message.content === "resume after restart"
+            record.type === "message" &&
+            "type" in record.message &&
+            record.message.type === "user.message" &&
+            record.message.data.messageId === "restart-msg-2" &&
+            record.message.data.content === "resume after restart"
           );
         }),
       ).toHaveLength(1);

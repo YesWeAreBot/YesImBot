@@ -151,6 +151,58 @@ describe("AgentSession", () => {
       expect.objectContaining({ kind: "system_notice", subType: "compaction_summary" }),
     ]);
   });
+
+  it("refreshes cache when appendStateChange persists response_status", () => {
+    const session = new AgentSession(createSessionManager());
+
+    session.appendStateChange({
+      id: "response-status-1",
+      timestamp: 106,
+      stage: "runtime",
+      visibility: "internal",
+      materialization: "internal",
+      stateType: "response_status",
+      data: {
+        endReason: "normal",
+        nextAction: "idle",
+        stepsCompleted: 1,
+        durationMs: 12,
+      },
+    });
+
+    expect(session.getEntries()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: "response_status" })]),
+    );
+  });
+
+  it("preserves state-change id and timestamp for runtime_state compatibility bridge", () => {
+    const session = new AgentSession(createSessionManager());
+
+    session.appendStateChange({
+      id: "follow-up-state-1",
+      timestamp: 107,
+      stage: "runtime",
+      visibility: "internal",
+      materialization: "internal",
+      stateType: "follow_up_review",
+      data: {
+        messageCount: 1,
+        messageIds: ["msg-1"],
+      },
+    });
+
+    expect(session.getTimeline()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "state_change",
+          id: "follow-up-state-1",
+          timestamp: 107,
+          stateType: "follow_up_review",
+          data: expect.objectContaining({ messageCount: 1, messageIds: ["msg-1"] }),
+        }),
+      ]),
+    );
+  });
 });
 
 void ({} as {

@@ -1,6 +1,8 @@
 import type { ModelMessage, SystemModelMessage, UserModelMessage } from "@ai-sdk/provider-utils";
 
 import { formatChannelMessageInput } from "./channel-message";
+import type { AthenaMessage } from "./domain/athena-message";
+import type { SessionMessage } from "./domain/session-message";
 import type {
   ChannelRawPayload,
   ChannelEventRecord,
@@ -10,7 +12,7 @@ import type {
   TimelineRecord,
 } from "./types/index";
 
-export interface MaterializeTimelineOptions {
+export interface CompactionMaterializeOptions {
   includeInternal?: boolean;
   systemNoticeStrategies?: Partial<Record<string, SystemNoticeStrategy>>;
 }
@@ -19,11 +21,15 @@ export type SystemNoticeStrategy = (
   record: SystemNoticeRecord<ChannelRawPayload | undefined>,
 ) => ModelMessage | ModelMessage[] | null | undefined;
 
-export function materializeTimelineRecord(
+export function materializeTimelineForCompactionRecord(
   record: TimelineRecord,
-  options: MaterializeTimelineOptions = {},
+  options: CompactionMaterializeOptions = {},
 ): ModelMessage[] {
   switch (record.kind) {
+    case "athena_event":
+      // Phase 12+ provider context is SessionMessage[]-only.
+      // Legacy athena_event timeline rows are never projected here.
+      return [];
     case "channel_message":
       return shouldProjectRecord(record, options) ? [materializeChannelMessage(record)] : [];
     case "channel_event":
@@ -50,14 +56,50 @@ export function materializeTimelineRecord(
   }
 }
 
-export function materializeTimeline(
+export function materializeTimelineForCompaction(
   records: TimelineRecord[],
-  options: MaterializeTimelineOptions = {},
+  options: CompactionMaterializeOptions = {},
 ): ModelMessage[] {
-  return records.flatMap((record) => materializeTimelineRecord(record, options));
+  return records.flatMap((record) => materializeTimelineForCompactionRecord(record, options));
 }
 
-function shouldProjectRecord(record: TimelineRecord, options: MaterializeTimelineOptions): boolean {
+export function convertToLlm(messages: SessionMessage[]): ModelMessage[] {
+  return messages.map((message) => {
+    if ("role" in message) {
+      switch (message.role) {
+        case "assistant":
+        case "tool":
+          return message;
+        default: {
+          const exhaustiveCheck: never = message;
+          throw new Error(`Unsupported SessionMessage role: ${String(exhaustiveCheck)}`);
+        }
+      }
+    }
+
+    return athenaMessageToUserModelMessage(message);
+  });
+}
+
+function athenaMessageToUserModelMessage(message: AthenaMessage): UserModelMessage {
+  switch (message.type) {
+    case "user.message":
+    case "notice.member.join":
+    case "notice.member.leave":
+    case "notice.reaction":
+    case "notice.state.update":
+      return {
+        role: "user",
+        content: message.data.content,
+      } satisfies UserModelMessage;
+    default: {
+      const exhaustiveCheck: never = message;
+      throw new Error(`Unsupported AthenaMessage type: ${String(exhaustiveCheck)}`);
+    }
+  }
+}
+
+function shouldProjectRecord(record: TimelineRecord, options: CompactionMaterializeOptions): boolean {
   if (record.materialization === "hidden" || record.visibility === "hidden") {
     return false;
   }
@@ -72,14 +114,18 @@ function shouldProjectRecord(record: TimelineRecord, options: MaterializeTimelin
   return true;
 }
 
-function materializeChannelMessage(record: ChannelMessageRecord): UserModelMessage {
+function materializeChannelMessage(
+  record: ChannelMessageRecord<ChannelRawPayload | undefined>,
+): UserModelMessage {
   return {
     role: "user",
     content: formatChannelMessageInput(record.message),
   };
 }
 
-function materializeChannelEvent(record: ChannelEventRecord): SystemModelMessage {
+function materializeChannelEvent(
+  record: ChannelEventRecord<ChannelRawPayload | undefined>,
+): SystemModelMessage {
   const { event } = record;
 
   return {

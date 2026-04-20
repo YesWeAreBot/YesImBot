@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { Bot, Context, Service, Session } from "koishi";
 
 import { resolveSenderIdentity, summarizeReplyContent } from "./channel-message";
+import { projectToAthenaMessage } from "./domain/project-to-athena-message";
+import { Activation, type ActivationResult, type AthenaEvent, type ChannelScopedAthenaEvent, type EventBatch } from "./types";
 import { InstructionStateService } from "./instruction-state/service";
 import { ChannelRuntime } from "./runtime";
 import { SessionManager } from "./session-manager";
@@ -15,6 +17,9 @@ import {
   type SettingsReloadMetadata,
 } from "./settings-manager";
 import type { ChannelMessageInput, ChannelKey } from "./types/index";
+import { evaluateActivationPolicy } from "./willingness";
+
+type RuntimeStateInput = ChannelScopedAthenaEvent;
 
 export interface ChannelSettingsReloadResult {
   channelKey: ChannelKey;
@@ -106,15 +111,16 @@ export interface AgentSessionServiceConfig {
  * an isolated SessionManager for JSONL persistence.
  *
  * Message flow:
- * 1. Koishi message event → koishiSessionToChannelInput()
- * 2. AgentSessionService.receive() → route to ChannelRuntime
- * 3. ChannelRuntime.receive() → persist, willingness check, maybe respond
+ * 1. Koishi message event → koishiSessionToAthenaEvent()
+ * 2. AgentSessionService.ingestEvent() → persist raw event, form eventBatch, evaluate activation
+ * 3. Persist hidden activation_result, then wake ChannelRuntime only for activated batches
  */
 export class AgentSessionService extends Service<AgentSessionServiceConfig> {
   static inject = ["yesimbot.model", "yesimbot.plugin"];
 
   private agents: Map<ChannelKey, ChannelRuntime> = new Map();
   private pendingAgentCreations: Map<ChannelKey, Promise<ChannelRuntime>> = new Map();
+  private pendingEventBatches: Map<ChannelKey, EventBatch> = new Map();
   /** TTL-based dedupe set for messageIds. Map<messageId, expiryTimestamp>. */
   private recentMessageIds: Map<string, number> = new Map();
   private readonly dedupeTtlMs = 120000;
@@ -136,11 +142,11 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
 
   protected async start(): Promise<void> {
     this.ctx.middleware(async (session, next) => {
-      const input = koishiSessionToChannelInput(session);
-      if (input) {
-        this.receive(input, session.bot).catch((err) => {
+      const event = koishiSessionToAthenaEvent(session);
+      if (event) {
+        this.ingestEvent(event, session.bot).catch((err) => {
           this.logger.error(
-            `Error handling message for ${input.platform}:${input.channelId}:`,
+            `Error handling message for ${event.platform}:${event.channelId}:`,
             err,
           );
         });
@@ -280,31 +286,67 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
     }
     this.agents.clear();
     this.pendingAgentCreations.clear();
+    this.pendingEventBatches.clear();
     this.recentMessageIds.clear();
     this.logger.info("AgentSessionService stopped");
   }
 
   // =========================================================================
-  // Message Routing
+  // Event Routing
   // =========================================================================
 
-  /** Process an incoming channel input. */
+  /** Compatibility adapter for message-shaped ingress. */
   async receive(input: ChannelMessageInput, bot?: Bot): Promise<void> {
+    return this.ingestEvent(channelMessageToAthenaEvent(input), bot);
+  }
+
+  /** Primary Phase 11 ingress seam. */
+  async ingestEvent(event: AthenaEvent, bot?: Bot): Promise<void> {
+    if (!isChannelScopedEvent(event)) {
+      throw new Error(`AgentSessionService.ingestEvent() requires a channel-scoped event`);
+    }
+
     const routeBot = bot;
 
     const selfId = routeBot?.selfId ?? "";
-    if (selfId && input.sender.userId === selfId) {
+    if (event.kind === "message" && selfId && event.sender.userId === selfId) {
       return;
     }
 
-    if (this.isDuplicate(input.messageId)) {
-      this.logger.debug(`Duplicate message ${input.messageId} dropped`);
+    if (event.kind === "message" && this.isDuplicate(event.messageId)) {
+      this.logger.debug(`Duplicate message ${event.messageId} dropped`);
       return;
     }
 
-    this.recordInstructionState(input);
-    const agent = await this.getOrCreateAgent(input, routeBot);
-    await agent.receive(input);
+    this.recordInstructionState(event);
+    const agent = await this.getOrCreateAgent(event, routeBot);
+    agent.session.appendAthenaMessage(projectToAthenaMessage(event));
+
+    const batch = this.appendEventToBatch(event);
+    const activation = await this.evaluateActivation(agent, batch, routeBot);
+
+    agent.session.appendActivationResult({
+      id: `${batch.batchId}:activation:${event.id}`,
+      timestamp: event.timestamp,
+      stage: "ingress",
+      batchId: batch.batchId,
+      activated: activation.activated,
+      reasons: activation.reasons,
+    });
+
+    if (!activation.activated) {
+      return;
+    }
+
+    try {
+      await agent.wake({
+        ...batch,
+        events: [...batch.events],
+        activation,
+      });
+    } finally {
+      this.pendingEventBatches.delete(batch.channelKey);
+    }
   }
 
   private isDuplicate(messageId: string): boolean {
@@ -335,7 +377,10 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
   // =========================================================================
 
   /** Get an existing agent or create a new one for the channel. */
-  private async getOrCreateAgent(input: ChannelMessageInput, bot?: Bot): Promise<ChannelRuntime> {
+  private async getOrCreateAgent(
+    input: ChannelScopedAthenaEvent,
+    bot?: Bot,
+  ): Promise<ChannelRuntime> {
     const { platform, channelId } = input;
     const channelKey: ChannelKey = `${platform}:${channelId}`;
     const existing = this.agents.get(channelKey);
@@ -361,7 +406,7 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
 
   private async createAndStoreAgent(
     channelKey: ChannelKey,
-    input: ChannelMessageInput,
+    input: ChannelScopedAthenaEvent,
     bot?: Bot,
   ): Promise<ChannelRuntime> {
     const { platform, channelId } = input;
@@ -415,9 +460,9 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
   }
 
   private getRuntimeStateDir(
-    input: Pick<ChannelMessageInput, "platform" | "channelId" | "isDirect" | "sender">,
+    input: RuntimeStateInput,
   ): string {
-    if (input.isDirect) {
+    if (input.kind === "message" && input.isDirect) {
       return this.instructionStateService.getUserStateDir(input.platform, input.sender.userId);
     }
 
@@ -425,9 +470,9 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
   }
 
   private ensureRuntimeState(
-    input: Pick<ChannelMessageInput, "platform" | "channelId" | "isDirect" | "sender">,
+    input: RuntimeStateInput,
   ): void {
-    if (input.isDirect) {
+    if (input.kind === "message" && input.isDirect) {
       this.instructionStateService.ensureUserState(input.platform, input.sender.userId);
       return;
     }
@@ -436,7 +481,7 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
   }
 
   private getRuntimeSettingsPath(
-    input: Pick<ChannelMessageInput, "platform" | "channelId" | "isDirect" | "sender">,
+    input: RuntimeStateInput,
   ): string {
     return join(this.getRuntimeStateDir(input), "settings.json");
   }
@@ -588,9 +633,9 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
     return this.agents.get(channelKey);
   }
 
-  private recordInstructionState(input: ChannelMessageInput): void {
+  private recordInstructionState(input: ChannelScopedAthenaEvent): void {
     this.instructionStateService.ensureGlobalState();
-    if (!input.isDirect) {
+    if (input.kind !== "message" || !input.isDirect) {
       this.instructionStateService.ensureChannelState(input.platform, input.channelId);
       this.instructionStateService.writeChannelMeta({
         platform: input.platform,
@@ -611,6 +656,66 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
     });
   }
 
+  private appendEventToBatch(event: ChannelScopedAthenaEvent): EventBatch {
+    const channelKey: ChannelKey = `${event.platform}:${event.channelId}`;
+    const pending = this.pendingEventBatches.get(channelKey);
+    if (!pending) {
+      const nextBatch: EventBatch = {
+        batchId: `batch:${event.id}`,
+        channelKey,
+        events: [event],
+      };
+      this.pendingEventBatches.set(channelKey, nextBatch);
+      return nextBatch;
+    }
+
+    pending.events.push(event);
+    return pending;
+  }
+
+  private async evaluateActivation(
+    agent: ChannelRuntime,
+    batch: EventBatch,
+    bot?: Bot,
+  ): Promise<ActivationResult> {
+    const activation = Activation.evaluate(batch);
+    const latestMessage = findLatestMessageEvent(batch.events);
+    if (!latestMessage) {
+      return activation;
+    }
+
+    const existingPolicyIndex = findLatestPolicyReasonIndex(activation);
+    const judgeSettings = agent.getSettingsManager().getJudgeSettings();
+    const policy = await evaluateActivationPolicy(
+      agent.getWillingnessJudge(),
+      {
+        isDirect: latestMessage.isDirect,
+        atSelf: latestMessage.atSelf,
+        isReplyToBot: latestMessage.isReplyToBot,
+        content: latestMessage.content,
+        selfId: bot?.selfId ?? "",
+        senderId: latestMessage.sender.userId,
+        judgeEnabled: judgeSettings?.enabled,
+        judgeModel: judgeSettings?.model,
+        judgeTimeoutMs: judgeSettings?.timeoutMs,
+      },
+    );
+
+    if (existingPolicyIndex >= 0) {
+      activation.reasons[existingPolicyIndex] = { source: "policy", code: policy.reason };
+    } else {
+      activation.reasons.push({ source: "policy", code: policy.reason });
+    }
+    activation.activated = activation.reasons.some((reason) =>
+      reason.code === "direct_message" ||
+      reason.code === "at_self" ||
+      reason.code === "llm_judge" ||
+      reason.code === "platform_notice" ||
+      reason.code === "internal_signal",
+    );
+    return activation;
+  }
+
   /** List all active channel keys. */
   getActiveChannels(): ChannelKey[] {
     return [...this.agents.keys()];
@@ -618,6 +723,54 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
 }
 
 // ============================================================================
+// Event helpers
+// ============================================================================
+
+function isChannelScopedEvent(event: AthenaEvent): event is ChannelScopedAthenaEvent {
+  return "channelId" in event && typeof event.channelId === "string";
+}
+
+function channelMessageToAthenaEvent(
+  input: ChannelMessageInput,
+): Extract<AthenaEvent, { kind: "message" }> {
+  return {
+    kind: "message",
+    id: input.messageId || `${input.platform}:${input.channelId}:${input.timestamp}`,
+    timestamp: input.timestamp,
+    platform: input.platform,
+    channelId: input.channelId,
+    messageId: input.messageId,
+    content: input.content,
+    sender: input.sender,
+    isDirect: input.isDirect,
+    atSelf: input.atSelf,
+    isReplyToBot: input.isReplyToBot,
+    replyTo: input.replyTo,
+    raw: input.raw,
+  };
+}
+
+function findLatestMessageEvent(events: AthenaEvent[]): Extract<AthenaEvent, { kind: "message" }> | null {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i];
+    if (event.kind === "message") {
+      return event;
+    }
+  }
+
+  return null;
+}
+
+function findLatestPolicyReasonIndex(result: ActivationResult): number {
+  for (let i = result.reasons.length - 1; i >= 0; i--) {
+    if (result.reasons[i]?.source === "policy") {
+      return i;
+    }
+  }
+
+  return -1;
+}
+
 // Koishi Session → channel input mapping
 // ============================================================================
 
@@ -682,4 +835,15 @@ export function koishiSessionToChannelInput(session: Session): ChannelMessageInp
     isReplyToBot: (session.quote && session.quote.user?.isBot) || false,
     replyTo,
   } satisfies ChannelMessageInput;
+}
+
+export function koishiSessionToAthenaEvent(
+  session: Session,
+): Extract<AthenaEvent, { kind: "message" }> | null {
+  const input = koishiSessionToChannelInput(session);
+  if (!input) {
+    return null;
+  }
+
+  return channelMessageToAthenaEvent(input);
 }

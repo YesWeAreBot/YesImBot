@@ -13,26 +13,40 @@ import {
 } from "node:fs";
 import { join, resolve } from "node:path";
 
-import type { AssistantModelMessage, ModelMessage, ToolModelMessage } from "@ai-sdk/provider-utils";
-import { JSONValue } from "ai";
-
-import { materializeTimeline } from "./materialize";
 import type {
-  AssistantMessageRecord,
-  ChannelMessageRecord,
-  TimelineRecord,
-  ToolMessageRecord,
-} from "./types/index";
-import type { ChannelBootstrapStatus, ChannelKey, ReplyReference } from "./types/index";
+  AssistantModelMessage,
+  ModelMessage,
+  ToolModelMessage,
+  UserModelMessage,
+} from "@ai-sdk/provider-utils";
 
-// ============================================================================
-// Session File Version
-// ============================================================================
+import { convertToLlm } from "./materialize";
+import type {
+  ActivationReason,
+  ActivationResultEntry,
+  AssistantMessage,
+  AthenaMessage,
+  ChannelBootstrapStatus,
+  ChannelKey,
+  CompactionEntry,
+  ResponseStatusEntry,
+  ResponseStatusReason,
+  SessionEntry,
+  SessionHeader,
+  SessionInfoEntry,
+  SessionMessage,
+  SessionMessageEntry,
+  ToolResultMessage,
+} from "./types/index";
+import type { ChannelMessageInput, TimelineRecord } from "./types/index";
 
 export const CURRENT_SESSION_VERSION = 1;
 
+const LEGACY_INCOMPATIBLE_ERROR =
+  "Incompatible legacy session JSONL: timeline/custom/model_change rows are not supported.";
+
 // ============================================================================
-// Content Parts (shared)
+// Message content types consumed by runtime (compat exports)
 // ============================================================================
 
 export interface TextPart {
@@ -48,21 +62,6 @@ export interface ImagePart {
 
 export type ContentPart = TextPart | ImagePart;
 
-// ============================================================================
-// AgentMessage Types — persistable/runtime message types with metadata
-// ============================================================================
-
-export interface AgentUserMessage {
-  role: "user";
-  content: string | ContentPart[];
-  timestamp: number;
-}
-
-export interface AgentTextPart {
-  type: "text";
-  text: string;
-}
-
 export interface AgentToolCallPart {
   type: "tool-call";
   toolCallId: string;
@@ -76,17 +75,27 @@ export interface AgentAssistantThinkingPart {
   signature?: string;
 }
 
+export interface AgentTextPart {
+  type: "text";
+  text: string;
+}
+
 export type AgentAssistantContentPart =
   | AgentTextPart
   | AgentToolCallPart
   | AgentAssistantThinkingPart;
 
-export interface AgentCustomMessage<T = unknown> {
-  role: "custom";
-  customType: string;
+export interface AgentUsage {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  cacheRead?: number;
+  cacheWrite?: number;
+}
+
+export interface AgentUserMessage {
+  role: "user";
   content: string | ContentPart[];
-  display: boolean;
-  details?: T;
   timestamp: number;
 }
 
@@ -98,14 +107,6 @@ export interface AgentAssistantMessage {
   model: string;
   usage?: AgentUsage;
   finishReason?: string;
-}
-
-export interface AgentUsage {
-  inputTokens: number;
-  outputTokens: number;
-  totalTokens: number;
-  cacheRead?: number;
-  cacheWrite?: number;
 }
 
 export interface AgentToolResultPart {
@@ -122,187 +123,72 @@ export interface AgentToolMessage {
   timestamp: number;
 }
 
-export type AgentMessage =
-  | AgentUserMessage
-  | AgentCustomMessage
-  | AgentAssistantMessage
-  | AgentToolMessage;
-
-// ============================================================================
-// Session Header — first line of JSONL file
-// ============================================================================
-
-export interface SessionHeader {
-  type: "session";
-  version: number;
-  id: string;
-  channelKey: ChannelKey;
-  timestamp: string;
-  modelId?: string;
-}
-
-// ============================================================================
-// Session Entry Types — all entries after header
-// ============================================================================
-
-export interface SessionEntryBase {
-  type: string;
-  /** Unique 8-char hex id within this session file. */
-  id: string;
-  /** Previous entry's id. Null for the first entry after header. */
-  parentId: string | null;
-  /** ISO 8601 timestamp. */
-  timestamp: string;
-}
-
-/** Wraps an AgentMessage (user / custom / assistant / tool). */
-export interface SessionMessageEntry extends SessionEntryBase {
-  type: "message";
-  message: AgentMessage;
-}
-
-/**
- * Extension message that participates in LLM context.
- * Used for channel chat messages, system events, image cache, etc.
- *
- * - `content` is sent to LLM (formatted text or structured parts).
- * - `details` carries metadata that is NOT sent to LLM.
- */
-export interface CustomMessageEntry<T = unknown> extends SessionEntryBase {
-  type: "custom_message";
+export interface AgentCustomMessage<T = unknown> {
+  role: "custom";
   customType: string;
   content: string | ContentPart[];
-  details?: T;
   display: boolean;
-}
-
-/**
- * Extension state that does NOT participate in LLM context.
- * Used to persist arbitrary state across session reloads.
- */
-export interface CustomEntry<T = unknown> extends SessionEntryBase {
-  type: "custom";
-  customType: string;
-  data?: T;
-}
-
-/** Context compaction summary. Entries before `firstKeptEntryId` are summarized. */
-export interface CompactionEntry extends SessionEntryBase {
-  type: "compaction";
-  summary: string;
-  firstKeptEntryId: string;
-  tokensBefore: number;
-}
-
-/** Records a model switch within the session. */
-export interface ModelChangeEntry extends SessionEntryBase {
-  type: "model_change";
-  provider: string;
-  modelId: string;
-}
-
-export interface TimelineEntry extends SessionEntryBase {
-  type: "timeline";
-  record: TimelineRecord;
-}
-
-// ============================================================================
-// Union Types
-// ============================================================================
-
-export type SessionEntry =
-  | TimelineEntry
-  | SessionMessageEntry
-  | CustomMessageEntry
-  | CustomEntry
-  | CompactionEntry
-  | ModelChangeEntry;
-
-export type FileEntry = SessionHeader | SessionEntry;
-
-// ============================================================================
-// Channel Message Details — metadata for CustomMessageEntry
-// ============================================================================
-
-/** Structured metadata stored in `details` of a channel_message CustomMessageEntry. */
-export interface ChannelMessageDetails {
+  details?: T;
   timestamp: number;
-  userId: string;
-  username: string;
-  nickname: string;
-  identity: string;
-  platform: string;
-  channelId: string;
-  messageId: string;
-  isDirect: boolean;
-  atSelf: boolean;
-  isReplyToBot: boolean;
-  replyTo?: ReplyReference;
 }
 
-// ============================================================================
-// Helpers
-// ============================================================================
+export type AgentMessage =
+  | AgentUserMessage
+  | AgentAssistantMessage
+  | AgentToolMessage
+  | AgentCustomMessage;
 
-/** Generate a unique 8-char hex id, collision-checked against existing entries. */
+type PersistedEntry = SessionHeader | Exclude<SessionEntry, SessionHeader>;
+
 function generateId(byId: { has(id: string): boolean }): string {
   for (let i = 0; i < 100; i++) {
     const id = randomUUID().slice(0, 8);
-    if (!byId.has(id)) return id;
-  }
-  return randomUUID();
-}
-
-/** Parse a JSONL file into FileEntry array. Returns empty array on invalid/empty. */
-export function loadEntriesFromFile(filePath: string): FileEntry[] {
-  if (!existsSync(filePath)) return [];
-
-  const content = readFileSync(filePath, "utf8");
-  const entries: FileEntry[] = [];
-  const lines = content.trim().split("\n");
-
-  for (const line of lines) {
-    if (!line.trim()) continue;
-    try {
-      entries.push(JSON.parse(line) as FileEntry);
-    } catch {
-      // Skip malformed lines
+    if (!byId.has(id)) {
+      return id;
     }
   }
 
-  if (entries.length === 0) return [];
-  const header = entries[0];
-  if (header.type !== "session" || typeof (header as SessionHeader).id !== "string") {
-    return [];
+  return randomUUID();
+}
+
+function ensureIsoTimestamp(input: string | number | Date): string {
+  if (typeof input === "string") {
+    const parsed = Date.parse(input);
+    if (Number.isFinite(parsed)) {
+      return new Date(parsed).toISOString();
+    }
   }
 
-  return entries;
+  return new Date(input).toISOString();
 }
 
 function readSessionHeader(filePath: string): SessionHeader | null {
   try {
     const fd = openSync(filePath, "r");
-    const buffer = Buffer.alloc(512);
-    const bytesRead = readSync(fd, buffer, 0, 512, 0);
+    const buffer = Buffer.alloc(1024);
+    const bytesRead = readSync(fd, buffer, 0, 1024, 0);
     closeSync(fd);
     const firstLine = buffer.toString("utf8", 0, bytesRead).split("\n")[0];
-    if (!firstLine) return null;
-    const header = JSON.parse(firstLine);
-    if (header.type !== "session" || typeof header.id !== "string") {
+    if (!firstLine) {
       return null;
     }
-    return header as SessionHeader;
+
+    const parsed = JSON.parse(firstLine) as Record<string, unknown>;
+    if (parsed.type !== "session" || typeof parsed.id !== "string") {
+      return null;
+    }
+
+    return parsed as unknown as SessionHeader;
   } catch {
     return null;
   }
 }
 
-/** Find the most recent valid .jsonl session file in a directory. */
 function findMostRecentSession(sessionDir: string, channelKey: ChannelKey): string | null {
   try {
     const files = readdirSync(sessionDir)
-      .filter((f) => f.endsWith(".jsonl"))
-      .map((f) => join(sessionDir, f))
+      .filter((file) => file.endsWith(".jsonl"))
+      .map((file) => join(sessionDir, file))
       .map((path) => ({
         path,
         header: readSessionHeader(path),
@@ -317,9 +203,9 @@ function findMostRecentSession(sessionDir: string, channelKey: ChannelKey): stri
           return b.mtime - a.mtime;
         }
 
-        const timestampDelta = Date.parse(b.header.timestamp) - Date.parse(a.header.timestamp);
-        if (timestampDelta !== 0) {
-          return timestampDelta;
+        const tsDelta = Date.parse(b.header.timestamp) - Date.parse(a.header.timestamp);
+        if (tsDelta !== 0) {
+          return tsDelta;
         }
 
         return b.path.localeCompare(a.path);
@@ -331,16 +217,59 @@ function findMostRecentSession(sessionDir: string, channelKey: ChannelKey): stri
   }
 }
 
-/** Run migrations to bring entries to current version. Returns true if migrated. */
-function migrateToCurrentVersion(entries: FileEntry[]): boolean {
-  const header = entries.find((e) => e.type === "session") as SessionHeader | undefined;
-  const version = header?.version ?? 1;
-  if (version >= CURRENT_SESSION_VERSION) return false;
-  // Future migrations go here
-  return false;
+function parseSessionLine(obj: Record<string, unknown>): PersistedEntry {
+  if (obj.type === "session") {
+    return obj as unknown as SessionHeader;
+  }
+
+  const type = obj.type;
+  if (
+    type === "timeline" ||
+    type === "custom" ||
+    type === "custom_message" ||
+    type === "model_change"
+  ) {
+    throw new Error(LEGACY_INCOMPATIBLE_ERROR);
+  }
+
+  if (
+    type !== "message" &&
+    type !== "activation_result" &&
+    type !== "response_status" &&
+    type !== "compaction" &&
+    type !== "session_info"
+  ) {
+    throw new Error(`Unsupported session entry type: ${String(type)}`);
+  }
+
+  return obj as unknown as Exclude<SessionEntry, SessionHeader>;
 }
 
-function serializeFileEntry(entry: FileEntry): string {
+export function loadEntriesFromFile(filePath: string): PersistedEntry[] {
+  if (!existsSync(filePath)) {
+    return [];
+  }
+
+  const raw = readFileSync(filePath, "utf8");
+  const lines = raw
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length === 0) {
+    return [];
+  }
+
+  const parsed = lines.map((line) => parseSessionLine(JSON.parse(line) as Record<string, unknown>));
+  const header = parsed[0];
+  if (header.type !== "session") {
+    throw new Error("Invalid session file: first row must be type=session");
+  }
+
+  return parsed;
+}
+
+function serializeEntry(entry: PersistedEntry): string {
   switch (entry.type) {
     case "session":
       return JSON.stringify({
@@ -351,34 +280,6 @@ function serializeFileEntry(entry: FileEntry): string {
         timestamp: entry.timestamp,
         modelId: entry.modelId,
       });
-    case "model_change":
-      return JSON.stringify({
-        type: entry.type,
-        provider: entry.provider,
-        modelId: entry.modelId,
-        id: entry.id,
-        parentId: entry.parentId,
-        timestamp: entry.timestamp,
-      });
-    case "timeline":
-      return JSON.stringify({
-        type: entry.type,
-        record: entry.record,
-        id: entry.id,
-        parentId: entry.parentId,
-        timestamp: entry.timestamp,
-      });
-    case "custom_message":
-      return JSON.stringify({
-        type: entry.type,
-        customType: entry.customType,
-        content: entry.content,
-        display: entry.display,
-        details: entry.details,
-        id: entry.id,
-        parentId: entry.parentId,
-        timestamp: entry.timestamp,
-      });
     case "message":
       return JSON.stringify({
         type: entry.type,
@@ -387,211 +288,292 @@ function serializeFileEntry(entry: FileEntry): string {
         timestamp: entry.timestamp,
         message: entry.message,
       });
+    case "activation_result":
+      return JSON.stringify({
+        type: entry.type,
+        id: entry.id,
+        parentId: entry.parentId,
+        timestamp: entry.timestamp,
+        batchId: entry.batchId,
+        activated: entry.activated,
+        reasons: entry.reasons,
+      });
+    case "response_status":
+      return JSON.stringify({
+        type: entry.type,
+        id: entry.id,
+        parentId: entry.parentId,
+        timestamp: entry.timestamp,
+        endReason: entry.endReason,
+        nextAction: entry.nextAction,
+        stepsCompleted: entry.stepsCompleted,
+        durationMs: entry.durationMs,
+      });
     case "compaction":
       return JSON.stringify({
         type: entry.type,
+        id: entry.id,
+        parentId: entry.parentId,
+        timestamp: entry.timestamp,
         summary: entry.summary,
         firstKeptEntryId: entry.firstKeptEntryId,
         tokensBefore: entry.tokensBefore,
-        id: entry.id,
-        parentId: entry.parentId,
-        timestamp: entry.timestamp,
       });
-    case "custom":
+    case "session_info":
       return JSON.stringify({
         type: entry.type,
-        customType: entry.customType,
-        data: entry.data,
         id: entry.id,
         parentId: entry.parentId,
         timestamp: entry.timestamp,
+        infoType: entry.infoType,
+        provider: entry.provider,
+        modelId: entry.modelId,
+        stateType: entry.infoType === "runtime_state" ? entry.stateType : undefined,
+        data: entry.infoType === "runtime_state" ? entry.data : undefined,
       });
-    default:
-      return JSON.stringify(entry);
   }
 }
 
-function channelKeyToParts(channelKey: ChannelKey): { platform: string; channelId: string } {
-  const [platform, channelId] = channelKey.split(":", 2);
-  return {
-    platform,
-    channelId,
-  };
-}
-
 function contentPartsToString(content: string | ContentPart[]): string {
-  if (typeof content === "string") return content;
+  if (typeof content === "string") {
+    return content;
+  }
+
   return content
-    .filter((p): p is { type: "text"; text: string } => p.type === "text")
-    .map((p) => p.text)
+    .filter((part): part is TextPart => part.type === "text")
+    .map((part) => part.text)
     .join("");
 }
 
-function legacyMessageToTimelineRecord(
-  message: AgentMessage,
-  channelKey: ChannelKey,
-  id: string,
-): TimelineRecord {
-  const { platform, channelId } = channelKeyToParts(channelKey);
-
+function agentMessageToSessionMessage(message: AgentMessage): SessionMessage {
   switch (message.role) {
-    case "assistant":
-      return {
-        id,
-        kind: "assistant_message",
-        timestamp: message.timestamp,
-        stage: "runtime",
-        visibility: "model",
-        materialization: "default",
-        message: assistantToModelMessage(message),
-      } satisfies AssistantMessageRecord;
-    case "tool":
-      return {
-        id,
-        kind: "tool_message",
-        timestamp: message.timestamp,
-        stage: "runtime",
-        visibility: "model",
-        materialization: "default",
-        message: toolToModelMessage(message),
-      } satisfies ToolMessageRecord;
     case "user":
       return {
-        id,
+        type: "user.message",
+        timestamp: ensureIsoTimestamp(message.timestamp),
+        data: {
+          messageId: `legacy-user-${message.timestamp}`,
+          senderId: "user",
+          content: contentPartsToString(message.content),
+        },
+      };
+    case "assistant":
+      return assistantToSessionMessage({
+        role: "assistant",
+        content:
+          typeof message.content === "string"
+            ? message.content
+            : message.content.map((part) => {
+                switch (part.type) {
+                  case "text":
+                    return { type: "text" as const, text: part.text };
+                  case "thinking":
+                    return {
+                      type: "reasoning" as const,
+                      text: part.text,
+                      signature: part.signature,
+                    };
+                  case "tool-call":
+                    return {
+                      type: "tool-call" as const,
+                      toolCallId: part.toolCallId,
+                      toolName: part.toolName,
+                      input: part.args,
+                    };
+                }
+              }),
+      });
+    case "tool":
+      return toolToSessionMessage({
+        role: "tool",
+        content: message.content.map((part) => ({
+          type: "tool-result" as const,
+          toolCallId: part.toolCallId,
+          toolName: part.toolName,
+          output: {
+            type: "json" as const,
+            value: part.result as import("ai").JSONValue,
+          },
+          isError: part.isError,
+        })),
+      });
+    case "custom":
+      return {
+        type: "notice.state.update",
+        timestamp: ensureIsoTimestamp(message.timestamp),
+        data: {
+          content: `[custom] ${message.customType}: ${contentPartsToString(message.content)}`,
+        },
+      };
+  }
+}
+
+function assistantToSessionMessage(message: AssistantModelMessage): AssistantMessage {
+  return {
+    ...message,
+    role: "assistant",
+    content: message.content,
+  };
+}
+
+function toolToSessionMessage(message: ToolModelMessage): ToolResultMessage {
+  return {
+    ...message,
+    role: "tool",
+    content: message.content,
+  };
+}
+
+function sessionMessageToTimelineRecord(
+  entry: SessionMessageEntry,
+  channelKey: ChannelKey,
+): TimelineRecord | null {
+  const [platform = "unknown", channelId = "unknown"] = channelKey.split(":", 2);
+  const { message } = entry;
+
+  if ("type" in message) {
+    if (message.type === "user.message") {
+      return {
         kind: "channel_message",
-        timestamp: message.timestamp,
-        stage: "ingress",
+        id: entry.id,
+        timestamp: Date.parse(entry.timestamp),
+        stage: "persisted",
         visibility: "model",
         materialization: "default",
         message: {
           kind: "channel_message",
           platform,
           channelId,
-          messageId: id,
-          timestamp: message.timestamp,
-          content: contentPartsToString(message.content),
+          messageId: message.data.messageId,
+          timestamp: Date.parse(entry.timestamp),
+          content: message.data.content,
           sender: {
-            userId: "user",
-            username: "user",
+            userId: message.data.senderId,
+            username: message.data.senderName ?? message.data.senderId,
+            nickname: message.data.senderName,
           },
           isDirect: false,
           atSelf: false,
           isReplyToBot: false,
-        },
-      } satisfies ChannelMessageRecord;
-    case "custom":
-      return legacyCustomMessageToTimelineRecord(
-        message.customType,
-        message.content,
-        message.details,
-        id,
-      );
-  }
-}
-
-function legacyCustomMessageToTimelineRecord<T>(
-  customType: string,
-  content: string | ContentPart[],
-  details: T | undefined,
-  id: string,
-): TimelineRecord {
-  switch (customType) {
-    case "channel_message": {
-      const messageDetails = details as ChannelMessageDetails | undefined;
-      return {
-        id,
-        kind: "channel_message",
-        timestamp: messageDetails?.timestamp ?? Date.now(),
-        stage: "ingress",
-        visibility: "model",
-        materialization: "default",
-        message: {
-          kind: "channel_message",
-          platform: messageDetails?.platform ?? "unknown",
-          channelId: messageDetails?.channelId ?? "unknown",
-          messageId: messageDetails?.messageId ?? id,
-          timestamp: messageDetails?.timestamp ?? Date.now(),
-          content: contentPartsToString(content),
-          sender: {
-            userId: messageDetails?.userId ?? "unknown",
-            username: messageDetails?.username ?? "unknown",
-            nickname: messageDetails?.nickname,
-            identity: messageDetails?.identity,
-          },
-          isDirect: messageDetails?.isDirect ?? false,
-          atSelf: messageDetails?.atSelf ?? false,
-          isReplyToBot: messageDetails?.isReplyToBot ?? false,
-          replyTo: messageDetails?.replyTo,
-        },
-      } satisfies ChannelMessageRecord;
+          replyTo: message.data.replyTo
+            ? {
+                messageId: message.data.replyTo.messageId,
+                username: message.data.replyTo.senderName ?? "unknown-user",
+                nickname: message.data.replyTo.senderName ?? "unknown-user",
+                summary: message.data.replyTo.content ?? "",
+              }
+            : undefined,
+        } satisfies ChannelMessageInput,
+      };
     }
+
+    return {
+      kind: "system_notice",
+      id: entry.id,
+      timestamp: Date.parse(entry.timestamp),
+      stage: "persisted",
+      visibility: "hidden",
+      materialization: "hidden",
+      subType: message.type,
+      materializationKey: "hidden",
+      notice: message.data.content,
+    };
+  }
+
+  if (message.role === "assistant") {
+    return {
+      kind: "assistant_message",
+      id: entry.id,
+      timestamp: Date.parse(entry.timestamp),
+      stage: "persisted",
+      visibility: "model",
+      materialization: "default",
+      message,
+    };
   }
 
   return {
-    id,
-    kind: "system_notice",
-    timestamp: Date.now(),
-    stage: "runtime",
-    visibility: "hidden",
-    materialization: "hidden",
-    subType: customType,
-    materializationKey: "hidden",
-    notice: contentPartsToString(content),
-    data: details as JSONValue | undefined,
-  } as TimelineRecord;
+    kind: "tool_message",
+    id: entry.id,
+    timestamp: Date.parse(entry.timestamp),
+    stage: "persisted",
+    visibility: "model",
+    materialization: "default",
+    message,
+  };
 }
 
-function legacyStateToTimelineRecord<T>(
-  customType: string,
-  data: T | undefined,
-  id: string,
-): TimelineRecord {
-  return {
-    id,
-    kind: "state_change",
-    timestamp: Date.now(),
-    stage: "runtime",
-    visibility: "internal",
-    materialization: "internal",
-    stateType: customType,
-    data: data as JSONValue | undefined,
-  } as TimelineRecord;
-}
-
-function entryToTimelineRecord(entry: SessionEntry): TimelineRecord | null {
+function helperToTimelineRecord(
+  entry: Exclude<SessionEntry, SessionHeader | SessionMessageEntry>,
+): TimelineRecord | null {
   switch (entry.type) {
-    case "timeline":
-      return entry.record;
-    case "message":
-      return legacyMessageToTimelineRecord(entry.message, "unknown:unknown", entry.id);
-    case "custom_message":
-      return legacyCustomMessageToTimelineRecord(
-        entry.customType,
-        entry.content,
-        entry.details,
-        entry.id,
-      );
-    case "custom":
-      return legacyStateToTimelineRecord(entry.customType, entry.data, entry.id);
-    default:
+    case "activation_result":
+      return {
+        kind: "system_notice",
+        id: entry.id,
+        timestamp: Date.parse(entry.timestamp),
+        stage: "persisted",
+        visibility: "hidden",
+        materialization: "hidden",
+        subType: "activation_result",
+        materializationKey: "activation_result",
+        notice: `activation_result batch=${entry.batchId} activated=${String(entry.activated)}`,
+        data: {
+          batchId: entry.batchId,
+          activated: entry.activated,
+          reasons: entry.reasons,
+        },
+      };
+    case "response_status":
+      return {
+        kind: "system_notice",
+        id: entry.id,
+        timestamp: Date.parse(entry.timestamp),
+        stage: "persisted",
+        visibility: "hidden",
+        materialization: "hidden",
+        subType: `response_status_${entry.endReason}`,
+        materializationKey: "response_status",
+        notice: `[response-status] endReason=${entry.endReason} nextAction=${entry.nextAction}`,
+        data: {
+          endReason: entry.endReason,
+          nextAction: entry.nextAction,
+          stepsCompleted: entry.stepsCompleted,
+          durationMs: entry.durationMs,
+        },
+      };
+    case "session_info":
+      if (entry.infoType === "runtime_state") {
+        return {
+          kind: "state_change",
+          id: entry.id,
+          timestamp: Date.parse(entry.timestamp),
+          stage: "persisted",
+          visibility: "internal",
+          materialization: "internal",
+          stateType: entry.stateType,
+          data: entry.data ?? {},
+        };
+      }
+
+      return {
+        kind: "state_change",
+        id: entry.id,
+        timestamp: Date.parse(entry.timestamp),
+        stage: "persisted",
+        visibility: "internal",
+        materialization: "internal",
+        stateType: entry.infoType,
+        data: {
+          provider: entry.provider,
+          modelId: entry.modelId,
+        },
+      };
+    case "compaction":
       return null;
   }
 }
 
-// ============================================================================
-// SessionManager
-// ============================================================================
-
-/**
- * Manages a single session as a linear append-only JSONL file.
- *
- * Each entry has an id and parentId forming a linear chain. The "leaf"
- * pointer tracks the most recent entry. Appending creates a new entry
- * whose parentId is the current leaf, then advances the leaf.
- *
- * Canonical timeline records remain the durable truth, while read-side callers
- * should use `getTimeline()` or `getModelMessages()` for derived projections.
- */
 export class SessionManager {
   private sessionId = "";
   private channelKey: ChannelKey;
@@ -599,13 +581,9 @@ export class SessionManager {
   private sessionFile: string | undefined;
   private persist: boolean;
   private flushed = false;
-  private fileEntries: FileEntry[] = [];
-  private byId: Map<string, SessionEntry> = new Map();
+  private fileEntries: PersistedEntry[] = [];
+  private byId: Map<string, Exclude<SessionEntry, SessionHeader>> = new Map();
   private leafId: string | null = null;
-
-  // =========================================================================
-  // Private Constructor
-  // =========================================================================
 
   private constructor(channelKey: ChannelKey, sessionDir: string, persist: boolean) {
     this.channelKey = channelKey;
@@ -617,37 +595,30 @@ export class SessionManager {
     }
   }
 
-  // =========================================================================
-  // Static Factory Methods
-  // =========================================================================
-
-  /** Create a brand new session for a channel. */
   static create(channelKey: ChannelKey, sessionDir: string, modelId?: string): SessionManager {
-    const mgr = new SessionManager(channelKey, sessionDir, true);
-    mgr.initNewSession(modelId);
-    return mgr;
+    const manager = new SessionManager(channelKey, sessionDir, true);
+    manager.initNewSession(modelId);
+    return manager;
   }
 
-  /** Open an existing session file. */
   static open(sessionFile: string, channelKey: ChannelKey): SessionManager {
     const dir = resolve(sessionFile, "..");
-    const mgr = new SessionManager(channelKey, dir, true);
-    mgr.loadSessionFile(sessionFile);
-    return mgr;
+    const manager = new SessionManager(channelKey, dir, true);
+    manager.loadSessionFile(sessionFile);
+    return manager;
   }
 
-  /**
-   * Continue the most recent session for a channel, or return null if none found.
-   * Call `SessionManager.create()` as fallback.
-   */
   static continueRecent(channelKey: ChannelKey, sessionDir: string): SessionManager | null {
-    if (!existsSync(sessionDir)) return null;
-    const mostRecent = findMostRecentSession(sessionDir, channelKey);
-    if (!mostRecent) return null;
+    if (!existsSync(sessionDir)) {
+      return null;
+    }
 
-    const mgr = new SessionManager(channelKey, sessionDir, true);
-    mgr.loadSessionFile(mostRecent);
-    return mgr;
+    const file = findMostRecentSession(sessionDir, channelKey);
+    if (!file) {
+      return null;
+    }
+
+    return SessionManager.open(file, channelKey);
   }
 
   static restoreOrCreateRecent(
@@ -672,35 +643,31 @@ export class SessionManager {
     };
   }
 
-  /** Create an in-memory session (no file persistence). For testing. */
   static inMemory(channelKey: ChannelKey): SessionManager {
-    const mgr = new SessionManager(channelKey, "", false);
-    mgr.initNewSession();
-    return mgr;
+    const manager = new SessionManager(channelKey, "", false);
+    manager.initNewSession();
+    return manager;
   }
-
-  // =========================================================================
-  // Internal Init
-  // =========================================================================
 
   private initNewSession(modelId?: string): void {
     this.sessionId = randomUUID();
-    const timestamp = new Date().toISOString();
+    const nowIso = new Date().toISOString();
     const header: SessionHeader = {
       type: "session",
       version: CURRENT_SESSION_VERSION,
       id: this.sessionId,
       channelKey: this.channelKey,
-      timestamp,
+      timestamp: nowIso,
       modelId,
     };
+
     this.fileEntries = [header];
     this.byId.clear();
     this.leafId = null;
     this.flushed = false;
 
     if (this.persist) {
-      const fileTimestamp = timestamp.replace(/[:.]/g, "-");
+      const fileTimestamp = nowIso.replace(/[:.]/g, "-");
       this.sessionFile = join(this.sessionDir, `${fileTimestamp}_${this.sessionId}.jsonl`);
     }
   }
@@ -708,130 +675,71 @@ export class SessionManager {
   private loadSessionFile(filePath: string): void {
     this.sessionFile = resolve(filePath);
 
-    if (existsSync(this.sessionFile)) {
-      this.fileEntries = loadEntriesFromFile(this.sessionFile);
-
-      if (this.fileEntries.length === 0) {
-        // Corrupted or empty file — start fresh but keep the explicit path
-        const explicitPath = this.sessionFile;
-        this.initNewSession();
-        this.sessionFile = explicitPath;
-        this.rewriteFile();
-        this.flushed = true;
-        return;
-      }
-
-      const header = this.fileEntries.find((e) => e.type === "session") as
-        | SessionHeader
-        | undefined;
-      this.sessionId = header?.id ?? randomUUID();
-
-      if (migrateToCurrentVersion(this.fileEntries)) {
-        this.rewriteFile();
-      }
-
-      this.buildIndex();
-      this.flushed = true;
-      this.repairUnresolvedToolCalls();
-    } else {
+    if (!existsSync(this.sessionFile)) {
       const explicitPath = this.sessionFile;
       this.initNewSession();
       this.sessionFile = explicitPath;
-    }
-  }
-
-  private repairUnresolvedToolCalls(): void {
-    const pendingToolCalls = new Map<string, { toolCallId: string; toolName: string }>();
-
-    for (const entry of this.fileEntries) {
-      if (entry.type === "message") {
-        const msg = entry.message;
-
-        if (msg.role === "assistant" && Array.isArray(msg.content)) {
-          for (const part of msg.content) {
-            if (part.type === "tool-call") {
-              pendingToolCalls.set(part.toolCallId, {
-                toolCallId: part.toolCallId,
-                toolName: part.toolName,
-              });
-            }
-          }
-        }
-
-        if (msg.role === "tool") {
-          for (const part of msg.content) {
-            pendingToolCalls.delete(part.toolCallId);
-          }
-        }
-
-        continue;
-      }
-
-      if (entry.type !== "timeline") continue;
-
-      if (
-        entry.record.kind === "assistant_message" &&
-        Array.isArray(entry.record.message.content)
-      ) {
-        for (const part of entry.record.message.content) {
-          if (part.type === "tool-call") {
-            pendingToolCalls.set(part.toolCallId, {
-              toolCallId: part.toolCallId,
-              toolName: part.toolName,
-            });
-          }
-        }
-      }
-
-      if (entry.record.kind === "tool_message") {
-        for (const part of entry.record.message.content) {
-          if (part.type === "tool-result") {
-            pendingToolCalls.delete(part.toolCallId);
-          }
-        }
-      }
-    }
-
-    if (pendingToolCalls.size === 0) {
       return;
     }
 
-    const syntheticResults: AgentToolResultPart[] = [...pendingToolCalls.values()].map((tc) => ({
-      type: "tool-result",
-      toolCallId: tc.toolCallId,
-      toolName: tc.toolName,
-      result: "Session interrupted before tool execution completed",
-      isError: true,
-    }));
+    const loaded = loadEntriesFromFile(this.sessionFile);
+    if (loaded.length === 0) {
+      throw new Error("Invalid session file: empty or malformed JSONL");
+    }
 
-    const repairMessage: AgentToolMessage = {
-      role: "tool",
-      content: syntheticResults,
-      timestamp: Date.now(),
-    };
+    const header = loaded[0];
+    if (header.type !== "session") {
+      throw new Error("Invalid session file: missing header");
+    }
 
-    this.appendMessage(repairMessage);
+    this.fileEntries = loaded;
+    this.sessionId = header.id;
+    this.buildIndex();
+    this.flushed = true;
   }
 
   private buildIndex(): void {
     this.byId.clear();
     this.leafId = null;
+
     for (const entry of this.fileEntries) {
-      if (entry.type === "session") continue;
+      if (entry.type === "session") {
+        continue;
+      }
+
       this.byId.set(entry.id, entry);
       this.leafId = entry.id;
     }
   }
 
-  private rewriteFile(): void {
-    if (!this.persist || !this.sessionFile) return;
-    const content = `${this.fileEntries.map((e) => serializeFileEntry(e)).join("\n")}\n`;
-    writeFileSync(this.sessionFile, content);
+  private appendPersistedEntry(entry: Exclude<SessionEntry, SessionHeader>): void {
+    this.fileEntries.push(entry);
+    this.byId.set(entry.id, entry);
+    this.leafId = entry.id;
+    this.persistEntry(entry);
   }
 
-  // =========================================================================
-  // Read Methods
-  // =========================================================================
+  private persistEntry(entry: Exclude<SessionEntry, SessionHeader>): void {
+    if (!this.persist || !this.sessionFile) {
+      return;
+    }
+
+    if (!this.flushed) {
+      const dir = resolve(this.sessionFile, "..");
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true });
+      }
+
+      writeFileSync(this.sessionFile, "");
+      for (const item of this.fileEntries) {
+        appendFileSync(this.sessionFile, `${serializeEntry(item)}\n`);
+      }
+      this.flushed = true;
+      return;
+    }
+
+    appendFileSync(this.sessionFile, `${serializeEntry(entry)}\n`);
+  }
 
   getSessionId(): string {
     return this.sessionId;
@@ -854,24 +762,43 @@ export class SessionManager {
   }
 
   getHeader(): SessionHeader {
-    return this.fileEntries[0] as SessionHeader;
+    const header = this.fileEntries[0];
+    if (!header || header.type !== "session") {
+      throw new Error("Session header missing");
+    }
+
+    return header;
   }
 
-  getEntries(): readonly SessionEntry[] {
-    return this.fileEntries.filter((e): e is SessionEntry => e.type !== "session");
+  getEntries(): readonly Exclude<SessionEntry, SessionHeader>[] {
+    return this.fileEntries.filter(
+      (entry): entry is Exclude<SessionEntry, SessionHeader> => entry.type !== "session",
+    );
+  }
+
+  getSessionMessages(): SessionMessage[] {
+    return this.getEntries()
+      .filter((entry): entry is SessionMessageEntry => entry.type === "message")
+      .map((entry) => entry.message);
   }
 
   getTimeline(): TimelineRecord[] {
     return this.getEntries()
-      .map((entry) => entryToTimelineRecord(entry))
+      .map((entry) => {
+        if (entry.type === "message") {
+          return sessionMessageToTimelineRecord(entry, this.channelKey);
+        }
+
+        return helperToTimelineRecord(entry);
+      })
       .filter((entry): entry is TimelineRecord => entry !== null);
   }
 
   getModelMessages(): ModelMessage[] {
-    return materializeTimeline(this.getTimeline());
+    return convertToLlm(this.getSessionMessages());
   }
 
-  getEntry(id: string): SessionEntry | undefined {
+  getEntry(id: string): Exclude<SessionEntry, SessionHeader> | undefined {
     return this.byId.get(id);
   }
 
@@ -883,18 +810,138 @@ export class SessionManager {
     return this.persist;
   }
 
-  // =========================================================================
-  // Append Methods — all return entry id
-  // =========================================================================
+  appendSessionMessage(message: SessionMessage): string {
+    const entry: SessionMessageEntry = {
+      type: "message",
+      id: generateId(this.byId),
+      parentId: this.leafId,
+      timestamp:
+        "timestamp" in message ? ensureIsoTimestamp(message.timestamp) : new Date().toISOString(),
+      message,
+    };
 
-  /** Append a user/custom/assistant/tool message. */
-  appendMessage(message: AgentMessage): string {
-    const id = generateId(this.byId);
-    const record = legacyMessageToTimelineRecord(message, this.channelKey, id);
-    return this.appendTimelineRecord(record);
+    this.appendPersistedEntry(entry);
+    return entry.id;
   }
 
-  /** Append a custom message that participates in LLM context. */
+  appendAthenaMessage(message: AthenaMessage): string {
+    return this.appendSessionMessage(message);
+  }
+
+  appendAssistantMessage(message: AssistantModelMessage): string {
+    return this.appendSessionMessage(assistantToSessionMessage(message));
+  }
+
+  appendToolResultMessage(message: ToolModelMessage): string {
+    return this.appendSessionMessage(toolToSessionMessage(message));
+  }
+
+  appendActivationResult(input: {
+    id?: string;
+    timestamp?: number;
+    batchId: string;
+    activated: boolean;
+    reasons: string[] | ActivationReason[];
+  }): string {
+    const entry: ActivationResultEntry = {
+      type: "activation_result",
+      id: input.id ?? generateId(this.byId),
+      parentId: this.leafId,
+      timestamp: ensureIsoTimestamp(input.timestamp ?? Date.now()),
+      batchId: input.batchId,
+      activated: input.activated,
+      reasons: input.reasons.map((reason) =>
+        typeof reason === "string" ? reason : `${reason.source}:${reason.code}`,
+      ),
+    };
+
+    this.appendPersistedEntry(entry);
+    return entry.id;
+  }
+
+  appendResponseStatus(input: {
+    id?: string;
+    timestamp?: number;
+    endReason: ResponseStatusReason | string;
+    nextAction: string;
+    stepsCompleted: number;
+    durationMs: number;
+  }): string {
+    const entry: ResponseStatusEntry = {
+      type: "response_status",
+      id: input.id ?? generateId(this.byId),
+      parentId: this.leafId,
+      timestamp: ensureIsoTimestamp(input.timestamp ?? Date.now()),
+      endReason: input.endReason,
+      nextAction: input.nextAction,
+      stepsCompleted: input.stepsCompleted,
+      durationMs: input.durationMs,
+    };
+
+    this.appendPersistedEntry(entry);
+    return entry.id;
+  }
+
+  appendCompaction(summary: string, firstKeptEntryId: string, tokensBefore: number): string {
+    const entry: CompactionEntry = {
+      type: "compaction",
+      id: generateId(this.byId),
+      parentId: this.leafId,
+      timestamp: new Date().toISOString(),
+      summary,
+      firstKeptEntryId,
+      tokensBefore,
+    };
+
+    this.appendPersistedEntry(entry);
+    return entry.id;
+  }
+
+  appendSessionInfo(provider: string, modelId: string): string {
+    const entry: SessionInfoEntry = {
+      type: "session_info",
+      id: generateId(this.byId),
+      parentId: this.leafId,
+      timestamp: new Date().toISOString(),
+      infoType: "model_change",
+      provider,
+      modelId,
+    };
+
+    this.appendPersistedEntry(entry);
+    return entry.id;
+  }
+
+  appendRuntimeStateInfo(input: {
+    stateType: string;
+    id?: string;
+    timestamp?: number;
+    data?: Record<string, import("ai").JSONValue | undefined>;
+  }): string {
+    const entry: SessionInfoEntry = {
+      type: "session_info",
+      id: input.id ?? generateId(this.byId),
+      parentId: this.leafId,
+      timestamp: ensureIsoTimestamp(input.timestamp ?? Date.now()),
+      infoType: "runtime_state",
+      provider: "runtime",
+      modelId: input.stateType,
+      stateType: input.stateType,
+      data: input.data,
+    };
+
+    this.appendPersistedEntry(entry);
+    return entry.id;
+  }
+
+  // --------------------------------------------------------------------------
+  // Compatibility wrappers kept for incremental callers
+  // --------------------------------------------------------------------------
+
+  appendMessage(message: AgentMessage): string {
+    return this.appendSessionMessage(agentMessageToSessionMessage(message));
+  }
+
   appendCustomMessageEntry<T = unknown>(
     customType: string,
     content: string | ContentPart[],
@@ -902,152 +949,160 @@ export class SessionManager {
     details?: T,
   ): string {
     void display;
-    const id = generateId(this.byId);
-    const record = legacyCustomMessageToTimelineRecord(customType, content, details, id);
-    return this.appendTimelineRecord(record);
+    const info = typeof details === "object" && details !== null ? JSON.stringify(details) : "";
+    return this.appendAthenaMessage({
+      type: "notice.state.update",
+      timestamp: new Date().toISOString(),
+      data: {
+        content: `[custom:${customType}] ${contentPartsToString(content)}${info ? ` ${info}` : ""}`,
+      },
+    });
   }
 
-  /** Append extension state (not in LLM context). */
   appendCustomEntry<T = unknown>(customType: string, data?: T): string {
-    const id = generateId(this.byId);
-    const record = legacyStateToTimelineRecord(customType, data, id);
-    return this.appendTimelineRecord(record);
+    if (customType === "activation_result") {
+      const payload = (data ?? {}) as {
+        batchId?: string;
+        activated?: boolean;
+        reasons?: string[];
+      };
+      return this.appendActivationResult({
+        batchId: payload.batchId ?? "unknown-batch",
+        activated: payload.activated ?? false,
+        reasons: payload.reasons ?? [],
+      });
+    }
+
+    if (customType === "response_status") {
+      const payload = (data ?? {}) as {
+        endReason?: string;
+        nextAction?: string;
+        stepsCompleted?: number;
+        durationMs?: number;
+      };
+      return this.appendResponseStatus({
+        endReason: payload.endReason ?? "exception",
+        nextAction: payload.nextAction ?? "blocked",
+        stepsCompleted: payload.stepsCompleted ?? 0,
+        durationMs: payload.durationMs ?? 0,
+      });
+    }
+
+    return this.appendAthenaMessage({
+      type: "notice.state.update",
+      timestamp: new Date().toISOString(),
+      data: {
+        content: `[state:${customType}] ${JSON.stringify(data ?? {})}`,
+      },
+    });
   }
 
   appendTimelineRecord(record: TimelineRecord): string {
-    const entry: TimelineEntry = {
-      type: "timeline",
-      id: record.id,
-      parentId: this.leafId,
-      timestamp: new Date(record.timestamp).toISOString(),
-      record,
-    };
-    this.appendEntry(entry);
-    return record.id;
+    if (record.kind === "assistant_message") {
+      return this.appendAssistantMessage(record.message);
+    }
+
+    if (record.kind === "tool_message") {
+      return this.appendToolResultMessage(record.message);
+    }
+
+    if (record.kind === "system_notice" && record.materializationKey === "response_status") {
+      const data = (record.data ?? {}) as {
+        endReason?: string;
+        nextAction?: string;
+        stepsCompleted?: number;
+        durationMs?: number;
+      };
+      const fallbackReason = record.subType.replace(/^response_status_/, "") || "exception";
+
+      return this.appendResponseStatus({
+        id: record.id,
+        timestamp: record.timestamp,
+        endReason: data.endReason ?? fallbackReason,
+        nextAction: data.nextAction ?? "blocked",
+        stepsCompleted: data.stepsCompleted ?? 0,
+        durationMs: data.durationMs ?? 0,
+      });
+    }
+
+    if (record.kind === "system_notice" && record.subType === "activation_result") {
+      const data = (record.data ?? {}) as {
+        batchId?: string;
+        activated?: boolean;
+        reasons?: string[];
+      };
+
+      return this.appendActivationResult({
+        id: record.id,
+        timestamp: record.timestamp,
+        batchId: data.batchId ?? "unknown-batch",
+        activated: data.activated ?? false,
+        reasons: data.reasons ?? [],
+      });
+    }
+
+    const asMessage =
+      record.kind === "channel_message"
+        ? ({
+            type: "user.message",
+            timestamp: ensureIsoTimestamp(record.timestamp),
+            data: {
+              messageId: record.message.messageId,
+              senderId: record.message.sender.userId,
+              senderName: record.message.sender.nickname ?? record.message.sender.username,
+              content: record.message.content,
+              replyTo: record.message.replyTo
+                ? {
+                    messageId: record.message.replyTo.messageId,
+                    senderName: record.message.replyTo.nickname || record.message.replyTo.username,
+                    content: record.message.replyTo.summary,
+                  }
+                : undefined,
+            },
+          } satisfies AthenaMessage)
+        : ({
+            type: "notice.state.update",
+            timestamp: ensureIsoTimestamp(record.timestamp),
+            data: {
+              content: `[${record.kind}]`,
+            },
+          } satisfies AthenaMessage);
+
+    const id = this.appendAthenaMessage(asMessage);
+    return record.id || id;
   }
 
-  /** Append a compaction summary. */
-  appendCompaction(summary: string, firstKeptEntryId: string, tokensBefore: number): string {
-    const entry: CompactionEntry = {
-      type: "compaction",
-      summary,
-      firstKeptEntryId,
-      tokensBefore,
-      id: generateId(this.byId),
-      parentId: this.leafId,
-      timestamp: new Date().toISOString(),
-    };
-    this.appendEntry(entry);
-    return entry.id;
-  }
-
-  /** Append a model change record. */
   appendModelChange(provider: string, modelId: string): string {
-    const entry: ModelChangeEntry = {
-      type: "model_change",
-      provider,
-      modelId,
-      id: generateId(this.byId),
-      parentId: this.leafId,
-      timestamp: new Date().toISOString(),
-    };
-    this.appendEntry(entry);
-    return entry.id;
-  }
-
-  // =========================================================================
-  // Internal Persistence
-  // =========================================================================
-
-  private appendEntry(entry: SessionEntry): void {
-    this.fileEntries.push(entry);
-    this.byId.set(entry.id, entry);
-    this.leafId = entry.id;
-    this.persistEntry(entry);
-  }
-
-  /**
-   * Persist-first strategy:
-   * 1. Create the file on first append.
-   * 2. On first flush, write all accumulated entries at once.
-   * 3. After that, append each new entry individually.
-   */
-  private persistEntry(entry: SessionEntry): void {
-    if (!this.persist || !this.sessionFile) return;
-
-    if (!this.flushed) {
-      const dir = resolve(this.sessionFile, "..");
-      if (!existsSync(dir)) {
-        mkdirSync(dir, { recursive: true });
-      }
-      writeFileSync(this.sessionFile, "");
-      for (const e of this.fileEntries) {
-        appendFileSync(this.sessionFile, `${serializeFileEntry(e)}\n`);
-      }
-      this.flushed = true;
-    } else {
-      appendFileSync(this.sessionFile, `${serializeFileEntry(entry)}\n`);
-    }
+    return this.appendSessionInfo(provider, modelId);
   }
 }
 
-// ============================================================================
-// AgentMessage → AI SDK ModelMessage conversion
-// ============================================================================
-
-function assistantToModelMessage(msg: AgentAssistantMessage): AssistantModelMessage {
-  if (typeof msg.content === "string") {
-    return { role: "assistant", content: msg.content };
-  }
-  const content = msg.content.map((part) => {
-    switch (part.type) {
-      case "text":
-        return { type: "text" as const, text: part.text };
-      case "tool-call":
-        return {
-          type: "tool-call" as const,
-          toolCallId: part.toolCallId,
-          toolName: part.toolName,
-          input: part.args,
-        };
-      case "thinking":
-        return { type: "reasoning" as const, text: part.text };
-    }
-  });
-  return { role: "assistant", content } as AssistantModelMessage;
-}
-
-function toolToModelMessage(msg: AgentToolMessage): ToolModelMessage {
-  return {
-    role: "tool",
-    content: msg.content.map((part) => ({
-      type: "tool-result" as const,
-      toolCallId: part.toolCallId,
-      toolName: part.toolName,
-      output: { type: "json" as const, value: part.result as JSONValue },
-      isError: part.isError,
-    })),
-  };
-}
-
-// ============================================================================
-// AI SDK helpers
-// ============================================================================
-
-/** Extract text from an AI SDK ResponseMessage for sending to channel. */
 export function extractTextFromResponseMessages(messages: readonly ModelMessage[]): string {
-  const texts: string[] = [];
-  for (const msg of messages) {
-    if (msg.role !== "assistant") continue;
-    if (typeof msg.content === "string") {
-      texts.push(msg.content);
-    } else if (Array.isArray(msg.content)) {
-      for (const part of msg.content) {
-        if ("text" in part && part.type === "text") {
-          texts.push(part.text);
-        }
+  const textChunks: string[] = [];
+
+  for (const message of messages) {
+    if (message.role !== "assistant") {
+      continue;
+    }
+
+    if (typeof message.content === "string") {
+      textChunks.push(message.content);
+      continue;
+    }
+
+    for (const part of message.content) {
+      if (part.type === "text") {
+        textChunks.push(part.text);
       }
     }
   }
-  return texts.join("");
+
+  return textChunks.join("");
+}
+
+export function athenaMessageToUserModelMessage(message: AthenaMessage): UserModelMessage {
+  return {
+    role: "user",
+    content: message.data.content,
+  };
 }

@@ -23,6 +23,7 @@ function isValidCutPoint(record: TimelineRecord): boolean {
   }
 
   return (
+    record.kind === "athena_event" ||
     record.kind === "channel_message" ||
     record.kind === "channel_event" ||
     record.kind === "assistant_message" ||
@@ -40,6 +41,34 @@ function estimateRecordTokens(record: TimelineRecord): number {
   }
 
   switch (record.kind) {
+    case "athena_event":
+      if (record.event.kind === "message") {
+        return charsToTokens(record.event.content.length);
+      }
+
+      if (record.event.kind === "channel_event") {
+        return charsToTokens(
+          record.event.eventType.length +
+            record.event.platform.length +
+            record.event.channelId.length +
+            (record.event.sourceUserId?.length ?? 0),
+        );
+      }
+
+      if (record.event.kind === "platform_notice") {
+        return charsToTokens(
+          record.event.noticeType.length +
+            record.event.platform.length +
+            (record.event.channelId?.length ?? 0) +
+            record.event.summary.length,
+        );
+      }
+
+      return charsToTokens(
+        record.event.signalType.length +
+          record.event.source.length +
+          (record.event.summary?.length ?? 0),
+      );
     case "channel_message":
       return charsToTokens(record.message.content.length);
     case "channel_event":

@@ -9,24 +9,21 @@ import { Bot, Context, Logger } from "koishi";
 import { AgentSession } from "../agent-session";
 import { compact, prepareCompaction, shouldCompact } from "../compaction";
 import { estimateContextTokens } from "../compaction/estimate";
+import type { ActivationResult, EventBatch } from "../domain/activation";
 import { InstructionAssembler } from "../instruction-assembler";
 import { InstructionStateService } from "../instruction-state/service";
+import { convertToLlm } from "../materialize";
 import type { SessionManager } from "../session-manager";
 import type {
+  AthenaEvent,
   FollowUpReviewRecord,
-  ResponseStatusNoticeSubType,
   ResponseStatusReason,
   ResponseStatusRecord,
 } from "../types";
-import type { ChannelInput, ChannelMessageInput, TimelineRecord } from "../types/index";
-import {
-  createDefaultWillingnessJudge,
-  evaluateRuntimeWillingnessHeuristic,
-  type WillingnessJudge,
-} from "../willingness";
+import type { ChannelInput, ChannelMessageInput, ChannelRawPayload } from "../types/index";
+import { createDefaultWillingnessJudge, type WillingnessJudge } from "../willingness";
 import { prepareRuntimeModel } from "./model-adapter";
 import {
-  buildRuntimeModelMessages,
   getReliableInputTokens,
   hasCompletedSendMessageWithoutHeartbeat,
   ResponseStepProcessor,
@@ -48,18 +45,22 @@ import type {
 // ============================================================================
 
 type ResponseHostInput = {
-  triggerEvents: ChannelInput[];
+  triggerEvents: EventBatch["events"];
   responderId: string;
   channelId: string;
   platform: string;
   startedAt: number;
 };
 
+export interface ActivatedEventBatch extends EventBatch {
+  activation: ActivationResult;
+}
+
 /**
  * Per-channel runtime wrapping AI SDK ToolLoopAgent + SessionManager.
  *
  * Responsibilities:
- * - Receive incoming messages, persist them, check willingness
+ * - Consume activation-approved batches and run runtime execution
  * - Schedule and execute AI responses via ToolLoopAgent
  * - Persist AI response steps to SessionManager
  * - Manage concurrency (prevent parallel generate() calls per channel)
@@ -88,7 +89,7 @@ export class ChannelRuntime {
   public currentSupportedToolSignature: string | null = null;
   private currentToolCatalog: ToolCatalog | null = null;
   private currentToolSelection: ToolSelection | null = null;
-  private pendingResponseInputs: ChannelInput[] = [];
+  private pendingActivatedBatches: ActivatedEventBatch[] = [];
   private currentResponseContext: unknown;
   private currentToolExperimentalContext: unknown;
   private readonly responseStepProcessor: ResponseStepProcessor;
@@ -285,86 +286,24 @@ export class ChannelRuntime {
   // Public API
   // =========================================================================
 
-  /**
-   * Process an incoming channel message input.
-   *
-   * 1. Persist the canonical message to the timeline immediately
-   * 2. Run willingness check
-   * 3. If should respond, schedule a response
-   */
   async receive(input: ChannelInput): Promise<void> {
     if (input.kind !== "channel_message") {
       throw new Error(`Unsupported channel input kind for runtime receive: ${input.kind}`);
     }
 
-    this.appendInboundMessage(input);
-    const shouldRespond = await this.shouldRespondNow(input);
-    this.receiveWriteback(input, shouldRespond);
-  }
-
-  private appendInboundMessage(event: ChannelMessageInput): void {
-    // receive
-    // Always append the canonical channel_message before making turn decisions.
-    this.logger.debug(
-      `[input:${this.getChannelKey()}] user=${event.sender.userId} direct=${event.isDirect} atSelf=${event.atSelf} replyToBot=${event.isReplyToBot} messageId=${event.messageId}`,
+    throw new Error(
+      `Use AgentSessionService.ingestEvent() for raw ingress; runtime expects activated batches`,
     );
-
-    this.session.appendChannelMessage({
-      id: event.messageId || createRuntimeRecordId(),
-      timestamp: event.timestamp,
-      stage: "ingress",
-      visibility: "model",
-      materialization: "default",
-      message: event,
-    });
   }
 
-  private async shouldRespondNow(event: ChannelMessageInput): Promise<boolean> {
-    // shouldRespond
-    // Decide after the inbound message has already become canonical session truth.
-    const selfId = this.bot?.selfId ?? "";
-    const judgeSettings = this.options.settingsManager.getJudgeSettings();
-    const heuristic = evaluateRuntimeWillingnessHeuristic({
-      isDirect: event.isDirect,
-      atSelf: event.atSelf,
-      isReplyToBot: event.isReplyToBot,
-      selfId,
-      senderId: event.sender.userId,
-    });
-    const willingness =
-      heuristic ??
-      (await this.willingnessJudge.judge({
-        isDirect: event.isDirect,
-        atSelf: event.atSelf,
-        isReplyToBot: event.isReplyToBot,
-        content: event.content,
-        selfId,
-        senderId: event.sender.userId,
-        judgeEnabled: judgeSettings?.enabled,
-        judgeModel: judgeSettings?.model,
-        judgeTimeoutMs: judgeSettings?.timeoutMs,
-      }));
-
-    this.logger.debug(
-      `[willingness:${this.getChannelKey()}] shouldRespond=${willingness.shouldRespond} reason=${willingness.reason} source=${heuristic ? "heuristic" : "judge"}`,
-    );
-
-    return willingness.shouldRespond;
-  }
-
-  private receiveWriteback(event: ChannelMessageInput, shouldRespond: boolean): void {
-    // writeback
-    // Fan the receive-stage decision into immediate idle, a queued follow-up, or a new run.
-    if (!shouldRespond) {
-      return;
-    }
-
-    this.pendingResponseInputs.push(event);
+  async wake(batch: ActivatedEventBatch): Promise<void> {
+    this.pendingActivatedBatches.push(batch);
 
     if (this.hasActiveTurn()) {
+      const latestMessage = findLatestMessageEvent(batch.events);
       this.markPendingFollowUp({
-        observedAt: event.timestamp,
-        messageId: event.messageId,
+        observedAt: latestMessage?.timestamp ?? Date.now(),
+        messageId: latestMessage?.messageId ?? batch.batchId,
       });
       return;
     }
@@ -394,6 +333,10 @@ export class ChannelRuntime {
     return this.options.settingsManager;
   }
 
+  getWillingnessJudge(): WillingnessJudge {
+    return this.willingnessJudge;
+  }
+
   // =========================================================================
   // Response Scheduling
   // =========================================================================
@@ -411,18 +354,7 @@ export class ChannelRuntime {
   }
 
   private appendResponseStatus(record: ResponseStatusRecord): void {
-    const subType = getResponseStatusNoticeSubType(record.endReason);
-    this.session.appendSystemNotice({
-      id: createRuntimeRecordId(),
-      timestamp: Date.now(),
-      stage: "runtime",
-      visibility: "hidden",
-      materialization: "hidden",
-      subType,
-      materializationKey: "response_status",
-      notice: buildResponseStatusNotice(subType, record),
-      data: record,
-    });
+    this.session.appendResponseStatus(record);
   }
 
   private markPendingFollowUp(input: { observedAt: number; messageId: string }): void {
@@ -454,18 +386,72 @@ export class ChannelRuntime {
   }
 
   private buildRuntimeMessages(instructions: string, protocolRetry: boolean): ModelMessage[] {
-    return buildRuntimeModelMessages(this.session, instructions, {
-      followUpReview: this.currentTurnFollowUpReview?.content,
-      protocolRetry,
-    });
+    const latestCompaction = this.getLatestCompactionSidecar();
+    const sessionMessages = latestCompaction
+      ? this.getSessionMessagesFromCompactionBoundary(latestCompaction.firstKeptEntryId)
+      : this.session.getSessionMessages();
+    const modelMessages = convertToLlm([...sessionMessages]);
+    const runtimeMessages: ModelMessage[] = latestCompaction
+      ? [
+          {
+            role: "user",
+            content: `[Context Summary]\n${latestCompaction.summary}`,
+          },
+          ...modelMessages,
+        ]
+      : modelMessages;
+
+    if (this.currentTurnFollowUpReview?.content) {
+      runtimeMessages.push({
+        role: "user",
+        content: this.currentTurnFollowUpReview.content,
+      });
+    }
+
+    if (protocolRetry) {
+      runtimeMessages.push({
+        role: "user",
+        content:
+          "[Protocol Guidance]\nVisible IM replies must be sent with the send_message tool. " +
+          "Your previous assistant text was not delivered to the user. " +
+          "Re-issue the full visible reply with send_message, and only set request_heartbeat when you intentionally need another model turn after sending.",
+      });
+    }
+
+    return [{ role: "system", content: instructions }, ...runtimeMessages];
   }
 
-  private getLatestChannelMessageInput(): ChannelMessageInput | undefined {
-    const timeline = this.session.getTimeline();
-    for (let i = timeline.length - 1; i >= 0; i--) {
-      const record = timeline[i];
-      if (record?.kind === "channel_message") {
-        return record.message;
+  private getLatestChannelMessageInput():
+    | ChannelMessageInput<ChannelRawPayload | undefined>
+    | undefined {
+    const sessionMessages = this.session.getSessionMessages();
+    for (let i = sessionMessages.length - 1; i >= 0; i--) {
+      const message = sessionMessages[i];
+      if ("type" in message && message.type === "user.message") {
+        return {
+          kind: "channel_message",
+          platform: this.options.platform,
+          channelId: this.options.channelId,
+          messageId: message.data.messageId,
+          timestamp: Date.parse(message.timestamp),
+          content: message.data.content,
+          sender: {
+            userId: message.data.senderId,
+            username: message.data.senderName ?? message.data.senderId,
+            nickname: message.data.senderName,
+          },
+          isDirect: false,
+          atSelf: false,
+          isReplyToBot: false,
+          replyTo: message.data.replyTo
+            ? {
+                messageId: message.data.replyTo.messageId ?? "unknown-message",
+                username: message.data.replyTo.senderName ?? "unknown-user",
+                nickname: message.data.replyTo.senderName ?? "unknown-user",
+                summary: message.data.replyTo.content ?? "",
+              }
+            : undefined,
+        };
       }
     }
 
@@ -474,7 +460,7 @@ export class ChannelRuntime {
 
   private createToolRuntime(
     turnSettings: ChannelRuntimeTurnSettingsSnapshot,
-    latestInput: ChannelMessageInput | undefined,
+    latestInput: ChannelMessageInput<ChannelRawPayload | undefined> | undefined,
   ) {
     return {
       channelKey: this.getChannelKey(),
@@ -497,8 +483,9 @@ export class ChannelRuntime {
   }
 
   private buildResponseHostInput(): ResponseHostInput {
+    const triggerEvents = this.pendingActivatedBatches.flatMap((batch) => batch.events);
     return {
-      triggerEvents: [...this.pendingResponseInputs],
+      triggerEvents: [...triggerEvents],
       responderId: (this.bot as { userId?: string } | undefined)?.userId ?? this.bot?.selfId ?? "",
       channelId: this.options.channelId,
       platform: this.options.platform,
@@ -572,10 +559,7 @@ export class ChannelRuntime {
     const pluginService = options.ctx["yesimbot.plugin"] as IPluginService | undefined;
     const runtime = this.createToolRuntime(options.turnSettings, latestInput);
     const responseHostInput = this.buildResponseHostInput();
-    if (responseHostInput.triggerEvents.length === 0 && latestInput) {
-      responseHostInput.triggerEvents = [latestInput];
-    }
-    this.pendingResponseInputs = [];
+    this.pendingActivatedBatches = [];
     const toolLifecycle = pluginService?.compileTools
       ? await (async () => {
           if (!this.currentToolCatalog) {
@@ -867,15 +851,7 @@ export class ChannelRuntime {
         const pendingFollowUp = this.consumePendingFollowUp();
         if (pendingFollowUp) {
           const followUpReview = this.createFollowUpReviewRecord(pendingFollowUp);
-          this.session.appendStateChange({
-            id: createRuntimeRecordId(),
-            timestamp: Date.now(),
-            stage: "runtime",
-            visibility: "internal",
-            materialization: "internal",
-            stateType: "follow_up_review",
-            data: { ...followUpReview },
-          });
+          this.session.appendRuntimeStateInfo("follow_up_review", undefined, followUpReview);
           this.nextTurnFollowUpReview = followUpReview;
         }
         this.currentTurnSettings = null;
@@ -975,8 +951,15 @@ export class ChannelRuntime {
     contextTokens: number,
     turnSettings = this.createTurnSettingsSnapshot(),
   ): Promise<CompactionRunResult> {
-    const records = [...this.session.getTimeline()];
-    if (records.length === 0) {
+    const entries = this.session
+      .getEntries()
+      .filter(
+        (
+          entry,
+        ): entry is Extract<ReturnType<AgentSession["getEntries"]>[number], { type: "message" }> =>
+          entry.type === "message",
+      );
+    if (entries.length === 0) {
       return { compacted: false, reason: "empty-session" };
     }
 
@@ -985,12 +968,12 @@ export class ChannelRuntime {
       return { compacted: false, reason: "already-compacted" };
     }
 
-    const compactionRecords = this.getCompactionRecords(
-      records,
+    const compactionEntries = this.getCompactionEntries(
+      entries,
       latestCompaction?.firstKeptEntryId,
     );
     const preparation = prepareCompaction(
-      compactionRecords,
+      compactionEntries,
       turnSettings.compactionSettings,
       latestCompaction?.summary,
       contextTokens,
@@ -1048,20 +1031,38 @@ export class ChannelRuntime {
     return entries[entries.length - 1]?.type === "compaction";
   }
 
-  private getCompactionRecords(
-    records: readonly TimelineRecord[],
+  private getCompactionEntries(
+    entries: Array<Extract<ReturnType<AgentSession["getEntries"]>[number], { type: "message" }>>,
     firstKeptEntryId?: string,
-  ): readonly TimelineRecord[] {
+  ): Array<Extract<ReturnType<AgentSession["getEntries"]>[number], { type: "message" }>> {
     if (!firstKeptEntryId) {
-      return records;
+      return entries;
     }
 
-    const firstKeptIndex = records.findIndex((record) => record.id === firstKeptEntryId);
+    const firstKeptIndex = entries.findIndex((entry) => entry.id === firstKeptEntryId);
     if (firstKeptIndex === -1) {
-      return records;
+      return entries;
     }
 
-    return records.slice(firstKeptIndex);
+    return entries.slice(firstKeptIndex);
+  }
+
+  private getSessionMessagesFromCompactionBoundary(
+    firstKeptEntryId: string,
+  ): ReturnType<AgentSession["getSessionMessages"]> {
+    const entries = this.session.getEntries();
+    const firstKeptIndex = entries.findIndex((entry) => entry.id === firstKeptEntryId);
+    if (firstKeptIndex === -1) {
+      return this.session.getSessionMessages();
+    }
+
+    return entries
+      .slice(firstKeptIndex)
+      .filter(
+        (entry): entry is Extract<(typeof entries)[number], { type: "message" }> =>
+          entry.type === "message",
+      )
+      .map((entry) => entry.message);
   }
 }
 
@@ -1114,34 +1115,15 @@ function createRuntimeRecordId(): string {
   return `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
 }
 
-function getResponseStatusNoticeSubType(
-  endReason: ResponseStatusReason,
-): ResponseStatusNoticeSubType {
-  switch (endReason) {
-    case "normal":
-      return "response_status_normal";
-    case "heartbeat_continuation":
-      return "response_status_heartbeat_continuation";
-    case "protocol_error":
-      return "response_status_protocol_error";
-    case "timeout":
-      return "response_status_timeout";
-    case "abort":
-      return "response_status_abort";
-    case "exception":
-      return "response_status_exception";
+function findLatestMessageEvent(
+  events: AthenaEvent[],
+): Extract<AthenaEvent, { kind: "message" }> | null {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i];
+    if (event.kind === "message") {
+      return event;
+    }
   }
-}
 
-function buildResponseStatusNotice(
-  subType: ResponseStatusNoticeSubType,
-  record: ResponseStatusRecord,
-): string {
-  return [
-    `[response-status] ${subType}`,
-    `endReason=${record.endReason}`,
-    `nextAction=${record.nextAction}`,
-    `stepsCompleted=${record.stepsCompleted}`,
-    `durationMs=${record.durationMs}`,
-  ].join(" ");
+  return null;
 }

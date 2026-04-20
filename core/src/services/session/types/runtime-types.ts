@@ -48,10 +48,10 @@ export type ResponseStatusRecord = Record<string, JSONValue | undefined> & {
   blockedReason?: string;
 };
 
-export interface FollowUpReviewRecord {
+export type FollowUpReviewRecord = Record<string, JSONValue | undefined> & {
   content: string;
   firstObservedAt: number;
   latestObservedAt: number;
   messageCount: number;
   messageIds: string[];
-}
+};

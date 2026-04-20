@@ -175,8 +175,3 @@ yarn-error.log
 .worktrees/
 references/
 yarn.lock
-
-## graphify
-graphify-out/
-.graphify_*
-.ace-tool/

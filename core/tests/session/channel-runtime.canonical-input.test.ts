@@ -23,7 +23,8 @@ vi.mock("koishi", () => {
 });
 
 import { AgentSession } from "../../src/services/session/agent-session";
-import { serializeTimelineForCompaction } from "../../src/services/session/compaction/serialize";
+import { Activation } from "../../src/services/session/domain/activation";
+import { serializeSessionMessagesForCompaction } from "../../src/services/session/compaction/serialize";
 import { ChannelRuntime } from "../../src/services/session/runtime";
 import { ResponseStepProcessor } from "../../src/services/session/runtime/response-step-processor";
 import { buildRuntimeModelMessages } from "../../src/services/session/runtime/response-step-processor";
@@ -141,7 +142,7 @@ describe("typed runtime input wiring", () => {
     expect(input).not.toHaveProperty("elements");
   });
 
-  it("appends typed channel records instead of formatted channel_message text", async () => {
+  it("appends typed user.message entries instead of athena_event timeline records", async () => {
     const ctx = createContextMock();
     const sessionManager = SessionManager.inMemory("discord:channel-1");
     const runtime = new ChannelRuntime(ctx, {
@@ -156,23 +157,113 @@ describe("typed runtime input wiring", () => {
       basePath: "/tmp/athena-channel-input",
     });
 
-    await runtime.receive(
-      createChannelMessageInput({ isDirect: false, atSelf: false, isReplyToBot: false }),
-    );
+    const event = createChannelMessageInput({ isDirect: false, atSelf: false, isReplyToBot: false });
+    const batch = {
+      batchId: "batch-runtime-append-1",
+      channelKey: "discord:channel-1",
+      events: [
+        {
+          kind: "message",
+          id: "evt-runtime-append-1",
+          timestamp: event.timestamp,
+          platform: event.platform,
+          channelId: event.channelId,
+          messageId: event.messageId,
+          content: event.content,
+          sender: event.sender,
+          isDirect: event.isDirect,
+          atSelf: event.atSelf,
+          isReplyToBot: event.isReplyToBot,
+        },
+      ],
+    } as const;
 
-    const timeline = sessionManager.getTimeline();
-    expect(timeline[0]).toMatchObject({
-      kind: "channel_message",
-      message: {
-        kind: "channel_message",
-        content: "hello canonical world",
+    runtime.session.appendAthenaMessage({
+      type: "user.message",
+      timestamp: new Date(batch.events[0].timestamp).toISOString(),
+      data: {
+        messageId: batch.events[0].messageId,
+        senderId: batch.events[0].sender.userId,
+        senderName: batch.events[0].sender.nickname ?? batch.events[0].sender.username,
+        content: batch.events[0].content,
       },
     });
-    expect(timeline[0]).not.toMatchObject({
+    await runtime.wake({
+      ...batch,
+      activation: Activation.evaluate(batch),
+    });
+
+    const entries = sessionManager.getEntries();
+    expect(entries[0]).toMatchObject({
+      type: "message",
       message: {
-        content: expect.stringContaining("[timestamp]"),
+        type: "user.message",
+        data: {
+          content: "hello canonical world",
+        },
       },
     });
+    expect(sessionManager.getModelMessages()[0]).toMatchObject({
+      role: "user",
+      content: expect.stringContaining("hello canonical world"),
+    });
+  });
+
+  it("runtime response_status and follow_up session_info persist as helper entries and stay out of model messages", () => {
+    const ctx = createContextMock();
+    const sessionManager = SessionManager.inMemory("discord:channel-1");
+    const runtime = new ChannelRuntime(ctx, {
+      bot: createBotMock(),
+      sessionManager,
+      settingsManager: createTestSettingsManager(),
+      platform: "discord",
+      channelId: "channel-1",
+      basePath: "/tmp/athena-channel-input",
+    });
+
+    runtime.session.appendAthenaMessage({
+      type: "user.message",
+      timestamp: new Date(1_710_000_000_000).toISOString(),
+      data: {
+        messageId: "msg-helper-boundary-1",
+        senderId: "user-1",
+        senderName: "alice",
+        content: "hello helper boundary",
+      },
+    });
+
+    runtime.session.appendStateChange({
+      id: "follow-up-review-1",
+      timestamp: 1_710_000_000_001,
+      stage: "runtime",
+      visibility: "internal",
+      materialization: "internal",
+      stateType: "follow_up_review",
+      data: { messageCount: 1 },
+    });
+    (runtime as unknown as { appendResponseStatus(record: { endReason: "normal"; nextAction: "follow_up"; durationMs: number; stepsCompleted: number }): void }).appendResponseStatus({
+      endReason: "normal",
+      nextAction: "follow_up",
+      durationMs: 10,
+      stepsCompleted: 1,
+    });
+
+    const entries = sessionManager.getEntries();
+    expect(entries.some((entry) => entry.type === "response_status")).toBe(true);
+    expect(
+      entries.some(
+        (entry) =>
+          entry.type === "session_info" && entry.provider === "runtime" && entry.modelId === "follow_up_review",
+      ),
+    ).toBe(true);
+
+    const modelMessages = sessionManager.getModelMessages();
+    expect(modelMessages.some((message) => {
+      if (typeof message.content !== "string") {
+        return false;
+      }
+      return message.content.includes("response_status") || message.content.includes("follow_up_review");
+    })).toBe(false);
   });
 
   it("routes typed channel_message inputs through service without re-normalizing", async () => {
@@ -181,10 +272,19 @@ describe("typed runtime input wiring", () => {
       model: "test:model",
       basePath: "sessions",
     });
-    const agentReceive = vi.fn().mockResolvedValue(undefined);
-    const getOrCreateAgentSpy = vi.spyOn(service, "getOrCreateAgent").mockReturnValue({
-      receive: agentReceive,
-    } as unknown as ChannelRuntime);
+    const runtime = new ChannelRuntime(ctx, {
+      bot: createBotMock(),
+      sessionManager: SessionManager.inMemory("discord:channel-1"),
+      settingsManager: createTestSettingsManager(),
+      willingnessJudge: {
+        judge: vi.fn().mockResolvedValue({ shouldRespond: false, reason: "no_trigger" }),
+      },
+      platform: "discord",
+      channelId: "channel-1",
+      basePath: "/tmp/athena-channel-input",
+    });
+    const wakeSpy = vi.spyOn(runtime, "wake").mockResolvedValue(undefined);
+    const getOrCreateAgentSpy = vi.spyOn(service, "getOrCreateAgent").mockResolvedValue(runtime);
 
     const channelMessageInput: ChannelMessageInput = {
       kind: "channel_message",
@@ -204,8 +304,16 @@ describe("typed runtime input wiring", () => {
 
     await service.receive(channelMessageInput);
 
-    expect(getOrCreateAgentSpy).toHaveBeenCalledWith(channelMessageInput, undefined);
-    expect(agentReceive).toHaveBeenCalledWith(channelMessageInput);
+    expect(getOrCreateAgentSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "message",
+        platform: "discord",
+        channelId: "channel-1",
+        messageId: "msg-1",
+      }),
+      undefined,
+    );
+    expect(wakeSpy).not.toHaveBeenCalled();
   });
 
   it("rejects non-message channel inputs at the runtime seam with typed kind branching", async () => {
@@ -236,6 +344,165 @@ describe("typed runtime input wiring", () => {
     await expect(runtime.receive(input)).rejects.toThrow(
       "Unsupported channel input kind for runtime receive: channel_event",
     );
+  });
+
+  it("accepts an already-activated batch through wake instead of assembling raw ingress families", async () => {
+    const ctx = createContextMock();
+    const sessionManager = SessionManager.inMemory("discord:channel-1");
+    const runtime = new ChannelRuntime(ctx, {
+      bot: createBotMock(),
+      sessionManager,
+      settingsManager: createTestSettingsManager(),
+      willingnessJudge: {
+        judge: vi.fn().mockResolvedValue({ shouldRespond: false, reason: "no_trigger" }),
+      },
+      platform: "discord",
+      channelId: "channel-1",
+      basePath: "/tmp/athena-channel-input",
+    });
+
+    const activatedBatch = {
+      batchId: "batch-activated-1",
+      channelKey: "discord:channel-1",
+      events: [
+        {
+          kind: "message",
+          id: "evt-message-1",
+          timestamp: 1_710_000_000_000,
+          platform: "discord",
+          channelId: "channel-1",
+          messageId: "msg-1",
+          content: "hello canonical world",
+          sender: {
+            userId: "user-1",
+            username: "alice",
+          },
+          isDirect: false,
+          atSelf: true,
+          isReplyToBot: false,
+        },
+        {
+          kind: "internal_signal",
+          id: "evt-signal-1",
+          timestamp: 1_710_000_000_001,
+          platform: "discord",
+          channelId: "channel-1",
+          signalType: "follow_up_review",
+          source: "scheduler",
+          summary: "wake runtime",
+        },
+      ],
+      activation: {
+        batchId: "batch-activated-1",
+        activated: true,
+        reasons: [
+          { source: "policy", code: "at_self" },
+          { source: "event", code: "internal_signal", detail: "follow_up_review" },
+        ],
+      },
+    };
+
+    await expect(
+      (runtime as unknown as { wake(batch: typeof activatedBatch): Promise<void> }).wake(activatedBatch),
+    ).resolves.toBeUndefined();
+  });
+
+  it("merges activated follow-up batches instead of overwriting earlier trigger events", async () => {
+    const ctx = createContextMock();
+    const sessionManager = SessionManager.inMemory("discord:channel-1");
+    const runtime = new ChannelRuntime(ctx, {
+      bot: createBotMock(),
+      sessionManager,
+      settingsManager: createTestSettingsManager(),
+      willingnessJudge: {
+        judge: vi.fn().mockResolvedValue({ shouldRespond: false, reason: "no_trigger" }),
+      },
+      platform: "discord",
+      channelId: "channel-1",
+      basePath: "/tmp/athena-channel-input",
+    });
+
+    (runtime as unknown as { responseState: string }).responseState = "responding";
+
+    await runtime.wake({
+      batchId: "batch-follow-up-1",
+      channelKey: "discord:channel-1",
+      events: [
+        {
+          kind: "internal_signal",
+          id: "evt-signal-queue-1",
+          timestamp: 1_710_000_000_010,
+          platform: "discord",
+          channelId: "channel-1",
+          signalType: "follow_up_review",
+          source: "scheduler",
+        },
+      ],
+      activation: {
+        batchId: "batch-follow-up-1",
+        activated: true,
+        reasons: [{ source: "event", code: "internal_signal", detail: "follow_up_review" }],
+      },
+    });
+    await runtime.wake({
+      batchId: "batch-follow-up-2",
+      channelKey: "discord:channel-1",
+      events: [
+        {
+          kind: "message",
+          id: "evt-message-queue-2",
+          timestamp: 1_710_000_000_011,
+          platform: "discord",
+          channelId: "channel-1",
+          messageId: "msg-queue-2",
+          content: "follow-up hello",
+          sender: {
+            userId: "user-2",
+            username: "bob",
+          },
+          isDirect: false,
+          atSelf: true,
+          isReplyToBot: false,
+        },
+      ],
+      activation: {
+        batchId: "batch-follow-up-2",
+        activated: true,
+        reasons: [{ source: "policy", code: "at_self" }],
+      },
+    });
+
+    const hostInput = (runtime as unknown as {
+      buildResponseHostInput(): { triggerEvents: Array<{ id: string; kind: string }> };
+    }).buildResponseHostInput();
+
+    expect(hostInput.triggerEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "evt-signal-queue-1", kind: "internal_signal" }),
+        expect.objectContaining({ id: "evt-message-queue-2", kind: "message" }),
+      ]),
+    );
+    expect(hostInput.triggerEvents).toHaveLength(2);
+  });
+
+  it("rejects raw non-batch athena ingress at runtime once activated batch wake seam exists", async () => {
+    const ctx = createContextMock();
+    const sessionManager = SessionManager.inMemory("discord:channel-1");
+    const runtime = new ChannelRuntime(ctx, {
+      bot: createBotMock(),
+      sessionManager,
+      settingsManager: createTestSettingsManager(),
+      willingnessJudge: {
+        judge: vi.fn().mockResolvedValue({ shouldRespond: false, reason: "no_trigger" }),
+      },
+      platform: "discord",
+      channelId: "channel-1",
+      basePath: "/tmp/athena-channel-input",
+    });
+
+    await expect(
+      runtime.receive(createChannelMessageInput()),
+    ).rejects.toThrow("Use AgentSessionService.ingestEvent() for raw ingress; runtime expects activated batches");
   });
 
   it("aligns assistant/tool role alignment to typed first-class records", () => {
@@ -310,50 +577,36 @@ describe("typed runtime input wiring", () => {
     expect(buildRuntimeModelMessages(session, "System prompt")).toEqual([
       { role: "system", content: "System prompt" },
       expect.objectContaining({ role: "user" }),
+      expect.objectContaining({ role: "user", content: expect.stringContaining("should stay hidden") }),
     ]);
   });
 
-  it("respects SystemNotice subtype visibility during compaction serialization", () => {
+  it("serializes compaction input from SessionMessage history and excludes helper entries", () => {
     const sessionManager = SessionManager.inMemory("discord:channel-1");
     const session = new AgentSession(sessionManager);
 
-    session.appendChannelMessage({
-      id: "msg-compaction-1",
-      timestamp: 1_710_000_000_000,
-      stage: "ingress",
-      visibility: "model",
-      materialization: "default",
-      message: createChannelMessageInput({ messageId: "msg-compaction-1" }),
-    });
-    session.appendSystemNotice({
-      id: "notice-hidden-2",
-      timestamp: 1_710_000_000_001,
-      stage: "runtime",
-      visibility: "hidden",
-      materialization: "hidden",
-      subType: "protocol_guidance",
-      materializationKey: "hidden",
-      notice: "do not leak this",
-    });
-    session.appendSystemNotice({
-      id: "notice-visible-1",
-      timestamp: 1_710_000_000_002,
-      stage: "runtime",
-      visibility: "internal",
-      materialization: "subtype",
-      subType: "compaction_summary",
-      materializationKey: "summary",
-      notice: "keep this visible",
-    });
-
-    const serialized = serializeTimelineForCompaction(session.getTimeline(), {
-      systemNoticeStrategies: {
-        compaction_summary: () => [{ role: "system", content: "[notice] keep this visible" }],
+    session.appendAthenaMessage({
+      type: "user.message",
+      timestamp: new Date(1_710_000_000_000).toISOString(),
+      data: {
+        messageId: "msg-compaction-1",
+        senderId: "user-1",
+        senderName: "Alice",
+        content: "hello canonical world",
       },
     });
+    session.appendResponseStatus({
+      endReason: "normal",
+      nextAction: "idle",
+      stepsCompleted: 1,
+      durationMs: 12,
+    });
+    session.appendSessionInfo("runtime", "follow_up_review");
+
+    const serialized = serializeSessionMessagesForCompaction(session.getSessionMessages());
 
     expect(serialized).toContain("hello canonical world");
-    expect(serialized).toContain("keep this visible");
-    expect(serialized).not.toContain("do not leak this");
+    expect(serialized).not.toContain("response_status");
+    expect(serialized).not.toContain("follow_up_review");
   });
 });

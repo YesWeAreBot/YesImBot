@@ -6,7 +6,7 @@ export type {
 } from "./types";
 export { estimateTokens, estimateContextTokens } from "./estimate";
 export { findCutPoint, findTurnStartIndex } from "./cut-point";
-export { serializeConversation } from "./serialize";
+export { serializeConversation, serializeSessionMessagesForCompaction } from "./serialize";
 export {
   generateSummary,
   generateTurnPrefixSummary,

@@ -1,4 +1,4 @@
-import type { TimelineRecord } from "../types/index";
+import type { SessionMessageEntry } from "../types";
 
 export interface CompactionSettings {
   enabled: boolean;
@@ -14,8 +14,8 @@ export interface CutPointResult {
 
 export interface CompactionPreparation {
   firstKeptEntryId: string;
-  recordsToSummarize: TimelineRecord[];
-  turnPrefixRecords: TimelineRecord[];
+  entriesToSummarize: SessionMessageEntry[];
+  turnPrefixEntries: SessionMessageEntry[];
   isSplitTurn: boolean;
   tokensBefore: number;
   previousSummary?: string;

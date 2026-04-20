@@ -1,4 +1,4 @@
-import type { ChannelMessageInput } from "./types/index";
+import type { ChannelMessageInput, ChannelRawPayload } from "./types/index";
 
 export function summarizeReplyContent(content: string, maxChars = 80): string {
   const normalized = content.replace(/\s+/g, " ").trim();
@@ -35,7 +35,9 @@ export function resolveSenderIdentity(input: {
   return "member";
 }
 
-export function formatChannelMessageInput(event: ChannelMessageInput): string {
+export function formatChannelMessageInput(
+  event: ChannelMessageInput<ChannelRawPayload | undefined>,
+): string {
   const lines = [
     `[timestamp] ${new Date(event.timestamp).toISOString()}`,
     `[platform/channel] ${event.platform}/${event.channelId}`,

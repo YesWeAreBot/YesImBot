@@ -1,8 +1,11 @@
 import type { AssistantModelMessage, ToolModelMessage } from "@ai-sdk/provider-utils";
 
 import type { ChannelEventInput, ChannelMessageInput, ChannelRawPayload } from "./channel-input";
+import type { AthenaEvent } from "../domain/athena-event";
+import type { ActivationReason } from "../domain/activation";
 
 export const TIMELINE_RECORD_KINDS = [
+  "athena_event",
   "channel_message",
   "channel_event",
   "assistant_message",
@@ -42,6 +45,13 @@ export interface ChannelEventRecord<
   event: ChannelEventInput<TRaw>;
 }
 
+export interface AthenaEventRecord<
+  TRaw extends ChannelRawPayload | undefined = undefined,
+> extends TimelineRecordBase {
+  kind: "athena_event";
+  event: AthenaEvent<TRaw>;
+}
+
 export interface AssistantMessageRecord extends TimelineRecordBase {
   kind: "assistant_message";
   message: AssistantModelMessage;
@@ -70,7 +80,14 @@ export interface SystemNoticeRecord<
   data?: TData;
 }
 
+export type ActivationResultRecordData = {
+  batchId: string;
+  activated: boolean;
+  reasons: ActivationReason[];
+};
+
 export type TimelineRecordWithRaw<TRaw extends ChannelRawPayload | undefined = undefined> =
+  | AthenaEventRecord<TRaw>
   | ChannelMessageRecord<TRaw>
   | ChannelEventRecord<TRaw>
   | AssistantMessageRecord
@@ -78,4 +95,4 @@ export type TimelineRecordWithRaw<TRaw extends ChannelRawPayload | undefined = u
   | StateChangeRecord<ChannelRawPayload | undefined>
   | SystemNoticeRecord<ChannelRawPayload | undefined>;
 
-export type TimelineRecord = TimelineRecordWithRaw;
+export type TimelineRecord = TimelineRecordWithRaw<ChannelRawPayload | undefined>;

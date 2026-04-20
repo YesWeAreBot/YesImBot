@@ -4,9 +4,11 @@
 
 import type { ModelMessage, TextPart } from "@ai-sdk/provider-utils";
 
-import { materializeTimeline, type MaterializeTimelineOptions } from "../materialize";
+import {
+  convertToLlm,
+} from "../materialize";
 import { AgentAssistantContentPart, AgentMessage, ContentPart } from "../session-manager";
-import type { TimelineRecord } from "../types/index";
+import type { SessionMessage } from "../types";
 
 const TOOL_RESULT_MAX_CHARS = 2000;
 
@@ -138,13 +140,8 @@ export function serializeConversation(messages: AgentMessage[]): string {
   return parts.join("\n\n");
 }
 
-export function serializeTimelineForCompaction(
-  records: readonly TimelineRecord[],
-  options: MaterializeTimelineOptions = {},
-): string {
-  // Compaction reads canonical visibility/materialization policy at materialize time,
-  // including SystemNotice subType strategy overrides provided through options.
-  return serializeModelMessages(materializeTimeline([...records], options));
+export function serializeSessionMessagesForCompaction(messages: readonly SessionMessage[]): string {
+  return serializeModelMessages(convertToLlm([...messages]));
 }
 
 function serializeModelMessages(messages: readonly ModelMessage[]): string {

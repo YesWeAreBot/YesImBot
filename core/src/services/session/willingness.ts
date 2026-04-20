@@ -23,6 +23,13 @@ export interface RuntimeWillingnessHeuristicParams {
   senderId: string;
 }
 
+export interface ActivationPolicyInput extends RuntimeWillingnessHeuristicParams {
+  content: string;
+  judgeEnabled?: boolean;
+  judgeModel?: string;
+  judgeTimeoutMs?: number;
+}
+
 export function evaluateRuntimeWillingnessHeuristic(
   params: RuntimeWillingnessHeuristicParams,
 ): WillingnessResult | null {
@@ -102,15 +109,31 @@ export function createDefaultWillingnessJudge(ctx: Context): WillingnessJudge {
   return new DefaultWillingnessJudge({ ctx });
 }
 
-export async function judgeWillingness(
-  ctx: Context,
-  params: WillingnessJudgeParams,
+export async function evaluateActivationPolicy(
+  judge: WillingnessJudge,
+  params: ActivationPolicyInput,
 ): Promise<WillingnessResult> {
   const heuristic = evaluateRuntimeWillingnessHeuristic(params);
   if (heuristic) {
     return heuristic;
   }
 
-  const judge = createDefaultWillingnessJudge(ctx);
-  return judge.judge(params);
+  return judge.judge({
+    isDirect: params.isDirect,
+    atSelf: params.atSelf,
+    isReplyToBot: params.isReplyToBot,
+    content: params.content,
+    selfId: params.selfId,
+    senderId: params.senderId,
+    judgeEnabled: params.judgeEnabled,
+    judgeModel: params.judgeModel,
+    judgeTimeoutMs: params.judgeTimeoutMs,
+  });
+}
+
+export async function judgeWillingness(
+  ctx: Context,
+  params: WillingnessJudgeParams,
+): Promise<WillingnessResult> {
+  return evaluateActivationPolicy(createDefaultWillingnessJudge(ctx), params);
 }
