@@ -8,7 +8,7 @@ function createSession(): AgentSession {
   return new AgentSession(SessionManager.inMemory("discord:channel-1"));
 }
 
-describe("ChannelRuntime runResponse context", () => {
+describe("SessionRuntime and StepTranscriptWriter context", () => {
   it("passes canonical user messages into generate input", () => {
     const session = createSession();
     session.appendAthenaMessage({
@@ -31,7 +31,7 @@ describe("ChannelRuntime runResponse context", () => {
     expect(generateInput.messages[1]).toMatchObject({ role: "user", content: "hi" });
   });
 
-  it("does not project protocol guidance runtime_state into rebuilt model context", () => {
+  it("does not project StepTranscriptWriter protocol guidance into rebuilt model context", () => {
     const session = createSession();
     session.appendRuntimeStateInfo("protocol_guidance", undefined, {
       content: "Visible IM replies must be sent with send_message",

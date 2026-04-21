@@ -5,6 +5,7 @@ import type { Logger } from "koishi";
 
 import { AgentSession } from "../agent-session";
 import type { ToolResultMessage } from "../messages";
+import { isSendMessageResult } from "../runtime/send-message-tool";
 import {
   type AgentAssistantMessage,
   type AgentAssistantThinkingPart,
@@ -12,7 +13,6 @@ import {
   type AgentToolCallPart,
   type AgentUsage,
 } from "../session-manager";
-import { isSendMessageResult } from "./send-message-tool";
 
 export const PROTOCOL_GUIDANCE_TEXT =
   "[Protocol Guidance]\n" +
@@ -22,29 +22,57 @@ export const PROTOCOL_GUIDANCE_TEXT =
 
 const MAX_PROTOCOL_RETRIES_PER_RESPONSE = 1;
 
-interface ResponseStepProcessorOptions {
+export interface StepTranscriptWriteSummary {
+  pendingProtocolRetry: boolean;
+  protocolError: boolean;
+  heartbeatRequested: boolean;
+  completedSendMessageWithoutHeartbeat: boolean;
+  sendFailure: boolean;
+  thrownError?: string;
+}
+
+interface StepTranscriptWriterOptions {
   session: AgentSession;
   platform: string;
   channelId: string;
   logger: Logger;
 }
 
-export class ResponseStepProcessor {
+export function createEmptyStepTranscriptWriteSummary(): StepTranscriptWriteSummary {
+  return {
+    pendingProtocolRetry: false,
+    protocolError: false,
+    heartbeatRequested: false,
+    completedSendMessageWithoutHeartbeat: false,
+    sendFailure: false,
+  };
+}
+
+export function mergeStepTranscriptWriteSummary(
+  current: StepTranscriptWriteSummary,
+  next: StepTranscriptWriteSummary,
+): StepTranscriptWriteSummary {
+  return {
+    pendingProtocolRetry: current.pendingProtocolRetry || next.pendingProtocolRetry,
+    protocolError: current.protocolError || next.protocolError,
+    heartbeatRequested: current.heartbeatRequested || next.heartbeatRequested,
+    completedSendMessageWithoutHeartbeat:
+      current.completedSendMessageWithoutHeartbeat || next.completedSendMessageWithoutHeartbeat,
+    sendFailure: current.sendFailure || next.sendFailure,
+    thrownError: current.thrownError ?? next.thrownError,
+  };
+}
+
+export class StepTranscriptWriter {
   private readonly session: AgentSession;
   private readonly platform: string;
   private readonly channelId: string;
   private readonly logger: Logger;
-  private seenAssistantToolCallIds = new Set<string>();
-  private seenToolResultCallIds = new Set<string>();
-  private _pendingProtocolRetry = false;
+  private readonly seenAssistantToolCallIds = new Set<string>();
+  private readonly seenToolResultCallIds = new Set<string>();
   private protocolRetryCount = 0;
-  private _protocolError = false;
-  private _heartbeatRequested = false;
-  private _completedSendMessageWithoutHeartbeat = false;
-  private _sendFailure = false;
-  private _thrownError: string | undefined;
 
-  constructor(options: ResponseStepProcessorOptions) {
+  constructor(options: StepTranscriptWriterOptions) {
     this.session = options.session;
     this.platform = options.platform;
     this.channelId = options.channelId;
@@ -56,20 +84,15 @@ export class ResponseStepProcessor {
       this.protocolRetryCount = 0;
     }
 
-    this._pendingProtocolRetry = false;
-    this._protocolError = false;
-    this._heartbeatRequested = false;
-    this._completedSendMessageWithoutHeartbeat = false;
-    this._sendFailure = false;
-    this._thrownError = undefined;
     this.seenAssistantToolCallIds.clear();
     this.seenToolResultCallIds.clear();
   }
 
-  apply(stepResult: OnStepFinishEvent): void {
+  writeStep(stepResult: OnStepFinishEvent): StepTranscriptWriteSummary {
+    const summary = createEmptyStepTranscriptWriteSummary();
     const responseMessages = stepResult.response?.messages;
     if (!responseMessages) {
-      return;
+      return summary;
     }
 
     this.logger.debug(
@@ -78,48 +101,32 @@ export class ResponseStepProcessor {
 
     for (const msg of responseMessages) {
       if (msg.role === "assistant") {
-        this.persistAssistantMessage(stepResult, msg.content);
+        Object.assign(
+          summary,
+          mergeStepTranscriptWriteSummary(
+            summary,
+            this.persistAssistantMessage(stepResult, msg.content),
+          ),
+        );
         continue;
       }
 
       if (msg.role === "tool") {
-        this.persistToolResultMessage(msg.content);
+        Object.assign(
+          summary,
+          mergeStepTranscriptWriteSummary(summary, this.persistToolResultMessage(msg.content)),
+        );
       }
     }
-  }
 
-  setThrownError(message: string): void {
-    this._thrownError = message;
-  }
-
-  get pendingProtocolRetry(): boolean {
-    return this._pendingProtocolRetry;
-  }
-
-  get protocolError(): boolean {
-    return this._protocolError;
-  }
-
-  get heartbeatRequested(): boolean {
-    return this._heartbeatRequested;
-  }
-
-  get completedSendMessageWithoutHeartbeat(): boolean {
-    return this._completedSendMessageWithoutHeartbeat;
-  }
-
-  get sendFailure(): boolean {
-    return this._sendFailure;
-  }
-
-  get thrownError(): string | undefined {
-    return this._thrownError;
+    return summary;
   }
 
   private persistAssistantMessage(
     stepResult: OnStepFinishEvent,
     content: string | unknown[],
-  ): void {
+  ): StepTranscriptWriteSummary {
+    const summary = createEmptyStepTranscriptWriteSummary();
     const agentMsg = createAgentAssistantMessage({
       content,
       model: stepResult.model,
@@ -142,63 +149,67 @@ export class ResponseStepProcessor {
       rememberAssistantToolCallIds(persistableAgentMsg, this.seenAssistantToolCallIds);
     }
 
-    if (hasUndeliveredVisibleText) {
-      this.logger.debug(
-        `[step:${this.platform}:${this.channelId}] undelivered assistant text detected protocolRetry=${this.protocolRetryCount < MAX_PROTOCOL_RETRIES_PER_RESPONSE}`,
-      );
+    if (!hasUndeliveredVisibleText) {
+      return summary;
+    }
+
+    this.logger.debug(
+      `[step:${this.platform}:${this.channelId}] undelivered assistant text detected protocolRetry=${this.protocolRetryCount < MAX_PROTOCOL_RETRIES_PER_RESPONSE}`,
+    );
+    this.session.appendRuntimeStateInfo(
+      "protocol_assistant_draft",
+      {
+        id: `${Date.now()}-protocol-draft`,
+        timestamp: Date.now(),
+      },
+      {
+        text: assistantText,
+        provider: agentMsg.provider,
+        model: agentMsg.model,
+        finishReason: agentMsg.finishReason,
+      },
+    );
+
+    if (this.protocolRetryCount < MAX_PROTOCOL_RETRIES_PER_RESPONSE) {
+      this.protocolRetryCount++;
+      summary.pendingProtocolRetry = true;
       this.session.appendRuntimeStateInfo(
-        "protocol_assistant_draft",
+        "protocol_guidance",
         {
-          id: `${Date.now()}-protocol-draft`,
+          id: `${Date.now()}-protocol-guidance`,
           timestamp: Date.now(),
         },
         {
-          text: assistantText,
-          provider: agentMsg.provider,
-          model: agentMsg.model,
-          finishReason: agentMsg.finishReason,
+          content: PROTOCOL_GUIDANCE_TEXT,
         },
       );
-
-      if (this.protocolRetryCount < MAX_PROTOCOL_RETRIES_PER_RESPONSE) {
-        this.protocolRetryCount++;
-        this._pendingProtocolRetry = true;
-        this.session.appendRuntimeStateInfo(
-          "protocol_guidance",
-          {
-            id: `${Date.now()}-protocol-guidance`,
-            timestamp: Date.now(),
-          },
-          {
-            content: PROTOCOL_GUIDANCE_TEXT,
-          },
-        );
-      } else {
-        this._protocolError = true;
-      }
+      return summary;
     }
+
+    summary.protocolError = true;
+    return summary;
   }
 
-  private persistToolResultMessage(content: unknown): void {
+  private persistToolResultMessage(content: unknown): StepTranscriptWriteSummary {
+    const summary = createEmptyStepTranscriptWriteSummary();
     const toolParts = Array.isArray(content)
       ? (content as Array<Record<string, unknown>>).filter((part) => part.type === "tool-result")
       : [];
 
     if (toolParts.length === 0) {
-      return;
+      return summary;
     }
 
     const freshToolParts = toolParts.filter(
       (part) => !this.seenToolResultCallIds.has(String(part.toolCallId)),
     );
     if (freshToolParts.length === 0) {
-      return;
+      return summary;
     }
 
     this.logger.debug(
       `[step:${this.platform}:${this.channelId}] tool results=${freshToolParts.length}`,
     );
-
     this.session.appendToolMessage(toolPartsToModelMessage(freshToolParts));
 
     for (const part of freshToolParts) {
@@ -220,26 +231,28 @@ export class ResponseStepProcessor {
       );
 
       if (toolResult.success === true) {
-        this._heartbeatRequested = toolResult.requestHeartbeat;
+        summary.heartbeatRequested = toolResult.requestHeartbeat;
         if (!toolResult.requestHeartbeat) {
-          this._completedSendMessageWithoutHeartbeat = true;
+          summary.completedSendMessageWithoutHeartbeat = true;
         }
       }
 
       if (toolResult.success === false && toolResult.segments.length === 0) {
-        this._protocolError = true;
+        summary.protocolError = true;
       }
 
       const firstErrorSegment = toolResult.segments.find(
         (segment) => segment.success === false || Boolean(segment.error),
       );
       if (toolResult.success === false && firstErrorSegment) {
-        this._sendFailure = true;
-        if (firstErrorSegment.error && !this._thrownError) {
-          this._thrownError = firstErrorSegment.error;
+        summary.sendFailure = true;
+        if (firstErrorSegment.error) {
+          summary.thrownError = firstErrorSegment.error;
         }
       }
     }
+
+    return summary;
   }
 }
 
@@ -458,7 +471,6 @@ export function hasCompletedSendMessageWithoutHeartbeat(
   });
 }
 
-/** Normalize AI SDK AssistantContent into AgentAssistantMessage content parts. */
 export function normalizeAssistantContent(
   content: unknown[],
 ): Array<AgentTextPart | AgentToolCallPart | AgentAssistantThinkingPart> {

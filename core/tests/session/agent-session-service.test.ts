@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { LanguageModel } from "ai";
-import type { Bot, Context, Logger } from "koishi";
+import type { Bot, Context, Logger, Session } from "koishi";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 type GenerateInput = {
@@ -68,15 +68,39 @@ import {
   getUserMetaPath,
   getUserStateDir,
 } from "../../src/services/session/instruction-state/layout";
-import { ChannelRuntime } from "../../src/services/session/runtime";
-import { AgentSessionService } from "../../src/services/session/service";
+import type { AthenaEvent } from "../../src/services/session/messages";
+import type { WillingnessJudge } from "../../src/services/session/messages/activation";
+import { SessionRuntime } from "../../src/services/session/runtime";
+import {
+  AgentSessionService,
+  koishiSessionToAthenaEvent,
+} from "../../src/services/session/service";
 import { SessionManager } from "../../src/services/session/session-manager";
-import type { AthenaEvent } from "../../src/services/session/types";
-import type { ChannelMessageInput } from "../../src/services/session/types/index";
-import type { WillingnessJudge } from "../../src/services/session/willingness";
 import { createTestSettingsManager } from "./test-settings-manager";
 
-type TestChannelMessageInput = ChannelMessageInput & {
+type TestChannelMessageInput = {
+  kind: "channel_message";
+  platform: string;
+  channelId: string;
+  sender: {
+    userId: string;
+    username: string;
+    nickname?: string;
+    identity?: string;
+  };
+  content: string;
+  isDirect: boolean;
+  atSelf: boolean;
+  isReplyToBot: boolean;
+  messageId: string;
+  timestamp: number;
+  replyTo?: {
+    messageId?: string;
+    userId?: string;
+    username: string;
+    nickname: string;
+    summary: string;
+  };
   bot?: Bot;
   userId: string;
   username: string;
@@ -201,13 +225,13 @@ function createCommandContextMock(
 ): {
   commands: Map<
     string,
-    (argv: { session?: ChannelMessageInput; options?: Record<string, unknown> }) => unknown
+    (argv: { session?: TestChannelMessageInput; options?: Record<string, unknown> }) => unknown
   >;
   ctx: Context;
 } {
   const commands = new Map<
     string,
-    (argv: { session?: ChannelMessageInput; options?: Record<string, unknown> }) => unknown
+    (argv: { session?: TestChannelMessageInput; options?: Record<string, unknown> }) => unknown
   >();
 
   const ctx = {
@@ -299,6 +323,28 @@ function createMessageAthenaEvent(
   };
 }
 
+function toAthenaEvent(input: TestChannelMessageInput): Extract<AthenaEvent, { kind: "message" }> {
+  return {
+    kind: "message",
+    id: input.messageId,
+    timestamp: input.timestamp,
+    platform: input.platform,
+    channelId: input.channelId,
+    messageId: input.messageId,
+    content: input.content,
+    sender: {
+      userId: input.sender.userId,
+      username: input.sender.username,
+      nickname: input.sender.nickname,
+      identity: input.sender.identity,
+    },
+    isDirect: input.isDirect,
+    atSelf: input.atSelf,
+    isReplyToBot: input.isReplyToBot,
+    replyTo: input.replyTo,
+  };
+}
+
 function createInternalSignalAthenaEvent(
   overrides: Partial<Extract<AthenaEvent, { kind: "internal_signal" }>> = {},
 ): Extract<AthenaEvent, { kind: "internal_signal" }> {
@@ -331,6 +377,64 @@ afterEach(() => {
 
 describe("AgentSessionService", () => {
   describe("event ingress", () => {
+    it("maps Koishi sessions into Athena message events", () => {
+      const event = koishiSessionToAthenaEvent({
+        platform: "discord",
+        channelId: "channel-1",
+        userId: "user-1",
+        username: "alice",
+        content: "hello athena",
+        messageId: "koishi-msg-1",
+        timestamp: 1_710_000_000_123,
+        isDirect: false,
+        stripped: {
+          atSelf: true,
+        },
+        elements: [],
+        bot: createBotMock("bot-self"),
+        author: {
+          nick: "Alice",
+        },
+        quote: {
+          id: "quoted-1",
+          content: "   quoted\nmessage that should be summarized   ",
+          user: {
+            id: "bot-self",
+            name: "athena",
+            isBot: true,
+          },
+          member: {
+            nick: "Athena",
+          },
+        },
+      } as unknown as Session);
+
+      expect(event).toEqual({
+        kind: "message",
+        id: "koishi-msg-1",
+        timestamp: 1_710_000_000_123,
+        platform: "discord",
+        channelId: "channel-1",
+        messageId: "koishi-msg-1",
+        content: "hello athena",
+        sender: {
+          userId: "user-1",
+          username: "alice",
+          nickname: "Alice",
+        },
+        isDirect: false,
+        atSelf: true,
+        isReplyToBot: true,
+        replyTo: {
+          messageId: "quoted-1",
+          userId: "bot-self",
+          username: "athena",
+          nickname: "Athena",
+          summary: "quoted message that should be summarized",
+        },
+      });
+    });
+
     it("creates only user-scoped state on the first direct message", async () => {
       const tempDir = mkdtempSync(join(tmpdir(), "athena-state-meta-on-message-"));
       tempDirs.push(tempDir);
@@ -338,7 +442,7 @@ describe("AgentSessionService", () => {
       const service = new AgentSessionService(ctx, {
         model: "test:model",
         basePath: "sessions",
-      });
+      }) as AgentSessionServiceWithIngress;
       const bot = createBotMock();
       const globalRoot = join(tempDir, "sessions");
       const legacyChannelDir = join(globalRoot, "discord-channel-1");
@@ -348,17 +452,19 @@ describe("AgentSessionService", () => {
 
       generateMock.mockResolvedValueOnce();
 
-      await service.receive(
-        createChannelMessageInput({
-          bot,
-          isDirect: true,
-          messageId: "state-meta-msg-1",
-          sender: {
-            userId: "user-42",
-            username: "alice",
-            nickname: "Alice",
-          },
-        }),
+      await service.ingestEvent(
+        toAthenaEvent(
+          createChannelMessageInput({
+            bot,
+            isDirect: true,
+            messageId: "state-meta-msg-1",
+            sender: {
+              userId: "user-42",
+              username: "alice",
+              nickname: "Alice",
+            },
+          }),
+        ),
         bot,
       );
 
@@ -390,30 +496,32 @@ describe("AgentSessionService", () => {
       const service = new AgentSessionService(ctx, {
         model: "test:model",
         basePath: "sessions",
-      });
+      }) as AgentSessionServiceWithIngress;
       const bot = createBotMock();
 
       generateMock.mockResolvedValueOnce();
 
-      await service.receive(
-        createChannelMessageInput({
-          bot,
-          isDirect: true,
-          atSelf: true,
-          isReplyToBot: true,
-          messageId: "instruction-msg-1",
-          sender: {
-            userId: "user-1",
-            username: "alice",
-            nickname: "Alice",
-            identity: "title:moderator",
-          },
-          replyTo: {
-            username: "yesimbot",
-            nickname: "Athena",
-            summary: "quoted",
-          },
-        }),
+      await service.ingestEvent(
+        toAthenaEvent(
+          createChannelMessageInput({
+            bot,
+            isDirect: true,
+            atSelf: true,
+            isReplyToBot: true,
+            messageId: "instruction-msg-1",
+            sender: {
+              userId: "user-1",
+              username: "alice",
+              nickname: "Alice",
+              identity: "title:moderator",
+            },
+            replyTo: {
+              username: "yesimbot",
+              nickname: "Athena",
+              summary: "quoted",
+            },
+          }),
+        ),
         bot,
       );
 
@@ -443,9 +551,9 @@ describe("AgentSessionService", () => {
       const service = new AgentSessionService(ctx, {
         model: "test:model",
         basePath: "sessions",
-      });
+      }) as AgentSessionServiceWithIngress;
       const sessionManager = SessionManager.inMemory("discord:channel-1");
-      const runtime = new ChannelRuntime(ctx, {
+      const runtime = new SessionRuntime(ctx, {
         bot,
         sessionManager,
         settingsManager: createTestSettingsManager(),
@@ -455,7 +563,10 @@ describe("AgentSessionService", () => {
       });
       vi.spyOn(service, "getOrCreateAgent").mockResolvedValue(runtime);
 
-      await service.receive(createChannelMessageInput({ bot, atSelf: false }));
+      await service.ingestEvent(
+        toAthenaEvent(createChannelMessageInput({ bot, atSelf: false })),
+        bot,
+      );
 
       expect(sessionManager.getEntryCount()).toBeGreaterThan(0);
       expect(bot.sendMessage).not.toHaveBeenCalled();
@@ -467,12 +578,12 @@ describe("AgentSessionService", () => {
       const service = new AgentSessionService(ctx, {
         model: "test:model",
         basePath: "sessions",
-      });
+      }) as AgentSessionServiceWithIngress;
       const sessionManager = SessionManager.inMemory("discord:channel-1");
       const deferredJudge: WillingnessJudge = {
         judge: vi.fn().mockResolvedValue({ shouldRespond: false, reason: "no_trigger" }),
       };
-      const runtime = new ChannelRuntime(ctx, {
+      const runtime = new SessionRuntime(ctx, {
         bot,
         sessionManager,
         settingsManager: createTestSettingsManager(),
@@ -484,8 +595,11 @@ describe("AgentSessionService", () => {
       vi.spyOn(service, "getOrCreateAgent").mockResolvedValue(runtime);
 
       generateMock.mockResolvedValueOnce();
-      await service.receive(
-        createChannelMessageInput({ bot, isDirect: true, atSelf: false, isReplyToBot: false }),
+      await service.ingestEvent(
+        toAthenaEvent(
+          createChannelMessageInput({ bot, isDirect: true, atSelf: false, isReplyToBot: false }),
+        ),
+        bot,
       );
 
       await vi.waitFor(() => {
@@ -500,12 +614,12 @@ describe("AgentSessionService", () => {
       const service = new AgentSessionService(ctx, {
         model: "test:model",
         basePath: "sessions",
-      });
+      }) as AgentSessionServiceWithIngress;
       const sessionManager = SessionManager.inMemory("discord:channel-1");
       const deferredJudge: WillingnessJudge = {
         judge: vi.fn().mockResolvedValue({ shouldRespond: false, reason: "no_trigger" }),
       };
-      const runtime = new ChannelRuntime(ctx, {
+      const runtime = new SessionRuntime(ctx, {
         bot,
         sessionManager,
         settingsManager: createTestSettingsManager(),
@@ -516,8 +630,11 @@ describe("AgentSessionService", () => {
       });
       vi.spyOn(service, "getOrCreateAgent").mockResolvedValue(runtime);
 
-      await service.receive(
-        createChannelMessageInput({ bot, isDirect: false, atSelf: false, isReplyToBot: false }),
+      await service.ingestEvent(
+        toAthenaEvent(
+          createChannelMessageInput({ bot, isDirect: false, atSelf: false, isReplyToBot: false }),
+        ),
+        bot,
       );
 
       expect(deferredJudge.judge).toHaveBeenCalledTimes(1);
@@ -531,9 +648,9 @@ describe("AgentSessionService", () => {
       const service = new AgentSessionService(ctx, {
         model: "test:model",
         basePath: "sessions",
-      });
+      }) as AgentSessionServiceWithIngress;
       const sessionManager = SessionManager.inMemory("discord:channel-1");
-      const runtime = new ChannelRuntime(ctx, {
+      const runtime = new SessionRuntime(ctx, {
         bot,
         sessionManager,
         settingsManager: createTestSettingsManager(),
@@ -543,17 +660,20 @@ describe("AgentSessionService", () => {
       });
       vi.spyOn(service, "getOrCreateAgent").mockResolvedValue(runtime);
 
-      await service.receive(
-        createChannelMessageInput({
-          bot,
-          nickname: "Alice-Display",
-          identity: "title:moderator",
-          replyTo: {
-            username: "yesimbot",
-            nickname: "Athena",
-            summary: "quoted summary",
-          },
-        }),
+      await service.ingestEvent(
+        toAthenaEvent(
+          createChannelMessageInput({
+            bot,
+            nickname: "Alice-Display",
+            identity: "title:moderator",
+            replyTo: {
+              username: "yesimbot",
+              nickname: "Athena",
+              summary: "quoted summary",
+            },
+          }),
+        ),
+        bot,
       );
 
       const persisted = sessionManager
@@ -590,16 +710,18 @@ describe("AgentSessionService", () => {
       const service = new AgentSessionService(ctx, {
         model: "test:model",
         basePath: "sessions",
-      });
+      }) as AgentSessionServiceWithIngress;
       const getOrCreateAgentSpy = vi.spyOn(service, "getOrCreateAgent");
       const bot = createBotMock("bot-self");
 
-      await service.receive(
-        createChannelMessageInput({
-          bot,
-          userId: "bot-self",
-          messageId: "self-msg-1",
-        }),
+      await service.ingestEvent(
+        toAthenaEvent(
+          createChannelMessageInput({
+            bot,
+            userId: "bot-self",
+            messageId: "self-msg-1",
+          }),
+        ),
         bot,
       );
 
@@ -614,8 +736,8 @@ describe("AgentSessionService", () => {
       const service = new AgentSessionService(ctx, {
         model: "test:model",
         basePath: "sessions",
-      });
-      const agent = new ChannelRuntime(ctx, {
+      }) as AgentSessionServiceWithIngress;
+      const agent = new SessionRuntime(ctx, {
         bot: createBotMock(),
         sessionManager: SessionManager.inMemory("discord:channel-1"),
         settingsManager: createTestSettingsManager(),
@@ -626,9 +748,11 @@ describe("AgentSessionService", () => {
       const wakeSpy = vi.spyOn(agent, "wake").mockResolvedValue(undefined);
       vi.spyOn(service, "getOrCreateAgent").mockResolvedValue(agent);
 
-      const event = createChannelMessageInput({ messageId: "dup-msg-1", atSelf: true });
-      await service.receive(event);
-      await service.receive(event);
+      const event = toAthenaEvent(
+        createChannelMessageInput({ messageId: "dup-msg-1", atSelf: true }),
+      );
+      await service.ingestEvent(event);
+      await service.ingestEvent(event);
 
       expect(wakeSpy).toHaveBeenCalledTimes(1);
     });
@@ -654,7 +778,7 @@ describe("AgentSessionService", () => {
         bot,
       );
 
-      const runtime = (service as unknown as { agents: Map<string, ChannelRuntime> }).agents.get(
+      const runtime = (service as unknown as { agents: Map<string, SessionRuntime> }).agents.get(
         "discord:channel-1",
       );
 
@@ -719,7 +843,7 @@ describe("AgentSessionService", () => {
         expect(generateMock).toHaveBeenCalledTimes(1);
       });
 
-      const runtime = (service as unknown as { agents: Map<string, ChannelRuntime> }).agents.get(
+      const runtime = (service as unknown as { agents: Map<string, SessionRuntime> }).agents.get(
         "discord:channel-1",
       );
 
@@ -754,7 +878,7 @@ describe("AgentSessionService", () => {
         basePath: "sessions",
       }) as AgentSessionServiceWithIngress;
       const bot = createBotMock();
-      const runtime = new ChannelRuntime(createContextMock(tempDir), {
+      const runtime = new SessionRuntime(createContextMock(tempDir), {
         bot,
         sessionManager: SessionManager.inMemory("discord:channel-1"),
         settingsManager: createTestSettingsManager(),
@@ -805,7 +929,7 @@ describe("AgentSessionService", () => {
       });
     });
 
-    it("preserves all activated follow-up events while an active turn is running", async () => {
+    it("preserves all activated follow-up events while an active response window is running", async () => {
       const tempDir = mkdtempSync(join(tmpdir(), "athena-activated-follow-up-queue-"));
       tempDirs.push(tempDir);
       const hostInputs: Array<{
@@ -824,7 +948,7 @@ describe("AgentSessionService", () => {
       const service = new AgentSessionService(ctx, {
         model: "test:model",
         basePath: "sessions",
-      });
+      }) as AgentSessionServiceWithIngress;
       const bot = createBotMock();
 
       let releaseFirst!: () => void;
@@ -837,13 +961,15 @@ describe("AgentSessionService", () => {
       });
       generateMock.mockResolvedValueOnce();
 
-      const first = service.receive(
-        createChannelMessageInput({
-          bot,
-          isDirect: true,
-          messageId: "follow-up-root-msg",
-          timestamp: 2000,
-        }),
+      const first = service.ingestEvent(
+        toAthenaEvent(
+          createChannelMessageInput({
+            bot,
+            isDirect: true,
+            messageId: "follow-up-root-msg",
+            timestamp: 2000,
+          }),
+        ),
         bot,
       );
 
@@ -887,13 +1013,13 @@ describe("AgentSessionService", () => {
       );
     });
 
-    it("same-channel burst keeps one active turn plus one merged follow-up", async () => {
+    it("same-channel burst keeps one active response window plus one merged follow-up", async () => {
       const tempDir = mkdtempSync(join(tmpdir(), "athena-single-turn-"));
       tempDirs.push(tempDir);
       const service = new AgentSessionService(createContextMock(tempDir), {
         model: "test:model",
         basePath: "sessions",
-      });
+      }) as AgentSessionServiceWithIngress;
       const bot = createBotMock();
 
       let releaseFirst!: () => void;
@@ -906,13 +1032,15 @@ describe("AgentSessionService", () => {
       });
       generateMock.mockResolvedValueOnce();
 
-      const first = service.receive(
-        createChannelMessageInput({
-          bot,
-          isDirect: true,
-          messageId: "msg-burst-1",
-          timestamp: 1000,
-        }),
+      const first = service.ingestEvent(
+        toAthenaEvent(
+          createChannelMessageInput({
+            bot,
+            isDirect: true,
+            messageId: "msg-burst-1",
+            timestamp: 1000,
+          }),
+        ),
         bot,
       );
 
@@ -920,22 +1048,26 @@ describe("AgentSessionService", () => {
         expect(generateMock).toHaveBeenCalledTimes(1);
       });
 
-      const second = service.receive(
-        createChannelMessageInput({
-          bot,
-          isDirect: true,
-          messageId: "msg-burst-2",
-          timestamp: 1001,
-        }),
+      const second = service.ingestEvent(
+        toAthenaEvent(
+          createChannelMessageInput({
+            bot,
+            isDirect: true,
+            messageId: "msg-burst-2",
+            timestamp: 1001,
+          }),
+        ),
         bot,
       );
-      const third = service.receive(
-        createChannelMessageInput({
-          bot,
-          isDirect: true,
-          messageId: "msg-burst-3",
-          timestamp: 1002,
-        }),
+      const third = service.ingestEvent(
+        toAthenaEvent(
+          createChannelMessageInput({
+            bot,
+            isDirect: true,
+            messageId: "msg-burst-3",
+            timestamp: 1002,
+          }),
+        ),
         bot,
       );
 
@@ -993,7 +1125,7 @@ describe("AgentSessionService", () => {
       const service = new AgentSessionService(createContextMock(tempDir), {
         model: "test:model",
         basePath: "sessions",
-      });
+      }) as AgentSessionServiceWithIngress;
       const bot = createBotMock();
 
       let releaseFirst!: () => void;
@@ -1006,22 +1138,26 @@ describe("AgentSessionService", () => {
       });
       generateMock.mockResolvedValueOnce();
 
-      const first = service.receive(
-        createChannelMessageInput({
-          bot,
-          channelId: "channel-race",
-          isDirect: true,
-          messageId: "race-msg-1",
-        }),
+      const first = service.ingestEvent(
+        toAthenaEvent(
+          createChannelMessageInput({
+            bot,
+            channelId: "channel-race",
+            isDirect: true,
+            messageId: "race-msg-1",
+          }),
+        ),
         bot,
       );
-      const second = service.receive(
-        createChannelMessageInput({
-          bot,
-          channelId: "channel-race",
-          isDirect: true,
-          messageId: "race-msg-2",
-        }),
+      const second = service.ingestEvent(
+        toAthenaEvent(
+          createChannelMessageInput({
+            bot,
+            channelId: "channel-race",
+            isDirect: true,
+            messageId: "race-msg-2",
+          }),
+        ),
         bot,
       );
 
@@ -1053,18 +1189,20 @@ describe("AgentSessionService", () => {
       const service = new AgentSessionService(ctx, {
         model: "test:model",
         basePath: "sessions",
-      });
+      }) as AgentSessionServiceWithIngress;
       const bot = createBotMock();
 
       generateMock.mockResolvedValueOnce();
 
       await startService(service);
-      await service.receive(
-        createChannelMessageInput({
-          bot,
-          isDirect: true,
-          messageId: "no-plugin-msg-1",
-        }),
+      await service.ingestEvent(
+        toAthenaEvent(
+          createChannelMessageInput({
+            bot,
+            isDirect: true,
+            messageId: "no-plugin-msg-1",
+          }),
+        ),
         bot,
       );
 
@@ -1105,17 +1243,19 @@ describe("AgentSessionService", () => {
       const service = new AgentSessionService(ctx, {
         model: "test:model",
         basePath: "sessions",
-      });
+      }) as AgentSessionServiceWithIngress;
       const bot = createBotMock();
 
       generateMock.mockResolvedValueOnce();
 
-      await service.receive(
-        createChannelMessageInput({
-          bot,
-          isDirect: true,
-          messageId: "skill-contributor-msg-1",
-        }),
+      await service.ingestEvent(
+        toAthenaEvent(
+          createChannelMessageInput({
+            bot,
+            isDirect: true,
+            messageId: "skill-contributor-msg-1",
+          }),
+        ),
         bot,
       );
 
@@ -1146,16 +1286,18 @@ describe("AgentSessionService", () => {
       const service = new AgentSessionService(ctx, {
         model: "test:model",
         basePath: "data/yesimbot/agents",
-      });
+      }) as AgentSessionServiceWithIngress;
 
       generateMock.mockResolvedValueOnce();
 
-      await service.receive(
-        createChannelMessageInput({
-          channelId: "channel/with:special#chars",
-          isDirect: true,
-          messageId: "session-path-msg-1",
-        }),
+      await service.ingestEvent(
+        toAthenaEvent(
+          createChannelMessageInput({
+            channelId: "channel/with:special#chars",
+            isDirect: true,
+            messageId: "session-path-msg-1",
+          }),
+        ),
       );
 
       const sessionDir = join(
@@ -1180,9 +1322,9 @@ describe("AgentSessionService", () => {
       const service = new AgentSessionService(ctx, {
         model: "test:model",
         basePath: "sessions",
-      });
+      }) as AgentSessionServiceWithIngress;
       const bot = createBotMock();
-      const agent = new ChannelRuntime(ctx, {
+      const agent = new SessionRuntime(ctx, {
         bot,
         sessionManager: SessionManager.inMemory("discord:origin-channel"),
         settingsManager: createTestSettingsManager(),
@@ -1201,7 +1343,7 @@ describe("AgentSessionService", () => {
         atSelf: true,
       });
 
-      await service.receive(event, bot);
+      await service.ingestEvent(toAthenaEvent(event), bot);
 
       expect(routeSpy).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1221,7 +1363,7 @@ describe("AgentSessionService", () => {
       const service = new AgentSessionService(createContextMock(tempDir), {
         model: "test:model",
         basePath: "sessions",
-      });
+      }) as AgentSessionServiceWithIngress;
       const bot = createBotMock();
 
       const first = createChannelMessageInput({
@@ -1239,9 +1381,9 @@ describe("AgentSessionService", () => {
 
       generateMock.mockResolvedValue(undefined);
 
-      await service.receive(first, bot);
+      await service.ingestEvent(toAthenaEvent(first), bot);
       const firstRuntime = service.getAgent("discord:channel-1");
-      await service.receive(second, bot);
+      await service.ingestEvent(toAthenaEvent(second), bot);
       const secondRuntime = service.getAgent("discord:channel-1");
 
       expect(firstRuntime).toBeDefined();
@@ -1256,20 +1398,22 @@ describe("AgentSessionService", () => {
       const firstService = new AgentSessionService(createContextMock(tempDir), {
         model: "test:model",
         basePath: "sessions",
-      });
+      }) as AgentSessionServiceWithIngress;
       const firstBot = createBotMock();
 
       generateMock.mockRejectedValueOnce(new Error("model exploded before restart"));
 
-      await firstService.receive(
-        createChannelMessageInput({
-          bot: firstBot,
-          channelId: "channel-restart",
-          isDirect: true,
-          messageId: "restart-msg-1",
-          timestamp: 1000,
-          content: "first run fails",
-        }),
+      await firstService.ingestEvent(
+        toAthenaEvent(
+          createChannelMessageInput({
+            bot: firstBot,
+            channelId: "channel-restart",
+            isDirect: true,
+            messageId: "restart-msg-1",
+            timestamp: 1000,
+            content: "first run fails",
+          }),
+        ),
         firstBot,
       );
 
@@ -1302,20 +1446,22 @@ describe("AgentSessionService", () => {
       const restartedService = new AgentSessionService(createContextMock(tempDir), {
         model: "test:model",
         basePath: "sessions",
-      });
+      }) as AgentSessionServiceWithIngress;
       expect(restartedService.getActiveChannels()).toEqual([]);
 
       generateMock.mockResolvedValueOnce();
 
-      await restartedService.receive(
-        createChannelMessageInput({
-          bot: restartBot,
-          channelId: "channel-restart",
-          isDirect: true,
-          messageId: "restart-msg-2",
-          timestamp: 1002,
-          content: "resume after restart",
-        }),
+      await restartedService.ingestEvent(
+        toAthenaEvent(
+          createChannelMessageInput({
+            bot: restartBot,
+            channelId: "channel-restart",
+            isDirect: true,
+            messageId: "restart-msg-2",
+            timestamp: 1002,
+            content: "resume after restart",
+          }),
+        ),
         restartBot,
       );
 
@@ -1372,17 +1518,17 @@ describe("AgentSessionService", () => {
       const service = new AgentSessionService(ctx, {
         model: "test:model",
         basePath: "sessions",
-      });
+      }) as AgentSessionServiceWithIngress;
       const runCompaction = vi.fn().mockResolvedValue({
         compacted: false,
         reason: "nothing-to-compact",
       });
 
-      (service as unknown as { agents: Map<string, ChannelRuntime> }).agents.set(
+      (service as unknown as { agents: Map<string, SessionRuntime> }).agents.set(
         "discord:channel-1",
         {
           runCompaction,
-        } as unknown as ChannelRuntime,
+        } as unknown as SessionRuntime,
       );
 
       await startService(service);
@@ -1412,11 +1558,11 @@ describe("AgentSessionService", () => {
         compacted: true,
       });
 
-      (service as unknown as { agents: Map<string, ChannelRuntime> }).agents.set(
+      (service as unknown as { agents: Map<string, SessionRuntime> }).agents.set(
         "discord:channel-1",
         {
           runCompaction,
-        } as unknown as ChannelRuntime,
+        } as unknown as SessionRuntime,
       );
 
       await startService(service);
@@ -1470,14 +1616,16 @@ describe("AgentSessionService", () => {
 
       await startService(service);
       generateMock.mockResolvedValueOnce();
-      await service.receive(
-        createChannelMessageInput({
-          bot: createBotMock(),
-          isDirect: true,
-          atSelf: true,
-          isReplyToBot: true,
-          messageId: "clear-msg-1",
-        }),
+      await service.ingestEvent(
+        toAthenaEvent(
+          createChannelMessageInput({
+            bot: createBotMock(),
+            isDirect: true,
+            atSelf: true,
+            isReplyToBot: true,
+            messageId: "clear-msg-1",
+          }),
+        ),
         createBotMock(),
       );
 
@@ -1500,14 +1648,16 @@ describe("AgentSessionService", () => {
       ).not.toHaveBeenCalled();
 
       generateMock.mockResolvedValueOnce();
-      await service.receive(
-        createChannelMessageInput({
-          bot: createBotMock(),
-          isDirect: true,
-          atSelf: true,
-          isReplyToBot: true,
-          messageId: "clear-msg-2",
-        }),
+      await service.ingestEvent(
+        toAthenaEvent(
+          createChannelMessageInput({
+            bot: createBotMock(),
+            isDirect: true,
+            atSelf: true,
+            isReplyToBot: true,
+            messageId: "clear-msg-2",
+          }),
+        ),
         createBotMock(),
       );
 

@@ -7,6 +7,7 @@ import {
   buildGenerateInputForTest,
   createSendMessageTool,
   type SendMessageResult,
+  StepTranscriptWriter,
 } from "../../src/services/session/runtime";
 import { SessionManager } from "../../src/services/session/session-manager";
 
@@ -29,7 +30,11 @@ function createSendResult(overrides: Partial<SendMessageResult> = {}): SendMessa
   };
 }
 
-describe("protocol/runtime helpers", () => {
+describe("StepTranscriptWriter protocol visibility", () => {
+  it("exposes StepTranscriptWriter for protocol draft classification", () => {
+    expect(StepTranscriptWriter).toBeTypeOf("function");
+  });
+
   it("send_message sends segments in order and returns structured results", async () => {
     const bot = {
       selfId: "bot-self",
@@ -51,7 +56,7 @@ describe("protocol/runtime helpers", () => {
     });
   });
 
-  it("keeps protocol retry helper entries out of rebuilt model context", () => {
+  it("keeps StepTranscriptWriter protocol helper entries out of rebuilt model context", () => {
     const session = new AgentSession(SessionManager.inMemory("discord:channel-1"));
     session.appendAthenaMessage({
       type: "user.message",

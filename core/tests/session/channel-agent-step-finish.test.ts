@@ -53,17 +53,22 @@ vi.mock("../../src/services/session/runtime/model-adapter", () => ({
 }));
 
 import {
-  ChannelRuntime,
   createAgentAssistantMessage,
   createSendMessageTool,
+  SessionRuntime,
+  StepTranscriptWriter,
 } from "../../src/services/session/runtime";
 import { SessionManager } from "../../src/services/session/session-manager";
 import { createTestSettingsManager } from "./test-settings-manager";
 
-describe("ChannelRuntime handleStepFinish", () => {
+describe("StepTranscriptWriter writeback seam", () => {
   beforeEach(() => {
     generateMock.mockReset();
     generateMock.mockResolvedValue(undefined);
+  });
+
+  it("exposes StepTranscriptWriter as the single step writeback owner", () => {
+    expect(StepTranscriptWriter).toBeTypeOf("function");
   });
 
   it("normalizes assistant reasoning blocks and usage metadata into AgentMessage payloads", () => {
@@ -197,7 +202,7 @@ describe("ChannelRuntime handleStepFinish", () => {
         activeToolNames: ["send_message"],
         responseContext: {},
       }));
-      const runtime = new ChannelRuntime(
+      const runtime = new SessionRuntime(
         {
           logger: vi.fn(() => ({
             level: 2,
@@ -239,7 +244,7 @@ describe("ChannelRuntime handleStepFinish", () => {
         | (() => Promise<void>)
         | undefined;
       if (!runResponse) {
-        throw new Error("ChannelRuntime.runResponse is unavailable");
+        throw new Error("SessionRuntime.runResponse is unavailable");
       }
 
       await runResponse.call(runtime);

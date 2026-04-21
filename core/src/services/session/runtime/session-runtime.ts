@@ -2,14 +2,20 @@ import { dirname } from "node:path";
 
 import type { ModelMessage } from "@ai-sdk/provider-utils";
 import type { IPluginService, ToolCatalog, ToolSelection } from "@yesimbot/plugin-sdk";
-import type { LanguageModel, OnFinishEvent, PrepareStepResult, ToolSet } from "ai";
+import type {
+  LanguageModel,
+  OnFinishEvent,
+  OnStepFinishEvent,
+  PrepareStepResult,
+  ToolSet,
+} from "ai";
 import { stepCountIs, ToolLoopAgent } from "ai";
 import { Bot, Context, Logger } from "koishi";
 
 import { AgentSession } from "../agent-session";
 import { compact, prepareCompaction, shouldCompact } from "../compaction";
 import { estimateContextTokens } from "../compaction/estimate";
-import { InstructionAssembler } from "../instruction-assembler";
+import { InstructionAssembler } from "../instruction-state/assembler";
 import { InstructionStateService } from "../instruction-state/service";
 import { convertToLlm } from "../materialize";
 import type {
@@ -21,27 +27,32 @@ import type {
   ResponseStatusRecord,
 } from "../messages";
 import { createDefaultWillingnessJudge, WillingnessJudge } from "../messages/activation";
-import type { SessionManager } from "../session-manager";
-import { prepareRuntimeModel } from "./model-adapter";
 import {
+  createEmptyStepTranscriptWriteSummary,
   getReliableInputTokens,
   hasCompletedSendMessageWithoutHeartbeat,
-  ResponseStepProcessor,
-} from "./response-step-processor";
+  mergeStepTranscriptWriteSummary,
+  PROTOCOL_GUIDANCE_TEXT,
+  StepTranscriptWriter,
+  type StepTranscriptWriteSummary,
+} from "../messages/step-transcript-writer";
+import type { SessionManager } from "../session-manager";
+import { prepareRuntimeModel } from "./model-adapter";
 import { createSendMessageTool } from "./send-message-tool";
 import type {
-  ChannelRuntimeOptions,
-  ChannelRuntimeTurnSettingsSnapshot,
+  SessionRuntimeOptions,
+  SessionRuntimeSnapshot,
+  ResponseWindowSettingsSnapshot,
   CompactionRunResult,
   MergedFollowUpOpportunity,
   NextActionSelection,
   ResponseState,
-  RuntimeTurnExecutionOptions,
-  RuntimeTurnExecutionResult,
+  SessionRuntimeExecutionOptions,
+  SessionRuntimeExecutionResult,
 } from "./types";
 
 // ============================================================================
-// ChannelRuntime
+// SessionRuntime
 // ============================================================================
 
 type ResponseHostInput = {
@@ -65,23 +76,30 @@ export interface ActivatedEventBatch extends EventBatch {
  * - Persist AI response steps to SessionManager
  * - Manage concurrency (prevent parallel generate() calls per channel)
  */
-export class ChannelRuntime {
+export class SessionRuntime {
   bot: Bot | undefined;
   readonly sessionManager: SessionManager;
   readonly session: AgentSession;
 
-  private options: ChannelRuntimeOptions;
+  private options: SessionRuntimeOptions;
   private responseState: ResponseState = "idle";
   private abortController: AbortController | null = null;
-  private pendingFollowUp: MergedFollowUpOpportunity | null = null;
-  private responseStartTime = 0;
-  private stepsCompleted = 0;
-  private responseActiveTools: string[] = [];
-  private currentTurnSettings: ChannelRuntimeTurnSettingsSnapshot | null = null;
-  private currentTurnInstructions: string | null = null;
-  private currentTurnFollowUpReview: FollowUpReviewRecord | null = null;
-  private nextTurnFollowUpReview: FollowUpReviewRecord | null = null;
-  private currentProtocolRetry = false;
+  private readonly runtimeSnapshot: SessionRuntimeSnapshot = {
+    state: "idle",
+    busyWindow: {
+      responseWindow: null,
+      instructions: null,
+      activeFollowUpReview: null,
+      queuedFollowUpReview: null,
+      protocolRetry: false,
+      startedAt: 0,
+      completedSteps: 0,
+      activeTools: [],
+    },
+    pendingFollowUp: null,
+    responseContext: undefined,
+    toolExperimentalContext: undefined,
+  };
   private cachedAgent: ToolLoopAgent<never, ToolSet> | null = null;
   private cachedAgentSignature: string | null = null;
   private cachedPreparedModel: ReturnType<typeof prepareRuntimeModel> | null = null;
@@ -90,16 +108,56 @@ export class ChannelRuntime {
   private currentToolCatalog: ToolCatalog | null = null;
   private currentToolSelection: ToolSelection | null = null;
   private pendingActivatedBatches: ActivatedEventBatch[] = [];
-  private currentResponseContext: unknown;
-  private currentToolExperimentalContext: unknown;
-  private readonly responseStepProcessor: ResponseStepProcessor;
+  private readonly stepTranscriptWriter: StepTranscriptWriter;
+  private currentStepSummary: StepTranscriptWriteSummary = createEmptyStepTranscriptWriteSummary();
   private readonly willingnessJudge: WillingnessJudge;
   private readonly logger: Logger;
   private readonly instructionAssembler: InstructionAssembler;
 
+  get snapshot(): SessionRuntimeSnapshot {
+    return {
+      state: this.runtimeSnapshot.state,
+      pendingFollowUp: this.runtimeSnapshot.pendingFollowUp
+        ? {
+            ...this.runtimeSnapshot.pendingFollowUp,
+            messageIds: [...this.runtimeSnapshot.pendingFollowUp.messageIds],
+          }
+        : null,
+      responseContext: this.runtimeSnapshot.responseContext,
+      toolExperimentalContext: this.runtimeSnapshot.toolExperimentalContext,
+      busyWindow: {
+        responseWindow: this.runtimeSnapshot.busyWindow.responseWindow
+          ? {
+              ...this.runtimeSnapshot.busyWindow.responseWindow,
+              compactionSettings: {
+                ...this.runtimeSnapshot.busyWindow.responseWindow.compactionSettings,
+              },
+            }
+          : null,
+        instructions: this.runtimeSnapshot.busyWindow.instructions,
+        activeFollowUpReview: this.runtimeSnapshot.busyWindow.activeFollowUpReview
+          ? {
+              ...this.runtimeSnapshot.busyWindow.activeFollowUpReview,
+              messageIds: [...this.runtimeSnapshot.busyWindow.activeFollowUpReview.messageIds],
+            }
+          : null,
+        queuedFollowUpReview: this.runtimeSnapshot.busyWindow.queuedFollowUpReview
+          ? {
+              ...this.runtimeSnapshot.busyWindow.queuedFollowUpReview,
+              messageIds: [...this.runtimeSnapshot.busyWindow.queuedFollowUpReview.messageIds],
+            }
+          : null,
+        protocolRetry: this.runtimeSnapshot.busyWindow.protocolRetry,
+        startedAt: this.runtimeSnapshot.busyWindow.startedAt,
+        completedSteps: this.runtimeSnapshot.busyWindow.completedSteps,
+        activeTools: [...this.runtimeSnapshot.busyWindow.activeTools],
+      },
+    };
+  }
+
   constructor(
     private ctx: Context,
-    options: ChannelRuntimeOptions,
+    options: SessionRuntimeOptions,
   ) {
     this.options = options;
     this.bot = options.bot;
@@ -108,7 +166,7 @@ export class ChannelRuntime {
     this.logger = this.ctx.logger("session");
     this.logger.level = 3;
     this.willingnessJudge = options.willingnessJudge ?? createDefaultWillingnessJudge(this.ctx);
-    this.responseStepProcessor = new ResponseStepProcessor({
+    this.stepTranscriptWriter = new StepTranscriptWriter({
       session: this.session,
       platform: options.platform,
       channelId: options.channelId,
@@ -136,6 +194,7 @@ export class ChannelRuntime {
     }
 
     this.responseState = nextState;
+    this.runtimeSnapshot.state = nextState;
     this.logger.debug(
       `[state:${this.getChannelKey()}] ${prevState}->${nextState} reason=${reason}`,
     );
@@ -151,7 +210,7 @@ export class ChannelRuntime {
     return modelId;
   }
 
-  private createTurnSettingsSnapshot(): ChannelRuntimeTurnSettingsSnapshot {
+  private createResponseWindowSnapshot(): ResponseWindowSettingsSnapshot {
     const responseSettings = this.options.settingsManager.getResponseSettings();
     const compactionSettings = this.options.settingsManager.getCompactionSettings();
 
@@ -172,8 +231,8 @@ export class ChannelRuntime {
     };
   }
 
-  private getActiveTurnSettings(): ChannelRuntimeTurnSettingsSnapshot {
-    return this.currentTurnSettings ?? this.createTurnSettingsSnapshot();
+  private getActiveResponseWindow(): ResponseWindowSettingsSnapshot {
+    return this.runtimeSnapshot.busyWindow.responseWindow ?? this.createResponseWindowSnapshot();
   }
 
   private appendAssistantMessage(
@@ -191,27 +250,27 @@ export class ChannelRuntime {
   // =========================================================================
 
   private createAgent(
-    turnSettings: ChannelRuntimeTurnSettingsSnapshot,
+    responseWindow: ResponseWindowSettingsSnapshot,
     model: LanguageModel,
   ): ToolLoopAgent<never, ToolSet> {
     const cumulativeTimeoutMs =
-      turnSettings.baseTimeoutMs + turnSettings.maxSteps * turnSettings.perStepTimeoutMs;
+      responseWindow.baseTimeoutMs + responseWindow.maxSteps * responseWindow.perStepTimeoutMs;
     return new ToolLoopAgent<never, ToolSet>({
       model,
       tools: {},
       stopWhen: [
-        stepCountIs(turnSettings.maxSteps),
+        stepCountIs(responseWindow.maxSteps),
         ({ steps }) =>
           hasCompletedSendMessageWithoutHeartbeat(steps) ||
-          this.responseStepProcessor.completedSendMessageWithoutHeartbeat,
+          this.currentStepSummary.completedSendMessageWithoutHeartbeat,
       ],
       timeout: {
         totalMs: cumulativeTimeoutMs,
-        chunkMs: turnSettings.chunkTimeoutMs,
+        chunkMs: responseWindow.chunkTimeoutMs,
       },
       prepareCall: async (options) => ({
         ...options,
-        experimental_context: this.currentToolExperimentalContext,
+        experimental_context: this.runtimeSnapshot.toolExperimentalContext,
       }),
       prepareStep: this.handlePrepareStep.bind(this),
       onStepFinish: this.handleStepFinish.bind(this),
@@ -220,30 +279,30 @@ export class ChannelRuntime {
   }
 
   private getAgentSignature(
-    turnSettings: ChannelRuntimeTurnSettingsSnapshot,
+    responseWindow: ResponseWindowSettingsSnapshot,
     modelMode: string,
   ): string {
     return [
-      turnSettings.modelId,
+      responseWindow.modelId,
       modelMode,
-      turnSettings.maxSteps,
-      turnSettings.baseTimeoutMs,
-      turnSettings.perStepTimeoutMs,
-      turnSettings.chunkTimeoutMs,
+      responseWindow.maxSteps,
+      responseWindow.baseTimeoutMs,
+      responseWindow.perStepTimeoutMs,
+      responseWindow.chunkTimeoutMs,
     ].join(":");
   }
 
   private getOrCreateAgent(
-    turnSettings: ChannelRuntimeTurnSettingsSnapshot,
+    responseWindow: ResponseWindowSettingsSnapshot,
     model: LanguageModel,
     modelMode: string,
   ): ToolLoopAgent<never, ToolSet> {
-    const nextSignature = this.getAgentSignature(turnSettings, modelMode);
+    const nextSignature = this.getAgentSignature(responseWindow, modelMode);
     if (this.cachedAgent && this.cachedAgentSignature === nextSignature) {
       return this.cachedAgent;
     }
 
-    const agent = this.createAgent(turnSettings, model);
+    const agent = this.createAgent(responseWindow, model);
     this.cachedAgent = agent;
     this.cachedAgentSignature = nextSignature;
     this.currentSupportedToolSignature = null;
@@ -259,11 +318,11 @@ export class ChannelRuntime {
   }
 
   private getPreparedModel(
-    turnSettings: ChannelRuntimeTurnSettingsSnapshot,
+    responseWindow: ResponseWindowSettingsSnapshot,
     requiresTools: boolean,
   ): ReturnType<typeof prepareRuntimeModel> {
     const nextSignature = this.getAgentSignature(
-      turnSettings,
+      responseWindow,
       requiresTools ? "tools-requested" : "plain",
     );
     if (this.cachedPreparedModel && this.cachedPreparedModelSignature === nextSignature) {
@@ -272,7 +331,7 @@ export class ChannelRuntime {
 
     const preparedModel = prepareRuntimeModel({
       registry: this.ctx["yesimbot.model"],
-      modelId: turnSettings.modelId,
+      modelId: responseWindow.modelId,
       requiresTools,
       requiresReasoning: false,
     });
@@ -285,6 +344,12 @@ export class ChannelRuntime {
   // =========================================================================
   // Public API
   // =========================================================================
+
+  async receive(_input?: unknown): Promise<never> {
+    throw new Error(
+      "Raw ingress is no longer accepted here. Use AgentSessionService.ingestEvent(...) instead.",
+    );
+  }
 
   async wake(batch: ActivatedEventBatch): Promise<void> {
     this.pendingActivatedBatches.push(batch);
@@ -319,7 +384,7 @@ export class ChannelRuntime {
     return this.responseState;
   }
 
-  getSettingsManager(): ChannelRuntimeOptions["settingsManager"] {
+  getSettingsManager(): SessionRuntimeOptions["settingsManager"] {
     return this.options.settingsManager;
   }
 
@@ -348,8 +413,8 @@ export class ChannelRuntime {
   }
 
   private markPendingFollowUp(input: { observedAt: number; messageId: string }): void {
-    if (!this.pendingFollowUp) {
-      this.pendingFollowUp = {
+    if (!this.runtimeSnapshot.pendingFollowUp) {
+      this.runtimeSnapshot.pendingFollowUp = {
         pending: true,
         firstObservedAt: input.observedAt,
         latestObservedAt: input.observedAt,
@@ -360,18 +425,19 @@ export class ChannelRuntime {
       return;
     }
 
-    this.pendingFollowUp.latestObservedAt = input.observedAt;
-    this.pendingFollowUp.pending = true;
-    if (!this.pendingFollowUp.messageIds.includes(input.messageId)) {
-      this.pendingFollowUp.messageIds.push(input.messageId);
-      this.pendingFollowUp.messageCount = this.pendingFollowUp.messageIds.length;
+    this.runtimeSnapshot.pendingFollowUp.latestObservedAt = input.observedAt;
+    this.runtimeSnapshot.pendingFollowUp.pending = true;
+    if (!this.runtimeSnapshot.pendingFollowUp.messageIds.includes(input.messageId)) {
+      this.runtimeSnapshot.pendingFollowUp.messageIds.push(input.messageId);
+      this.runtimeSnapshot.pendingFollowUp.messageCount =
+        this.runtimeSnapshot.pendingFollowUp.messageIds.length;
     }
     this.logger.debug(`[state:${this.getChannelKey()}] pending_follow_up updated`);
   }
 
   private consumePendingFollowUp(): MergedFollowUpOpportunity | null {
-    const pendingFollowUp = this.pendingFollowUp;
-    this.pendingFollowUp = null;
+    const pendingFollowUp = this.runtimeSnapshot.pendingFollowUp;
+    this.runtimeSnapshot.pendingFollowUp = null;
     return pendingFollowUp;
   }
 
@@ -391,29 +457,25 @@ export class ChannelRuntime {
         ]
       : modelMessages;
 
-    if (this.currentTurnFollowUpReview?.content) {
+    if (this.runtimeSnapshot.busyWindow.activeFollowUpReview?.content) {
       runtimeMessages.push({
         role: "user",
-        content: this.currentTurnFollowUpReview.content,
+        content: this.runtimeSnapshot.busyWindow.activeFollowUpReview.content,
       });
     }
 
     if (protocolRetry) {
       runtimeMessages.push({
         role: "user",
-        content:
-          "[Protocol Guidance]\nVisible IM replies must be sent with the send_message tool. " +
-          "Your previous assistant text was not delivered to the user. " +
-          "Re-issue the full visible reply with send_message, and only set request_heartbeat when you intentionally need another model turn after sending.",
+        content: PROTOCOL_GUIDANCE_TEXT,
       });
     }
 
     return [{ role: "system", content: instructions }, ...runtimeMessages];
   }
 
-  private getLatestChannelMessageInput():
-    | ChannelMessageInput<ChannelRawPayload | undefined>
-    | undefined {
+  // @ts-expect-error ChannelMessageInput was removed
+  private getLatestChannelMessageInput(): ChannelMessageInput<ChannelRawPayload | undefined> {
     const sessionMessages = this.session.getSessionMessages();
     for (let i = sessionMessages.length - 1; i >= 0; i--) {
       const message = sessionMessages[i];
@@ -449,15 +511,17 @@ export class ChannelRuntime {
   }
 
   private createToolRuntime(
-    turnSettings: ChannelRuntimeTurnSettingsSnapshot,
-    latestInput: ChannelMessageInput<ChannelRawPayload | undefined> | undefined,
+    responseWindow: ResponseWindowSettingsSnapshot,
+    // @ts-expect-error ChannelMessageInput was removed
+    latestInput: ChannelMessageInput<ChannelRawPayload>,
   ) {
     return {
       channelKey: this.getChannelKey(),
       platform: this.options.platform,
       channelId: this.options.channelId,
-      modelId: turnSettings.modelId,
+      modelId: responseWindow.modelId,
       basePath: this.options.basePath,
+      // Plugin runtime compatibility still expects an outer turn-shaped envelope.
       turn: {
         messageId: latestInput?.messageId ?? createRuntimeRecordId(),
         timestamp: latestInput?.timestamp ?? Date.now(),
@@ -514,8 +578,8 @@ export class ChannelRuntime {
   }
 
   private async executeRuntimeTurn(
-    options: RuntimeTurnExecutionOptions,
-  ): Promise<RuntimeTurnExecutionResult> {
+    options: SessionRuntimeExecutionOptions,
+  ): Promise<SessionRuntimeExecutionResult> {
     const channelKey = `${options.platform}:${options.channelId}`;
     const latestInput = this.getLatestChannelMessageInput();
     const instructions = await this.instructionAssembler.buildSystemPrompt({
@@ -537,8 +601,8 @@ export class ChannelRuntime {
         isReplyToBot: false,
       },
     });
-    this.currentTurnInstructions = instructions;
-    this.currentProtocolRetry = options.protocolRetry;
+    this.runtimeSnapshot.busyWindow.instructions = instructions;
+    this.runtimeSnapshot.busyWindow.protocolRetry = options.protocolRetry;
     const modelMessages = this.buildRuntimeMessages(instructions, options.protocolRetry);
 
     const sendMessageTool = createSendMessageTool({
@@ -547,7 +611,7 @@ export class ChannelRuntime {
     });
     const builtinTools = { send_message: sendMessageTool } satisfies ToolSet;
     const pluginService = options.ctx["yesimbot.plugin"] as IPluginService | undefined;
-    const runtime = this.createToolRuntime(options.turnSettings, latestInput);
+    const runtime = this.createToolRuntime(options.responseWindow, latestInput);
     const responseHostInput = this.buildResponseHostInput();
     this.pendingActivatedBatches = [];
     const toolLifecycle = pluginService?.compileTools
@@ -601,12 +665,12 @@ export class ChannelRuntime {
         })();
     const responseActiveTools =
       this.currentToolSelection?.activeToolNames ?? Object.keys(toolLifecycle.activeTools);
-    this.responseActiveTools = responseActiveTools;
-    this.currentResponseContext = toolLifecycle.responseContext;
-    this.currentToolExperimentalContext = this.currentResponseContext;
+    this.runtimeSnapshot.busyWindow.activeTools = responseActiveTools;
+    this.runtimeSnapshot.responseContext = toolLifecycle.responseContext;
+    this.runtimeSnapshot.toolExperimentalContext = this.runtimeSnapshot.responseContext;
 
     const preparedModel = this.getPreparedModel(
-      options.turnSettings,
+      options.responseWindow,
       responseActiveTools.length > 0,
     );
     const modelMode =
@@ -614,17 +678,17 @@ export class ChannelRuntime {
         ? "tool-compat"
         : "raw";
 
-    const agent = this.getOrCreateAgent(options.turnSettings, preparedModel.model, modelMode);
+    const agent = this.getOrCreateAgent(options.responseWindow, preparedModel.model, modelMode);
     if (this.currentSupportedToolSignature !== toolLifecycle.signature) {
       this.syncAgentTools(agent, toolLifecycle.supportedTools);
       this.currentSupportedToolSignature = toolLifecycle.signature;
     }
 
     options.logger.debug(
-      `[llm:${channelKey}] start streaming=${options.turnSettings.streaming} messages=${modelMessages.length} tools=${responseActiveTools.length} retry=${options.protocolRetry}`,
+      `[llm:${channelKey}] start streaming=${options.responseWindow.streaming} messages=${modelMessages.length} tools=${responseActiveTools.length} retry=${options.protocolRetry}`,
     );
 
-    if (options.turnSettings.streaming) {
+    if (options.responseWindow.streaming) {
       let streamError: unknown;
       const captureStreamError = (error: unknown) => {
         if (streamError === undefined) {
@@ -665,21 +729,25 @@ export class ChannelRuntime {
 
   private async runResponse(protocolRetry = false): Promise<void> {
     if (!protocolRetry) {
-      this.currentTurnFollowUpReview = this.nextTurnFollowUpReview;
-      this.nextTurnFollowUpReview = null;
+      this.runtimeSnapshot.busyWindow.activeFollowUpReview =
+        this.runtimeSnapshot.busyWindow.queuedFollowUpReview;
+      this.runtimeSnapshot.busyWindow.queuedFollowUpReview = null;
     }
 
-    this.responseStepProcessor.beginResponse(protocolRetry);
+    this.stepTranscriptWriter.beginResponse(protocolRetry);
+    this.currentStepSummary = createEmptyStepTranscriptWriteSummary();
     this.setResponseState("responding", protocolRetry ? "protocol_retry" : "response_start");
     this.abortController = new AbortController();
-    this.responseStartTime = Date.now();
-    this.stepsCompleted = 0;
-    this.currentTurnSettings = this.createTurnSettingsSnapshot();
+    this.runtimeSnapshot.busyWindow.startedAt = Date.now();
+    this.runtimeSnapshot.busyWindow.completedSteps = 0;
+    this.runtimeSnapshot.busyWindow.responseWindow = this.createResponseWindowSnapshot();
 
-    const turnSettings = this.currentTurnSettings;
+    const responseWindow = this.runtimeSnapshot.busyWindow.responseWindow;
     const timeoutMs =
-      turnSettings.baseTimeoutMs + turnSettings.maxSteps * turnSettings.perStepTimeoutMs;
+      responseWindow.baseTimeoutMs + responseWindow.maxSteps * responseWindow.perStepTimeoutMs;
     let timedOut = false;
+    let scheduleProtocolRetry = false;
+    let scheduleFollowUp = false;
 
     const watchdog = setTimeout(() => {
       if (this.responseState === "responding") {
@@ -704,163 +772,174 @@ export class ChannelRuntime {
         platform: this.options.platform,
         channelId: this.options.channelId,
         basePath: this.options.basePath,
-        turnSettings,
+        responseWindow,
         protocolRetry,
         abortSignal: this.abortController.signal,
       });
-      this.responseActiveTools = executionResult.responseActiveTools;
+      this.runtimeSnapshot.busyWindow.activeTools = executionResult.responseActiveTools;
     } catch (err: unknown) {
       const thrownError = err instanceof Error ? err.message : String(err);
-      this.responseStepProcessor.setThrownError(thrownError);
+      this.currentStepSummary = mergeStepTranscriptWriteSummary(this.currentStepSummary, {
+        ...createEmptyStepTranscriptWriteSummary(),
+        sendFailure: true,
+        thrownError,
+      });
 
       this.ctx.logger.error(
-        `Response failed for ${this.options.platform}:${this.options.channelId}: ${this.responseStepProcessor.thrownError}`,
+        `Response failed for ${this.options.platform}:${this.options.channelId}: ${this.currentStepSummary.thrownError}`,
       );
     } finally {
       clearTimeout(watchdog);
 
-      if (this.responseStepProcessor.pendingProtocolRetry) {
+      if (this.currentStepSummary.pendingProtocolRetry) {
         this.setResponseState("idle", "protocol_retry_pending");
         this.abortController = null;
-        this.currentTurnSettings = null;
-        this.currentTurnInstructions = null;
-        this.currentResponseContext = undefined;
-        this.currentToolExperimentalContext = undefined;
-        this.currentProtocolRetry = false;
-        this.runResponse(true).catch(() => {});
-        return;
+        this.runtimeSnapshot.busyWindow.responseWindow = null;
+        this.runtimeSnapshot.busyWindow.instructions = null;
+        this.runtimeSnapshot.responseContext = undefined;
+        this.runtimeSnapshot.toolExperimentalContext = undefined;
+        this.runtimeSnapshot.busyWindow.protocolRetry = false;
+        scheduleProtocolRetry = true;
+      } else {
+        // maybe follow-up
+        function resolveEndReason(input: {
+          aborted: boolean;
+          timedOut: boolean;
+          protocolError: boolean;
+          heartbeatRequested: boolean;
+          sendFailure: boolean;
+          thrownError?: string;
+        }): ResponseStatusReason {
+          if (
+            (input.sendFailure || Boolean(input.thrownError)) &&
+            input.thrownError &&
+            !isAbortLikeThrownError(input.thrownError) &&
+            !isTimeoutLikeThrownError(input.thrownError)
+          ) {
+            return "exception";
+          }
+
+          if (input.timedOut) {
+            return "timeout";
+          }
+
+          if (input.aborted) {
+            return "abort";
+          }
+
+          if (input.protocolError) {
+            return "protocol_error";
+          }
+
+          if (input.sendFailure || Boolean(input.thrownError)) {
+            return "exception";
+          }
+
+          if (input.heartbeatRequested) {
+            return "heartbeat_continuation";
+          }
+
+          return "normal";
+        }
+        const endReason = resolveEndReason({
+          aborted: this.abortController?.signal.aborted === true && !timedOut,
+          timedOut,
+          protocolError: this.currentStepSummary.protocolError,
+          heartbeatRequested: this.currentStepSummary.heartbeatRequested,
+          sendFailure: this.currentStepSummary.sendFailure,
+          thrownError: this.currentStepSummary.thrownError,
+        });
+
+        function selectOutcome(input: {
+          endReason: ResponseStatusReason;
+          hasPendingFollowUp: boolean;
+          thrownError?: string;
+        }): NextActionSelection {
+          if (input.endReason === "timeout") {
+            return {
+              nextAction: "blocked",
+              blockedReason: "timeout",
+            };
+          }
+
+          if (input.endReason === "protocol_error" || input.endReason === "exception") {
+            return {
+              nextAction: "blocked",
+              blockedReason: input.thrownError ?? input.endReason,
+            };
+          }
+
+          if (
+            input.endReason === "abort" &&
+            input.thrownError &&
+            !isAbortLikeThrownError(input.thrownError)
+          ) {
+            return {
+              nextAction: "blocked",
+              blockedReason: input.thrownError,
+            };
+          }
+
+          if (input.hasPendingFollowUp) {
+            return { nextAction: "follow_up" };
+          }
+
+          return { nextAction: "idle" };
+        }
+        const outcome = selectOutcome({
+          endReason,
+          hasPendingFollowUp: Boolean(this.runtimeSnapshot.pendingFollowUp?.pending),
+          thrownError: this.currentStepSummary.thrownError,
+        });
+        const record: ResponseStatusRecord = {
+          endReason,
+          nextAction: outcome.nextAction,
+          durationMs: Date.now() - this.runtimeSnapshot.busyWindow.startedAt,
+          stepsCompleted: this.runtimeSnapshot.busyWindow.completedSteps,
+          error: this.currentStepSummary.thrownError,
+          blockedReason: outcome.blockedReason,
+        };
+        this.appendResponseStatus(record);
+        this.logger.debug(
+          `[state:${this.getChannelKey()}] end reason=${endReason} nextAction=${outcome.nextAction} steps=${this.runtimeSnapshot.busyWindow.completedSteps} durationMs=${record.durationMs}`,
+        );
+
+        this.setResponseState("idle", "response_status_persisted");
+        this.abortController = null;
+
+        if (outcome.nextAction === "follow_up") {
+          const pendingFollowUp = this.consumePendingFollowUp();
+          if (pendingFollowUp) {
+            const followUpReview = this.createFollowUpReviewRecord(pendingFollowUp);
+            this.session.appendRuntimeStateInfo("follow_up_review", undefined, followUpReview);
+            this.runtimeSnapshot.busyWindow.queuedFollowUpReview = followUpReview;
+          }
+          this.runtimeSnapshot.busyWindow.responseWindow = null;
+          this.runtimeSnapshot.busyWindow.instructions = null;
+          this.runtimeSnapshot.busyWindow.activeFollowUpReview = null;
+          this.runtimeSnapshot.responseContext = undefined;
+          this.runtimeSnapshot.toolExperimentalContext = undefined;
+          this.runtimeSnapshot.busyWindow.protocolRetry = false;
+          scheduleFollowUp = true;
+        } else {
+          this.runtimeSnapshot.pendingFollowUp = null;
+          this.runtimeSnapshot.busyWindow.responseWindow = null;
+          this.runtimeSnapshot.busyWindow.instructions = null;
+          this.runtimeSnapshot.busyWindow.activeFollowUpReview = null;
+          this.runtimeSnapshot.responseContext = undefined;
+          this.runtimeSnapshot.toolExperimentalContext = undefined;
+          this.runtimeSnapshot.busyWindow.protocolRetry = false;
+        }
       }
+    }
 
-      // maybe follow-up
-      function resolveEndReason(input: {
-        aborted: boolean;
-        timedOut: boolean;
-        protocolError: boolean;
-        heartbeatRequested: boolean;
-        sendFailure: boolean;
-        thrownError?: string;
-      }): ResponseStatusReason {
-        if (
-          (input.sendFailure || Boolean(input.thrownError)) &&
-          input.thrownError &&
-          !isAbortLikeThrownError(input.thrownError) &&
-          !isTimeoutLikeThrownError(input.thrownError)
-        ) {
-          return "exception";
-        }
+    if (scheduleProtocolRetry) {
+      this.runResponse(true).catch(() => {});
+      return;
+    }
 
-        if (input.timedOut) {
-          return "timeout";
-        }
-
-        if (input.aborted) {
-          return "abort";
-        }
-
-        if (input.protocolError) {
-          return "protocol_error";
-        }
-
-        if (input.sendFailure || Boolean(input.thrownError)) {
-          return "exception";
-        }
-
-        if (input.heartbeatRequested) {
-          return "heartbeat_continuation";
-        }
-
-        return "normal";
-      }
-      const endReason = resolveEndReason({
-        aborted: this.abortController?.signal.aborted === true && !timedOut,
-        timedOut,
-        protocolError: this.responseStepProcessor.protocolError,
-        heartbeatRequested: this.responseStepProcessor.heartbeatRequested,
-        sendFailure: this.responseStepProcessor.sendFailure,
-        thrownError: this.responseStepProcessor.thrownError,
-      });
-
-      function selectOutcome(input: {
-        endReason: ResponseStatusReason;
-        hasPendingFollowUp: boolean;
-        thrownError?: string;
-      }): NextActionSelection {
-        if (input.endReason === "timeout") {
-          return {
-            nextAction: "blocked",
-            blockedReason: "timeout",
-          };
-        }
-
-        if (input.endReason === "protocol_error" || input.endReason === "exception") {
-          return {
-            nextAction: "blocked",
-            blockedReason: input.thrownError ?? input.endReason,
-          };
-        }
-
-        if (
-          input.endReason === "abort" &&
-          input.thrownError &&
-          !isAbortLikeThrownError(input.thrownError)
-        ) {
-          return {
-            nextAction: "blocked",
-            blockedReason: input.thrownError,
-          };
-        }
-
-        if (input.hasPendingFollowUp) {
-          return { nextAction: "follow_up" };
-        }
-
-        return { nextAction: "idle" };
-      }
-      const outcome = selectOutcome({
-        endReason,
-        hasPendingFollowUp: Boolean(this.pendingFollowUp?.pending),
-        thrownError: this.responseStepProcessor.thrownError,
-      });
-      const record: ResponseStatusRecord = {
-        endReason,
-        nextAction: outcome.nextAction,
-        durationMs: Date.now() - this.responseStartTime,
-        stepsCompleted: this.stepsCompleted,
-        error: this.responseStepProcessor.thrownError,
-        blockedReason: outcome.blockedReason,
-      };
-      this.appendResponseStatus(record);
-      this.logger.debug(
-        `[state:${this.getChannelKey()}] end reason=${endReason} nextAction=${outcome.nextAction} steps=${this.stepsCompleted} durationMs=${record.durationMs}`,
-      );
-
-      this.setResponseState("idle", "response_status_persisted");
-      this.abortController = null;
-
-      if (outcome.nextAction === "follow_up") {
-        const pendingFollowUp = this.consumePendingFollowUp();
-        if (pendingFollowUp) {
-          const followUpReview = this.createFollowUpReviewRecord(pendingFollowUp);
-          this.session.appendRuntimeStateInfo("follow_up_review", undefined, followUpReview);
-          this.nextTurnFollowUpReview = followUpReview;
-        }
-        this.currentTurnSettings = null;
-        this.currentTurnInstructions = null;
-        this.currentTurnFollowUpReview = null;
-        this.currentResponseContext = undefined;
-        this.currentToolExperimentalContext = undefined;
-        this.currentProtocolRetry = false;
-        this.runResponse().catch(() => {});
-        return;
-      }
-
-      this.pendingFollowUp = null;
-      this.currentTurnSettings = null;
-      this.currentTurnInstructions = null;
-      this.currentTurnFollowUpReview = null;
-      this.currentResponseContext = undefined;
-      this.currentToolExperimentalContext = undefined;
-      this.currentProtocolRetry = false;
+    if (scheduleFollowUp) {
+      this.runResponse().catch(() => {});
     }
   }
 
@@ -878,8 +957,11 @@ export class ChannelRuntime {
     messages: ModelMessage[];
     experimental_context?: unknown;
   }): PrepareStepResult {
-    const nextMessages = this.currentTurnInstructions
-      ? this.buildRuntimeMessages(this.currentTurnInstructions, this.currentProtocolRetry)
+    const nextMessages = this.runtimeSnapshot.busyWindow.instructions
+      ? this.buildRuntimeMessages(
+          this.runtimeSnapshot.busyWindow.instructions,
+          this.runtimeSnapshot.busyWindow.protocolRetry,
+        )
       : _opts.messages;
     const maxTokenEstimate = 100000;
     const estimatedTokens = JSON.stringify(nextMessages).length / 4;
@@ -893,15 +975,15 @@ export class ChannelRuntime {
       const keepCount = Math.max(10, Math.floor(rest.length / 2));
       const trimmed = rest.slice(-keepCount);
       return {
-        activeTools: this.responseActiveTools,
-        experimental_context: this.currentToolExperimentalContext,
+        activeTools: this.runtimeSnapshot.busyWindow.activeTools,
+        experimental_context: this.runtimeSnapshot.toolExperimentalContext,
         messages: [system, ...trimmed],
       };
     }
 
     return {
-      activeTools: this.responseActiveTools,
-      experimental_context: this.currentToolExperimentalContext,
+      activeTools: this.runtimeSnapshot.busyWindow.activeTools,
+      experimental_context: this.runtimeSnapshot.toolExperimentalContext,
       messages: nextMessages,
     };
   }
@@ -909,27 +991,30 @@ export class ChannelRuntime {
   /**
    * Called after each LLM step. Persists messages and enforces tool-first outbound protocol.
    */
-  private handleStepFinish(stepResult: Parameters<ResponseStepProcessor["apply"]>[0]): void {
-    this.stepsCompleted++;
-    this.responseStepProcessor.apply(stepResult);
+  private handleStepFinish(stepResult: OnStepFinishEvent): void {
+    this.runtimeSnapshot.busyWindow.completedSteps++;
+    this.currentStepSummary = mergeStepTranscriptWriteSummary(
+      this.currentStepSummary,
+      this.stepTranscriptWriter.writeStep(stepResult),
+    );
     this.logger.debug(
-      `[step:${this.getChannelKey()}] completed count=${this.stepsCompleted} finishReason=${stepResult.finishReason ?? "unknown"}`,
+      `[step:${this.getChannelKey()}] completed count=${this.runtimeSnapshot.busyWindow.completedSteps} finishReason=${stepResult.finishReason ?? "unknown"}`,
     );
   }
 
   private handleFinish(event: OnFinishEvent): void {
-    const turnSettings = this.getActiveTurnSettings();
+    const responseWindow = this.getActiveResponseWindow();
     const totalUsage = event.totalUsage ?? event.usage;
     const contextTokens =
       getReliableInputTokens(totalUsage) ?? estimateContextTokens(this.session.getModelMessages());
 
     if (
-      !shouldCompact(contextTokens, turnSettings.contextWindow, turnSettings.compactionSettings)
+      !shouldCompact(contextTokens, responseWindow.contextWindow, responseWindow.compactionSettings)
     ) {
       return;
     }
 
-    this.runCompaction(contextTokens, turnSettings).catch((err: unknown) => {
+    this.runCompaction(contextTokens, responseWindow).catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err);
       this.ctx.logger.error(
         `Compaction failed for ${this.options.platform}:${this.options.channelId}: ${msg}`,
@@ -939,7 +1024,7 @@ export class ChannelRuntime {
 
   public async runCompaction(
     contextTokens: number,
-    turnSettings = this.createTurnSettingsSnapshot(),
+    responseWindow = this.createResponseWindowSnapshot(),
   ): Promise<CompactionRunResult> {
     const entries = this.session
       .getEntries()
@@ -964,7 +1049,7 @@ export class ChannelRuntime {
     );
     const preparation = prepareCompaction(
       compactionEntries,
-      turnSettings.compactionSettings,
+      responseWindow.compactionSettings,
       latestCompaction?.summary,
       contextTokens,
     );
@@ -972,7 +1057,7 @@ export class ChannelRuntime {
       return { compacted: false, reason: "nothing-to-compact" };
     }
 
-    const compactionModelId = turnSettings.compactionSettings.model ?? turnSettings.modelId;
+    const compactionModelId = responseWindow.compactionSettings.model ?? responseWindow.modelId;
     const model: LanguageModel = this.ctx["yesimbot.model"].resolve(compactionModelId);
     const result = await compact(preparation, model);
 

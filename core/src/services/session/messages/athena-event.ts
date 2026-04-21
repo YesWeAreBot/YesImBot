@@ -1,13 +1,20 @@
-import type { ChannelRawPayload, ReplyReference, SenderMetadata } from "./channel-input";
+import { ReplyReference } from "./athena-message";
 
 export interface AthenaEventBase {
   id: string;
   timestamp: number;
 }
 
-export interface AthenaMessageEvent<
-  TRaw extends ChannelRawPayload | undefined = undefined,
-> extends AthenaEventBase {
+interface SenderMetadata {
+  userId: string;
+  username: string;
+  nickname?: string;
+  identity?: string;
+}
+
+interface KoishiMessagePayload {}
+
+export interface AthenaMessageEvent extends AthenaEventBase {
   kind: "message";
   platform: string;
   channelId: string;
@@ -18,49 +25,46 @@ export interface AthenaMessageEvent<
   atSelf: boolean;
   isReplyToBot: boolean;
   replyTo?: ReplyReference;
-  raw?: TRaw;
+  raw?: KoishiMessagePayload;
 }
 
-export interface AthenaChannelEvent<
-  TRaw extends ChannelRawPayload | undefined = undefined,
-> extends AthenaEventBase {
+interface KoishiChannelEventPayload {}
+
+export interface AthenaChannelEvent extends AthenaEventBase {
   kind: "channel_event";
   platform: string;
   channelId: string;
   eventId: string;
   eventType: string;
   sourceUserId?: string;
-  raw?: TRaw;
+  raw?: KoishiChannelEventPayload;
 }
 
-export interface AthenaPlatformNoticeEvent<
-  TRaw extends ChannelRawPayload | undefined = undefined,
-> extends AthenaEventBase {
+interface KoishiPlatformNoticePayload {}
+
+export interface AthenaPlatformNoticeEvent extends AthenaEventBase {
   kind: "platform_notice";
   platform: string;
-  channelId?: string;
+  channelId: string;
   noticeType: string;
   summary: string;
-  raw?: TRaw;
+  raw?: KoishiPlatformNoticePayload;
 }
 
-export interface AthenaInternalSignalEvent<
-  TRaw extends ChannelRawPayload | undefined = undefined,
-> extends AthenaEventBase {
+interface InternalSignalRawPayload {}
+
+export interface AthenaInternalSignalEvent extends AthenaEventBase {
   kind: "internal_signal";
   platform: string;
   channelId: string;
   signalType: string;
   source: string;
   summary?: string;
-  raw?: TRaw;
+  raw?: InternalSignalRawPayload;
 }
 
-export type AthenaEvent<TRaw extends ChannelRawPayload | undefined = undefined> =
-  | AthenaMessageEvent<TRaw>
-  | AthenaChannelEvent<TRaw>
-  | AthenaPlatformNoticeEvent<TRaw>
-  | AthenaInternalSignalEvent<TRaw>;
-
-export type ChannelScopedAthenaEvent<TRaw extends ChannelRawPayload | undefined = undefined> =
-  Extract<AthenaEvent<TRaw>, { channelId: string }>;
+export type AthenaEvent =
+  | AthenaMessageEvent
+  | AthenaChannelEvent
+  | AthenaPlatformNoticeEvent
+  | AthenaInternalSignalEvent;

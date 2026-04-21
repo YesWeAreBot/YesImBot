@@ -48,5 +48,4 @@ export type {
   AthenaInternalSignalEvent,
   AthenaMessageEvent,
   AthenaPlatformNoticeEvent,
-  ChannelScopedAthenaEvent,
 } from "./athena-event";

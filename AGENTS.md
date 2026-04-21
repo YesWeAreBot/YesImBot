@@ -41,7 +41,7 @@ Use the narrowest command that proves your change.
 # root
 yarn lint
 yarn fmt:check
-yarn typecheck
+yarn check-types
 yarn build
 yarn test
 

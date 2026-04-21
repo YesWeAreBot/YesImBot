@@ -1,11 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, expectTypeOf, it, vi } from "vitest";
 
-import { ChannelRuntime } from "../../src/services/session/runtime";
+import { SessionRuntime, type SessionRuntimeSnapshot } from "../../src/services/session/runtime";
 import { SessionManager } from "../../src/services/session/session-manager";
 import { createTestSettingsManager } from "./test-settings-manager";
 
 function createRuntime() {
-  return new ChannelRuntime(
+  return new SessionRuntime(
     {
       logger: vi.fn(() => ({
         debug: vi.fn(),
@@ -47,7 +47,15 @@ function createRuntime() {
   );
 }
 
-describe("ChannelRuntime integration seams", () => {
+describe("SessionRuntime integration seams", () => {
+  it("exposes explicit runtime snapshot vocabulary", () => {
+    expectTypeOf<SessionRuntimeSnapshot>().toMatchTypeOf<{
+      busyWindow: object | null;
+      pendingFollowUp: object | null;
+      responseContext: unknown;
+    }>();
+  });
+
   it("rejects raw channel ingress and points callers to AgentSessionService.ingestEvent", async () => {
     const runtime = createRuntime();
 
@@ -71,6 +79,7 @@ describe("ChannelRuntime integration seams", () => {
     const runtime = createRuntime();
 
     expect(runtime.getResponseState()).toBe("idle");
+    expect((runtime as unknown as { snapshot: SessionRuntimeSnapshot }).snapshot).toBeDefined();
     expect(runtime.sessionManager.getEntries()).toEqual([]);
     expect(runtime.sessionManager.getSessionMessages()).toEqual([]);
   });

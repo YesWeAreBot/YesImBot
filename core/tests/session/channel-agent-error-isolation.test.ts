@@ -28,9 +28,9 @@ import { AgentSession } from "../../src/services/session/agent-session";
 import type { ResponseStatusRecord } from "../../src/services/session/messages";
 import {
   buildGenerateInputForTest,
-  ChannelRuntime,
   createAgentAssistantMessage,
   normalizeAssistantContent,
+  SessionRuntime,
 } from "../../src/services/session/runtime";
 import { SessionManager } from "../../src/services/session/session-manager";
 import { createTestSettingsManager } from "./test-settings-manager";
@@ -110,12 +110,12 @@ function createSession(): AgentSession {
   return new AgentSession(sessionManager);
 }
 
-describe("ChannelRuntime plugin safety helpers", () => {
+describe("SessionRuntime plugin safety helpers", () => {
   beforeEach(() => {
     generateMock.mockReset();
   });
 
-  it("normalizes assistant tool-call parts for persistence", () => {
+  it("normalizes assistant tool-call parts for StepTranscriptWriter persistence", () => {
     const content = normalizeAssistantContent([
       {
         type: "tool-call",
@@ -217,7 +217,7 @@ describe("ChannelRuntime plugin safety helpers", () => {
 
   it("logs response failures with the channel identifier", async () => {
     const { ctx, logger } = createContextMock();
-    const agent = new ChannelRuntime(ctx as never, {
+    const agent = new SessionRuntime(ctx as never, {
       bot: createBotMock() as never,
       sessionManager: SessionManager.inMemory("discord:channel-1"),
       settingsManager: createTestSettingsManager(),

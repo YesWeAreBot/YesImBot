@@ -5,11 +5,10 @@ import type {
   InstructionAssemblyContext,
   InstructionBlock,
   InstructionContributor,
-} from "./instruction-contributor";
-import { sortInstructionBlocks } from "./instruction-contributor";
-import { AGENTS_FILE, PERSONA_FILE, TOOLS_FILE, USER_FILE } from "./instruction-state/layout";
-import type { InstructionStateService } from "./instruction-state/service";
-import type { ChannelMessageInput, ChannelRawPayload } from "./messages";
+} from "./contributor";
+import { sortInstructionBlocks } from "./contributor";
+import { AGENTS_FILE, PERSONA_FILE, TOOLS_FILE, USER_FILE } from "./layout";
+import type { InstructionStateService } from "./service";
 
 const DEFAULT_SESSION_INSTRUCTIONS =
   "你是一个群聊参与者。像真人一样自然地参与对话，不要使用助手腔调。所有要发送到聊天中的可见内容都必须通过 send_message 工具发送；普通 assistant 文本不会直接发给用户。默认在发送后结束当前轮次，只有在确实需要继续下一步时才设置 request_heartbeat。";
@@ -105,6 +104,7 @@ export interface InstructionAssemblerOptions {
 export interface BuildSystemPromptInput {
   platform: string;
   channelId: string;
+  // @ts-expect-error ChannelMessageInput was removed
   turn: ChannelMessageInput<ChannelRawPayload | undefined>;
 }
 

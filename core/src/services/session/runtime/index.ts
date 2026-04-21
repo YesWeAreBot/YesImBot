@@ -2,13 +2,17 @@ export {
   buildGenerateInputForTest,
   createAgentAssistantMessage,
   normalizeAssistantContent,
-} from "./response-step-processor";
-export { ChannelRuntime } from "./channel-runtime";
+  StepTranscriptWriter,
+} from "../messages/step-transcript-writer";
+export { SessionRuntime } from "./session-runtime";
 export { createSendMessageTool, isSendMessageResult } from "./send-message-tool";
 export type { SendMessageResult, SendMessageSegmentResult } from "./send-message-tool";
 export type {
-  ChannelRuntimeOptions,
+  ResponseWindowSettingsSnapshot,
   CompactionRunResult,
   CompactionSkipReason,
   ResponseState,
+  SessionRuntimeBusyWindowSnapshot,
+  SessionRuntimeSnapshot,
+  SessionRuntimeOptions,
 } from "./types";

@@ -4,18 +4,11 @@ import { join } from "node:path";
 import { Bot, Context, Service, Session } from "koishi";
 
 import { InstructionStateService } from "./instruction-state/service";
-import {
-  Activation,
-  type ActivationResult,
-  type AthenaEvent,
-  type ChannelScopedAthenaEvent,
-  type EventBatch,
-} from "./messages";
+import { Activation, type ActivationResult, type AthenaEvent, type EventBatch } from "./messages";
 import { evaluateActivationPolicy } from "./messages/activation";
-import type { ChannelMessageInput } from "./messages/channel-input";
 import { projectToAthenaMessage } from "./messages/project-to-athena-message";
 import type { ChannelKey } from "./messages/runtime-types";
-import { ChannelRuntime } from "./runtime";
+import { SessionRuntime } from "./runtime";
 import { SessionManager } from "./session-manager";
 import {
   SettingsManager,
@@ -24,8 +17,6 @@ import {
   type SettingsIssue,
   type SettingsReloadMetadata,
 } from "./settings-manager";
-
-type RuntimeStateInput = ChannelScopedAthenaEvent;
 
 export interface ChannelSettingsReloadResult {
   channelKey: ChannelKey;
@@ -113,19 +104,19 @@ export interface AgentSessionServiceConfig {
 /**
  * Koishi service that manages per-channel AI runtimes.
  *
- * Each channel (platform:channelId) gets its own ChannelRuntime with
+ * Each channel (platform:channelId) gets its own SessionRuntime with
  * an isolated SessionManager for JSONL persistence.
  *
  * Message flow:
  * 1. Koishi message event → koishiSessionToAthenaEvent()
  * 2. AgentSessionService.ingestEvent() → persist raw event, form eventBatch, evaluate activation
- * 3. Persist hidden activation_result, then wake ChannelRuntime only for activated batches
+ * 3. Persist hidden activation_result, then wake SessionRuntime only for activated batches
  */
 export class AgentSessionService extends Service<AgentSessionServiceConfig> {
   static inject = ["yesimbot.model", "yesimbot.plugin"];
 
-  private agents: Map<ChannelKey, ChannelRuntime> = new Map();
-  private pendingAgentCreations: Map<ChannelKey, Promise<ChannelRuntime>> = new Map();
+  private agents: Map<ChannelKey, SessionRuntime> = new Map();
+  private pendingAgentCreations: Map<ChannelKey, Promise<SessionRuntime>> = new Map();
   private pendingEventBatches: Map<ChannelKey, EventBatch> = new Map();
   /** TTL-based dedupe set for messageIds. Map<messageId, expiryTimestamp>. */
   private recentMessageIds: Map<string, number> = new Map();
@@ -301,17 +292,8 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
   // Event Routing
   // =========================================================================
 
-  /** Compatibility adapter for message-shaped ingress. */
-  async receive(input: ChannelMessageInput, bot?: Bot): Promise<void> {
-    return this.ingestEvent(channelMessageToAthenaEvent(input), bot);
-  }
-
   /** Primary Phase 11 ingress seam. */
   async ingestEvent(event: AthenaEvent, bot?: Bot): Promise<void> {
-    if (!isChannelScopedEvent(event)) {
-      throw new Error(`AgentSessionService.ingestEvent() requires a channel-scoped event`);
-    }
-
     const routeBot = bot;
 
     const selfId = routeBot?.selfId ?? "";
@@ -383,10 +365,7 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
   // =========================================================================
 
   /** Get an existing agent or create a new one for the channel. */
-  private async getOrCreateAgent(
-    input: ChannelScopedAthenaEvent,
-    bot?: Bot,
-  ): Promise<ChannelRuntime> {
+  private async getOrCreateAgent(input: AthenaEvent, bot?: Bot): Promise<SessionRuntime> {
     const { platform, channelId } = input;
     const channelKey: ChannelKey = `${platform}:${channelId}`;
     const existing = this.agents.get(channelKey);
@@ -412,9 +391,9 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
 
   private async createAndStoreAgent(
     channelKey: ChannelKey,
-    input: ChannelScopedAthenaEvent,
+    input: AthenaEvent,
     bot?: Bot,
-  ): Promise<ChannelRuntime> {
+  ): Promise<SessionRuntime> {
     const { platform, channelId } = input;
     const globalSettingsPath = this.getGlobalSettingsPath();
     const basePath = this.getRuntimeStateDir(input);
@@ -445,7 +424,7 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
       this.logger.debug(`Created new session for ${channelKey}`);
     }
 
-    const agent = new ChannelRuntime(this.ctx, {
+    const agent = new SessionRuntime(this.ctx, {
       bot,
       sessionManager,
       settingsManager,
@@ -465,7 +444,7 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
     return (pluginService?.getInstructions?.(channelKey) as never) ?? [];
   }
 
-  private getRuntimeStateDir(input: RuntimeStateInput): string {
+  private getRuntimeStateDir(input: AthenaEvent): string {
     if (input.kind === "message" && input.isDirect) {
       return this.instructionStateService.getUserStateDir(input.platform, input.sender.userId);
     }
@@ -473,7 +452,7 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
     return this.instructionStateService.getChannelStateDir(input.platform, input.channelId);
   }
 
-  private ensureRuntimeState(input: RuntimeStateInput): void {
+  private ensureRuntimeState(input: AthenaEvent): void {
     if (input.kind === "message" && input.isDirect) {
       this.instructionStateService.ensureUserState(input.platform, input.sender.userId);
       return;
@@ -482,7 +461,7 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
     this.instructionStateService.ensureChannelState(input.platform, input.channelId);
   }
 
-  private getRuntimeSettingsPath(input: RuntimeStateInput): string {
+  private getRuntimeSettingsPath(input: AthenaEvent): string {
     return join(this.getRuntimeStateDir(input), "settings.json");
   }
 
@@ -629,11 +608,11 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
   }
 
   /** Get an existing agent (without creating). */
-  getAgent(channelKey: ChannelKey): ChannelRuntime | undefined {
+  getAgent(channelKey: ChannelKey): SessionRuntime | undefined {
     return this.agents.get(channelKey);
   }
 
-  private recordInstructionState(input: ChannelScopedAthenaEvent): void {
+  private recordInstructionState(input: AthenaEvent): void {
     this.instructionStateService.ensureGlobalState();
     if (input.kind !== "message" || !input.isDirect) {
       this.instructionStateService.ensureChannelState(input.platform, input.channelId);
@@ -656,7 +635,7 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
     });
   }
 
-  private appendEventToBatch(event: ChannelScopedAthenaEvent): EventBatch {
+  private appendEventToBatch(event: AthenaEvent): EventBatch {
     const channelKey: ChannelKey = `${event.platform}:${event.channelId}`;
     const pending = this.pendingEventBatches.get(channelKey);
     if (!pending) {
@@ -674,7 +653,7 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
   }
 
   private async evaluateActivation(
-    agent: ChannelRuntime,
+    agent: SessionRuntime,
     batch: EventBatch,
     bot?: Bot,
   ): Promise<ActivationResult> {
@@ -724,30 +703,6 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
 // Event helpers
 // ============================================================================
 
-function isChannelScopedEvent(event: AthenaEvent): event is ChannelScopedAthenaEvent {
-  return "channelId" in event && typeof event.channelId === "string";
-}
-
-function channelMessageToAthenaEvent(
-  input: ChannelMessageInput,
-): Extract<AthenaEvent, { kind: "message" }> {
-  return {
-    kind: "message",
-    id: input.messageId || `${input.platform}:${input.channelId}:${input.timestamp}`,
-    timestamp: input.timestamp,
-    platform: input.platform,
-    channelId: input.channelId,
-    messageId: input.messageId,
-    content: input.content,
-    sender: input.sender,
-    isDirect: input.isDirect,
-    atSelf: input.atSelf,
-    isReplyToBot: input.isReplyToBot,
-    replyTo: input.replyTo,
-    raw: input.raw,
-  };
-}
-
 function findLatestMessageEvent(
   events: AthenaEvent[],
 ): Extract<AthenaEvent, { kind: "message" }> | null {
@@ -774,11 +729,9 @@ function findLatestPolicyReasonIndex(result: ActivationResult): number {
 // Koishi Session → channel input mapping
 // ============================================================================
 
-/**
- * Convert a Koishi session object to channel input.
- * Returns null if the session lacks required fields.
- */
-export function koishiSessionToChannelInput(session: Session): ChannelMessageInput | null {
+export function koishiSessionToAthenaEvent(
+  session: Session,
+): Extract<AthenaEvent, { kind: "message" }> | null {
   if (!session.platform || !session.channelId || !session.userId) {
     return null;
   }
@@ -812,11 +765,14 @@ export function koishiSessionToChannelInput(session: Session): ChannelMessageInp
     : undefined;
 
   return {
-    kind: "channel_message",
+    kind: "message",
+    id:
+      session.messageId ??
+      `${session.platform}:${session.channelId}:${session.timestamp ?? Date.now()}`,
+    timestamp: session.timestamp ?? Date.now(),
     platform: session.platform,
     channelId: session.channelId,
     messageId: session.messageId ?? "",
-    timestamp: session.timestamp ?? Date.now(),
     content,
     sender: {
       userId: session.userId,
@@ -827,18 +783,7 @@ export function koishiSessionToChannelInput(session: Session): ChannelMessageInp
     atSelf,
     isReplyToBot: (session.quote && session.quote.user?.isBot) || false,
     replyTo,
-  } satisfies ChannelMessageInput;
-}
-
-export function koishiSessionToAthenaEvent(
-  session: Session,
-): Extract<AthenaEvent, { kind: "message" }> | null {
-  const input = koishiSessionToChannelInput(session);
-  if (!input) {
-    return null;
-  }
-
-  return channelMessageToAthenaEvent(input);
+  };
 }
 
 function summarizeReplyContent(content: string, maxChars = 80): string {

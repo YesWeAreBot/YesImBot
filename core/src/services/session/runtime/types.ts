@@ -1,13 +1,14 @@
 import type { Bot, Context, Logger } from "koishi";
 
-import type { InstructionContributor } from "../instruction-contributor";
+import { InstructionContributor } from "../instruction-state/contributor";
 import type { InstructionStateService } from "../instruction-state/service";
+import type { FollowUpReviewRecord } from "../messages";
 import { WillingnessJudge } from "../messages/activation";
 import type { NextAction } from "../messages/runtime-types";
 import type { SessionManager } from "../session-manager";
 import { SettingsReloadMetadata } from "../settings-manager";
 
-export interface ChannelRuntimeSettingsManager {
+export interface SessionRuntimeSettingsManager {
   reload(): SettingsReloadMetadata;
   getReloadMetadata(): SettingsReloadMetadata;
   getModel(): string | undefined;
@@ -39,10 +40,10 @@ export interface ChannelRuntimeSettingsManager {
   getBuiltInInstructions(fallback?: string): string | undefined;
 }
 
-export interface ChannelRuntimeOptions {
+export interface SessionRuntimeOptions {
   bot?: Bot;
   sessionManager: SessionManager;
-  settingsManager: ChannelRuntimeSettingsManager;
+  settingsManager: SessionRuntimeSettingsManager;
   instructionStateService?: InstructionStateService;
   instructions?: InstructionContributor[];
   willingnessJudge?: WillingnessJudge;
@@ -75,7 +76,7 @@ export interface NextActionSelection {
   blockedReason?: string;
 }
 
-export interface ChannelRuntimeTurnSettingsSnapshot {
+export interface ResponseWindowSettingsSnapshot {
   modelId: string;
   streaming: boolean;
   maxSteps: number;
@@ -93,20 +94,39 @@ export interface ChannelRuntimeTurnSettingsSnapshot {
 
 export type ResponseState = "idle" | "responding";
 
-export interface RuntimeTurnExecutionOptions {
+export interface SessionRuntimeBusyWindowSnapshot {
+  responseWindow: ResponseWindowSettingsSnapshot | null;
+  instructions: string | null;
+  activeFollowUpReview: FollowUpReviewRecord | null;
+  queuedFollowUpReview: FollowUpReviewRecord | null;
+  protocolRetry: boolean;
+  startedAt: number;
+  completedSteps: number;
+  activeTools: string[];
+}
+
+export interface SessionRuntimeSnapshot {
+  state: ResponseState;
+  busyWindow: SessionRuntimeBusyWindowSnapshot;
+  pendingFollowUp: MergedFollowUpOpportunity | null;
+  responseContext: unknown;
+  toolExperimentalContext: unknown;
+}
+
+export interface SessionRuntimeExecutionOptions {
   ctx: Context;
   logger: Logger;
   bot: Bot;
   sessionManager: SessionManager;
-  settingsManager: ChannelRuntimeSettingsManager;
+  settingsManager: SessionRuntimeSettingsManager;
   platform: string;
   channelId: string;
   basePath: string;
-  turnSettings: ChannelRuntimeTurnSettingsSnapshot;
+  responseWindow: ResponseWindowSettingsSnapshot;
   protocolRetry: boolean;
   abortSignal: AbortSignal;
 }
 
-export interface RuntimeTurnExecutionResult {
+export interface SessionRuntimeExecutionResult {
   responseActiveTools: string[];
 }
