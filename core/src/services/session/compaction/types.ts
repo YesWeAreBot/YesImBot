@@ -1,15 +1,9 @@
-import type { SessionMessageEntry } from "../types";
+import type { SessionMessageEntry } from "../messages";
 
 export interface CompactionSettings {
   enabled: boolean;
   reserveTokens: number;
   keepRecentTokens: number;
-}
-
-export interface CutPointResult {
-  firstKeptRecordIndex: number;
-  turnStartIndex: number;
-  isSplitTurn: boolean;
 }
 
 export interface CompactionPreparation {

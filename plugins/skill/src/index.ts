@@ -6,14 +6,6 @@ import { Schema } from "koishi";
 import { buildSkillSummaries, resolveSkillRoots } from "./state";
 import { buildSkillPluginToolDefinitions } from "./tool-definitions";
 
-interface InstructionBlock {
-  key: string;
-  title: string;
-  content: string;
-  layer: "extension";
-  priority: number;
-}
-
 export interface SkillPluginConfig {
   skills: string[];
 }

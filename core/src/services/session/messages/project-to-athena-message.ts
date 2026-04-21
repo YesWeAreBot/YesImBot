@@ -1,3 +1,4 @@
+import type { AthenaEvent } from "./athena-event";
 import { toAthenaReplyReference } from "./athena-message";
 import type {
   AthenaMemberJoinMessage,
@@ -7,7 +8,6 @@ import type {
   AthenaStateUpdateMessage,
   AthenaUserMessage,
 } from "./athena-message";
-import type { AthenaEvent } from "./athena-event";
 
 export function projectToAthenaMessage(event: AthenaEvent): AthenaMessage {
   switch (event.kind) {
@@ -81,7 +81,8 @@ function projectInternalSignalEvent(
     type: "notice.reaction",
     timestamp: new Date(event.timestamp).toISOString(),
     data: {
-      content: `[internal-signal] type=${event.signalType} source=${event.source} summary=${event.summary ?? ""}`.trim(),
+      content:
+        `[internal-signal] type=${event.signalType} source=${event.source} summary=${event.summary ?? ""}`.trim(),
     },
   };
 }

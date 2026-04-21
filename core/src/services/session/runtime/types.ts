@@ -2,10 +2,10 @@ import type { Bot, Context, Logger } from "koishi";
 
 import type { InstructionContributor } from "../instruction-contributor";
 import type { InstructionStateService } from "../instruction-state/service";
+import { WillingnessJudge } from "../messages/activation";
+import type { NextAction } from "../messages/runtime-types";
 import type { SessionManager } from "../session-manager";
 import { SettingsReloadMetadata } from "../settings-manager";
-import type { NextAction } from "../types/index";
-import type { WillingnessJudge } from "../willingness";
 
 export interface ChannelRuntimeSettingsManager {
   reload(): SettingsReloadMetadata;

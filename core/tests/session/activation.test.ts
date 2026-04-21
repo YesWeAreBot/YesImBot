@@ -6,7 +6,7 @@ import {
   type AthenaEvent,
   type ChannelScopedAthenaEvent,
   type EventBatch,
-} from "../../src/services/session/types";
+} from "../../src/services/session/messages";
 
 function acceptEvent(event: AthenaEvent): AthenaEvent {
   return event;
@@ -70,17 +70,9 @@ describe("Phase 11 activation contracts", () => {
       payload: { anything: true },
     });
 
-    expect([
-      messageEvent,
-      channelEvent,
-      platformNotice,
-      internalSignal,
-    ].map((event) => event.kind)).toEqual([
-      "message",
-      "channel_event",
-      "platform_notice",
-      "internal_signal",
-    ]);
+    expect(
+      [messageEvent, channelEvent, platformNotice, internalSignal].map((event) => event.kind),
+    ).toEqual(["message", "channel_event", "platform_notice", "internal_signal"]);
 
     const channelScopedSignal = {
       kind: "internal_signal",

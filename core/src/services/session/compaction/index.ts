@@ -1,11 +1,5 @@
-export type {
-  CompactionSettings,
-  CompactionPreparation,
-  CompactionResult,
-  CutPointResult,
-} from "./types";
+export type { CompactionSettings, CompactionPreparation, CompactionResult } from "./types";
 export { estimateTokens, estimateContextTokens } from "./estimate";
-export { findCutPoint, findTurnStartIndex } from "./cut-point";
 export { serializeConversation, serializeSessionMessagesForCompaction } from "./serialize";
 export {
   generateSummary,

@@ -9,48 +9,27 @@ describe("SessionManager canonical materialization", () => {
     expect(sessionManagerModule.convertAgentMessagesToModelMessages).toBeUndefined();
   });
 
-  it("materializes canonical timeline records through getModelMessages", () => {
+  it("materializes message entries through getModelMessages while helper entries stay out", () => {
     const manager = SessionManager.inMemory("discord:channel-1");
 
-    manager.appendTimelineRecord({
-      id: "msg-1",
-      kind: "channel_message",
-      timestamp: 1,
-      stage: "ingress",
-      visibility: "model",
-      materialization: "default",
-      message: {
-        kind: "channel_message",
-        platform: "discord",
-        channelId: "channel-1",
+    manager.appendAthenaMessage({
+      type: "user.message",
+      timestamp: new Date(1).toISOString(),
+      data: {
         messageId: "msg-1",
-        timestamp: 1,
+        senderId: "alice",
+        senderName: "alice",
         content: "hi",
-        sender: {
-          userId: "alice",
-          username: "alice",
-        },
-        isDirect: true,
-        atSelf: false,
-        isReplyToBot: false,
       },
     });
-    manager.appendTimelineRecord({
-      id: "notice-1",
-      kind: "system_notice",
-      timestamp: 2,
-      stage: "runtime",
-      visibility: "hidden",
-      materialization: "hidden",
-      subType: "protocol_guidance",
-      materializationKey: "hidden",
-      notice: "hidden guidance",
+    manager.appendRuntimeStateInfo("protocol_guidance", undefined, {
+      content: "hidden guidance",
     });
 
     expect(manager.getModelMessages()).toEqual([
       expect.objectContaining({
         role: "user",
-        content: expect.stringContaining("hi"),
+        content: "hi",
       }),
     ]);
   });

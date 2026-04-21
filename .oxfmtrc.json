@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
-  "ignorePatterns": [".planning", "dist"],
+  "ignorePatterns": [".planning", "docs", "dist"],
   "experimentalSortImports": {
     "order": "asc"
   },

@@ -13,19 +13,24 @@ describe("session replay", () => {
     const sessionDir = mkdtempSync(join(tmpdir(), "athena-session-replay-"));
     const manager = SessionManager.create("discord:replay", sessionDir, "openai:gpt-4.1");
 
-    manager.appendMessage({
-      role: "user",
-      content: "hello replay",
-      timestamp: Date.now(),
+    manager.appendAthenaMessage({
+      type: "user.message",
+      timestamp: new Date(Date.now()).toISOString(),
+      data: {
+        messageId: "msg-replay-1",
+        senderId: "user-1",
+        senderName: "alice",
+        content: "hello replay",
+      },
     });
 
-    manager.appendCustomEntry("activation_result", {
+    manager.appendActivationResult({
       batchId: "batch-1",
       activated: true,
       reasons: ["at_self"],
     });
 
-    manager.appendCustomEntry("response_status", {
+    manager.appendResponseStatus({
       endReason: "normal",
       nextAction: "idle",
       stepsCompleted: 1,
@@ -35,7 +40,7 @@ describe("session replay", () => {
     const firstEntryId = manager.getEntries()[0]?.id;
     expect(firstEntryId).toBeDefined();
     manager.appendCompaction("summary", firstEntryId!, 128);
-    manager.appendModelChange("openai", "gpt-4.1");
+    manager.appendSessionInfo("openai", "gpt-4.1");
 
     const sessionFile = manager.getSessionFile();
     expect(sessionFile).toBeDefined();
@@ -134,33 +139,38 @@ describe("session replay", () => {
     ).toBe(true);
   });
 
-  it("replay preserves follow_up_review state semantics through session_info bridge", () => {
+  it("replay preserves follow_up_review state semantics through session_info entries", () => {
     const sessionDir = mkdtempSync(join(tmpdir(), "athena-session-replay-follow-up-"));
     const manager = SessionManager.create("discord:replay-follow-up", sessionDir, "openai:gpt-4.1");
     const session = new AgentSession(manager);
 
-    session.appendStateChange({
-      id: "follow-up-review-1",
-      timestamp: 1_710_000_000_010,
-      stage: "runtime",
-      visibility: "internal",
-      materialization: "internal",
-      stateType: "follow_up_review",
-      data: {
+    session.appendRuntimeStateInfo(
+      "follow_up_review",
+      {
+        id: "follow-up-review-1",
+        timestamp: 1_710_000_000_010,
+      },
+      {
         messageCount: 2,
         messageIds: ["msg-2", "msg-3"],
         content: "Observed window: 2\nTracked message IDs: msg-2, msg-3",
       },
-    });
+    );
 
     const restored = SessionManager.restoreOrCreateRecent("discord:replay-follow-up", sessionDir);
     const followUpState = restored.sessionManager
-      .getTimeline()
-      .find((entry) => entry.kind === "state_change" && entry.stateType === "follow_up_review");
+      .getEntries()
+      .find(
+        (entry) =>
+          entry.type === "session_info" &&
+          entry.infoType === "runtime_state" &&
+          entry.stateType === "follow_up_review",
+      );
 
     expect(followUpState).toBeTruthy();
     expect(followUpState).toMatchObject({
-      kind: "state_change",
+      type: "session_info",
+      infoType: "runtime_state",
       stateType: "follow_up_review",
       data: {
         messageCount: 2,

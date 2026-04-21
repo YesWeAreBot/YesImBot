@@ -47,8 +47,14 @@ describe("session legacy incompatibility", () => {
       },
     };
 
-    writeFileSync(legacyFile, `${JSON.stringify(header)}\n${JSON.stringify(legacyTimeline)}\n`, "utf8");
+    writeFileSync(
+      legacyFile,
+      `${JSON.stringify(header)}\n${JSON.stringify(legacyTimeline)}\n`,
+      "utf8",
+    );
 
-    expect(() => SessionManager.open(legacyFile, "discord:legacy")).toThrow(/legacy|incompatible|timeline/i);
+    expect(() => SessionManager.open(legacyFile, "discord:legacy")).toThrow(
+      /legacy|incompatible|timeline/i,
+    );
   });
 });

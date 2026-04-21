@@ -1,20 +1,14 @@
 import type { ModelMessage } from "@ai-sdk/provider-utils";
 
 import { convertToLlm } from "./materialize";
-import { SessionManager } from "./session-manager";
-import type { ActivationReason, AthenaMessage, SessionEntry, SessionMessage } from "./types/index";
 import type {
-  AssistantMessageRecord,
-  ChannelEventRecord,
-  ChannelMessageRecord,
-  ChannelRawPayload,
+  ActivationReason,
+  AthenaMessage,
   ResponseStatusRecord,
-  ResponseStatusReason,
-  StateChangeRecord,
-  SystemNoticeRecord,
-  TimelineRecord,
-  ToolMessageRecord,
-} from "./types/index";
+  SessionEntry,
+  SessionMessage,
+} from "./messages";
+import { SessionManager } from "./session-manager";
 
 export class AgentSession {
   readonly sessionManager: SessionManager;
@@ -56,18 +50,6 @@ export class AgentSession {
     ];
   }
 
-  getTimeline(): readonly TimelineRecord[] {
-    return this.sessionManager.getTimeline();
-  }
-
-  getHistory(): readonly TimelineRecord[] {
-    return this.getTimeline();
-  }
-
-  getInternalRecords(): TimelineRecord[] {
-    return this.getTimeline().filter((record) => record.visibility !== "model");
-  }
-
   appendSessionMessage(message: SessionMessage): string {
     const id = this.sessionManager.appendSessionMessage(message);
     this.refreshCache();
@@ -80,20 +62,20 @@ export class AgentSession {
     return id;
   }
 
-  appendAssistantMessage(record: Omit<AssistantMessageRecord, "kind">): string {
-    const id = this.sessionManager.appendAssistantMessage(record.message);
+  appendAssistantMessage(message: Extract<SessionMessage, { role: "assistant" }>): string {
+    const id = this.sessionManager.appendAssistantMessage(message);
     this.refreshCache();
     return id;
   }
 
-  appendToolResultMessage(record: Omit<ToolMessageRecord, "kind">): string {
-    const id = this.sessionManager.appendToolResultMessage(record.message);
+  appendToolResultMessage(message: Extract<SessionMessage, { role: "tool" }>): string {
+    const id = this.sessionManager.appendToolResultMessage(message);
     this.refreshCache();
     return id;
   }
 
-  appendToolMessage(record: Omit<ToolMessageRecord, "kind">): string {
-    return this.appendToolResultMessage(record);
+  appendToolMessage(message: Extract<SessionMessage, { role: "tool" }>): string {
+    return this.appendToolResultMessage(message);
   }
 
   appendActivationResult(record: {
@@ -123,6 +105,8 @@ export class AgentSession {
       nextAction: record.nextAction,
       stepsCompleted: record.stepsCompleted,
       durationMs: record.durationMs,
+      error: record.error,
+      blockedReason: record.blockedReason,
     });
     this.refreshCache();
     return id;
@@ -153,122 +137,6 @@ export class AgentSession {
       id: options?.id,
       timestamp: options?.timestamp,
       data,
-    });
-    this.refreshCache();
-    return id;
-  }
-
-  // --------------------------------------------------------------------------
-  // Backward compatibility bridge (kept for unaffected callers)
-  // --------------------------------------------------------------------------
-
-  appendChannelMessage(record: Omit<ChannelMessageRecord, "kind">): string {
-    return this.appendAthenaMessage({
-      type: "user.message",
-      timestamp: new Date(record.timestamp).toISOString(),
-      data: {
-        messageId: record.message.messageId,
-        senderId: record.message.sender.userId,
-        senderName: record.message.sender.nickname ?? record.message.sender.username,
-        content: record.message.content,
-        replyTo: record.message.replyTo
-          ? {
-              messageId: record.message.replyTo.messageId,
-              senderName: record.message.replyTo.nickname || record.message.replyTo.username,
-              content: record.message.replyTo.summary,
-            }
-          : undefined,
-      },
-    });
-  }
-
-  appendChannelEvent(_record: Omit<ChannelEventRecord, "kind">): string {
-    return this.appendAthenaMessage({
-      type: "notice.state.update",
-      timestamp: new Date().toISOString(),
-      data: { content: "[channel-event]" },
-    });
-  }
-
-  appendStateChange<TData extends ChannelRawPayload | undefined = undefined>(
-    record: Omit<StateChangeRecord<TData>, "kind">,
-  ): string {
-    if (record.stateType === "response_status") {
-      const status = (record.data ?? {}) as {
-        endReason?: ResponseStatusReason;
-        nextAction?: string;
-        stepsCompleted?: number;
-        durationMs?: number;
-      };
-
-      const id = this.sessionManager.appendResponseStatus({
-        id: record.id,
-        timestamp: record.timestamp,
-        endReason: status.endReason ?? "exception",
-        nextAction: status.nextAction ?? "blocked",
-        stepsCompleted: status.stepsCompleted ?? 0,
-        durationMs: status.durationMs ?? 0,
-      });
-      this.refreshCache();
-      return id;
-    }
-
-    const id = this.sessionManager.appendRuntimeStateInfo(
-      {
-        stateType: record.stateType,
-        id: record.id,
-        timestamp: record.timestamp,
-        data: (record.data ?? undefined) as Record<string, import("ai").JSONValue | undefined> | undefined,
-      },
-    );
-    this.refreshCache();
-    return id;
-  }
-
-  appendSystemNotice<TData extends ChannelRawPayload | undefined = undefined>(
-    record: Omit<SystemNoticeRecord<TData>, "kind">,
-  ): string {
-    if (record.materializationKey === "activation_result") {
-      const payload = (record.data ?? {}) as {
-        batchId?: string;
-        activated?: boolean;
-        reasons?: string[];
-      };
-      const id = this.sessionManager.appendActivationResult({
-        id: record.id,
-        timestamp: record.timestamp,
-        batchId: payload.batchId ?? "unknown-batch",
-        activated: payload.activated ?? false,
-        reasons: payload.reasons ?? [],
-      });
-      this.refreshCache();
-      return id;
-    }
-
-    if (record.materializationKey === "response_status") {
-      const payload = (record.data ?? {}) as {
-        endReason?: ResponseStatusReason;
-        nextAction?: string;
-        stepsCompleted?: number;
-        durationMs?: number;
-      };
-      const id = this.sessionManager.appendResponseStatus({
-        id: record.id,
-        timestamp: record.timestamp,
-        endReason:
-          payload.endReason ?? (record.subType.replace(/^response_status_/, "") || "exception"),
-        nextAction: payload.nextAction ?? "blocked",
-        stepsCompleted: payload.stepsCompleted ?? 0,
-        durationMs: payload.durationMs ?? 0,
-      });
-      this.refreshCache();
-      return id;
-    }
-
-    const id = this.sessionManager.appendAthenaMessage({
-      type: "notice.state.update",
-      timestamp: new Date(record.timestamp).toISOString(),
-      data: { content: record.notice },
     });
     this.refreshCache();
     return id;

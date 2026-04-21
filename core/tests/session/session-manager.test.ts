@@ -6,9 +6,22 @@ import { describe, expect, it } from "vitest";
 
 import { SessionManager } from "../../src/services/session/session-manager";
 
+function createUserMessage(content: string, messageId: string) {
+  return {
+    type: "user.message" as const,
+    timestamp: new Date(1_710_000_000_000).toISOString(),
+    data: {
+      messageId,
+      senderId: "user-1",
+      senderName: "alice",
+      content,
+    },
+  };
+}
+
 describe("SessionManager", () => {
   describe("lazy init per channel", () => {
-    it("creates session directory on first access", () => {
+    it("creates session directory on first access and persists message-first JSONL", () => {
       const tempBase = mkdtempSync(join(tmpdir(), "athena-session-manager-"));
       const sessionDir = join(tempBase, "discord_12345", "session");
 
@@ -16,29 +29,7 @@ describe("SessionManager", () => {
 
       expect(existsSync(sessionDir)).toBe(true);
 
-      manager.appendTimelineRecord({
-        id: "message-1",
-        kind: "channel_message",
-        timestamp: 1,
-        stage: "ingress",
-        visibility: "model",
-        materialization: "default",
-        message: {
-          kind: "channel_message",
-          platform: "discord",
-          channelId: "12345",
-          messageId: "msg-1",
-          timestamp: 1,
-          content: "hello",
-          sender: {
-            userId: "user-1",
-            username: "alice",
-          },
-          isDirect: true,
-          atSelf: false,
-          isReplyToBot: false,
-        },
-      });
+      manager.appendAthenaMessage(createUserMessage("hello", "msg-1"));
 
       const sessionFile = manager.getSessionFile();
       expect(sessionFile).toBeDefined();
@@ -46,8 +37,9 @@ describe("SessionManager", () => {
 
       const content = readFileSync(sessionFile!, "utf8");
       expect(content).toContain('"type":"session"');
-      expect(content).toContain('"type":"timeline"');
-      expect(content).toContain('"kind":"channel_message"');
+      expect(content).toContain('"type":"message"');
+      expect(content).toContain('"type":"user.message"');
+      expect(content).not.toContain('"type":"timeline"');
     });
 
     it.todo("returns same session for same channel key");
@@ -59,35 +51,10 @@ describe("SessionManager", () => {
       const sessionDir = join(tempBase, "discord_12345", "session");
 
       const manager = SessionManager.create("discord:12345", sessionDir, "openai:gpt-4.1");
-      manager.appendTimelineRecord({
-        id: "message-1",
-        kind: "channel_message",
-        timestamp: 1,
-        stage: "ingress",
-        visibility: "model",
-        materialization: "default",
-        message: {
-          kind: "channel_message",
-          platform: "discord",
-          channelId: "12345",
-          messageId: "msg-1",
-          timestamp: 1,
-          content: "hello",
-          sender: {
-            userId: "user-1",
-            username: "alice",
-          },
-          isDirect: true,
-          atSelf: false,
-          isReplyToBot: false,
-        },
-      });
-      manager.appendMessage({
+      manager.appendAthenaMessage(createUserMessage("hello", "msg-1"));
+      manager.appendAssistantMessage({
         role: "assistant",
         content: [{ type: "text", text: "hi" }],
-        timestamp: Date.now(),
-        provider: "openai",
-        model: "gpt-4.1",
       });
 
       const restored = SessionManager.continueRecent("discord:12345", sessionDir);
@@ -100,67 +67,28 @@ describe("SessionManager", () => {
       const sessionDir = join(tempBase, "discord_12345", "session");
 
       const targetSession = SessionManager.create("discord:12345", sessionDir, "openai:gpt-4.1");
-      targetSession.appendTimelineRecord({
-        id: "target-message-1",
-        kind: "channel_message",
-        timestamp: 10,
-        stage: "ingress",
-        visibility: "model",
-        materialization: "default",
-        message: {
-          kind: "channel_message",
-          platform: "discord",
-          channelId: "12345",
-          messageId: "msg-target-1",
-          timestamp: 10,
-          content: "target session",
-          sender: {
-            userId: "user-1",
-            username: "alice",
-          },
-          isDirect: true,
-          atSelf: false,
-          isReplyToBot: false,
-        },
-      });
+      targetSession.appendAthenaMessage(createUserMessage("target session", "msg-target-1"));
 
       const unrelatedSession = SessionManager.create("discord:99999", sessionDir, "openai:gpt-4.1");
-      unrelatedSession.appendTimelineRecord({
-        id: "other-message-1",
-        kind: "channel_message",
-        timestamp: 20,
-        stage: "ingress",
-        visibility: "model",
-        materialization: "default",
-        message: {
-          kind: "channel_message",
-          platform: "discord",
-          channelId: "99999",
+      unrelatedSession.appendAthenaMessage({
+        type: "user.message",
+        timestamp: new Date(1_710_000_000_001).toISOString(),
+        data: {
           messageId: "msg-other-1",
-          timestamp: 20,
+          senderId: "user-2",
+          senderName: "bob",
           content: "other session",
-          sender: {
-            userId: "user-2",
-            username: "bob",
-          },
-          isDirect: true,
-          atSelf: false,
-          isReplyToBot: false,
         },
       });
 
       const restored = SessionManager.restoreOrCreateRecent("discord:12345", sessionDir);
 
       expect(restored).toMatchObject({ status: "restored" });
-      expect(restored.status).toBe("restored");
       expect(restored.sessionManager.getHeader().channelKey).toBe("discord:12345");
-      expect(restored.sessionManager.getTimeline()).toEqual([
+      expect(restored.sessionManager.getSessionMessages()).toEqual([
         expect.objectContaining({
-          kind: "channel_message",
-          message: expect.objectContaining({
-            channelId: "12345",
-            content: "target session",
-          }),
+          type: "user.message",
+          data: expect.objectContaining({ content: "target session" }),
         }),
       ]);
     });
@@ -170,21 +98,15 @@ describe("SessionManager", () => {
       const sessionDir = join(tempBase, "discord_12345", "session");
 
       const older = SessionManager.create("discord:12345", sessionDir, "openai:gpt-4.1");
-      older.appendMessage({
+      older.appendAssistantMessage({
         role: "assistant",
         content: [{ type: "text", text: "older reply" }],
-        timestamp: 1,
-        provider: "openai",
-        model: "gpt-4.1",
       });
 
       const newer = SessionManager.create("discord:12345", sessionDir, "openai:gpt-4.1");
-      newer.appendMessage({
+      newer.appendAssistantMessage({
         role: "assistant",
         content: [{ type: "text", text: "newer reply" }],
-        timestamp: 2,
-        provider: "openai",
-        model: "gpt-4.1",
       });
 
       utimesSync(older.getSessionFile()!, new Date(1_000), new Date(1_000));
@@ -193,7 +115,6 @@ describe("SessionManager", () => {
       const restored = SessionManager.restoreOrCreateRecent("discord:12345", sessionDir);
 
       expect(restored).toMatchObject({ status: "restored" });
-      expect(restored.status).toBe("restored");
       expect(restored.sessionManager.getModelMessages()).toEqual([
         {
           role: "assistant",
@@ -243,39 +164,21 @@ describe("SessionManager", () => {
     it.todo("uses global config when workspace config absent per D-08");
   });
 
-  describe("channel message records", () => {
-    it("persists channel messages as canonical timeline entries", () => {
+  describe("message-first persistence", () => {
+    it("persists channel messages as canonical session entries", () => {
       const manager = SessionManager.inMemory("discord:12345");
-      manager.appendTimelineRecord({
-        id: "message-1",
-        kind: "channel_message",
-        timestamp: 1,
-        stage: "ingress",
-        visibility: "model",
-        materialization: "default",
-        message: {
-          kind: "channel_message",
-          platform: "discord",
-          channelId: "12345",
-          messageId: "msg-1",
-          timestamp: 1,
-          content: "hello",
-          sender: {
-            userId: "user-1",
-            username: "alice",
-            nickname: "alice",
-            identity: "direct-user",
-          },
-          isDirect: true,
-          atSelf: false,
-          isReplyToBot: false,
-        },
-      });
+      manager.appendAthenaMessage(createUserMessage("hello", "msg-1"));
 
       const entries = manager.getEntries();
 
       expect(entries).toHaveLength(1);
-      expect(entries[0]).toMatchObject({ type: "timeline" });
+      expect(entries[0]).toMatchObject({
+        type: "message",
+        message: expect.objectContaining({
+          type: "user.message",
+          data: expect.objectContaining({ content: "hello" }),
+        }),
+      });
     });
   });
 });

@@ -408,47 +408,23 @@ describe("AgentSessionService settings bootstrap", () => {
       "session",
     );
     const seededSession = SessionManager.create("discord:channel-1", sessionDir, "global-model");
-    seededSession.appendTimelineRecord({
-      id: "persisted-channel-message",
-      kind: "channel_message",
-      timestamp: 100,
-      stage: "ingress",
-      visibility: "model",
-      materialization: "default",
-      message: {
-        kind: "channel_message",
-        platform: "discord",
-        channelId: "channel-1",
+    seededSession.appendAthenaMessage({
+      type: "user.message",
+      timestamp: new Date(100).toISOString(),
+      data: {
         messageId: "persisted-msg-1",
-        timestamp: 100,
+        senderId: "user-1",
+        senderName: "alice",
         content: "persisted hello before restart",
-        sender: {
-          userId: "user-1",
-          username: "alice",
-          nickname: "Alice",
-        },
-        isDirect: false,
-        atSelf: false,
-        isReplyToBot: false,
       },
     });
-    seededSession.appendTimelineRecord({
+    seededSession.appendResponseStatus({
       id: "persisted-response-status",
-      kind: "system_notice",
       timestamp: 101,
-      stage: "runtime",
-      visibility: "hidden",
-      materialization: "hidden",
-      subType: "response_status_exception",
-      materializationKey: "response_status",
-      notice: "step failed",
-      data: {
-        endReason: "exception",
-        nextAction: "idle",
-        durationMs: 12,
-        stepsCompleted: 1,
-        error: "seeded failure",
-      },
+      endReason: "exception",
+      nextAction: "idle",
+      durationMs: 12,
+      stepsCompleted: 1,
     });
 
     const bot = createBotMock();
@@ -465,31 +441,33 @@ describe("AgentSessionService settings bootstrap", () => {
       bot,
     );
     const runtime = service.getAgent("discord:channel-1");
-    const timeline = runtime?.sessionManager.getTimeline() ?? [];
+    const entries = runtime?.sessionManager.getEntries() ?? [];
 
     expect(service.getActiveChannels()).toEqual(["discord:channel-1"]);
     expect(runtime).toBeDefined();
-    expect(timeline).toEqual(
+    expect(entries).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          kind: "channel_message",
+          type: "message",
           message: expect.objectContaining({
-            content: "persisted hello before restart",
+            type: "user.message",
+            data: expect.objectContaining({
+              content: "persisted hello before restart",
+            }),
           }),
         }),
         expect.objectContaining({
-          kind: "system_notice",
-          materializationKey: "response_status",
-          data: expect.objectContaining({
-            error: "seeded failure",
-            endReason: "exception",
-          }),
+          type: "response_status",
+          endReason: "exception",
         }),
         expect.objectContaining({
-          kind: "channel_message",
+          type: "message",
           message: expect.objectContaining({
-            content: "wake runtime",
-            messageId: "settings-msg-restore-1",
+            type: "user.message",
+            data: expect.objectContaining({
+              content: "wake runtime",
+              messageId: "settings-msg-restore-1",
+            }),
           }),
         }),
       ]),

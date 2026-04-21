@@ -1,6 +1,6 @@
 import type { LanguageModel } from "ai";
 
-import type { SessionMessageEntry } from "../types";
+import type { SessionMessageEntry } from "../messages";
 import { prepareCompaction } from "./prepare";
 import { generateSummary, generateTurnPrefixSummary } from "./summarize";
 import type { CompactionPreparation, CompactionResult, CompactionSettings } from "./types";

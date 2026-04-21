@@ -7,151 +7,69 @@ import { describe, expect, it } from "vitest";
 import { SessionManager } from "../../src/services/session/session-manager";
 
 describe("session restore", () => {
-  it("restores canonical projections from persisted session data", () => {
+  it("rejects legacy timeline fixture and only accepts current session-entry JSONL", () => {
     const fixture = readFileSync("tests/session/fixtures/sample-session.jsonl", "utf8");
-    const restored = SessionManager.open(
-      "tests/session/fixtures/sample-session.jsonl",
-      "discord:test",
-    );
-
     expect(fixture).toContain('"type":"timeline"');
-    expect(fixture).not.toContain('"type":"custom_message"');
-    expect(restored.getTimeline()).toEqual([
-      expect.objectContaining({ kind: "channel_message" }),
-      expect.objectContaining({ kind: "assistant_message" }),
-      expect.objectContaining({ kind: "tool_message" }),
+    expect(() =>
+      SessionManager.open("tests/session/fixtures/sample-session.jsonl", "discord:test"),
+    ).toThrow(/timeline\/custom\/model_change rows are not supported/);
+  });
+
+  it("restores current message/session-entry JSONL from disk", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "athena-restore-current-"));
+    const manager = SessionManager.create("discord:restore", tempDir, "openai:gpt-4.1");
+    manager.appendAssistantMessage({
+      role: "assistant",
+      content: [
+        { type: "text", text: "Calling tool..." },
+        {
+          type: "tool-call",
+          toolCallId: "tc-001",
+          toolName: "test_tool",
+          input: { q: "hello" },
+        },
+      ],
+    });
+    manager.appendResponseStatus({
+      endReason: "exception",
+      nextAction: "idle",
+      stepsCompleted: 1,
+      durationMs: 12,
+      error: "tool crashed",
+      blockedReason: "tool crashed",
+    });
+
+    const restored = SessionManager.open(manager.getSessionFile()!, "discord:restore");
+    expect(restored.getEntries()).toEqual([
+      expect.objectContaining({ type: "message" }),
+      expect.objectContaining({
+        type: "response_status",
+        endReason: "exception",
+        nextAction: "idle",
+        error: "tool crashed",
+        blockedReason: "tool crashed",
+      }),
+      expect.objectContaining({
+        type: "message",
+        message: {
+          role: "tool",
+          content: expect.arrayContaining([
+            expect.objectContaining({
+              type: "tool-result",
+              toolCallId: "tc-001",
+              toolName: "test_tool",
+              output: {
+                type: "json",
+                value: "Session interrupted before tool execution completed",
+              },
+            }),
+          ]),
+        },
+      }),
     ]);
     expect(restored.getModelMessages()).toEqual([
-      expect.objectContaining({ role: "user" }),
       expect.objectContaining({ role: "assistant" }),
       expect.objectContaining({ role: "tool" }),
     ]);
-  });
-
-  describe("repairs unresolved tool calls", () => {
-    it("appends synthetic error tool result for unresolved tool call on restore", () => {
-      const tempDir = mkdtempSync(join(tmpdir(), "athena-restore-"));
-      const manager = SessionManager.create("discord:restore", tempDir, "openai:gpt-4.1");
-
-      manager.appendMessage({
-        role: "assistant",
-        content: [
-          { type: "text", text: "Calling tool..." },
-          {
-            type: "tool-call",
-            toolCallId: "tc-001",
-            toolName: "test_tool",
-            args: { q: "hello" },
-          },
-        ],
-        timestamp: Date.now(),
-        provider: "openai",
-        model: "gpt-4.1",
-      });
-
-      const sessionFile = manager.getSessionFile();
-      expect(sessionFile).toBeDefined();
-
-      const restored = SessionManager.open(sessionFile!, "discord:restore");
-      const entries = restored.getEntries();
-      const lastEntry = entries[entries.length - 1];
-
-      expect(lastEntry.type).toBe("timeline");
-      if (lastEntry.type !== "timeline") {
-        throw new Error("expected timeline entry");
-      }
-
-      expect(lastEntry.record.kind).toBe("tool_message");
-      if (lastEntry.record.kind !== "tool_message") {
-        throw new Error("expected tool message record");
-      }
-
-      expect(lastEntry.record.message.content).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            type: "tool-result",
-            toolCallId: "tc-001",
-            toolName: "test_tool",
-            isError: true,
-            output: {
-              type: "json",
-              value: expect.stringContaining("Session interrupted"),
-            },
-          }),
-        ]),
-      );
-    });
-
-    it("keeps canonical records and hidden response_status durable while repairing unresolved tool calls", () => {
-      const tempDir = mkdtempSync(join(tmpdir(), "athena-restore-"));
-      const manager = SessionManager.create("discord:restore", tempDir, "openai:gpt-4.1");
-
-      manager.appendMessage({
-        role: "assistant",
-        content: [
-          { type: "text", text: "Calling tool..." },
-          {
-            type: "tool-call",
-            toolCallId: "tc-002",
-            toolName: "test_tool",
-            args: { q: "hello" },
-          },
-        ],
-        timestamp: 100,
-        provider: "openai",
-        model: "gpt-4.1",
-      });
-      manager.appendTimelineRecord({
-        id: "response-status-1",
-        kind: "system_notice",
-        timestamp: 101,
-        stage: "runtime",
-        visibility: "hidden",
-        materialization: "hidden",
-        subType: "response_status_exception",
-        materializationKey: "response_status",
-        notice: "step failed",
-        data: {
-          endReason: "exception",
-          nextAction: "idle",
-          durationMs: 12,
-          stepsCompleted: 1,
-          error: "tool crashed",
-        },
-      });
-
-      const restored = SessionManager.open(manager.getSessionFile()!, "discord:restore");
-
-      expect(restored.getTimeline()).toEqual([
-        expect.objectContaining({ kind: "assistant_message" }),
-        expect.objectContaining({
-          kind: "system_notice",
-          materializationKey: "response_status",
-          visibility: "hidden",
-          materialization: "hidden",
-        }),
-        expect.objectContaining({
-          kind: "tool_message",
-          message: expect.objectContaining({
-            content: expect.arrayContaining([
-              expect.objectContaining({
-                toolCallId: "tc-002",
-                toolName: "test_tool",
-                isError: true,
-                output: {
-                  type: "json",
-                  value: "Session interrupted before tool execution completed",
-                },
-              }),
-            ]),
-          }),
-        }),
-      ]);
-
-      expect(restored.getModelMessages()).toEqual([
-        expect.objectContaining({ role: "assistant" }),
-        expect.objectContaining({ role: "tool" }),
-      ]);
-    });
   });
 });

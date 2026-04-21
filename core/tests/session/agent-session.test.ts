@@ -1,16 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { AgentSession } from "../../src/services/session/agent-session";
+import type { ChannelKey } from "../../src/services/session/messages";
 import { SessionManager } from "../../src/services/session/session-manager";
-import type {
-  AssistantMessageRecord,
-  ChannelKey,
-  ChannelEventRecord,
-  ChannelMessageRecord,
-  StateChangeRecord,
-  SystemNoticeRecord,
-  ToolMessageRecord,
-} from "../../src/services/session/types/index";
 
 const channelKey: ChannelKey = "discord:channel-1";
 
@@ -18,197 +10,132 @@ function createSessionManager(): SessionManager {
   return SessionManager.inMemory(channelKey);
 }
 
+function createUserMessage(content: string, messageId = "msg-1") {
+  return {
+    type: "user.message" as const,
+    timestamp: new Date(100).toISOString(),
+    data: {
+      messageId,
+      senderId: "user-1",
+      senderName: "alice",
+      content,
+    },
+  };
+}
+
 describe("AgentSession", () => {
-  it("exposes layered views for timeline, model messages, and internal records", () => {
+  it("exposes entries, session messages, and model messages while helper entries stay out of model context", () => {
     const session = new AgentSession(createSessionManager());
 
-    session.appendChannelMessage({
-      id: "message-1",
-      timestamp: 100,
-      stage: "ingress",
-      visibility: "model",
-      materialization: "default",
-      message: {
-        kind: "channel_message",
-        platform: "discord",
-        channelId: "channel-1",
-        messageId: "msg-1",
-        timestamp: 100,
-        content: "hello",
-        sender: {
-          userId: "user-1",
-          username: "alice",
-          nickname: "Alice",
-        },
-        isDirect: true,
-        atSelf: false,
-        isReplyToBot: false,
+    session.appendAthenaMessage(createUserMessage("hello"));
+    session.appendRuntimeStateInfo(
+      "response_state",
+      {
+        id: "state-1",
+        timestamp: 101,
       },
-    });
-    session.appendStateChange({
-      id: "state-1",
-      timestamp: 101,
-      stage: "runtime",
-      visibility: "internal",
-      materialization: "internal",
+      { status: "idle" },
+    );
+
+    expect(session.getEntries()).toHaveLength(2);
+    expect(session.getSessionMessages()).toEqual([
+      expect.objectContaining({ type: "user.message" }),
+    ]);
+    expect(session.getModelMessages()).toEqual([
+      expect.objectContaining({ role: "user", content: "hello" }),
+    ]);
+    expect(
+      session
+        .getEntries()
+        .find((entry) => entry.type === "session_info" && entry.infoType === "runtime_state"),
+    ).toMatchObject({
+      type: "session_info",
+      infoType: "runtime_state",
       stateType: "response_state",
-      data: { status: "idle" },
     });
-
-    const timeline = session.getTimeline();
-    const modelMessages = session.getModelMessages();
-    const internalRecords = session.getInternalRecords();
-
-    expect(timeline).toHaveLength(2);
-    expect(modelMessages).toHaveLength(1);
-    expect(modelMessages[0]).toMatchObject({ role: "user" });
-    expect(internalRecords).toHaveLength(1);
-    expect(internalRecords[0]).toMatchObject({ kind: "state_change" });
   });
 
-  it("advances session state only through explicit append APIs", () => {
-    const sessionManager = createSessionManager();
-    const session = new AgentSession(sessionManager);
-
-    session.appendChannelEvent({
-      id: "event-1",
-      timestamp: 102,
-      stage: "ingress",
-      visibility: "internal",
-      materialization: "internal",
-      event: {
-        kind: "channel_event",
-        platform: "discord",
-        channelId: "channel-1",
-        eventId: "evt-1",
-        eventType: "reaction_added",
-        timestamp: 102,
-        sourceUserId: "user-1",
-      },
-    });
-
-    expect(session.getTimeline()).toHaveLength(1);
-    expect(sessionManager.getEntries()).toHaveLength(1);
-  });
-
-  it("writes assistant/tool durable truth as first-class timeline records", () => {
+  it("writes assistant and tool durable truth as first-class session messages", () => {
     const session = new AgentSession(createSessionManager());
 
     session.appendAssistantMessage({
-      id: "assistant-1",
-      timestamp: 103,
-      stage: "runtime",
-      visibility: "model",
-      materialization: "default",
-      message: {
-        role: "assistant",
-        content: "done",
-      },
+      role: "assistant",
+      content: "done",
     });
-    session.appendToolMessage({
-      id: "tool-1",
-      timestamp: 104,
-      stage: "runtime",
-      visibility: "model",
-      materialization: "default",
-      message: {
-        role: "tool",
-        content: [
-          {
-            type: "tool-result",
-            toolCallId: "call-1",
-            toolName: "lookupWeather",
-            output: { value: 21 },
+    session.appendToolResultMessage({
+      role: "tool",
+      content: [
+        {
+          type: "tool-result",
+          toolCallId: "call-1",
+          toolName: "lookupWeather",
+          output: {
+            type: "json",
+            value: { value: 21 },
           },
-        ],
-      },
+        },
+      ],
     });
 
-    const timeline = session.getTimeline();
-
-    expect(timeline[0]).toMatchObject({ kind: "assistant_message" });
-    expect(timeline[1]).toMatchObject({ kind: "tool_message" });
-    expect(timeline[0]).not.toHaveProperty("role");
-    expect(timeline[1]).not.toHaveProperty("customType");
-  });
-
-  it("keeps SystemNotice internal unless explicitly requested", () => {
-    const session = new AgentSession(createSessionManager());
-
-    session.appendSystemNotice({
-      id: "notice-1",
-      timestamp: 105,
-      stage: "runtime",
-      visibility: "hidden",
-      materialization: "subtype",
-      subType: "compaction_summary",
-      materializationKey: "compaction-summary",
-      notice: "compaction ready",
-    });
-
-    expect(session.getModelMessages()).toEqual([]);
-    expect(session.getInternalRecords()).toEqual([
-      expect.objectContaining({ kind: "system_notice", subType: "compaction_summary" }),
+    expect(session.getSessionMessages()).toEqual([
+      expect.objectContaining({ role: "assistant" }),
+      expect.objectContaining({ role: "tool" }),
+    ]);
+    expect(session.getModelMessages()).toEqual([
+      expect.objectContaining({ role: "assistant" }),
+      expect.objectContaining({ role: "tool" }),
     ]);
   });
 
-  it("refreshes cache when appendStateChange persists response_status", () => {
+  it("refreshes cache when response_status and runtime_state helpers are appended", () => {
     const session = new AgentSession(createSessionManager());
 
-    session.appendStateChange({
-      id: "response-status-1",
-      timestamp: 106,
-      stage: "runtime",
-      visibility: "internal",
-      materialization: "internal",
-      stateType: "response_status",
-      data: {
-        endReason: "normal",
-        nextAction: "idle",
-        stepsCompleted: 1,
-        durationMs: 12,
-      },
+    session.appendResponseStatus({
+      endReason: "normal",
+      nextAction: "idle",
+      stepsCompleted: 1,
+      durationMs: 12,
     });
-
-    expect(session.getEntries()).toEqual(
-      expect.arrayContaining([expect.objectContaining({ type: "response_status" })]),
-    );
-  });
-
-  it("preserves state-change id and timestamp for runtime_state compatibility bridge", () => {
-    const session = new AgentSession(createSessionManager());
-
-    session.appendStateChange({
-      id: "follow-up-state-1",
-      timestamp: 107,
-      stage: "runtime",
-      visibility: "internal",
-      materialization: "internal",
-      stateType: "follow_up_review",
-      data: {
+    session.appendRuntimeStateInfo(
+      "follow_up_review",
+      {
+        id: "follow-up-state-1",
+        timestamp: 107,
+      },
+      {
         messageCount: 1,
         messageIds: ["msg-1"],
       },
-    });
+    );
 
-    expect(session.getTimeline()).toEqual(
+    expect(session.getEntries()).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({ type: "response_status", endReason: "normal" }),
         expect.objectContaining({
-          kind: "state_change",
-          id: "follow-up-state-1",
-          timestamp: 107,
+          type: "session_info",
+          infoType: "runtime_state",
           stateType: "follow_up_review",
-          data: expect.objectContaining({ messageCount: 1, messageIds: ["msg-1"] }),
+          id: "follow-up-state-1",
         }),
       ]),
     );
   });
-});
 
-void ({} as {
-  layeredViews: ChannelMessageRecord;
-  append: ChannelEventRecord;
-  assistantTool: AssistantMessageRecord | ToolMessageRecord;
-  SystemNotice: SystemNoticeRecord;
-  internal: StateChangeRecord;
+  it("prepends latest compaction summary while keeping messages from firstKeptEntryId onward", () => {
+    const sessionManager = createSessionManager();
+    const session = new AgentSession(sessionManager);
+
+    const firstId = session.appendAthenaMessage(createUserMessage("older message", "msg-old-1"));
+    session.appendAthenaMessage(createUserMessage("newer message", "msg-new-1"));
+    session.appendCompaction("summary", firstId, 128);
+
+    expect(session.getModelMessages()).toEqual([
+      {
+        role: "user",
+        content: "[Context Summary]\nsummary",
+      },
+      expect.objectContaining({ role: "user", content: "older message" }),
+      expect.objectContaining({ role: "user", content: "newer message" }),
+    ]);
+  });
 });

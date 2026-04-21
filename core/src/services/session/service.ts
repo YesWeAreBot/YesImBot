@@ -3,10 +3,18 @@ import { join } from "node:path";
 
 import { Bot, Context, Service, Session } from "koishi";
 
-import { resolveSenderIdentity, summarizeReplyContent } from "./channel-message";
-import { projectToAthenaMessage } from "./domain/project-to-athena-message";
-import { Activation, type ActivationResult, type AthenaEvent, type ChannelScopedAthenaEvent, type EventBatch } from "./types";
 import { InstructionStateService } from "./instruction-state/service";
+import {
+  Activation,
+  type ActivationResult,
+  type AthenaEvent,
+  type ChannelScopedAthenaEvent,
+  type EventBatch,
+} from "./messages";
+import { evaluateActivationPolicy } from "./messages/activation";
+import type { ChannelMessageInput } from "./messages/channel-input";
+import { projectToAthenaMessage } from "./messages/project-to-athena-message";
+import type { ChannelKey } from "./messages/runtime-types";
 import { ChannelRuntime } from "./runtime";
 import { SessionManager } from "./session-manager";
 import {
@@ -16,8 +24,6 @@ import {
   type SettingsIssue,
   type SettingsReloadMetadata,
 } from "./settings-manager";
-import type { ChannelMessageInput, ChannelKey } from "./types/index";
-import { evaluateActivationPolicy } from "./willingness";
 
 type RuntimeStateInput = ChannelScopedAthenaEvent;
 
@@ -459,9 +465,7 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
     return (pluginService?.getInstructions?.(channelKey) as never) ?? [];
   }
 
-  private getRuntimeStateDir(
-    input: RuntimeStateInput,
-  ): string {
+  private getRuntimeStateDir(input: RuntimeStateInput): string {
     if (input.kind === "message" && input.isDirect) {
       return this.instructionStateService.getUserStateDir(input.platform, input.sender.userId);
     }
@@ -469,9 +473,7 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
     return this.instructionStateService.getChannelStateDir(input.platform, input.channelId);
   }
 
-  private ensureRuntimeState(
-    input: RuntimeStateInput,
-  ): void {
+  private ensureRuntimeState(input: RuntimeStateInput): void {
     if (input.kind === "message" && input.isDirect) {
       this.instructionStateService.ensureUserState(input.platform, input.sender.userId);
       return;
@@ -480,9 +482,7 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
     this.instructionStateService.ensureChannelState(input.platform, input.channelId);
   }
 
-  private getRuntimeSettingsPath(
-    input: RuntimeStateInput,
-  ): string {
+  private getRuntimeSettingsPath(input: RuntimeStateInput): string {
     return join(this.getRuntimeStateDir(input), "settings.json");
   }
 
@@ -686,32 +686,30 @@ export class AgentSessionService extends Service<AgentSessionServiceConfig> {
 
     const existingPolicyIndex = findLatestPolicyReasonIndex(activation);
     const judgeSettings = agent.getSettingsManager().getJudgeSettings();
-    const policy = await evaluateActivationPolicy(
-      agent.getWillingnessJudge(),
-      {
-        isDirect: latestMessage.isDirect,
-        atSelf: latestMessage.atSelf,
-        isReplyToBot: latestMessage.isReplyToBot,
-        content: latestMessage.content,
-        selfId: bot?.selfId ?? "",
-        senderId: latestMessage.sender.userId,
-        judgeEnabled: judgeSettings?.enabled,
-        judgeModel: judgeSettings?.model,
-        judgeTimeoutMs: judgeSettings?.timeoutMs,
-      },
-    );
+    const policy = await evaluateActivationPolicy(agent.getWillingnessJudge(), {
+      isDirect: latestMessage.isDirect,
+      atSelf: latestMessage.atSelf,
+      isReplyToBot: latestMessage.isReplyToBot,
+      content: latestMessage.content,
+      selfId: bot?.selfId ?? "",
+      senderId: latestMessage.sender.userId,
+      judgeEnabled: judgeSettings?.enabled,
+      judgeModel: judgeSettings?.model,
+      judgeTimeoutMs: judgeSettings?.timeoutMs,
+    });
 
     if (existingPolicyIndex >= 0) {
       activation.reasons[existingPolicyIndex] = { source: "policy", code: policy.reason };
     } else {
       activation.reasons.push({ source: "policy", code: policy.reason });
     }
-    activation.activated = activation.reasons.some((reason) =>
-      reason.code === "direct_message" ||
-      reason.code === "at_self" ||
-      reason.code === "llm_judge" ||
-      reason.code === "platform_notice" ||
-      reason.code === "internal_signal",
+    activation.activated = activation.reasons.some(
+      (reason) =>
+        reason.code === "direct_message" ||
+        reason.code === "at_self" ||
+        reason.code === "llm_judge" ||
+        reason.code === "platform_notice" ||
+        reason.code === "internal_signal",
     );
     return activation;
   }
@@ -750,7 +748,9 @@ function channelMessageToAthenaEvent(
   };
 }
 
-function findLatestMessageEvent(events: AthenaEvent[]): Extract<AthenaEvent, { kind: "message" }> | null {
+function findLatestMessageEvent(
+  events: AthenaEvent[],
+): Extract<AthenaEvent, { kind: "message" }> | null {
   for (let i = events.length - 1; i >= 0; i--) {
     const event = events[i];
     if (event.kind === "message") {
@@ -795,12 +795,6 @@ export function koishiSessionToChannelInput(session: Session): ChannelMessageInp
     session.author?.user?.name ??
     session.username ??
     session.userId;
-  const identity = resolveSenderIdentity({
-    isDirect: session.isDirect ?? false,
-    title: session.author?.title,
-    roles: session.author?.roles?.map((role) => role.name ?? "").filter(Boolean),
-    isBot: session.author?.user?.isBot ?? false,
-  });
 
   const replyTo = session.quote
     ? {
@@ -828,7 +822,6 @@ export function koishiSessionToChannelInput(session: Session): ChannelMessageInp
       userId: session.userId,
       username: session.username ?? session.userId,
       nickname,
-      identity,
     },
     isDirect: session.isDirect ?? false,
     atSelf,
@@ -846,4 +839,13 @@ export function koishiSessionToAthenaEvent(
   }
 
   return channelMessageToAthenaEvent(input);
+}
+
+function summarizeReplyContent(content: string, maxChars = 80): string {
+  const normalized = content.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxChars) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxChars)}…`;
 }

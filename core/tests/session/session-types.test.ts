@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import type { ToolResultMessage } from "../../src/services/session/messages";
 import type {
   AgentAssistantMessage,
   AgentCustomMessage,
@@ -55,5 +56,15 @@ describe("session message types", () => {
 
     expect(details.username).toBe("alice");
     expect(details.identity).toBe("direct-user");
+  });
+
+  it("rejects tool approval responses from durable tool messages", () => {
+    // @ts-expect-error durable tool messages must persist only tool-result parts.
+    const toolMessage: ToolResultMessage = {
+      role: "tool",
+      content: [{ type: "tool-approval-response", approvalId: "approval-1", approved: true }],
+    };
+
+    expect(toolMessage.role).toBe("tool");
   });
 });

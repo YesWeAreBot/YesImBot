@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { AthenaMessage } from "../../src/services/session/domain/athena-message";
+import type { AthenaMessage } from "../../src/services/session/messages/athena-message";
 import type {
   ActivationResultEntry,
   AssistantMessage,
@@ -12,7 +12,7 @@ import type {
   SessionMessage,
   SessionMessageEntry,
   ToolResultMessage,
-} from "../../src/services/session/domain/session-message";
+} from "../../src/services/session/messages/session-message";
 
 describe("session entry contracts", () => {
   it("locks SessionEntry helper entry discriminants and message entry boundary", () => {
@@ -83,7 +83,14 @@ describe("session entry contracts", () => {
       modelId: "gpt-4.1",
     };
 
-    const entries: SessionEntry[] = [header, message, activation, responseStatus, compaction, sessionInfo];
+    const entries: SessionEntry[] = [
+      header,
+      message,
+      activation,
+      responseStatus,
+      compaction,
+      sessionInfo,
+    ];
 
     expect(entries.map((entry) => entry.type)).toEqual([
       "session",

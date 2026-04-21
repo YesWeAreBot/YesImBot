@@ -9,19 +9,19 @@ import { Bot, Context, Logger } from "koishi";
 import { AgentSession } from "../agent-session";
 import { compact, prepareCompaction, shouldCompact } from "../compaction";
 import { estimateContextTokens } from "../compaction/estimate";
-import type { ActivationResult, EventBatch } from "../domain/activation";
 import { InstructionAssembler } from "../instruction-assembler";
 import { InstructionStateService } from "../instruction-state/service";
 import { convertToLlm } from "../materialize";
-import type { SessionManager } from "../session-manager";
 import type {
+  ActivationResult,
   AthenaEvent,
+  EventBatch,
   FollowUpReviewRecord,
   ResponseStatusReason,
   ResponseStatusRecord,
-} from "../types";
-import type { ChannelInput, ChannelMessageInput, ChannelRawPayload } from "../types/index";
-import { createDefaultWillingnessJudge, type WillingnessJudge } from "../willingness";
+} from "../messages";
+import { createDefaultWillingnessJudge, WillingnessJudge } from "../messages/activation";
+import type { SessionManager } from "../session-manager";
 import { prepareRuntimeModel } from "./model-adapter";
 import {
   getReliableInputTokens,
@@ -285,16 +285,6 @@ export class ChannelRuntime {
   // =========================================================================
   // Public API
   // =========================================================================
-
-  async receive(input: ChannelInput): Promise<void> {
-    if (input.kind !== "channel_message") {
-      throw new Error(`Unsupported channel input kind for runtime receive: ${input.kind}`);
-    }
-
-    throw new Error(
-      `Use AgentSessionService.ingestEvent() for raw ingress; runtime expects activated batches`,
-    );
-  }
 
   async wake(batch: ActivatedEventBatch): Promise<void> {
     this.pendingActivatedBatches.push(batch);

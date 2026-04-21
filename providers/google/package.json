@@ -33,11 +33,11 @@
   },
   "scripts": {
     "build": "pkgroll",
+    "check-types": "tsc --noEmit",
     "clean": "rimraf dist && rimraf tsconfig.tsbuildinfo",
     "fmt": "oxfmt",
     "lint": "oxlint",
-    "pub": "yarn npm publish --access public",
-    "typecheck": "tsc --noEmit && echo 'TypeScript typecheck passed!'"
+    "pub": "yarn npm publish --access public"
   },
   "dependencies": {
     "@ai-sdk/google": "^3.0.0",

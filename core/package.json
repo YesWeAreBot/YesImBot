@@ -36,12 +36,12 @@
   },
   "scripts": {
     "build": "npx pkgroll --sourcemap",
+    "check-types": "tsc --noEmit",
     "clean": "rimraf dist && rimraf tsconfig.tsbuildinfo",
     "fmt": "oxfmt",
     "lint": "oxlint",
     "pub": "yarn npm publish --access public",
-    "test": "vitest run",
-    "typecheck": "tsc --noEmit && echo 'TypeScript typecheck passed!'"
+    "test": "vitest run"
   },
   "dependencies": {
     "@ai-sdk-tool/parser": "^4.1.19",

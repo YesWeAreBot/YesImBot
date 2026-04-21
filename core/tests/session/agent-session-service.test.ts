@@ -68,10 +68,10 @@ import {
   getUserMetaPath,
   getUserStateDir,
 } from "../../src/services/session/instruction-state/layout";
-import type { AthenaEvent } from "../../src/services/session/types";
 import { ChannelRuntime } from "../../src/services/session/runtime";
 import { AgentSessionService } from "../../src/services/session/service";
 import { SessionManager } from "../../src/services/session/session-manager";
+import type { AthenaEvent } from "../../src/services/session/types";
 import type { ChannelMessageInput } from "../../src/services/session/types/index";
 import type { WillingnessJudge } from "../../src/services/session/willingness";
 import { createTestSettingsManager } from "./test-settings-manager";
@@ -654,9 +654,9 @@ describe("AgentSessionService", () => {
         bot,
       );
 
-      const runtime = (
-        service as unknown as { agents: Map<string, ChannelRuntime> }
-      ).agents.get("discord:channel-1");
+      const runtime = (service as unknown as { agents: Map<string, ChannelRuntime> }).agents.get(
+        "discord:channel-1",
+      );
 
       expect(runtime).toBeTruthy();
       if (!runtime) {
@@ -719,9 +719,9 @@ describe("AgentSessionService", () => {
         expect(generateMock).toHaveBeenCalledTimes(1);
       });
 
-      const runtime = (
-        service as unknown as { agents: Map<string, ChannelRuntime> }
-      ).agents.get("discord:channel-1");
+      const runtime = (service as unknown as { agents: Map<string, ChannelRuntime> }).agents.get(
+        "discord:channel-1",
+      );
 
       expect(runtime).toBeTruthy();
       if (!runtime) {
@@ -780,7 +780,8 @@ describe("AgentSessionService", () => {
       ).rejects.toThrow("wake failed");
 
       expect(
-        (service as unknown as { pendingEventBatches: Map<string, unknown> }).pendingEventBatches.size,
+        (service as unknown as { pendingEventBatches: Map<string, unknown> }).pendingEventBatches
+          .size,
       ).toBe(0);
 
       await service.ingestEvent(
@@ -881,9 +882,9 @@ describe("AgentSessionService", () => {
           expect.objectContaining({ id: "follow-up-msg-2", kind: "message" }),
         ]),
       );
-      expect(
-        Array.from(new Set(hostInputs[1]?.triggerEvents.map((event) => event.id))),
-      ).toEqual(expect.arrayContaining(["follow-up-signal-1", "follow-up-msg-2"]));
+      expect(Array.from(new Set(hostInputs[1]?.triggerEvents.map((event) => event.id)))).toEqual(
+        expect.arrayContaining(["follow-up-signal-1", "follow-up-msg-2"]),
+      );
     });
 
     it("same-channel burst keeps one active turn plus one merged follow-up", async () => {
@@ -1276,18 +1277,15 @@ describe("AgentSessionService", () => {
       expect(firstRuntime).toBeDefined();
 
       await vi.waitFor(() => {
-        const timeline = firstRuntime?.sessionManager.getTimeline() ?? [];
+        const entries = firstRuntime?.sessionManager.getEntries() ?? [];
         expect(
-          timeline.some(
-            (record) =>
-              record.kind === "system_notice" &&
-              record.materializationKey === "response_status" &&
-              record.data?.endReason === "exception",
+          entries.some(
+            (record) => record.type === "response_status" && record.endReason === "exception",
           ),
         ).toBe(true);
       });
 
-      firstRuntime?.sessionManager.appendMessage({
+      firstRuntime?.sessionManager.appendAssistantMessage({
         role: "assistant",
         content: [
           { type: "text", text: "Calling tool before restart" },
@@ -1298,9 +1296,6 @@ describe("AgentSessionService", () => {
             args: { content: "ping" },
           },
         ],
-        timestamp: 1001,
-        provider: "test",
-        model: "test:model",
       });
 
       const restartBot = createBotMock();
@@ -1335,9 +1330,7 @@ describe("AgentSessionService", () => {
       expect(resumedRuntime).toBeDefined();
       expect(
         resumedEntries.some(
-          (record) =>
-            record.type === "response_status" &&
-            record.endReason === "exception",
+          (record) => record.type === "response_status" && record.endReason === "exception",
         ),
       ).toBe(true);
       expect(

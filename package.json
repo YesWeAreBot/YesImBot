@@ -16,29 +16,30 @@
     "providers/*"
   ],
   "scripts": {
-    "build": "yarn workspaces foreach -Apt --topological-dev run build",
-    "clean": "yarn workspaces foreach -Ap run clean",
-    "fmt": "yarn workspaces foreach -Ap run fmt",
-    "fmt:check": "yarn workspaces foreach -Ap run fmt --check",
-    "lint": "yarn workspaces foreach -Ap run lint",
-    "lint:fix": "yarn workspaces foreach -Ap run lint --fix",
+    "build": "turbo run build",
+    "check-types": "turbo run check-types",
+    "clean": "turbo run clean && rimraf .turbo",
+    "fmt": "oxfmt --check",
+    "fmt:check": "oxfmt --check .",
+    "fmt:fix": "oxfmt .",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint --fix .",
     "prepare": "husky",
-    "pub": "yarn build && yarn workspaces foreach -Ap --topological-dev run pub",
+    "pub": "turbo run pub",
     "release": "node scripts/release.mjs",
     "release:beta": "node scripts/release.mjs --beta",
-    "test": "yarn workspaces foreach -Ap run test",
-    "typecheck": "yarn workspaces foreach -Apt --topological-dev run typecheck"
+    "test": "turbo run test"
   },
   "devDependencies": {
     "@types/node": "^22.16.2",
     "bumpp": "^10.2.0",
     "husky": "^9.1.7",
-    "koishi-plugin-yesimbot-skill": "workspace:^",
     "lint-staged": "^16.2.7",
     "oxfmt": "^0.33.0",
     "oxlint": "^1.48.0",
     "pkgroll": "^2.21.4",
     "rimraf": "^6.1.2",
+    "turbo": "^2.9.6",
     "typescript": "^5.9.3"
   },
   "lint-staged": {

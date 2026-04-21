@@ -1,4 +1,7 @@
-import type { AssistantModelMessage, ToolModelMessage } from "@ai-sdk/provider-utils";
+import type {
+  AssistantModelMessage,
+  ToolResultPart,
+} from "@ai-sdk/provider-utils";
 import type { JSONValue } from "ai";
 
 import type { AthenaMessage } from "./athena-message";
@@ -23,11 +26,12 @@ export interface AssistantMessage extends AssistantModelMessage {
   role: "assistant";
 }
 
-export interface ToolResultMessage extends ToolModelMessage {
+export interface ToolResultMessage {
   role: "tool";
+  content: Array<ToolResultPart>;
 }
 
-export type SessionMessage = AthenaMessage | AssistantModelMessage | ToolModelMessage;
+export type SessionMessage = AthenaMessage | AssistantMessage | ToolResultMessage;
 
 export interface SessionMessageEntry extends SessionEntryBase {
   type: "message";
@@ -47,6 +51,8 @@ export interface ResponseStatusEntry extends SessionEntryBase {
   nextAction: string;
   stepsCompleted: number;
   durationMs: number;
+  error?: string;
+  blockedReason?: string;
 }
 
 export interface CompactionEntry extends SessionEntryBase {

@@ -1,4 +1,10 @@
-import type { ReplyReference } from "../types/channel-input";
+export interface ReplyReference {
+  messageId?: string;
+  userId?: string;
+  username: string;
+  nickname: string;
+  summary: string;
+}
 
 export interface BaseAthenaMessage<K extends string, D> {
   type: K;

@@ -4,25 +4,6 @@ export type ChannelKey = `${string}:${string}`;
 
 export type NextAction = "idle" | "follow_up" | "blocked";
 
-export type ChannelBootstrapStatus = "ready" | "restored" | "created" | "failed";
-
-export interface ChannelBootstrapResult {
-  channelKey: ChannelKey;
-  status: ChannelBootstrapStatus;
-  error?: string;
-}
-
-export interface WillingnessResult {
-  shouldRespond: boolean;
-  reason:
-    | "direct_message"
-    | "at_self"
-    | "llm_judge"
-    | "reply_without_at"
-    | "no_trigger"
-    | "self_message";
-}
-
 export type ResponseStatusReason =
   | "normal"
   | "heartbeat_continuation"

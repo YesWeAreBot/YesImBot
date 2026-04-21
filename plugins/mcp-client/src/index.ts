@@ -96,7 +96,7 @@ export default class McpClientPlugin extends YesImPlugin<McpClientConfig> {
 
   override async dispose(): Promise<void> {
     this.ctx.logger.info("清理 MCP 客户端...");
-    for (const [name, client] of this.clients.entries()) {
+    for (const [name, _client] of this.clients.entries()) {
       try {
         this.ctx.logger.success(`成功断开 MCP 服务器 ${name}`);
       } catch (error) {

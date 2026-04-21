@@ -22,7 +22,7 @@ export class ModelService extends Service<ModelServiceConfig> {
 
     const command = ctx.command("yesimbot.model", "模型指令集", { authority: 3 });
 
-    command.subcommand(".set <model:string>", "设置当前会话使用的模型").action(({}, model) => {
+    command.subcommand(".set <model:string>", "设置当前会话使用的模型").action((_, model) => {
       if (!model) return "请提供模型名称，格式为 provider:modelId";
       const parsed = parseModelId(model);
       if (!parsed) return `无效的模型格式: ${model}`;

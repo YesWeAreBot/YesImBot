@@ -32,6 +32,9 @@ export const Config = Schema.object({
       { id: "deepseek-reasoner", toolCall: true, reasoning: true },
     ])
     .description("可用模型列表"),
+}).i18n({
+  "en-US": enUS._config,
+  "zh-CN": zhCN._config,
 });
 
 export function apply(ctx: Context, config: Config) {

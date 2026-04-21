@@ -1,5 +1,5 @@
 import { convertToLlm } from "../materialize";
-import type { SessionMessageEntry } from "../types";
+import type { SessionMessageEntry } from "../messages";
 import { estimateContextTokens } from "./estimate";
 import type { CompactionPreparation, CompactionSettings } from "./types";
 
@@ -45,7 +45,8 @@ export function prepareCompaction(
   }
 
   const messageHistory = entries.map((entry) => entry.message);
-  const tokensBefore = estimateContextTokens(convertToLlm(messageHistory)) + estimateSummaryTokens(previousSummary);
+  const tokensBefore =
+    estimateContextTokens(convertToLlm(messageHistory)) + estimateSummaryTokens(previousSummary);
   const ratio =
     contextTokens !== undefined && tokensBefore > 0 ? Math.max(1, contextTokens / tokensBefore) : 1;
   const effectiveKeepRecentTokens = Math.max(1, Math.floor(settings.keepRecentTokens / ratio));

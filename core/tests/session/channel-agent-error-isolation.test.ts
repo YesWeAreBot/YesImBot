@@ -25,6 +25,7 @@ vi.mock("ai", () => {
 });
 
 import { AgentSession } from "../../src/services/session/agent-session";
+import type { ResponseStatusRecord } from "../../src/services/session/messages";
 import {
   buildGenerateInputForTest,
   ChannelRuntime,
@@ -32,10 +33,6 @@ import {
   normalizeAssistantContent,
 } from "../../src/services/session/runtime";
 import { SessionManager } from "../../src/services/session/session-manager";
-import type {
-  ChannelMessageInput,
-  ResponseStatusRecord,
-} from "../../src/services/session/types/index";
 import { createTestSettingsManager } from "./test-settings-manager";
 
 function createContextMock() {
@@ -79,24 +76,32 @@ function createBotMock() {
   };
 }
 
-function createChannelMessageInput(
-  overrides: Partial<ChannelMessageInput> = {},
-): ChannelMessageInput {
+function createActivatedBatch(messageId = "msg-error-1") {
   return {
-    kind: "channel_message",
-    platform: "discord",
-    channelId: "channel-1",
-    sender: {
-      userId: "user-1",
-      username: "alice",
+    batchId: `batch-${messageId}`,
+    channelKey: "discord:channel-1",
+    events: [
+      {
+        kind: "message",
+        id: `evt-${messageId}`,
+        timestamp: Date.now(),
+        platform: "discord",
+        channelId: "channel-1",
+        messageId,
+        content: "hello",
+        sender: {
+          userId: "user-1",
+          username: "alice",
+        },
+        isDirect: true,
+        atSelf: false,
+        isReplyToBot: false,
+      },
+    ],
+    activation: {
+      activated: true,
+      reasons: [{ source: "runtime", code: "direct_message" }],
     },
-    content: "hello",
-    isDirect: true,
-    atSelf: false,
-    isReplyToBot: false,
-    messageId: "msg-error-1",
-    timestamp: Date.now(),
-    ...overrides,
   };
 }
 
@@ -223,7 +228,7 @@ describe("ChannelRuntime plugin safety helpers", () => {
 
     generateMock.mockRejectedValueOnce(new Error("transport failed"));
 
-    await agent.receive(createChannelMessageInput());
+    await agent.wake(createActivatedBatch());
 
     await vi.waitFor(() => {
       expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("discord:channel-1"));

@@ -1,9 +1,10 @@
-import type { AssistantModelMessage, ModelMessage, ToolModelMessage } from "@ai-sdk/provider-utils";
+import type { AssistantModelMessage, ModelMessage } from "@ai-sdk/provider-utils";
 import type { JSONValue } from "ai";
 import type { OnStepFinishEvent } from "ai";
 import type { Logger } from "koishi";
 
 import { AgentSession } from "../agent-session";
+import type { ToolResultMessage } from "../messages";
 import {
   type AgentAssistantMessage,
   type AgentAssistantThinkingPart,
@@ -137,14 +138,7 @@ export class ResponseStepProcessor {
       persistableAgentMsg &&
       !isDuplicateAssistantToolCallMessage(persistableAgentMsg, this.seenAssistantToolCallIds)
     ) {
-      this.session.appendAssistantMessage({
-        id: `${Date.now()}-assistant-${this.seenAssistantToolCallIds.size}`,
-        timestamp: persistableAgentMsg.timestamp,
-        stage: "runtime",
-        visibility: "model",
-        materialization: "default",
-        message: assistantMessageToModelMessage(persistableAgentMsg),
-      });
+      this.session.appendAssistantMessage(assistantMessageToModelMessage(persistableAgentMsg));
       rememberAssistantToolCallIds(persistableAgentMsg, this.seenAssistantToolCallIds);
     }
 
@@ -152,34 +146,33 @@ export class ResponseStepProcessor {
       this.logger.debug(
         `[step:${this.platform}:${this.channelId}] undelivered assistant text detected protocolRetry=${this.protocolRetryCount < MAX_PROTOCOL_RETRIES_PER_RESPONSE}`,
       );
-      this.session.appendStateChange({
-        id: `${Date.now()}-protocol-draft`,
-        timestamp: Date.now(),
-        stage: "runtime",
-        visibility: "internal",
-        materialization: "internal",
-        stateType: "protocol_assistant_draft",
-        data: {
+      this.session.appendRuntimeStateInfo(
+        "protocol_assistant_draft",
+        {
+          id: `${Date.now()}-protocol-draft`,
+          timestamp: Date.now(),
+        },
+        {
           text: assistantText,
           provider: agentMsg.provider,
           model: agentMsg.model,
           finishReason: agentMsg.finishReason,
         },
-      });
+      );
 
       if (this.protocolRetryCount < MAX_PROTOCOL_RETRIES_PER_RESPONSE) {
         this.protocolRetryCount++;
         this._pendingProtocolRetry = true;
-        this.session.appendSystemNotice({
-          id: `${Date.now()}-protocol-guidance`,
-          timestamp: Date.now(),
-          stage: "runtime",
-          visibility: "hidden",
-          materialization: "hidden",
-          subType: "protocol_guidance",
-          materializationKey: "hidden",
-          notice: PROTOCOL_GUIDANCE_TEXT,
-        });
+        this.session.appendRuntimeStateInfo(
+          "protocol_guidance",
+          {
+            id: `${Date.now()}-protocol-guidance`,
+            timestamp: Date.now(),
+          },
+          {
+            content: PROTOCOL_GUIDANCE_TEXT,
+          },
+        );
       } else {
         this._protocolError = true;
       }
@@ -206,14 +199,7 @@ export class ResponseStepProcessor {
       `[step:${this.platform}:${this.channelId}] tool results=${freshToolParts.length}`,
     );
 
-    this.session.appendToolMessage({
-      id: `${Date.now()}-tool-${this.seenToolResultCallIds.size}`,
-      timestamp: Date.now(),
-      stage: "runtime",
-      visibility: "model",
-      materialization: "default",
-      message: toolPartsToModelMessage(freshToolParts),
-    });
+    this.session.appendToolMessage(toolPartsToModelMessage(freshToolParts));
 
     for (const part of freshToolParts) {
       this.seenToolResultCallIds.add(String(part.toolCallId));
@@ -306,7 +292,7 @@ function assistantMessageToModelMessage(message: AgentAssistantMessage): Assista
   } satisfies AssistantModelMessage;
 }
 
-function toolPartsToModelMessage(parts: Array<Record<string, unknown>>): ToolModelMessage {
+function toolPartsToModelMessage(parts: Array<Record<string, unknown>>): ToolResultMessage {
   return {
     role: "tool",
     content: parts.map((part) => ({
@@ -314,7 +300,6 @@ function toolPartsToModelMessage(parts: Array<Record<string, unknown>>): ToolMod
       toolCallId: part.toolCallId as string,
       toolName: part.toolName as string,
       output: { type: "json" as const, value: unwrapToolResult(part.output) as JSONValue },
-      isError: part.isError as boolean | undefined,
     })),
   };
 }

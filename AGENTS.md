@@ -16,7 +16,6 @@ Load these on demand when the task needs deeper context:
 
 - `@README.md` - top-level workspace summary and common root commands.
 - `@package.json` - root workspace scripts, workspace layout, lint-staged config, Yarn version.
-- `@.github/workflows/ci.yml` - authoritative verification order: `lint -> fmt:check -> typecheck -> build -> test`.
 - `@core/package.json` - core package scripts; this is the only workspace package with a `test` script.
 - `@core/src/index.ts` - Koishi plugin entrypoint and top-level runtime config schema.
 - `@core/src/services/session/service.ts` - channel runtime ownership, middleware wiring, management commands.
@@ -46,18 +45,24 @@ yarn typecheck
 yarn build
 yarn test
 
+# minimum turbo-targeted commands
+yarn turbo run build --filter=koishi-plugin-yesimbot
+yarn turbo run test --filter=koishi-plugin-yesimbot
+yarn turbo run check-types --filter=@yesimbot/plugin-sdk
+
 # focused core checks
-yarn workspace koishi-plugin-yesimbot typecheck
-yarn workspace koishi-plugin-yesimbot test
-yarn workspace koishi-plugin-yesimbot test tests/session/session-restore.test.ts
+yarn turbo run check-types --filter=koishi-plugin-yesimbot
+yarn turbo run test --filter=koishi-plugin-yesimbot
+yarn workspace koishi-plugin-yesimbot exec vitest run tests/session/session-restore.test.ts
 yarn workspace koishi-plugin-yesimbot exec vitest run tests/session/channel-agent-step-finish.test.ts -t "normalizes assistant reasoning blocks and usage metadata into AgentMessage payloads"
 
 # focused package checks
-yarn workspace @yesimbot/plugin-sdk typecheck
+yarn turbo run check-types --filter=@yesimbot/plugin-sdk
 ```
 
-- Follow CI order before claiming broad success: `yarn lint`, `yarn fmt:check`, `yarn typecheck`, `yarn build`, `yarn test`.
+- Follow CI order before claiming broad success: `yarn turbo run quality`, `yarn check-types`, `yarn build`, `yarn test`.
 - Root `yarn test` only runs workspaces that actually define a `test` script; currently that means `core`.
+- Prefer `yarn turbo run <task> --filter=<package>` for package-scoped build, test, and typecheck commands.
 - When changing runtime/session logic, start with the narrowest `core/tests/session/*.test.ts` target, then expand.
 
 ## Architecture Notes
@@ -70,29 +75,28 @@ yarn workspace @yesimbot/plugin-sdk typecheck
 
 ## File Reference
 
-| File | Purpose |
-| ---- | ------- |
-| `README.md` | High-level workspace summary and common commands |
-| `package.json` | Root scripts, workspace boundaries, lint-staged, Yarn version |
-| `.github/workflows/ci.yml` | Exact CI verification sequence |
-| `.github/workflows/publish.yml` | Current publish flow: build/publish `shared-model` first, then `core` |
-| `.yarnrc.yml` | Confirms Yarn 4 and `node-modules` linker |
-| `.oxlintrc.json` | Lint rules; notably `@typescript-eslint/no-explicit-any` is enforced |
-| `.oxfmtrc.json` | Formatter behavior and import/package.json sorting |
-| `.husky/pre-commit` | Pre-commit entrypoint (`npx lint-staged`) |
-| `core/src/index.ts` | Main Koishi plugin entry and config schema |
-| `core/src/services/session/service.ts` | Channel bootstrapping, middleware, admin commands |
-| `core/src/services/model/service.ts` | Model registry and `provider:modelId` resolution |
-| `packages/plugin-sdk/src/plugin.ts` | Plugin authoring API for optional integrations |
-| `packages/plugin-sdk/src/tools/index.ts` | Tool metadata/decorator registration |
-| `providers/openai/src/index.ts` | Representative provider plugin entry |
-| `plugins/search-service/src/index.ts` | Representative optional tool plugin entry |
-| `plugins/mcp-client/src/index.ts` | MCP integration entrypoint |
-| `scripts/release.mjs` | Interactive version/tag bump flow; final push is manual |
+| File                                     | Purpose                                                              |
+| ---------------------------------------- | -------------------------------------------------------------------- |
+| `README.md`                              | High-level workspace summary and common commands                     |
+| `package.json`                           | Root scripts, workspace boundaries, lint-staged, Yarn version        |
+| `.yarnrc.yml`                            | Confirms Yarn 4 and `node-modules` linker                            |
+| `.oxlintrc.json`                         | Lint rules; notably `@typescript-eslint/no-explicit-any` is enforced |
+| `.oxfmtrc.json`                          | Formatter behavior and import/package.json sorting                   |
+| `.husky/pre-commit`                      | Pre-commit entrypoint (`npx lint-staged`)                            |
+| `core/src/index.ts`                      | Main Koishi plugin entry and config schema                           |
+| `core/src/services/session/service.ts`   | Channel bootstrapping, middleware, admin commands                    |
+| `core/src/services/model/service.ts`     | Model registry and `provider:modelId` resolution                     |
+| `packages/plugin-sdk/src/plugin.ts`      | Plugin authoring API for optional integrations                       |
+| `packages/plugin-sdk/src/tools/index.ts` | Tool metadata/decorator registration                                 |
+| `providers/openai/src/index.ts`          | Representative provider plugin entry                                 |
+| `plugins/search-service/src/index.ts`    | Representative optional tool plugin entry                            |
+| `plugins/mcp-client/src/index.ts`        | MCP integration entrypoint                                           |
+| `scripts/release.mjs`                    | Interactive version/tag bump flow; final push is manual              |
 
 ## File Editing
 
 **IMPORTANT**
+
 - When updating or creating long files, write them in smaller chunks instead of one large write.
 - Prefer segmented writes for large content because the write tool can time out on oversized payloads.
 
@@ -105,27 +109,30 @@ yarn workspace @yesimbot/plugin-sdk typecheck
 This project has a graphify knowledge graph at graphify-out/.
 
 Rules:
+
 - Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
 - If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
 - After modifying code files in this session, run `graphify update .` to keep the graph current (AST-only, no API cost)
 
 <!-- GSD:profile-start -->
+
 ## Developer Profile
 
 > Generated by GSD from questionnaire. Run `/gsd-profile-user --refresh` to update.
 
-| Dimension | Rating | Confidence |
-|-----------|--------|------------|
-| Communication | conversational | MEDIUM |
-| Decisions | deliberate-informed | MEDIUM |
-| Explanations | educational | MEDIUM |
-| Debugging | collaborative | MEDIUM |
-| UX Philosophy | backend-focused | MEDIUM |
-| Vendor Choices | opinionated | MEDIUM |
-| Frustrations | scope-creep | MEDIUM |
-| Learning | documentation-first | MEDIUM |
+| Dimension      | Rating              | Confidence |
+| -------------- | ------------------- | ---------- |
+| Communication  | conversational      | MEDIUM     |
+| Decisions      | deliberate-informed | MEDIUM     |
+| Explanations   | educational         | MEDIUM     |
+| Debugging      | collaborative       | MEDIUM     |
+| UX Philosophy  | backend-focused     | MEDIUM     |
+| Vendor Choices | opinionated         | MEDIUM     |
+| Frustrations   | scope-creep         | MEDIUM     |
+| Learning       | documentation-first | MEDIUM     |
 
 **Directives:**
+
 - **Communication:** Use a natural conversational tone. Explain reasoning briefly alongside code. Engage with the developer's questions.
 - **Decisions:** Present options in a structured comparison table with pros/cons. Let the developer make the final call.
 - **Explanations:** Teach the underlying concepts and principles, not just the implementation. Relate new patterns to fundamentals.

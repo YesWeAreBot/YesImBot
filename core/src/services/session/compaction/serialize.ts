@@ -4,11 +4,9 @@
 
 import type { ModelMessage, TextPart } from "@ai-sdk/provider-utils";
 
-import {
-  convertToLlm,
-} from "../materialize";
+import { convertToLlm } from "../materialize";
+import type { SessionMessage } from "../messages";
 import { AgentAssistantContentPart, AgentMessage, ContentPart } from "../session-manager";
-import type { SessionMessage } from "../types";
 
 const TOOL_RESULT_MAX_CHARS = 2000;
 

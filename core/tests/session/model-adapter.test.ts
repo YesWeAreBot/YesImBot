@@ -165,7 +165,7 @@ describe("prepareRuntimeModel", () => {
 
     const missingProviderRegistry: FakeRegistry = {
       resolveRegistration: vi.fn(() => {
-        throw new Error('Provider "missing" not found. Available: \[openai\]');
+        throw new Error('Provider "missing" not found. Available: [openai]');
       }),
     };
 

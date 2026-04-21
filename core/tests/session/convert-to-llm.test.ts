@@ -10,7 +10,7 @@ import type {
   SessionMessage,
   SessionMessageEntry,
   ToolResultMessage,
-} from "../../src/services/session/domain/session-message";
+} from "../../src/services/session/messages/session-message";
 
 describe("convertToLlm(SessionMessage[])", () => {
   it("maps Athena user.message and notice.* variants to provider user messages", () => {
