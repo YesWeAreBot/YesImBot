@@ -1,5 +1,5 @@
 import { createOpenAI } from "@ai-sdk/openai";
-import type { ModelEntry, ModelProvider } from "@yesimbot/shared-model";
+import type { ChatModelConfig, EmbeddingModelConfig, ModelProvider } from "@yesimbot/shared-model";
 import { Context, Schema } from "koishi";
 
 export const name = "yesimbot-provider-openai";
@@ -10,14 +10,15 @@ export interface Config {
   id: string;
   apiKey: string;
   baseURL?: string;
-  models: ModelEntry[];
+  chatModels: ChatModelConfig[];
+  embeddingModels: EmbeddingModelConfig[];
 }
 
 export const Config = Schema.object({
   id: Schema.string().default("openai").description("提供商标识"),
   apiKey: Schema.string().role("secret").required().description("API Key"),
   baseURL: Schema.string().description("API Base URL"),
-  models: Schema.array(
+  chatModels: Schema.array(
     Schema.object({
       id: Schema.string().required().description("模型 ID"),
       toolCall: Schema.boolean().default(true).description("支持工具调用"),
@@ -29,7 +30,15 @@ export const Config = Schema.object({
       { id: "gpt-4o", toolCall: true, reasoning: false },
       { id: "o3-mini", toolCall: true, reasoning: true },
     ])
-    .description("可用模型列表"),
+    .description("可用聊天模型列表"),
+  embeddingModels: Schema.array(
+    Schema.object({
+      id: Schema.string().required().description("模型 ID"),
+    }),
+  )
+    .role("table")
+    .default([{ id: "text-embedding-3-large" }])
+    .description("可用嵌入模型列表"),
 });
 
 export function apply(ctx: Context, config: Config) {
@@ -40,9 +49,14 @@ export function apply(ctx: Context, config: Config) {
 
   const provider: ModelProvider = {
     id: config.id,
+    capabilities: {
+      chat: true,
+      embedding: true,
+    },
+    chatModels: () => config.chatModels,
+    embeddingModels: () => config.embeddingModels,
     chat: (modelId) => client.chat(modelId),
     embedding: (modelId) => client.embedding(modelId),
-    models: () => config.models,
   };
 
   ctx["yesimbot.model"].register(provider);

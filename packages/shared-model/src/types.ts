@@ -1,46 +1,72 @@
-import type { EmbeddingModelV3, LanguageModelV3 } from "@ai-sdk/provider";
+import { EmbeddingModel, LanguageModel } from "ai";
 
-/** provider:model 格式的完整标识 */
 export type ModelId = `${string}:${string}`;
 
-/** 模型条目，用于 UI 列表展示和能力查询 */
-export interface ModelEntry {
+export const CHAT_MODEL_MODALITIES = ["text", "audio", "image", "video", "pdf"] as const;
+export type ChatModelModality = (typeof CHAT_MODEL_MODALITIES)[number];
+
+export interface ChatModelConfig {
   id: string;
+  name?: string;
   toolCall?: boolean;
   reasoning?: boolean;
+  limit?: {
+    context: number;
+    output: number;
+  };
+  modalities?: {
+    input: ChatModelModality[];
+    output: ChatModelModality[];
+  };
+  variants?: Record<string, unknown>;
 }
 
-/** runtime 可直接消费的 provider:model 解析结果 */
-export interface ResolvedModelRegistration {
-  fullId: string;
-  providerId: string;
-  modelId: string;
-  entry: ModelEntry;
-  model: LanguageModelV3;
+export interface EmbeddingModelConfig {
+  id: string;
+  name?: string;
+  dimension?: number;
 }
 
-/** provider 插件向 ModelRegistry 注册时实现此接口 */
+export interface ModelProviderCapabilities {
+  chat: boolean;
+  embedding: boolean;
+}
+
 export interface ModelProvider {
   readonly id: string;
-  chat(modelId: string): LanguageModelV3;
-  embedding?(modelId: string): EmbeddingModelV3;
-  models(): ModelEntry[];
+  readonly capabilities: ModelProviderCapabilities;
+  chatModels(): ChatModelConfig[];
+  embeddingModels(): EmbeddingModelConfig[];
+  chat(modelId: string): LanguageModel;
+  embedding(modelId: string): EmbeddingModel;
 }
 
-/** ModelService 对外暴露的注册表接口 */
+export interface ChatModelRef {
+  fullId: ModelId;
+  providerId: string;
+  modelId: string;
+  entry: ChatModelConfig;
+  model: LanguageModel;
+}
+
 export interface ModelRegistry {
   register(provider: ModelProvider): void;
-  unregister(id: string): void;
-  resolve(fullId: string): LanguageModelV3;
-  resolveRegistration(fullId: string): ResolvedModelRegistration;
-  resolveEmbedding(fullId: string): EmbeddingModelV3;
+  unregister(providerId: string): void;
+  resolve(fullId: string): LanguageModel;
+  resolveChatModel(fullId: string): ChatModelRef;
+  resolveEmbedding(fullId: string): EmbeddingModel;
   getProvider(id: string): ModelProvider | undefined;
   listProviders(): string[];
-  listModels(providerId?: string): ModelEntry[];
+  listChatModels(): Array<{ fullId: string; config: ChatModelConfig }>;
+  listEmbeddingModels(): Array<{ fullId: string; config: EmbeddingModelConfig }>;
 }
 
 export function parseModelId(fullId: string): { provider: string; model: string } | null {
   const idx = fullId.indexOf(":");
   if (idx <= 0) return null;
   return { provider: fullId.slice(0, idx), model: fullId.slice(idx + 1) };
+}
+
+export function formatModelId(providerId: string, modelId: string): ModelId {
+  return `${providerId}:${modelId}`;
 }

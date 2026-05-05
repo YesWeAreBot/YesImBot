@@ -1,5 +1,5 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
-import type { ModelEntry, ModelProvider } from "@yesimbot/shared-model";
+import type { ChatModelConfig, ModelProvider } from "@yesimbot/shared-model";
 import { Context, Schema } from "koishi";
 
 export const name = "yesimbot-provider-anthropic";
@@ -10,14 +10,14 @@ export interface Config {
   id: string;
   apiKey: string;
   baseURL?: string;
-  models: ModelEntry[];
+  chatModels: ChatModelConfig[];
 }
 
 export const Config = Schema.object({
   id: Schema.string().default("anthropic").description("提供商标识"),
   apiKey: Schema.string().role("secret").required().description("API Key"),
   baseURL: Schema.string().description("API Base URL"),
-  models: Schema.array(
+  chatModels: Schema.array(
     Schema.object({
       id: Schema.string().required().description("模型 ID"),
       toolCall: Schema.boolean().default(true).description("支持工具调用"),
@@ -28,7 +28,7 @@ export const Config = Schema.object({
       { id: "claude-3-5-sonnet", toolCall: true, reasoning: false },
       { id: "claude-3-opus", toolCall: true, reasoning: true },
     ])
-    .description("可用模型列表"),
+    .description("可用聊天模型列表"),
 });
 
 export function apply(ctx: Context, config: Config) {
@@ -39,8 +39,16 @@ export function apply(ctx: Context, config: Config) {
 
   const provider: ModelProvider = {
     id: config.id,
+    capabilities: {
+      chat: true,
+      embedding: false,
+    },
+    chatModels: () => config.chatModels,
+    embeddingModels: () => [],
     chat: (modelId) => client.chat(modelId),
-    models: () => config.models,
+    embedding: () => {
+      throw new Error(`Provider "${config.id}" does not support embedding`);
+    },
   };
 
   ctx["yesimbot.model"].register(provider);

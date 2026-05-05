@@ -1,5 +1,10 @@
 import { createDeepSeek } from "@ai-sdk/deepseek";
-import type { ModelEntry, ModelProvider } from "@yesimbot/shared-model";
+import {
+  defaultSettingsMiddleware,
+  wrapLanguageModel,
+  type ChatModelConfig,
+  type ModelProvider,
+} from "@yesimbot/shared-model";
 import { Context, Schema } from "koishi";
 
 import enUS from "./locales/en-US.json";
@@ -13,14 +18,14 @@ export interface Config {
   id: string;
   apiKey: string;
   baseURL?: string;
-  models: ModelEntry[];
+  chatModels: ChatModelConfig[];
 }
 
 export const Config = Schema.object({
   id: Schema.string().default("deepseek").description("提供商标识"),
   apiKey: Schema.string().role("secret").required().description("API Key"),
   baseURL: Schema.string().description("API Base URL"),
-  models: Schema.array(
+  chatModels: Schema.array(
     Schema.object({
       id: Schema.string().required().description("模型 ID"),
       toolCall: Schema.boolean().default(true).description("支持工具调用"),
@@ -30,8 +35,10 @@ export const Config = Schema.object({
     .default([
       { id: "deepseek-chat", toolCall: true, reasoning: false },
       { id: "deepseek-reasoner", toolCall: true, reasoning: true },
+      { id: "deepseek-v4-flash", toolCall: true, reasoning: true },
+      { id: "deepseek-v4-pro", toolCall: true, reasoning: true },
     ])
-    .description("可用模型列表"),
+    .description("可用聊天模型列表"),
 }).i18n({
   "en-US": enUS._config,
   "zh-CN": zhCN._config,
@@ -45,8 +52,34 @@ export function apply(ctx: Context, config: Config) {
 
   const provider: ModelProvider = {
     id: config.id,
-    chat: (modelId) => client.chat(modelId),
-    models: () => config.models,
+    capabilities: {
+      chat: true,
+      embedding: false,
+    },
+    chatModels: () => config.chatModels,
+    embeddingModels: () => [],
+    chat: (modelId) => {
+      return wrapLanguageModel({
+        model: client.chat(modelId),
+        middleware: [
+          defaultSettingsMiddleware({
+            settings: {
+              providerOptions: {
+                [config.id]: {
+                  reasoning_effort: "high",
+                  thinking: {
+                    type: "enabled",
+                  },
+                },
+              },
+            },
+          }),
+        ],
+      });
+    },
+    embedding: () => {
+      throw new Error(`Provider "${config.id}" does not support embedding`);
+    },
   };
 
   ctx["yesimbot.model"].register(provider);
