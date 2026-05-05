@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Core**: `AthenaEvent` / `AthenaMessage` / `CustomMessage` message type chain
 - **Core**: `ExtensionRegistry` wired in core runtime, exposed to Koishi context
 - **Tool**: `tool-utils` extension for weather information (example extension)
+- Third-party notice (NOTICE) attributing code from `pi-mono` (MIT)
 
 ### Changed
 
@@ -51,6 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Agent**: `setAutoRetryEnabled()` / `autoRetryEnabled` now reads from `_retrySettings` instead of no-op/hardcoded
 - **Agent**: Retry enabled check restored in `_createRetryablePromiseForAgentEnd`
 - **Agent**: `setSteeringMode()` / `setFollowUpMode()` cleaned of dead `settingsManager` comments
+- Corrected truncated wording in the project’s MIT License declaration
 
 ## [4.0.0-beta.5] - 2026-03-17
 
