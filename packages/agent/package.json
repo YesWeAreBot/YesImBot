@@ -1,0 +1,44 @@
+{
+  "name": "@yesimbot/agent",
+  "version": "0.1.0-beta.1",
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.cjs"
+    },
+    "./agent": {
+      "types": "./dist/agent/index.d.ts",
+      "require": "./dist/agent/index.cjs"
+    },
+    "./session": {
+      "types": "./dist/session/index.d.ts",
+      "require": "./dist/session/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "build": "npx pkgroll --clean-dist --sourcemap=inline",
+    "check-types": "tsc --noEmit",
+    "clean": "rimraf .turbo && rimraf dist && rimraf tsconfig.tsbuildinfo",
+    "pub": "yarn npm publish --access public",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ai-sdk-tool/parser": "^4.1.21",
+    "@ai-sdk/provider-utils": "^4.0.0",
+    "ai": "^6.0.0"
+  },
+  "devDependencies": {
+    "vitest": "^4.0.18"
+  }
+}
