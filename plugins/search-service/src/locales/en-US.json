@@ -1,9 +1,0 @@
-{
-  "_config": {
-    "provider": "Search backend provider to use",
-    "apiKey": "API key for the search backend",
-    "endpoint": "Endpoint URL for the search backend",
-    "defaultLimit": "Default number of search results to return",
-    "jinaApiKey": "API key for Jina AI Reader, used in the fetch tool"
-  }
-}
