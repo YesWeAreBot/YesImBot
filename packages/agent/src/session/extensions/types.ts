@@ -68,7 +68,8 @@ export interface ExtensionContext {
 /**
  * Tool definition for registerTool().
  */
-export type ToolDefinition = AgentTool & {
+/* prettier-ignore */
+export type ToolDefinition<INPUT = unknown, OUTPUT = unknown, DETAILS = never> = AgentTool<INPUT, OUTPUT, DETAILS> & {
   name: string;
   /** Optional one-line snippet for the Available tools section in the default system prompt. Custom tools are omitted from that section when this is not provided. */
   promptSnippet?: string;
@@ -364,7 +365,8 @@ export interface ExtensionAPI {
   // =========================================================================
 
   /** Register a tool that the LLM can call. */
-  registerTool(tool: ToolDefinition): void;
+  /* prettier-ignore */
+  registerTool<INPUT = unknown, OUTPUT = ToolResultOutput, DETAILS = never>(tool: ToolDefinition<INPUT, OUTPUT, DETAILS>): void;
 
   // =========================================================================
   // Actions

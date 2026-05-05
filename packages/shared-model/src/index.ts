@@ -1,8 +1,8 @@
-import type {} from "koishi";
+import type {} from "@koishijs/core";
 
 import type { ModelRegistry } from "./types";
 
-declare module "koishi" {
+declare module "@koishijs/core" {
   interface Context {
     "yesimbot.model": ModelRegistry;
   }
@@ -15,10 +15,10 @@ export {
   defaultSettingsMiddleware,
   extractJsonMiddleware,
   extractReasoningMiddleware,
+  jsonSchema,
   simulateStreamingMiddleware,
   wrapLanguageModel,
   wrapProvider,
 } from "ai";
 export type { LanguageModel, LanguageModelMiddleware } from "ai";
-
 export * from "./types";

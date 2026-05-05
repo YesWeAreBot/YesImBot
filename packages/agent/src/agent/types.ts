@@ -65,7 +65,8 @@ export interface AfterToolCallContext {
   assistantMessage: AssistantMessage;
   toolCall: AgentToolCall;
   args: unknown;
-  result: AgentToolResult<unknown>;
+  result: AgentToolResult;
+  rawResult: unknown;
   isError: boolean;
   context: AgentContext;
 }
@@ -111,13 +112,19 @@ export interface AgentState {
   readonly errorMessage?: string;
 }
 
-export interface AgentToolResult<T> {
+/** 工具执行返回值类型 */
+export type ToolExecuteReturn<OUTPUT, DETAILS = never> = [DETAILS] extends [never]
+  ? OUTPUT
+  : OUTPUT | { output: OUTPUT; details: DETAILS };
+
+/** 归一化后的工具结果 */
+export interface AgentToolResult<T = unknown> {
   content: ToolResultOutput;
-  details: T;
-  terminate?: boolean;
+  details?: T;
 }
 
-export type AgentTool<INPUT = unknown, OUTPUT = unknown> = Tool<INPUT, OUTPUT>;
+/* prettier-ignore */
+export type AgentTool<INPUT = unknown, OUTPUT = unknown, DETAILS = never> = Tool<INPUT, ToolExecuteReturn<OUTPUT, DETAILS>>;
 
 export interface AgentContext {
   systemPrompt: string;
@@ -138,6 +145,6 @@ export type AgentEvent =
       type: "tool_execution_end";
       toolCallId: string;
       toolName: string;
-      result: AgentToolResult<unknown>;
+      result: AgentToolResult;
       isError: boolean;
     };

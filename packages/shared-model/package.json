@@ -27,6 +27,7 @@
     "pub": "yarn npm publish --access public"
   },
   "dependencies": {
+    "@ai-sdk-tool/parser": "^4.1.0",
     "@ai-sdk/provider": "^3.0.0",
     "ai": "^6.0.0",
     "zod": "^3.25.76"

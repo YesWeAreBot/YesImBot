@@ -17,7 +17,7 @@
       "dependsOn": ["//#lint:fix", "//#fmt:fix"]
     },
     "build": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["check-types", "^build"],
       "outputs": ["dist/**", "lib/**"]
     },
     "check-types": {

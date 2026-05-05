@@ -1,7 +1,14 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
-import { ImagePart, LanguageModel, TextPart } from "ai";
+import { LanguageModelV3 } from "@yesimbot/shared-model";
+import {
+  ImagePart,
+  LanguageModel,
+  TextPart,
+  wrapLanguageModel,
+  type LanguageModelMiddleware,
+} from "ai";
 
 import { Agent } from "../agent/agent.js";
 import {
@@ -286,6 +293,42 @@ export class AgentSession {
     this.agent.transformContext = async (messages, _signal) => {
       return this._extensionRunner.emitContextBuild(messages);
     };
+
+    // Wire provider:before-request hook: wrap model with middleware
+    this._wrapModelForProviderEvents();
+  }
+
+  /**
+   * Wrap the agent's model with middleware that calls emitBeforeProviderRequest
+   * before each provider request, allowing extensions to inspect/modify the request.
+   */
+  private _wrapModelForProviderEvents(): void {
+    const self = this;
+    const middleware: LanguageModelMiddleware = {
+      specificationVersion: "v3",
+      wrapStream: async (options) => {
+        const runner = self._extensionRunner;
+        if (runner) {
+          try {
+            const modified = await runner.emitBeforeProviderRequest(options.params);
+            if (modified && typeof modified === "object") {
+              options = { ...options, params: modified as typeof options.params };
+            }
+          } catch (err) {
+            runner.emitError({
+              event: "provider:before-request",
+              error: err instanceof Error ? err.message : String(err),
+              stack: err instanceof Error ? err.stack : undefined,
+            });
+          }
+        }
+        return options.doStream();
+      },
+    };
+    this.agent.state.model = wrapLanguageModel({
+      model: this.agent.state.model as LanguageModelV3,
+      middleware,
+    });
   }
 
   /**
@@ -1655,19 +1698,19 @@ export class AgentSession {
     // base tools
     for (const [name, tool] of this._baseToolDefinitions) {
       if (isAllowedTool(name)) {
-        toolRegistry.set(name, tool as AgentTool);
+        toolRegistry.set(name, tool);
       }
     }
 
     // extension tools
     for (const [name, tool] of extensionTools) {
-      toolRegistry.set(name, tool as AgentTool);
+      toolRegistry.set(name, tool);
     }
 
     // custom tools
     for (const [name, tool] of this._customTools) {
       if (isAllowedTool(name)) {
-        toolRegistry.set(name, tool as AgentTool);
+        toolRegistry.set(name, tool);
       }
     }
 

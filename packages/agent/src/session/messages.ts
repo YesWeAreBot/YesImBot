@@ -1,6 +1,5 @@
-import type { ImagePart, TextPart, UserContent } from "@ai-sdk/provider-utils";
-
-import { AgentMessage, Message } from "../agent/types";
+import type { UserContent } from "@ai-sdk/provider-utils";
+import type { AgentMessage, Message } from "@yesimbot/agent";
 
 // #region ATHENA
 
@@ -32,7 +31,7 @@ export interface CompactionSummaryMessage {
   timestamp: number;
 }
 
-declare module "../agent/types" {
+declare module "@yesimbot/agent" {
   interface CustomAgentMessages {
     custom: CustomMessage;
     compactionSummary: CompactionSummaryMessage;

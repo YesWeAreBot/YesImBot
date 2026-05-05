@@ -481,13 +481,10 @@ export class ExtensionRunner {
    * Invalidates old bindings, increments generation, creates new bindings.
    */
   async reload(definitions: ExtensionDefinition[]): Promise<void> {
-    // 1. Invalidate old bindings
-    this.invalidate("reload");
-
-    // 2. generation++
+    // 1. generation++ (old bindings become stale by generation mismatch)
     this._currentGeneration++;
 
-    // 3. Dispose old bindings
+    // 2. Dispose old bindings
     for (const binding of this.bindings) {
       try {
         await binding.cleanup?.dispose?.();
@@ -496,7 +493,8 @@ export class ExtensionRunner {
       }
     }
 
-    // 4. Create new bindings
+    // 3. Create new bindings (runtime must NOT be invalidated here,
+    //    because setup() calls registerTool/on which call runtime.assertActive())
     const newBindings: ExtensionBinding[] = [];
     const sorted = [...definitions].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
     for (const def of sorted) {
@@ -517,7 +515,7 @@ export class ExtensionRunner {
       }
     }
 
-    // 5. Replace bindings
+    // 4. Replace bindings
     this.bindings = newBindings;
   }
 
@@ -526,7 +524,6 @@ export class ExtensionRunner {
    * Uses createExtensionBindingSync.
    */
   reloadSync(definitions: ExtensionDefinition[]): void {
-    this.invalidate("reload");
     this._currentGeneration++;
 
     for (const binding of this.bindings) {

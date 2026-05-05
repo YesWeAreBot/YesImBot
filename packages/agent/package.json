@@ -34,7 +34,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@ai-sdk-tool/parser": "^4.1.21",
     "@ai-sdk/provider-utils": "^4.0.0",
     "ai": "^6.0.0"
   },

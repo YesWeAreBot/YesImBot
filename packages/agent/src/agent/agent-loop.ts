@@ -1,5 +1,5 @@
-import { safeValidateTypes, type TextPart } from "@ai-sdk/provider-utils";
-import { streamText, type ToolSet } from "ai";
+import { safeValidateTypes, ToolResultOutput, type TextPart } from "@ai-sdk/provider-utils";
+import { JSONValue, streamText, type ToolSet } from "ai";
 
 import { EventStream } from "./event-stream.js";
 import type {
@@ -354,7 +354,8 @@ async function executeToolCalls(
       args: rawArgs,
     });
 
-    let result: AgentToolResult<unknown>;
+    let result: AgentToolResult;
+    let rawResult: unknown;
     let isError = false;
     let args = rawArgs;
 
@@ -401,12 +402,13 @@ async function executeToolCalls(
       isError = true;
     } else {
       try {
-        result = await tool.execute(args, {
+        rawResult = await tool.execute(args, {
           toolCallId: toolCall.toolCallId,
           messages: await config.convertToLlm(currentContext.messages),
           abortSignal: signal,
           experimental_context: contextSnapshot,
         });
+        result = normalizeToolResult(rawResult);
       } catch (error) {
         result = createErrorToolResult(stringifyError(error));
         isError = true;
@@ -414,16 +416,24 @@ async function executeToolCalls(
     }
 
     const after = await config.afterToolCall?.(
-      { assistantMessage, toolCall, args, result, isError, context: contextSnapshot },
+      {
+        assistantMessage,
+        toolCall,
+        args,
+        result,
+        rawResult,
+        isError,
+        context: contextSnapshot,
+      },
       signal,
     );
 
-    const finalResult: AgentToolResult<unknown> = {
+    const finalResult: AgentToolResult = {
       content: after?.content ?? result.content,
       details: after?.details ?? result.details,
-      terminate: after?.terminate ?? result.terminate,
     };
     const finalIsError = after?.isError ?? isError;
+    const terminate = after?.terminate ?? false;
 
     await emit({
       type: "tool_execution_end",
@@ -438,7 +448,7 @@ async function executeToolCalls(
     await emit({ type: "message_end", message: toolMessage });
 
     finalizedCalls.push(toolMessage);
-    terminateVotes.push(finalResult.terminate === true);
+    terminateVotes.push(terminate);
     currentContext.messages.push(toolMessage);
   }
 
@@ -475,17 +485,14 @@ function createContextSnapshot(context: AgentContext): AgentContext {
   };
 }
 
-function createErrorToolResult(message: string): AgentToolResult<unknown> {
+function createErrorToolResult(message: string): AgentToolResult {
   return {
     content: { type: "error-text", value: message },
     details: message,
   };
 }
 
-function createToolResultMessage(
-  toolCall: AgentToolCall,
-  result: AgentToolResult<unknown>,
-): ToolMessage {
+function createToolResultMessage(toolCall: AgentToolCall, result: AgentToolResult): ToolMessage {
   return {
     role: "tool",
     content: [
@@ -511,4 +518,41 @@ function stringifyError(error: unknown): string {
     return "Unknown error";
   }
   return String(error);
+}
+
+/** 将工具返回值归一化为 AgentToolResult */
+export function normalizeToolResult(result: unknown): AgentToolResult {
+  if (
+    result !== null &&
+    typeof result === "object" &&
+    "output" in result &&
+    "details" in result &&
+    !("type" in result)
+  ) {
+    return {
+      content: toToolResultOutput((result as { output: unknown }).output),
+      details: (result as { details: unknown }).details,
+    };
+  }
+  return {
+    content: toToolResultOutput(result),
+  };
+}
+
+function toToolResultOutput(output: unknown): ToolResultOutput {
+  if (typeof output === "string") {
+    return { type: "text", value: output };
+  }
+  if (output && typeof output === "object" && "type" in output) {
+    const obj = output as { type: string; value?: unknown };
+    if (
+      (obj.type === "text" || obj.type === "json" || obj.type === "execution-denied") &&
+      "value" in obj
+    ) {
+      return output as ToolResultOutput;
+    }
+    const { type: _, ...rest } = obj;
+    return { type: "json", value: rest as JSONValue };
+  }
+  return { type: "json", value: output as JSONValue };
 }
