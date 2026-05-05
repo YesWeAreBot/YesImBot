@@ -39,7 +39,7 @@ interface CustomMessages {
   group_notice: GroupNotice;
 }
 
-type AthenaMessage = CustomMessages[keyof CustomMessages];
+export type AthenaMessage = CustomMessages[keyof CustomMessages];
 
 export function sendAthenaMessage(
   session: AgentSession,

@@ -4,19 +4,18 @@ Koishi 4.x plugin monorepo for building personality-driven LLM chat agents.
 
 ## Documentation Index
 
-- Project constitution: `.specify/memory/constitution.md`
 - Project working context: `AGENTS.md`
-- Architecture overview: `.planning/codebase/ARCHITECTURE.md`
-- Codebase conventions: `.planning/codebase/CONVENTIONS.md`
-- Testing patterns: `.planning/codebase/TESTING.md`
-- Milestone and roadmap context: `.planning/PROJECT.md`, `.planning/ROADMAP.md`
+- Roadmap: `ROADMAP.md`
+- Vision & evolution notes: `docs/2026-05-04-athena-v4-vision-and-evolution-notes.md`
+- Design specs: `docs/superpowers/specs/`
+- Implementation plans: `docs/superpowers/plans/`
 
 ## Workspace Layout
 
 - `core/`: main runtime plugin and services
+- `packages/agent/`: agent loop, session management, extension system
 - `packages/shared-model/`: shared model/provider types
 - `providers/`: model provider integrations
-- `plugins/`: optional extensions
 - `references/`: previous versions and design references
 
 ## Common Commands
@@ -26,6 +25,6 @@ yarn build
 yarn check-types
 yarn test
 yarn turbo run test --filter=koishi-plugin-yesimbot
-yarn turbo run check-types --filter=@yesimbot/plugin-sdk
+yarn turbo run check-types --filter=@yesimbot/agent
 yarn lint
 ```

@@ -7,10 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Agent**: New `@yesimbot/agent` package — standalone agent loop, session management, and extension framework
+- **Agent**: `normalizeToolResult` function for unified tool return value normalization
+- **Agent**: `ToolExecuteReturn<OUTPUT, DETAILS>` three-generic-parameter type design
+- **Agent**: `RetrySettings` interface and `AgentSessionConfig` extension with configurable compaction, retry, system prompt, and steering mode
+- **Agent**: `ExtensionRegistry` (global) + `ExtensionRunner` (per-session) extension system with hot reload, stale guard, and generation tracking
+- **Agent**: `ExtensionDefinition` / `ExtensionBinding` / `ExtensionAPI` / `ExtensionCleanup` type contracts
+- **Agent**: Event model unified to `domain:action` naming (`session:start`, `agent:before-start`, `tool:call`, `context:build`, etc.)
+- **Agent**: `context:build` hook for per-LLM-call message array modification
+- **Agent**: `agent:before-start` hook for system prompt and message injection
+- **Core**: `AthenaEvent` / `AthenaMessage` / `CustomMessage` message type chain
+- **Core**: `ExtensionRegistry` wired in core runtime, exposed to Koishi context
+- **Tool**: `tool-utils` extension for weather information (example extension)
+
 ### Changed
 
-- **Boundary**: Hard-removed `koishi-plugin-yesimbot/services/*` package exports; plugin authoring now uses `@yesimbot/plugin-sdk/tools`, `@yesimbot/plugin-sdk/hooks`, and `@yesimbot/plugin-sdk/skills`
-- **Runtime**: Narrowed `core/src/services/plugin` barrel to runtime-facing exports and removed authoring decorator re-exports
+- **Architecture**: Complete v4 rewrite — `packages/agent` as generic framework, `core` as Athena business layer, `providers/*` as model backends, `plugins/*` as extensions
+- **Agent**: `AgentSession` constructor accepts `extensions: ExtensionDefinition[]` from core
+- **Agent**: `_refreshToolRegistry` restored from placeholder — merges base + extension + custom tools
+- **Agent**: `getAllTools()` / `getToolDefinition()` restored from empty/commented implementation
+- **Agent**: Compaction defaults changed from 8000/10000 to 16384/20000 (aligned with pi-mono reference)
+- **Agent**: Retry defaults changed from `baseDelayMs: 1000` to `baseDelayMs: 2000` (aligned with pi-mono reference)
+- **Agent**: Context window no longer hardcoded to 128000 — reads from `model.contextWindow` with 128000 fallback
+- **Core**: Model service refactored to ai-sdk based Provider plugin architecture
+- **Core**: Message handling refactored with `convertToLlm` logic for `AthenaMessage` type
+- **Providers**: Updated for new agent architecture and shared-model contracts
+
+### Removed
+
+- **Agent**: `@yesimbot/plugin-sdk` package — incompatible with new Extension system
+- **Agent**: `setModel()` / `removeTool()` / `refreshTools()` from `ExtensionAPI` (internal to runner)
+- **Agent**: pi-coding-agent residual types: `SessionBeforeSwitchEvent`, `SessionBeforeForkEvent`, `SessionBeforeTreeEvent`, `ModelSelectEvent`, `ExtensionFactory`
+- **Agent**: `settingsManager` dependency — all settings now injected via `AgentSessionConfig`
+- **Core**: Legacy session service and related tests
+- **Plugins**: Removed legacy plugins: `mcp-client`, `search-service`, `skill`, `workspace` (to be re-implemented on new Extension system)
+- **Legacy**: Removed legacy timeline types, HorizonView/Scenario contracts, trait modules
+
+### Fixed
+
+- **Agent**: `setAutoCompactionEnabled()` / `autoCompactionEnabled` now reads from `compactionSettings` instead of no-op/hardcoded
+- **Agent**: `setAutoRetryEnabled()` / `autoRetryEnabled` now reads from `_retrySettings` instead of no-op/hardcoded
+- **Agent**: Retry enabled check restored in `_createRetryablePromiseForAgentEnd`
+- **Agent**: `setSteeringMode()` / `setFollowUpMode()` cleaned of dead `settingsManager` comments
 
 ## [4.0.0-beta.5] - 2026-03-17
 

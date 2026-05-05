@@ -3,14 +3,16 @@ import { resolve } from "node:path";
 
 import {
   Agent,
+  AgentMessage,
   AgentSession,
   convertToLlm,
   ExtensionRegistry,
   SessionManager,
 } from "@yesimbot/agent";
+import { jsonSchema } from "@yesimbot/shared-model";
 import { Bot, Context, Logger, Schema } from "koishi";
 
-import { ChatMessage, sendAthenaMessage } from "./messages";
+import { AthenaMessage, ChatMessage, sendAthenaMessage } from "./messages";
 import { ModelService, ModelServiceConfig } from "./services/model";
 
 interface Config extends ModelServiceConfig {
@@ -51,6 +53,39 @@ class Runtime {
   }
 
   private async start() {
+    const ctx = this.ctx;
+    this.extensionRegistry.add({
+      id: "tool-utils",
+      setup(api) {
+        ctx.logger.info("Setting up tool-utils extension");
+        api.registerTool<{ city: string; unit: string }>({
+          name: "get_weather",
+          description: "Get weather information for a location",
+          inputSchema: jsonSchema({
+            type: "object",
+            properties: {
+              city: { type: "string", description: "City name" },
+              unit: { type: "string", enum: ["C", "F"], description: "Temperature unit" },
+            },
+            required: ["city"],
+          }),
+          execute: async ({ city, unit }) => {
+            ctx.logger.info(`Executing get_weather tool with city=${city} and unit=${unit}`);
+            // Mock implementation - replace with real API call
+            const temp = city === "New York" ? 25 : 30;
+            const tempStr = unit === "F" ? `${temp * 1.8 + 32} °F` : `${temp} °C`;
+            return {
+              type: "text",
+              value: `The current temperature in ${city} is ${tempStr}.`,
+            };
+          },
+        });
+
+        api.on("provider:before-request", ({ type, payload }) => {
+          console.log(payload);
+        });
+      },
+    });
     if (!this.config.chatModel) {
       this.ctx.logger.error("No chat model specified in config");
       return;
@@ -70,7 +105,36 @@ class Runtime {
       if (!channels.has(cid)) {
         const agent = new Agent({
           model: chatModel.model,
-          convertToLlm: convertToLlm,
+          convertToLlm: (messages) => {
+            let llmMessages: AgentMessage[] = [];
+            for (const message of messages) {
+              if (message.role === "custom") {
+                let athenaMessage = message as AthenaMessage;
+                switch (athenaMessage.customType) {
+                  case "chat_message":
+                    llmMessages.push({
+                      role: "user",
+                      content: `${athenaMessage.details.senderName || athenaMessage.details.senderId} said: ${athenaMessage.content}`,
+                      timestamp: message.timestamp,
+                    });
+                    break;
+                  case "group_notice":
+                    llmMessages.push({
+                      role: "user",
+                      content: athenaMessage.content,
+                      timestamp: message.timestamp,
+                    });
+                    break;
+                  default:
+                    llmMessages.push(message);
+                    break;
+                }
+              } else {
+                llmMessages.push(message);
+              }
+            }
+            return convertToLlm(llmMessages);
+          },
         });
         const platform = session.platform;
         const channelId = session.channelId!;
@@ -79,6 +143,7 @@ class Runtime {
           agent,
           sessionManager,
           extensions: this.extensionRegistry.getAll(),
+          customSystemPrompt: `你现在正在${platform}的频道${channelId}中与用户进行对话。请根据用户的输入生成回复，并在需要时调用工具。`,
         });
         this.extensionRegistry.registerRunner(agentSession.extensionRunner);
 
@@ -95,44 +160,54 @@ class Runtime {
             case "agent_start":
               break;
             case "agent_end": {
-              for (const message of event.messages) {
-                if (message.role === "assistant") {
-                  const textContent = message.content
-                    .filter((part) => part.type === "text")
-                    .map((part) => part.text)
-                    .join("");
-                  const reasoningContent = message.content
-                    .filter((part) => part.type === "reasoning")
-                    .map((part) => part.text)
-                    .join("");
-
-                  if (reasoningContent) {
-                    this.logger.info(`Agent reasoning:\n${reasoningContent}`);
-                    sessionContext.bot.sendMessage(
-                      sessionContext.channelId,
-                      `[Reasoning]\n${reasoningContent}`,
-                    );
-                  }
-                  if (textContent) {
-                    this.logger.info(`Agent response:\n${textContent}`);
-                    sessionContext.bot.sendMessage(sessionContext.channelId, textContent);
-                  }
-                }
-              }
               break;
             }
             case "turn_start":
+              break;
             case "turn_end":
+              break;
             case "message_start":
+              break;
             case "message_update":
-            case "message_end":
+              break;
+            case "message_end": {
+              if (event.message.role === "assistant") {
+                const textContent = event.message.content
+                  .filter((part) => part.type === "text")
+                  .map((part) => part.text)
+                  .join("");
+                const reasoningContent = event.message.content
+                  .filter((part) => part.type === "reasoning")
+                  .map((part) => part.text)
+                  .join("");
+
+                if (reasoningContent) {
+                  this.logger.info(`Agent reasoning:\n${reasoningContent}`);
+                  sessionContext.bot.sendMessage(
+                    sessionContext.channelId,
+                    `[Reasoning]\n${reasoningContent}`,
+                  );
+                }
+                if (textContent) {
+                  this.logger.info(`Agent response:\n${textContent}`);
+                  sessionContext.bot.sendMessage(sessionContext.channelId, textContent);
+                }
+              }
+            }
             case "tool_execution_start":
+              break;
             case "tool_execution_end":
+              break;
             case "queue_update":
+              break;
             case "compaction_start":
+              break;
             case "compaction_end":
+              break;
             case "auto_retry_start":
+              break;
             case "auto_retry_end":
+              break;
           }
         });
         channels.set(cid, sessionContext);

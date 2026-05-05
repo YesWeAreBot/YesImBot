@@ -2,14 +2,12 @@
 
 ## Project Overview
 
-Athena is a Yarn 4 monorepo for Koishi-based LLM chat agents.
+Athena is a Yarn 4 monorepo for Koishi-based LLM chat agents. Long-term goal: evolve from group chat agent into a persistent, perceptive, autonomous digital entity.
 
-- `core/` is the main `koishi-plugin-yesimbot` runtime.
-- `packages/agent/` owns the agent loop, session management, and compaction logic (`@yesimbot/agent`).
+- `core/` is the main `koishi-plugin-yesimbot` runtime — business logic, Koishi integration, message conversion.
+- `packages/agent/` owns the agent loop, session management, compaction, and extension system (`@yesimbot/agent`).
 - `packages/shared-model/` defines cross-package model/provider contracts.
-- `packages/plugin-sdk/` defines the plugin/tool registration API used by optional integrations.
 - `providers/*` register model backends into `ctx["yesimbot.model"]`.
-- `plugins/*` register optional tools and integrations into the runtime.
 
 ## Working Rules
 
@@ -58,23 +56,19 @@ yarn workspace @yesimbot/agent exec vitest run tests/session/compaction.test.ts 
 
 - `core/src/index.ts` wires `ModelService` and `Runtime`. Runtime creates one `AgentSession` per `platform:channelId` on first message.
 - `@yesimbot/agent` (`packages/agent/`) owns `Agent`, `AgentSession`, `SessionManager`, and the agent loop (`packages/agent/src/agent/`).
+- Extension system: `ExtensionRegistry` (global, in core) manages definitions; `ExtensionRunner` (per-session, in agent) manages bindings. Extensions register tools, subscribe to lifecycle events, inject context, and modify system prompts.
 - `AgentSession.subscribe()` emits events (`agent_start`, `agent_end`, `turn_start`, `tool_execution_*`, etc.).
 - Provider packages expose Koishi plugins from `providers/*/src/index.ts`; optional integrations do the same from `plugins/*/src/index.ts`.
-- Shared contracts belong in `packages/shared-model` or `packages/plugin-sdk` before wiring them into `core`.
+- Shared contracts belong in `packages/shared-model` before wiring them into `core`.
 
 ## Workspace Package Names
 
-| Directory                 | npm name                                |
-| ------------------------- | --------------------------------------- |
-| `core/`                   | `koishi-plugin-yesimbot`                |
-| `packages/agent/`         | `@yesimbot/agent`                       |
-| `packages/shared-model/`  | `@yesimbot/shared-model`                |
-| `packages/plugin-sdk/`    | `@yesimbot/plugin-sdk`                  |
-| `plugins/workspace/`      | `koishi-plugin-yesimbot-workspace`      |
-| `plugins/skill/`          | `koishi-plugin-yesimbot-skill`          |
-| `plugins/mcp-client/`     | `koishi-plugin-yesimbot-mcp-client`     |
-| `plugins/search-service/` | `koishi-plugin-yesimbot-search-service` |
-| `plugins/bash/`           | `koishi-plugin-yesimbot-bash`           |
+| Directory                | npm name                       |
+| ------------------------ | ------------------------------ |
+| `core/`                  | `koishi-plugin-yesimbot`       |
+| `packages/agent/`        | `@yesimbot/agent`              |
+| `packages/shared-model/` | `@yesimbot/shared-model`       |
+| `plugins/skill/`         | `koishi-plugin-yesimbot-skill` |
 
 ## Context Files
 
@@ -83,7 +77,7 @@ Load on demand when deeper context is needed:
 - `@core/src/index.ts` — Koishi plugin entrypoint and runtime wiring.
 - `@packages/agent/src/agent/` — agent loop implementation.
 - `@packages/agent/src/session/` — session management and compaction.
-- `@packages/plugin-sdk/` — plugin/tool registration API.
+- `@packages/agent/src/session/extensions/` — extension system (types, runner, loader, registry).
 - `@packages/shared-model/` — cross-package model/provider type contracts.
 
 ## Reference Projects
