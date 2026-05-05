@@ -17,8 +17,7 @@
     "directory": "core"
   },
   "files": [
-    "dist",
-    "resources"
+    "dist"
   ],
   "type": "module",
   "main": "./dist/index.cjs",
@@ -35,20 +34,15 @@
     "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
-    "build": "npx pkgroll --sourcemap",
+    "build": "npx pkgroll --clean-dist --sourcemap",
     "check-types": "tsc --noEmit",
-    "clean": "rimraf dist && rimraf tsconfig.tsbuildinfo",
-    "fmt": "oxfmt",
-    "lint": "oxlint",
+    "clean": "rimraf .turbo && rimraf dist && rimraf tsconfig.tsbuildinfo",
     "pub": "yarn npm publish --access public",
     "test": "vitest run"
   },
   "dependencies": {
-    "@ai-sdk-tool/parser": "^4.1.19",
-    "@ai-sdk/provider-utils": "^4.0.0",
-    "@yesimbot/plugin-sdk": "workspace:^",
-    "@yesimbot/shared-model": "workspace:^",
-    "ai": "^6.0.0"
+    "@yesimbot/agent": "workspace:^",
+    "@yesimbot/shared-model": "workspace:^"
   },
   "devDependencies": {
     "@types/json-schema": "^7.0.15",
