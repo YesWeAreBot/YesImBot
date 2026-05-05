@@ -5,140 +5,106 @@
 Athena is a Yarn 4 monorepo for Koishi-based LLM chat agents.
 
 - `core/` is the main `koishi-plugin-yesimbot` runtime.
+- `packages/agent/` owns the agent loop, session management, and compaction logic (`@yesimbot/agent`).
 - `packages/shared-model/` defines cross-package model/provider contracts.
 - `packages/plugin-sdk/` defines the plugin/tool registration API used by optional integrations.
 - `providers/*` register model backends into `ctx["yesimbot.model"]`.
 - `plugins/*` register optional tools and integrations into the runtime.
 
-## Context Files
-
-Load these on demand when the task needs deeper context:
-
-- `@README.md` - top-level workspace summary and common root commands.
-- `@package.json` - root workspace scripts, workspace layout, lint-staged config, Yarn version.
-- `@core/package.json` - core package scripts; this is the only workspace package with a `test` script.
-- `@core/src/index.ts` - Koishi plugin entrypoint and top-level runtime config schema.
-- `@core/src/services/session/service.ts` - channel runtime ownership, middleware wiring, management commands.
-- `@core/src/services/model/service.ts` - model registry, `provider:modelId` resolution, model-related commands.
-- `@.planning/codebase/ARCHITECTURE.md` - verified runtime layering and data flow.
-- `@.planning/codebase/CONVENTIONS.md` - repo-specific TS/Koishi patterns already extracted from code.
-- `@.planning/codebase/TESTING.md` - focused Vitest commands and current test layout under `core/tests/session/`.
-- `@.planning/codebase/INTEGRATIONS.md` - provider/search/MCP integration inventory and where secrets live.
-- `@scripts/release.mjs` - interactive release flow and tag naming rules.
-
 ## Working Rules
 
 - Prefer communicating in Chinese unless the user asks otherwise.
-- This repo uses Yarn 4 with `nodeLinker: node-modules`; use `yarn`, not `pnpm` or `npm`.
+- This repo uses Yarn 4 (`nodeLinker: node-modules`); use `yarn`, not `pnpm` or `npm`.
 - Pre-commit runs `npx lint-staged`, which applies `oxlint --fix` and `oxfmt --write` to staged JS/TS and JSON files.
-- `dist/` directories exist as build output across packages; do not treat them as the primary source of truth.
+- `dist/` directories are build output; do not treat them as source of truth.
+- When updating or creating long files, write them in smaller chunks — the write tool can time out on oversized payloads.
+- `references/` and `node_modules/` are `.gitignore`-excluded. Tool-based file search (glob, grep, etc.) filters them by default. To read from these directories, always use **absolute paths** (e.g., `/home/workspace/Athena/references/...`).
 
 ## Build and Verification
 
 Use the narrowest command that proves your change.
 
 ```bash
-# root
+# full pipeline (CI order)
+yarn lint && yarn fmt:check && yarn check-types && yarn build && yarn test
+
+# root turbo shortcuts
 yarn lint
 yarn fmt:check
 yarn check-types
 yarn build
 yarn test
 
-# minimum turbo-targeted commands
+# package-scoped (always prefer turbo --filter for speed)
 yarn turbo run build --filter=koishi-plugin-yesimbot
-yarn turbo run test --filter=koishi-plugin-yesimbot
-yarn turbo run check-types --filter=@yesimbot/plugin-sdk
-
-# focused core checks
 yarn turbo run check-types --filter=koishi-plugin-yesimbot
 yarn turbo run test --filter=koishi-plugin-yesimbot
-yarn workspace koishi-plugin-yesimbot exec vitest run tests/session/session-restore.test.ts
-yarn workspace koishi-plugin-yesimbot exec vitest run tests/session/channel-agent-step-finish.test.ts -t "normalizes assistant reasoning blocks and usage metadata into AgentMessage payloads"
-
-# focused package checks
+yarn turbo run check-types --filter=@yesimbot/agent
+yarn turbo run test --filter=@yesimbot/agent
 yarn turbo run check-types --filter=@yesimbot/plugin-sdk
+
+# single test file
+yarn workspace @yesimbot/agent exec vitest run tests/agent/agent-loop.test.ts
+
+# single test by name pattern
+yarn workspace @yesimbot/agent exec vitest run tests/session/compaction.test.ts -t "compaction"
 ```
 
-- Follow CI order before claiming broad success: `yarn turbo run quality`, `yarn check-types`, `yarn build`, `yarn test`.
-- Root `yarn test` only runs workspaces that actually define a `test` script; currently that means `core`.
-- Prefer `yarn turbo run <task> --filter=<package>` for package-scoped build, test, and typecheck commands.
-- When changing runtime/session logic, start with the narrowest `core/tests/session/*.test.ts` target, then expand.
+- Root `yarn test` runs all workspaces with a `test` script; currently `core` and `packages/agent`.
+- `core` has no `tests/` directory yet; its vitest config exists but is empty. Tests live in `packages/agent/tests/`.
+- Turbo task `test` depends on `build` (see `turbo.json`). Run build first if type-checking or test resolution fails on workspace references.
 
-## Architecture Notes
+## Architecture
 
-- `core/src/index.ts` wires three long-lived services: `ModelService`, `PluginService`, and `AgentSessionService`.
-- `AgentSessionService` owns one runtime per `platform:channelId` and persists append-only session state under the configured workspace base path.
-- `attachedInstructionFiles` defaults to `SOUL.md`, `AGENTS.md`, and `PERSONA.md`; changes to instruction-loading behavior should be checked from `core/src/index.ts` and session resource-loading code.
+- `core/src/index.ts` wires `ModelService` and `Runtime`. Runtime creates one `AgentSession` per `platform:channelId` on first message.
+- `@yesimbot/agent` (`packages/agent/`) owns `Agent`, `AgentSession`, `SessionManager`, and the agent loop (`packages/agent/src/agent/`).
+- `AgentSession.subscribe()` emits events (`agent_start`, `agent_end`, `turn_start`, `tool_execution_*`, etc.).
 - Provider packages expose Koishi plugins from `providers/*/src/index.ts`; optional integrations do the same from `plugins/*/src/index.ts`.
 - Shared contracts belong in `packages/shared-model` or `packages/plugin-sdk` before wiring them into `core`.
 
-## File Reference
+## Workspace Package Names
 
-| File                                     | Purpose                                                              |
-| ---------------------------------------- | -------------------------------------------------------------------- |
-| `README.md`                              | High-level workspace summary and common commands                     |
-| `package.json`                           | Root scripts, workspace boundaries, lint-staged, Yarn version        |
-| `.yarnrc.yml`                            | Confirms Yarn 4 and `node-modules` linker                            |
-| `.oxlintrc.json`                         | Lint rules; notably `@typescript-eslint/no-explicit-any` is enforced |
-| `.oxfmtrc.json`                          | Formatter behavior and import/package.json sorting                   |
-| `.husky/pre-commit`                      | Pre-commit entrypoint (`npx lint-staged`)                            |
-| `core/src/index.ts`                      | Main Koishi plugin entry and config schema                           |
-| `core/src/services/session/service.ts`   | Channel bootstrapping, middleware, admin commands                    |
-| `core/src/services/model/service.ts`     | Model registry and `provider:modelId` resolution                     |
-| `packages/plugin-sdk/src/plugin.ts`      | Plugin authoring API for optional integrations                       |
-| `packages/plugin-sdk/src/tools/index.ts` | Tool metadata/decorator registration                                 |
-| `providers/openai/src/index.ts`          | Representative provider plugin entry                                 |
-| `plugins/search-service/src/index.ts`    | Representative optional tool plugin entry                            |
-| `plugins/mcp-client/src/index.ts`        | MCP integration entrypoint                                           |
-| `scripts/release.mjs`                    | Interactive version/tag bump flow; final push is manual              |
+| Directory                 | npm name                                |
+| ------------------------- | --------------------------------------- |
+| `core/`                   | `koishi-plugin-yesimbot`                |
+| `packages/agent/`         | `@yesimbot/agent`                       |
+| `packages/shared-model/`  | `@yesimbot/shared-model`                |
+| `packages/plugin-sdk/`    | `@yesimbot/plugin-sdk`                  |
+| `plugins/workspace/`      | `koishi-plugin-yesimbot-workspace`      |
+| `plugins/skill/`          | `koishi-plugin-yesimbot-skill`          |
+| `plugins/mcp-client/`     | `koishi-plugin-yesimbot-mcp-client`     |
+| `plugins/search-service/` | `koishi-plugin-yesimbot-search-service` |
+| `plugins/bash/`           | `koishi-plugin-yesimbot-bash`           |
 
-## File Editing
+## Context Files
 
-**IMPORTANT**
+Load on demand when deeper context is needed:
 
-- When updating or creating long files, write them in smaller chunks instead of one large write.
-- Prefer segmented writes for large content because the write tool can time out on oversized payloads.
+- `@core/src/index.ts` — Koishi plugin entrypoint and runtime wiring.
+- `@packages/agent/src/agent/` — agent loop implementation.
+- `@packages/agent/src/session/` — session management and compaction.
+- `@packages/plugin-sdk/` — plugin/tool registration API.
+- `@packages/shared-model/` — cross-package model/provider type contracts.
 
-## Communication
+## Reference Projects
 
-- Unless the user explicitly requests otherwise, prefer communicating in Chinese.
+`references/` 目录存放设计参考与文档，按需用绝对路径读取：
 
-## graphify
+| 目录                           | 用途                                                                               | 何时参考                                                             |
+| ------------------------------ | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `references/koishi-docs/zh-CN` | Koishi 官方中文文档（插件 API、Schema、数据库、沙盒等）                            | 开发 Koishi 插件、不确定 API 用法或配置 schema 时                    |
+| `references/pi-mono`           | Pi monorepo — 多 provider LLM API、agent runtime、coding agent CLI                 | 设计 agent loop、tool calling、多 provider 适配、monorepo 工程模式时 |
+| `references/plast-mem`         | Plast Mem — Rust 认知科学记忆层（情景/语义双层记忆、FSRS 衰减、事件分段）          | 实现记忆系统、会话分段、语义召回、compaction 策略时                  |
+| `references/CyberGroupmate`    | CyberGroupmate — CodeAct 群聊 Agent（氛围感知、三层记忆、反思引擎、NPM-as-skills） | 设计群聊行为、消息路由、CodeAct 执行、多模态处理、可视化面板时       |
 
-This project has a graphify knowledge graph at graphify-out/.
+## Subagents
 
-Rules:
+- ALWAYS wait for all subagents to complete before yielding.
+- Spawn subagents for parallelizable work, long-running tasks, or risky change isolation.
+- 如果需要，优先派发子代理进行研究
 
-- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
-- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
-- After modifying code files in this session, run `graphify update .` to keep the graph current (AST-only, no API cost)
+## 代码索引工具使用规范
 
-<!-- GSD:profile-start -->
-
-## Developer Profile
-
-> Generated by GSD from questionnaire. Run `/gsd-profile-user --refresh` to update.
-
-| Dimension      | Rating              | Confidence |
-| -------------- | ------------------- | ---------- |
-| Communication  | conversational      | MEDIUM     |
-| Decisions      | deliberate-informed | MEDIUM     |
-| Explanations   | educational         | MEDIUM     |
-| Debugging      | collaborative       | MEDIUM     |
-| UX Philosophy  | backend-focused     | MEDIUM     |
-| Vendor Choices | opinionated         | MEDIUM     |
-| Frustrations   | scope-creep         | MEDIUM     |
-| Learning       | documentation-first | MEDIUM     |
-
-**Directives:**
-
-- **Communication:** Use a natural conversational tone. Explain reasoning briefly alongside code. Engage with the developer's questions.
-- **Decisions:** Present options in a structured comparison table with pros/cons. Let the developer make the final call.
-- **Explanations:** Teach the underlying concepts and principles, not just the implementation. Relate new patterns to fundamentals.
-- **Debugging:** Walk through the debugging process step by step. Explain the investigation approach, not just the conclusion.
-- **UX Philosophy:** Optimize for developer experience (clear APIs, good error messages, helpful CLI output) over visual design.
-- **Vendor Choices:** Respect the developer's existing tool preferences. Ask before suggesting alternatives to their preferred stack.
-- **Frustrations:** Do exactly what is asked -- nothing more. Never add unrequested features, refactoring, or "improvements". Ask before expanding scope.
-- **Learning:** Link to official documentation and relevant sections. Structure explanations like reference material.
-<!-- GSD:profile-end -->
+- 优先使用 augment-context-engine_codebase-retrieval 索引本地代码
+- 使用 augment-context-engine_codebase-retrieval 索引 references 中被 .gitignore 排除的仓库，并将 directory_path 设置为对应仓库的绝对路径
+- 使用 deepwiki 研究第三方仓库，常用仓库列表 `badlogic/pi-mono`, `vercel/ai`

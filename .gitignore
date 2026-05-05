@@ -172,15 +172,9 @@ yarn-error.log
 # End of https://www.toptal.com/developers/gitignore/api/node,yarn,turbo,vuejs
 
 # Add here any additional files/directories you want to ignore in your project
-.agents/
 .claude/
 .opencode/
 .vscode/
 .worktrees/
 references/
 yarn.lock
-
-## graphify
-graphify-out/
-.graphify_*
-.ace-tool/

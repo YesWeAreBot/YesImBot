@@ -15,5 +15,6 @@
     "jsx": "react-jsx",
     "jsxImportSource": "@satorijs/element",
     "types": ["node"]
-  }
+  },
+  "exclude": ["dist", "node_modules", "references"]
 }

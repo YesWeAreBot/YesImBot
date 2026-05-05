@@ -1,11 +1,11 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
   "tasks": {
-    "//#fmt": {},
-    "//#fmt:fix": {
+    "//#fmt": {
       "cache": false,
       "dependsOn": ["//#lint:fix"]
     },
+    "//#fmt:check": {},
     "//#lint": {},
     "//#lint:fix": {
       "cache": false
