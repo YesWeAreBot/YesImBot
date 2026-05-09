@@ -15,6 +15,7 @@ import { Bot, Context, Logger, Schema, Service } from "koishi";
 
 import { AthenaMessage, ChatMessage } from "./messages";
 import { ModelService, ModelServiceConfig } from "./services/model";
+import { SessionService } from "./services/session";
 
 interface Config extends ModelServiceConfig {
   chatModel: string;
@@ -34,6 +35,7 @@ type ChannelKey = `${string}:${string}`;
 
 interface SessionContext {
   agentSession: AgentSession;
+  sessionManager: SessionManager;
   platform: string;
   channelId: string;
   bot: Bot;
@@ -84,8 +86,31 @@ export class ExtensionService extends Service {
   }
 }
 
+function convertAthenaMessages(messages: AgentMessage[]): AgentMessage[] {
+  return messages.map((message) => {
+    if (message.role === "custom" && message.customType === "athena:message") {
+      const athenaMessage = message as AthenaMessage;
+      switch (athenaMessage.details.kind) {
+        case "chat_message":
+          return {
+            ...message,
+            role: "user" as const,
+            content: `${athenaMessage.details.senderName || athenaMessage.details.senderId} said: ${athenaMessage.content}`,
+          };
+        case "group_notice":
+          return {
+            ...message,
+            role: "user" as const,
+            content: athenaMessage.content,
+          };
+      }
+    }
+    return message;
+  });
+}
+
 class RuntimeService extends Service {
-  static inject = ["yesimbot.model", "yesimbot.extension"];
+  static inject = ["yesimbot.model", "yesimbot.extension", "yesimbot.session"];
   readonly logger: Logger;
 
   constructor(
@@ -111,119 +136,118 @@ class RuntimeService extends Service {
     }
 
     const channels = new Map<ChannelKey, SessionContext>();
-    const sessionDir = resolve(this.config.basePath, "sessions");
-    const sessionManager = SessionManager.create(this.config.basePath, sessionDir);
+
+    const createSessionContext = (
+      platform: string,
+      channelId: string,
+      sessionManager: SessionManager,
+      bot: Bot,
+    ): SessionContext => {
+      const agent = new Agent({
+        model: chatModel.model,
+        convertToLlm: (messages) => convertToLlm(convertAthenaMessages(messages)),
+      });
+      const agentSession = new AgentSession({
+        cwd: this.config.basePath,
+        agent,
+        sessionManager,
+        extensions: this.ctx["yesimbot.extension"].getAllExtensions(),
+        customSystemPrompt: `你现在正在${platform}的频道${channelId}中与用户进行对话。请根据用户的输入生成回复，并在需要时调用工具。`,
+      });
+      this.ctx["yesimbot.extension"].registerRunner(agentSession.extensionRunner);
+
+      const sessionContext: SessionContext = {
+        agentSession,
+        sessionManager,
+        platform,
+        channelId,
+        bot,
+      };
+
+      agentSession.subscribe((event) => {
+        this.ctx.logger.info(`Agent event: ${event.type}`);
+        switch (event.type) {
+          case "agent_start":
+            break;
+          case "agent_end": {
+            break;
+          }
+          case "turn_start":
+            break;
+          case "turn_end":
+            break;
+          case "message_start":
+            break;
+          case "message_update":
+            break;
+          case "message_end": {
+            if (event.message.role === "assistant") {
+              const textContent = event.message.content
+                .filter((part) => part.type === "text")
+                .map((part) => part.text)
+                .join("");
+              const reasoningContent = event.message.content
+                .filter((part) => part.type === "reasoning")
+                .map((part) => part.text)
+                .join("");
+
+              if (reasoningContent) {
+                this.logger.info(`Agent reasoning:\n${reasoningContent}`);
+                sessionContext.bot.sendMessage(
+                  sessionContext.channelId,
+                  `[Reasoning]\n${reasoningContent}`,
+                );
+              }
+              if (textContent) {
+                this.logger.info(`Agent response:\n${textContent}`);
+                sessionContext.bot.sendMessage(sessionContext.channelId, textContent);
+              }
+            }
+          }
+          case "tool_execution_start":
+            break;
+          case "tool_execution_end":
+            break;
+          case "queue_update":
+            break;
+          case "compaction_start":
+            break;
+          case "compaction_end":
+            break;
+          case "auto_retry_start":
+            break;
+          case "auto_retry_end":
+            break;
+        }
+      });
+
+      return sessionContext;
+    };
+
+    this.ctx.on("session:new", async ({ platform, channelId, sessionManager }) => {
+      const key: ChannelKey = `${platform}:${channelId}`;
+      const existing = channels.get(key);
+      if (existing) {
+        existing.agentSession.dispose();
+        const newCtx = createSessionContext(platform, channelId, sessionManager, existing.bot);
+        channels.set(key, newCtx);
+        this.logger.info(`Session replaced for channel ${key}`);
+      }
+    });
 
     this.ctx.middleware(async (session, next) => {
       const cid = session.cid as ChannelKey;
       if (!channels.has(cid)) {
-        const agent = new Agent({
-          model: chatModel.model,
-          convertToLlm: (messages) => {
-            let llmMessages: AgentMessage[] = [];
-            for (const message of messages) {
-              if (message.role === "custom" && message.customType === "athena:message") {
-                let athenaMessage = message as AthenaMessage;
-                switch (athenaMessage.details.kind) {
-                  case "chat_message":
-                    llmMessages.push({
-                      role: "user",
-                      content: `${athenaMessage.details.senderName || athenaMessage.details.senderId} said: ${athenaMessage.content}`,
-                      timestamp: message.timestamp,
-                    });
-                    break;
-                  case "group_notice":
-                    llmMessages.push({
-                      role: "user",
-                      content: athenaMessage.content,
-                      timestamp: message.timestamp,
-                    });
-                    break;
-                  default:
-                    llmMessages.push(message);
-                    break;
-                }
-              } else {
-                llmMessages.push(message);
-              }
-            }
-            return convertToLlm(llmMessages);
-          },
-        });
-        const platform = session.platform;
-        const channelId = session.channelId!;
-        const agentSession = new AgentSession({
-          cwd: this.config.basePath,
-          agent,
+        const sessionManager = await this.ctx["yesimbot.session"].getOrCreate(
+          session.platform!,
+          session.channelId!,
+        );
+        const sessionContext = createSessionContext(
+          session.platform,
+          session.channelId!,
           sessionManager,
-          extensions: this.ctx["yesimbot.extension"].getAllExtensions(),
-          customSystemPrompt: `你现在正在${platform}的频道${channelId}中与用户进行对话。请根据用户的输入生成回复，并在需要时调用工具。`,
-        });
-        this.ctx["yesimbot.extension"].registerRunner(agentSession.extensionRunner);
-
-        const sessionContext: SessionContext = {
-          agentSession,
-          platform,
-          channelId,
-          bot: session.bot,
-        };
-
-        agentSession.subscribe((event) => {
-          this.ctx.logger.info(`Agent event: ${event.type}`);
-          switch (event.type) {
-            case "agent_start":
-              break;
-            case "agent_end": {
-              break;
-            }
-            case "turn_start":
-              break;
-            case "turn_end":
-              break;
-            case "message_start":
-              break;
-            case "message_update":
-              break;
-            case "message_end": {
-              if (event.message.role === "assistant") {
-                const textContent = event.message.content
-                  .filter((part) => part.type === "text")
-                  .map((part) => part.text)
-                  .join("");
-                const reasoningContent = event.message.content
-                  .filter((part) => part.type === "reasoning")
-                  .map((part) => part.text)
-                  .join("");
-
-                if (reasoningContent) {
-                  this.logger.info(`Agent reasoning:\n${reasoningContent}`);
-                  sessionContext.bot.sendMessage(
-                    sessionContext.channelId,
-                    `[Reasoning]\n${reasoningContent}`,
-                  );
-                }
-                if (textContent) {
-                  this.logger.info(`Agent response:\n${textContent}`);
-                  sessionContext.bot.sendMessage(sessionContext.channelId, textContent);
-                }
-              }
-            }
-            case "tool_execution_start":
-              break;
-            case "tool_execution_end":
-              break;
-            case "queue_update":
-              break;
-            case "compaction_start":
-              break;
-            case "compaction_end":
-              break;
-            case "auto_retry_start":
-              break;
-            case "auto_retry_end":
-              break;
-          }
-        });
+          session.bot,
+        );
         channels.set(cid, sessionContext);
         this.logger.info(`Created new agent session for channel ${cid}`);
       }
@@ -262,5 +286,6 @@ export async function apply(ctx: Context, config: Config) {
   }
   ctx.plugin(ModelService, config);
   ctx.plugin(ExtensionService, config);
+  ctx.plugin(SessionService, config);
   ctx.plugin(RuntimeService, config);
 }
