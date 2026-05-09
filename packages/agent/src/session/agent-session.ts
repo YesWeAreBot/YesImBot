@@ -683,6 +683,16 @@ export class AgentSession {
    * Call this when completely done with the session.
    */
   dispose(): void {
+    for (const binding of this._extensionRunner.getBindings()) {
+      try {
+        const result = binding.cleanup?.dispose?.();
+        if (result && typeof result === "object" && "then" in result) {
+          (result as Promise<void>).catch(() => {});
+        }
+      } catch {
+        // ignore cleanup errors
+      }
+    }
     this._extensionRunner.invalidate(
       "This extension instance is stale after session replacement or reload. Use the provided replacement-session context instead.",
     );
@@ -1647,7 +1657,7 @@ export class AgentSession {
 
         getActiveTools: () => this.getActiveToolNames(),
         setActiveTools: (toolNames) => this.setActiveToolsByName(toolNames),
-        refreshTools: () => this._refreshToolRegistry(),
+        refreshTools: () => this._refreshToolRegistry({ fromRegisterTool: true }),
       },
       {
         getModel: () => this.model,
@@ -1676,6 +1686,7 @@ export class AgentSession {
   private _refreshToolRegistry(options?: {
     activeToolNames?: string[];
     includeAllExtensionTools?: boolean;
+    fromRegisterTool?: boolean;
   }): void {
     const previousActiveToolNames = this.getActiveToolNames();
     const allowedToolNames = this._allowedToolNames;
@@ -1721,7 +1732,7 @@ export class AgentSession {
       (name) => isAllowedTool(name),
     );
 
-    if (options?.includeAllExtensionTools) {
+    if (options?.fromRegisterTool || options?.includeAllExtensionTools) {
       for (const name of extensionTools.keys()) {
         if (!nextActiveToolNames.includes(name)) {
           nextActiveToolNames.push(name);

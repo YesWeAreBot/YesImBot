@@ -31,6 +31,18 @@
 - **Provider 层独立**
   - OpenAI / DeepSeek / Anthropic / Google provider 插件
   - 通过 `ctx["yesimbot.model"]` 服务注册
+- **Extension 异步初始化与动态工具刷新**
+  - 异步 `setup()` 完成后自动刷新工具（generation 检查防竞态）
+  - `registerTool()` 后自动追加到 active tools（`fromRegisterTool` 标记）
+  - `dispose()` 同步调用 extension cleanup（含异步 rejection 捕获）
+- **Extension 工具生命周期与热重载**
+  - `unregisterTool()` 支持运行时移除已注册工具
+  - `registeredToolNames` 追踪工具注册历史（用于审计和诊断）
+  - `reload()`/`reloadSync()` 替换 binding 后自动调用 `refreshTools()`
+  - `unregisterExtension()` 支持移除 extension definition 并通知所有 runner
+- **Extension 最小插件开发模型验证**
+  - `plugins/mcp-client` 作为首个真实 Extension 插件：Koishi Service + Schema 配置 + MCP SDK 集成
+  - 通过 `ExtensionAPI.registerTool()` 注册工具，验证异步 setup → 工具注册 → Agent 可用完整链路
 - **旧版清理**
   - 删除 `@yesimbot/plugin-sdk`（与新 Extension 系统不兼容）
   - 删除旧版 plugins（mcp-client, search-service, skill, workspace）
@@ -43,13 +55,12 @@
 
 ### 待完成（第一阶段收尾项）
 
-| 优先级 | 项目 | 说明 |
-|--------|------|------|
-| P0 | 上下文压缩端到端验证 | 压缩逻辑存在但未手动测试，需验证 compaction → 恢复 → 再压缩完整链路 |
-| P0 | Extension 最小插件开发模型 | Extension 系统设计完成但缺乏一个真实插件验证闭环（如 skill 插件迁移） |
-| P1 | `core/src/index.ts` 职责拆分 | 当前入口文件承载过多，需拆分为独立 service 模块 |
-| P1 | Provider 层验证 | 新架构下 Provider 注册和调用链路需要端到端验证 |
-| P2 | 残留硬编码清理 | `agent-session.ts` 中仍有 `//TODO`、`settingsManager` 残留引用 |
+| 优先级 | 项目                         | 说明                                                                  |
+| ------ | ---------------------------- | --------------------------------------------------------------------- |
+| P0     | 上下文压缩端到端验证         | 压缩逻辑存在但未手动测试，需验证 compaction → 恢复 → 再压缩完整链路   |
+| P1     | `core/src/index.ts` 职责拆分 | 当前入口文件承载过多，需拆分为独立 service 模块                       |
+| P1     | Provider 层验证              | 新架构下 Provider 注册和调用链路需要端到端验证                        |
+| P2     | 残留硬编码清理               | `agent-session.ts` 中仍有 `//TODO`、`settingsManager` 残留引用        |
 
 ---
 
@@ -122,12 +133,12 @@
 
 ## 版本节奏
 
-| 版本 | 对应阶段 | 状态 |
-|------|----------|------|
-| v4.0.0-beta.1 ~ beta.5 | 第一阶段早期 | ✅ 已发布 |
-| v4.0.0-beta.6+ | 第一阶段收尾 | 🔧 开发中（local/dev 分支） |
-| v4.0.0-rc | 第一阶段完成 | 📋 计划中 |
-| v4.1.x | 第二阶段 | 📋 计划中 |
-| v4.2.x | 第三阶段 | 📋 计划中 |
-| v4.3.x | 第四阶段 | 📋 计划中 |
-| v5.0.0 | 第五阶段 | 🔮 远景 |
+| 版本                   | 对应阶段     | 状态                        |
+| ---------------------- | ------------ | --------------------------- |
+| v4.0.0-beta.1 ~ beta.5 | 第一阶段早期 | ✅ 已发布                   |
+| v4.0.0-beta.6+         | 第一阶段收尾 | 🔧 开发中（local/dev 分支） |
+| v4.0.0-rc              | 第一阶段完成 | 📋 计划中                   |
+| v4.1.x                 | 第二阶段     | 📋 计划中                   |
+| v4.2.x                 | 第三阶段     | 📋 计划中                   |
+| v4.3.x                 | 第四阶段     | 📋 计划中                   |
+| v5.0.0                 | 第五阶段     | 🔮 远景                     |

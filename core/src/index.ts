@@ -1,18 +1,19 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 
+import "@yesimbot/agent";
+import { Agent, AgentMessage } from "@yesimbot/agent/agent";
 import {
-  Agent,
-  AgentMessage,
   AgentSession,
   convertToLlm,
+  ExtensionDefinition,
   ExtensionRegistry,
+  ExtensionRunner,
   SessionManager,
-} from "@yesimbot/agent";
-import { jsonSchema } from "@yesimbot/shared-model";
-import { Bot, Context, Logger, Schema } from "koishi";
+} from "@yesimbot/agent/session";
+import { Bot, Context, Logger, Schema, Service } from "koishi";
 
-import { AthenaMessage, ChatMessage, sendAthenaMessage } from "./messages";
+import { AthenaMessage, ChatMessage } from "./messages";
 import { ModelService, ModelServiceConfig } from "./services/model";
 
 interface Config extends ModelServiceConfig {
@@ -38,54 +39,67 @@ interface SessionContext {
   bot: Bot;
 }
 
-class Runtime {
-  static inject = ["yesimbot.model"];
+declare module "koishi" {
+  export interface Context {
+    "yesimbot.extension": ExtensionService;
+  }
+}
+
+export class ExtensionService extends Service {
   readonly logger: Logger;
-  private extensionRegistry = new ExtensionRegistry();
+  private extensionRegistry: ExtensionRegistry;
+  constructor(
+    public ctx: Context,
+    public config: Config,
+  ) {
+    super(ctx, "yesimbot.extension");
+    this.logger = ctx.logger("yesimbot.extension");
+    this.logger.level = config.logLevel ?? 2;
+
+    this.extensionRegistry = new ExtensionRegistry();
+  }
+
+  protected async start() {
+    this.logger.info("Starting yesimbot extension service");
+  }
+
+  public registerExtension(extension: ExtensionDefinition) {
+    this.extensionRegistry.add(extension);
+  }
+
+  public unregisterExtension(id: string) {
+    this.extensionRegistry.remove(id);
+  }
+
+  public getExtension(id: string) {
+    return this.extensionRegistry.get(id);
+  }
+
+  public getAllExtensions() {
+    return this.extensionRegistry.getAll();
+  }
+
+  public registerRunner(runner: ExtensionRunner) {
+    this.extensionRegistry.registerRunner(runner);
+  }
+}
+
+class RuntimeService extends Service {
+  static inject = ["yesimbot.model", "yesimbot.extension"];
+  readonly logger: Logger;
 
   constructor(
     public ctx: Context,
     public config: Config,
   ) {
-    this.logger = ctx.logger("yesimbot");
+    super(ctx, "yesimbot.runtime");
+    this.logger = ctx.logger("yesimbot.runtime");
     this.logger.level = config.logLevel ?? 2;
-    ctx.on("ready", this.start.bind(this));
   }
 
-  private async start() {
-    const ctx = this.ctx;
-    this.extensionRegistry.add({
-      id: "tool-utils",
-      setup(api) {
-        ctx.logger.info("Setting up tool-utils extension");
-        api.registerTool<{ city: string; unit: string }>({
-          name: "get_weather",
-          description: "Get weather information for a location",
-          inputSchema: jsonSchema({
-            type: "object",
-            properties: {
-              city: { type: "string", description: "City name" },
-              unit: { type: "string", enum: ["C", "F"], description: "Temperature unit" },
-            },
-            required: ["city"],
-          }),
-          execute: async ({ city, unit }) => {
-            ctx.logger.info(`Executing get_weather tool with city=${city} and unit=${unit}`);
-            // Mock implementation - replace with real API call
-            const temp = city === "New York" ? 25 : 30;
-            const tempStr = unit === "F" ? `${temp * 1.8 + 32} °F` : `${temp} °C`;
-            return {
-              type: "text",
-              value: `The current temperature in ${city} is ${tempStr}.`,
-            };
-          },
-        });
+  protected async start() {
+    this.logger.info("Starting yesimbot runtime service");
 
-        api.on("provider:before-request", ({ type, payload }) => {
-          console.log(payload);
-        });
-      },
-    });
     if (!this.config.chatModel) {
       this.ctx.logger.error("No chat model specified in config");
       return;
@@ -108,9 +122,9 @@ class Runtime {
           convertToLlm: (messages) => {
             let llmMessages: AgentMessage[] = [];
             for (const message of messages) {
-              if (message.role === "custom") {
+              if (message.role === "custom" && message.customType === "athena:message") {
                 let athenaMessage = message as AthenaMessage;
-                switch (athenaMessage.customType) {
+                switch (athenaMessage.details.kind) {
                   case "chat_message":
                     llmMessages.push({
                       role: "user",
@@ -142,10 +156,10 @@ class Runtime {
           cwd: this.config.basePath,
           agent,
           sessionManager,
-          extensions: this.extensionRegistry.getAll(),
+          extensions: this.ctx["yesimbot.extension"].getAllExtensions(),
           customSystemPrompt: `你现在正在${platform}的频道${channelId}中与用户进行对话。请根据用户的输入生成回复，并在需要时调用工具。`,
         });
-        this.extensionRegistry.registerRunner(agentSession.extensionRunner);
+        this.ctx["yesimbot.extension"].registerRunner(agentSession.extensionRunner);
 
         const sessionContext: SessionContext = {
           agentSession,
@@ -215,13 +229,13 @@ class Runtime {
       }
       const sessionContext = channels.get(cid)!;
 
-      await sendAthenaMessage(
-        sessionContext.agentSession,
+      await sessionContext.agentSession.sendCustomMessage(
         {
-          customType: "chat_message",
+          customType: "athena:message",
           content: String(session.content),
           display: true,
           details: {
+            kind: "chat_message",
             messageId: session.messageId,
             platform: session.platform,
             channelId: session.channelId,
@@ -247,5 +261,6 @@ export async function apply(ctx: Context, config: Config) {
     }
   }
   ctx.plugin(ModelService, config);
-  ctx.plugin(Runtime, config);
+  ctx.plugin(ExtensionService, config);
+  ctx.plugin(RuntimeService, config);
 }

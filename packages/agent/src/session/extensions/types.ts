@@ -368,6 +368,9 @@ export interface ExtensionAPI {
   /* prettier-ignore */
   registerTool<INPUT = unknown, OUTPUT = ToolResultOutput, DETAILS = never>(tool: ToolDefinition<INPUT, OUTPUT, DETAILS>): void;
 
+  /** Unregister a previously registered tool by name. */
+  unregisterTool(name: string): void;
+
   // =========================================================================
   // Actions
   // =========================================================================
@@ -428,7 +431,7 @@ export interface ExtensionCleanup {
 export interface ExtensionDefinition {
   id: string;
   order?: number;
-  setup(api: ExtensionAPI): void | Promise<void> | ExtensionCleanup;
+  setup(api: ExtensionAPI): void | Promise<void> | ExtensionCleanup | Promise<ExtensionCleanup>;
 }
 
 /** Session-local binding instance */
@@ -439,6 +442,12 @@ export interface ExtensionBinding {
   handlers: Map<string, HandlerFn[]>;
   tools: Map<string, ToolDefinition>;
   cleanup?: ExtensionCleanup;
+  /**
+   * Historical record of all tool names registered during this binding's setup.
+   * Unlike `tools` (which shrinks on unregisterTool), this set only grows —
+   * it preserves the full registration history for auditing and diagnostics.
+   */
+  registeredToolNames: Set<string>;
 }
 
 export type SendMessageHandler = <T = unknown>(

@@ -517,6 +517,7 @@ export class ExtensionRunner {
 
     // 4. Replace bindings
     this.bindings = newBindings;
+    this.runtime.refreshTools();
   }
 
   /**
@@ -543,6 +544,7 @@ export class ExtensionRunner {
           this._currentGeneration,
           this.runtime,
           this._eventBus,
+          () => this._currentGeneration,
         );
         newBindings.push(binding);
       } catch (err) {
@@ -555,6 +557,7 @@ export class ExtensionRunner {
     }
 
     this.bindings = newBindings;
+    this.runtime.refreshTools();
   }
 
   /** Get current bindings (readonly). */

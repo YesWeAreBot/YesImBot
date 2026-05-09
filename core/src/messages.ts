@@ -1,53 +1,42 @@
-import { AgentSession, CustomMessage } from "@yesimbot/agent";
+import type { UserContent } from "@yesimbot/agent/ai";
 
-type M<T> = Pick<CustomMessage<T>, "customType" | "content" | "display" | "details">;
-
-interface ChatMessageDetails {
-  messageId: string;
+export interface BaseDetails {
+  kind: "chat_message" | "group_notice" | string;
   platform: string;
   channelId: string;
+  timestamp: number;
+}
+
+export interface BaseMessage<T extends BaseDetails> {
+  customType: "athena:message";
+  content: UserContent;
+  display: boolean;
+  details: T;
+}
+
+interface ChatMessageDetails extends BaseDetails {
+  kind: "chat_message";
+  messageId: string;
   senderId: string;
   senderName?: string;
   quoteMessageId?: string;
-  timestamp: number;
-  [key: string]: unknown;
 }
 
-export interface ChatMessage extends M<ChatMessageDetails> {
-  customType: "chat_message";
-  details: ChatMessageDetails;
-}
+export type ChatMessage = BaseMessage<ChatMessageDetails>;
 
-interface GroupNoticeDetails {
+interface GroupNoticeDetails extends BaseDetails {
+  kind: "group_notice";
   noticeType: string;
   groupId: string;
   operatorId: string;
   operatorName?: string;
-  timestamp: number;
-  [key: string]: unknown;
 }
 
-interface GroupNotice extends M<GroupNoticeDetails> {
-  customType: "group_notice";
-  content: string;
-  details: GroupNoticeDetails;
-  [key: string]: unknown;
-}
+export type GroupNotice = BaseMessage<GroupNoticeDetails>;
 
-interface CustomMessages {
+export interface CustomMessages {
   chat_message: ChatMessage;
   group_notice: GroupNotice;
 }
 
 export type AthenaMessage = CustomMessages[keyof CustomMessages];
-
-export function sendAthenaMessage(
-  session: AgentSession,
-  message: AthenaMessage,
-  options?: {
-    triggerTurn?: boolean;
-    deliverAs?: "steer" | "followUp" | "nextTurn";
-  },
-) {
-  return session.sendCustomMessage(message as M<unknown>, options);
-}

@@ -34,7 +34,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
-    "build": "npx pkgroll --clean-dist --sourcemap",
+    "build": "npx pkgroll --sourcemap",
     "check-types": "tsc --noEmit",
     "clean": "rimraf .turbo && rimraf dist && rimraf tsconfig.tsbuildinfo",
     "pub": "yarn npm publish --access public",
@@ -58,9 +58,6 @@
       "en": "A Koishi plugin that allows LLM chat in your guild."
     },
     "service": {
-      "required": [
-        "database"
-      ],
       "implements": [
         "yesimbot"
       ]

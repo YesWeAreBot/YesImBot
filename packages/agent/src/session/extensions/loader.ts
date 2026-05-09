@@ -62,6 +62,7 @@ export async function createExtensionBinding(
     generation,
     handlers: new Map(),
     tools: new Map(),
+    registeredToolNames: new Set(),
   };
 
   const api = createExtensionAPI(binding, runtime, eventBus);
@@ -82,6 +83,7 @@ export function createExtensionBindingSync(
   generation: number,
   runtime: ExtensionRuntime,
   eventBus: EventBus,
+  getCurrentGeneration: () => number,
 ): ExtensionBinding {
   const binding: ExtensionBinding = {
     id: definition.id,
@@ -89,6 +91,7 @@ export function createExtensionBindingSync(
     generation,
     handlers: new Map(),
     tools: new Map(),
+    registeredToolNames: new Set(),
   };
 
   const api = createExtensionAPI(binding, runtime, eventBus);
@@ -99,6 +102,9 @@ export function createExtensionBindingSync(
       .then((cleanup) => {
         if (cleanup && typeof cleanup === "object" && "dispose" in cleanup) {
           binding.cleanup = cleanup as ExtensionCleanup;
+        }
+        if (binding.generation === getCurrentGeneration()) {
+          runtime.refreshTools();
         }
       })
       .catch((err) => {
@@ -131,7 +137,15 @@ function createExtensionAPI(
     registerTool(tool: ToolDefinition): void {
       runtime.assertActive();
       binding.tools.set(tool.name, tool);
+      binding.registeredToolNames.add(tool.name);
       runtime.refreshTools();
+    },
+
+    unregisterTool(name: string) {
+      runtime.assertActive();
+      if (binding.tools.delete(name)) {
+        runtime.refreshTools();
+      }
     },
 
     sendMessage(message, options): void {

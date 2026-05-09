@@ -12,6 +12,10 @@
       "types": "./dist/index.d.ts",
       "require": "./dist/index.cjs"
     },
+    "./ai": {
+      "types": "./dist/ai/index.d.ts",
+      "require": "./dist/ai/index.cjs"
+    },
     "./agent": {
       "types": "./dist/agent/index.d.ts",
       "require": "./dist/agent/index.cjs"
@@ -35,7 +39,8 @@
   },
   "dependencies": {
     "@ai-sdk/provider-utils": "^4.0.0",
-    "ai": "^6.0.0"
+    "ai": "^6.0.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "vitest": "^4.0.18"

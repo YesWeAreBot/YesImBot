@@ -18,9 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Agent**: Event model unified to `domain:action` naming (`session:start`, `agent:before-start`, `tool:call`, `context:build`, etc.)
 - **Agent**: `context:build` hook for per-LLM-call message array modification
 - **Agent**: `agent:before-start` hook for system prompt and message injection
+- **Agent**: `ExtensionAPI.unregisterTool()` for removing registered tools at runtime
+- **Agent**: `ExtensionBinding.registeredToolNames` historical tracking of all tools registered during setup
+- **Agent**: `ExtensionRunner.reload()`/`reloadSync()` now call `refreshTools()` after replacing bindings
+- **Core**: `ExtensionService.unregisterExtension()` for removing extension definitions and notifying runners
 - **Core**: `AthenaEvent` / `AthenaMessage` / `CustomMessage` message type chain
 - **Core**: `ExtensionRegistry` wired in core runtime, exposed to Koishi context
-- **Tool**: `tool-utils` extension for weather information (example extension)
+- **Plugin**: `mcp-client` plugin — first real Extension plugin validating the full async setup → tool registration → Agent availability chain, with MCP SDK integration (stdio/http/sse transports)
+- **Plugin**: `mcp-client` stop lifecycle now properly closes MCP client connections and unregisters extension
 - Third-party notice (NOTICE) attributing code from `pi-mono` (MIT)
 
 ### Changed
@@ -52,6 +57,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Agent**: `setAutoRetryEnabled()` / `autoRetryEnabled` now reads from `_retrySettings` instead of no-op/hardcoded
 - **Agent**: Retry enabled check restored in `_createRetryablePromiseForAgentEnd`
 - **Agent**: `setSteeringMode()` / `setFollowUpMode()` cleaned of dead `settingsManager` comments
+- **Agent**: Async `Extension.setup()` now triggers `runtime.refreshTools()` on completion with generation check to prevent stale refreshes after reload
+- **Agent**: `registerTool()` now auto-activates new tools via `fromRegisterTool` flag in `_refreshToolRegistry`, fixing tools not appearing in Agent's active tool set after async registration
+- **Agent**: `AgentSession.dispose()` now calls `cleanup?.dispose()` on all extension bindings before invalidation, with async rejection catching
 - Corrected truncated wording in the project’s MIT License declaration
 
 ## [4.0.0-beta.5] - 2026-03-17

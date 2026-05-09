@@ -32,7 +32,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
-    "build": "npx pkgroll --clean-dist --sourcemap",
+    "build": "npx pkgroll --sourcemap",
     "check-types": "tsc --noEmit",
     "clean": "rimraf .turbo && rimraf dist && rimraf tsconfig.tsbuildinfo",
     "fmt": "oxfmt",

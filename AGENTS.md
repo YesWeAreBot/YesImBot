@@ -56,7 +56,7 @@ yarn workspace @yesimbot/agent exec vitest run tests/session/compaction.test.ts 
 
 - `core/src/index.ts` wires `ModelService` and `Runtime`. Runtime creates one `AgentSession` per `platform:channelId` on first message.
 - `@yesimbot/agent` (`packages/agent/`) owns `Agent`, `AgentSession`, `SessionManager`, and the agent loop (`packages/agent/src/agent/`).
-- Extension system: `ExtensionRegistry` (global, in core) manages definitions; `ExtensionRunner` (per-session, in agent) manages bindings. Extensions register tools, subscribe to lifecycle events, inject context, and modify system prompts.
+- Extension system: `ExtensionRegistry` (global, in core) manages definitions; `ExtensionRunner` (per-session, in agent) manages bindings. Extensions register/unregister tools, subscribe to lifecycle events, inject context, and modify system prompts.
 - `AgentSession.subscribe()` emits events (`agent_start`, `agent_end`, `turn_start`, `tool_execution_*`, etc.).
 - Provider packages expose Koishi plugins from `providers/*/src/index.ts`; optional integrations do the same from `plugins/*/src/index.ts`.
 - Shared contracts belong in `packages/shared-model` before wiring them into `core`.
