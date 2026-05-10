@@ -124,9 +124,7 @@ export interface AgentToolResult<T = unknown> {
 }
 
 /* prettier-ignore */
-export type AgentTool<INPUT = unknown, OUTPUT = unknown, DETAILS = never> = Tool<INPUT, ToolExecuteReturn<OUTPUT, DETAILS>> & {
-  inputSchema?: unknown;
-}
+export type AgentTool<INPUT = unknown, OUTPUT = unknown, DETAILS = never> = Tool<INPUT, ToolExecuteReturn<OUTPUT, DETAILS>>
 
 export interface AgentContext {
   systemPrompt: string;

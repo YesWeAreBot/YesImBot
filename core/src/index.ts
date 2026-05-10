@@ -94,13 +94,15 @@ function convertAthenaMessages(messages: AgentMessage[]): AgentMessage[] {
         case "chat_message":
           return {
             ...message,
-            role: "user" as const,
+            role: "custom" as const,
+            rawContent: athenaMessage.content,
             content: `${athenaMessage.details.senderName || athenaMessage.details.senderId} said: ${athenaMessage.content}`,
           };
         case "group_notice":
           return {
             ...message,
-            role: "user" as const,
+            role: "custom" as const,
+            rawContent: athenaMessage.content,
             content: athenaMessage.content,
           };
       }
