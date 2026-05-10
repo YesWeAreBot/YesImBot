@@ -869,6 +869,35 @@ export class AgentSession {
   // =========================================================================
 
   /**
+   * Emit agent:before-start extension event and apply the resulting
+   * system prompt / injected messages. Shared by prompt() and sendCustomMessage().
+   */
+  private async _applyBeforeAgentStart(
+    promptText: string,
+    images?: ImagePart[],
+  ): Promise<AgentMessage[]> {
+    const result = await this._extensionRunner.emitBeforeAgentStart(
+      promptText,
+      images,
+      this._baseSystemPrompt,
+      this._baseSystemPromptOptions,
+    );
+
+    const injected: AgentMessage[] =
+      result?.messages?.map((msg) => ({
+        role: "custom" as const,
+        customType: msg.customType,
+        content: msg.content,
+        display: msg.display,
+        details: msg.details,
+        timestamp: Date.now(),
+      })) ?? [];
+
+    this.agent.state.systemPrompt = result?.systemPrompt ?? this._baseSystemPrompt;
+    return injected;
+  }
+
+  /**
    * Send a prompt to the agent.
    * - Handles extension commands (registered via pi.registerCommand) immediately, even during streaming
    * - Expands file-based prompt templates by default
@@ -925,33 +954,8 @@ export class AgentSession {
       }
       this._pendingNextTurnMessages = [];
 
-      // Emit before_agent_start extension event
-      const result = await this._extensionRunner.emitBeforeAgentStart(
-        text,
-        currentImages,
-        this._baseSystemPrompt,
-        this._baseSystemPromptOptions,
-      );
-      // Add all custom messages from extensions
-      if (result?.messages) {
-        for (const msg of result.messages) {
-          messages.push({
-            role: "custom",
-            customType: msg.customType,
-            content: msg.content,
-            display: msg.display,
-            details: msg.details,
-            timestamp: Date.now(),
-          });
-        }
-      }
-      // Apply extension-modified system prompt, or reset to base
-      if (result?.systemPrompt) {
-        this.agent.state.systemPrompt = result.systemPrompt;
-      } else {
-        // Ensure we're using the base prompt (in case previous turn had modifications)
-        this.agent.state.systemPrompt = this._baseSystemPrompt;
-      }
+      // Emit before_agent_start extension event and apply system prompt
+      messages.push(...(await this._applyBeforeAgentStart(text, currentImages)));
     } catch (error) {
       throw error;
     }
@@ -1054,6 +1058,10 @@ export class AgentSession {
         this.agent.steer(appMessage);
       }
     } else if (options?.triggerTurn) {
+      // Apply extension before-start hooks (system prompt, injected messages)
+      const promptText = typeof message.content === "string" ? message.content : "";
+      const injected = await this._applyBeforeAgentStart(promptText);
+      for (const msg of injected) this.agent.state.messages.push(msg);
       await this.agent.prompt(appMessage);
     } else {
       this.agent.state.messages.push(appMessage);
