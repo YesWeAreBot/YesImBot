@@ -40,8 +40,8 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
     }
 
     // Add date and working directory last
-    prompt += `\nCurrent date: ${date}`;
-    prompt += `\nCurrent working directory: ${promptCwd}`;
+    // prompt += `\nCurrent date: ${date}`;
+    // prompt += `\nCurrent working directory: ${promptCwd}`;
 
     return prompt;
   }
@@ -100,8 +100,8 @@ Pi documentation (read only when the user asks about pi itself, its SDK, extensi
   }
 
   // Add date and working directory last
-  prompt += `\nCurrent date: ${date}`;
-  prompt += `\nCurrent working directory: ${promptCwd}`;
+  // prompt += `\nCurrent date: ${date}`;
+  // prompt += `\nCurrent working directory: ${promptCwd}`;
 
   return prompt;
 }

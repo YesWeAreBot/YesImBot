@@ -3,8 +3,7 @@ import { resolve } from "node:path";
 
 import { Bash, InitialFiles, InMemoryFs, MountableFs, OverlayFs, ReadWriteFs } from "just-bash";
 
-import { createWorkspaceTools } from "./tools";
-import type { WorkspaceConfig, WorkspaceToolSet } from "./types";
+import type { WorkspaceConfig } from "./types";
 
 export class Workspace {
   readonly bash: Bash;
@@ -38,12 +37,12 @@ export class Workspace {
       };
     }
 
-    const baseFs = new OverlayFs({ root });
+    const baseFs = new OverlayFs({ root, mountPoint: "/" });
 
     const mountableFs = new MountableFs({
       base: new InMemoryFs(memoryFiles),
       mounts: [
-        { mountPoint: "/home/user", filesystem: baseFs },
+        { mountPoint: "/home/workspace", filesystem: baseFs },
         ...Object.entries(persistPaths).map(([mountPoint, hostPath]) => ({
           mountPoint,
           filesystem: new ReadWriteFs({ root: resolve(hostPath) }),
@@ -57,13 +56,6 @@ export class Workspace {
   async init(): Promise<void> {
     if (this._initialized) return;
     this._initialized = true;
-  }
-
-  getTools(): WorkspaceToolSet {
-    if (!this._initialized) {
-      throw new Error("Workspace not initialized. Call init() first.");
-    }
-    return createWorkspaceTools(this);
   }
 
   get defaultTimeoutMs(): number {

@@ -1,4 +1,7 @@
-import type { ExtensionAPI } from "@yesimbot/agent/session";
+import { existsSync, mkdirSync } from "node:fs";
+import { resolve } from "node:path";
+
+import type { ExtensionAPI, ToolDefinition } from "@yesimbot/agent/session";
 import { Context, Logger, Schema, Service } from "koishi";
 import type {} from "koishi-plugin-yesimbot";
 
@@ -23,7 +26,9 @@ export default class WorkspacePlugin extends Service<WorkspacePluginConfig> {
     root: Schema.path({ filters: ["directory"], allowCreate: true })
       .default("data/yesimbot/workspace")
       .description("工作区根目录"),
-    persistPaths: Schema.dict(Schema.string()).description("持久化路径映射"),
+    persistPaths: Schema.dict(
+      Schema.path({ filters: ["directory", "file"], allowCreate: true }),
+    ).description("持久化路径映射"),
     timeoutMs: Schema.number().default(30000).description("命令执行超时（毫秒）"),
     enableNetwork: Schema.boolean().default(false).description("启用网络访问"),
     enablePython: Schema.boolean().default(false).description("启用 Python 执行"),
@@ -31,21 +36,41 @@ export default class WorkspacePlugin extends Service<WorkspacePluginConfig> {
   });
 
   private ws?: Workspace;
-  private log: Logger;
+  readonly logger: Logger;
 
   constructor(ctx: Context, config: WorkspacePluginConfig) {
     super(ctx, "yesimbot.workspace");
-    this.log = ctx.logger("workspace");
+    this.logger = ctx.logger("workspace");
     this.config = config;
   }
 
   async start(): Promise<void> {
-    this.log.info("Starting workspace plugin...");
+    this.logger.info("Starting workspace plugin...");
+
+    const root = resolve(this.ctx.baseDir, this.config.root);
+    const persistPaths: Record<string, string> = {};
+
+    for (const [virtualPath, hostPath] of Object.entries(this.config.persistPaths || {})) {
+      persistPaths[virtualPath] = resolve(this.ctx.baseDir, hostPath);
+    }
+
+    if (!existsSync(root)) {
+      mkdirSync(root, { recursive: true });
+    }
+
+    for (const hostPath of Object.values(persistPaths)) {
+      if (!existsSync(hostPath)) {
+        mkdirSync(hostPath, { recursive: true });
+      }
+    }
+
+    this.logger.info(`Workspace root: ${root}`);
+    this.logger.info(`Persist paths: ${JSON.stringify(persistPaths, null, 2)}`);
 
     const workspaceConfig: WorkspaceConfig = {
-      root: this.config.root,
+      root,
       filesystem: {
-        persistPaths: this.config.persistPaths,
+        persistPaths,
       },
       bash: {
         timeoutMs: this.config.timeoutMs,
@@ -59,32 +84,31 @@ export default class WorkspacePlugin extends Service<WorkspacePluginConfig> {
     await this.ws.init();
 
     const workspace = this.ws;
-    const log = this.log;
+    const logger = this.logger;
 
     this.ctx["yesimbot.extension"].registerExtension({
       id: "workspace",
       setup(api: ExtensionAPI) {
-        log.info("Registering workspace tools...");
+        logger.info("Registering workspace tools...");
 
         const tools = createWorkspaceTools(workspace);
         for (const tool of tools) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          api.registerTool(tool as any);
-          log.info(`Registered tool: ${tool.name}`);
+          api.registerTool(tool as ToolDefinition);
+          logger.info(`Registered tool: ${tool.name}`);
         }
 
         return {
           dispose() {
-            log.info("Workspace extension disposed");
+            logger.info("Workspace extension disposed");
           },
         };
       },
     });
 
-    this.log.success("Workspace plugin started");
+    this.logger.success("Workspace plugin started");
   }
 
   async stop(): Promise<void> {
-    this.log.info("Workspace plugin stopped");
+    this.logger.info("Workspace plugin stopped");
   }
 }
