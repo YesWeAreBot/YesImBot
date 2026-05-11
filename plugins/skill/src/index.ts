@@ -73,14 +73,18 @@ export default class SkillPlugin extends Service<SkillConfig> {
           inputSchema: jsonSchema({
             type: "object",
             properties: {
-              skillName: {
+              skill: {
                 type: "string",
-                description: "技能名称",
+                description: 'The skill name. E.g., "commit", "review-pr", or "pdf"',
+              },
+              args: {
+                type: "string",
+                description: "Optional arguments for the skill",
               },
             },
-            required: ["skillName"],
+            required: ["skill"],
           }),
-          execute: async ({ skillName }, options) => {
+          execute: async ({ skill: skillName, args }, options) => {
             const skill = skills.find((s) => s.name === skillName);
             if (!skill) {
               return {
@@ -102,7 +106,8 @@ export default class SkillPlugin extends Service<SkillConfig> {
 }
 
 type LoadSkillToolInput = {
-  skillName: string;
+  skill: string;
+  args?: Record<string, unknown>;
 };
 
 type LoadSkillToolOutput =
