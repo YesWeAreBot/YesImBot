@@ -5,15 +5,10 @@ import type { ToolResult, WriteFileInput, WriteResult } from "../types";
 import type { Workspace } from "../workspace";
 import { createError, stripAnsi } from "./helpers";
 
-const TOOL_NAME = "workspace_write_file";
+const TOOL_NAME = "write_file";
 
-const DESCRIPTION = `Write content to a file in the workspace. Creates the file if it doesn't exist, overwrites if it does.
-
-Usage:
-- Write file: { path: "src/new-file.ts", content: "console.log('hello')" }
-- Create directory structure: { path: "deep/nested/file.txt", content: "data" }
-
-Parent directories are created automatically.`;
+const DESCRIPTION =
+  "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.";
 
 export function createWriteFileTool(
   workspace: Workspace,
@@ -21,17 +16,10 @@ export function createWriteFileTool(
   return {
     name: TOOL_NAME,
     description: DESCRIPTION,
-    promptSnippet: "path, content",
-    promptGuidelines: [
-      "Overwrites existing files completely",
-      "Creates parent directories automatically",
-      "Use edit_file for partial modifications",
-    ],
+    promptSnippet: "Create or overwrite files",
+    promptGuidelines: ["Use write only for new files or complete rewrites."],
     inputSchema: z.object({
-      path: z
-        .string()
-        .min(1, "Path cannot be empty")
-        .describe('File path relative to workspace root (e.g., "src/new-file.ts")'),
+      path: z.string().describe("Path to the file to write (relative or absolute)"),
       content: z.string().describe("Content to write to the file"),
     }),
     execute: async (input) => {

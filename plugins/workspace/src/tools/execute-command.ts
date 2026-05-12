@@ -5,7 +5,7 @@ import type { ExecuteCommandInput, ExecuteResult, ToolResult } from "../types";
 import type { Workspace } from "../workspace";
 import { createError, limitLines, stripAnsi } from "./helpers";
 
-const TOOL_NAME = "workspace_execute_command";
+const TOOL_NAME = "execute_command";
 
 const DESCRIPTION = `Execute a shell command in the sandboxed workspace environment.
 
@@ -22,14 +22,9 @@ export function createExecuteCommandTool(
   return {
     name: TOOL_NAME,
     description: DESCRIPTION,
-    promptSnippet: "command, timeoutMs?",
-    promptGuidelines: [
-      "Commands run in a sandbox with isolated shell state",
-      "Use pipes, redirects, and chaining (&&, ||, ;) as needed",
-      "Default timeout is 30 seconds",
-    ],
+    promptSnippet: "Execute bash commands (ls, grep, find, etc.)",
     inputSchema: z.object({
-      command: z.string().min(1, "Command cannot be empty").describe("Shell command to execute"),
+      command: z.string().describe("Shell command to execute"),
       timeoutMs: z.number().int().positive().optional().describe("Timeout in milliseconds"),
     }),
     execute: async (input) => {

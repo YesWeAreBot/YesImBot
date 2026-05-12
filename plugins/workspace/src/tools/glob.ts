@@ -5,7 +5,7 @@ import type { GlobInput, GlobResult, ToolResult } from "../types";
 import type { Workspace } from "../workspace";
 import { createError, stripAnsi } from "./helpers";
 
-const TOOL_NAME = "workspace_glob";
+const TOOL_NAME = "glob";
 
 const DESCRIPTION = `Find files by glob pattern. Returns matching file paths sorted by modification time.
 
@@ -20,12 +20,6 @@ export function createGlobTool(
   return {
     name: TOOL_NAME,
     description: DESCRIPTION,
-    promptSnippet: "pattern, path?",
-    promptGuidelines: [
-      "Use ** for recursive matching",
-      "Results sorted by modification time",
-      "Returns relative paths",
-    ],
     inputSchema: z.object({
       pattern: z
         .string()

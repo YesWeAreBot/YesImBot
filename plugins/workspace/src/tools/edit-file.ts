@@ -5,7 +5,7 @@ import type { EditFileInput, ToolResult, WriteResult } from "../types";
 import type { Workspace } from "../workspace";
 import { createError, stripAnsi } from "./helpers";
 
-const TOOL_NAME = "workspace_edit_file";
+const TOOL_NAME = "edit_file";
 
 const DESCRIPTION = `Edit a file by replacing specific text. The old_string must match exactly and be unique in the file.
 
@@ -21,12 +21,6 @@ export function createEditFileTool(
   return {
     name: TOOL_NAME,
     description: DESCRIPTION,
-    promptSnippet: "path, old_string, new_string, replace_all?",
-    promptGuidelines: [
-      "old_string must be unique in the file unless replace_all is true",
-      "Preserve exact indentation from the file content",
-      "Prefer editing existing files; use write_file only for new files",
-    ],
     inputSchema: z
       .object({
         path: z.string().min(1, "Path cannot be empty").describe("File path"),

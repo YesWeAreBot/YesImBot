@@ -10,7 +10,7 @@ export interface WorkspaceConfig {
   root: string;
 
   /** 文件系统配置 */
-  filesystem?: {
+  filesystem: {
     /** 持久化路径映射：虚拟路径 → 宿主机路径 */
     persistPaths?: Record<string, string>;
     /** 初始文件（注入到虚拟文件系统） */
@@ -18,9 +18,9 @@ export interface WorkspaceConfig {
   };
 
   /** Bash 配置 */
-  bash?: {
-    /** 默认工作目录（虚拟路径，默认: /home/user） */
-    cwd?: string;
+  bash: {
+    /** 默认工作目录（虚拟路径） */
+    cwd: string;
     /** 默认环境变量 */
     env?: Record<string, string>;
     /** 默认超时（毫秒，默认: 30000） */
@@ -77,30 +77,6 @@ export interface EditFileInput {
   replaceAll?: boolean;
 }
 
-export interface ListFilesInput {
-  path?: string;
-  maxDepth?: number;
-  showHidden?: boolean;
-  dirsOnly?: boolean;
-  exclude?: string;
-  extension?: string;
-  pattern?: string | string[];
-}
-
-export interface DeleteInput {
-  path: string;
-  recursive?: boolean;
-}
-
-export interface MkdirInput {
-  path: string;
-  recursive?: boolean;
-}
-
-export interface FileStatInput {
-  path: string;
-}
-
 export interface GrepInput {
   pattern: string;
   path?: string;
@@ -147,20 +123,6 @@ export interface WriteResult extends SuccessResult {
   message: string;
 }
 
-export interface ListFilesResult {
-  tree: string;
-  summary: string;
-  truncated?: boolean;
-}
-
-export interface FileStatResult {
-  path: string;
-  type: "file" | "directory" | "symlink" | "other";
-  size: number;
-  modifiedAt: string;
-  permissions: string;
-}
-
 export interface GrepResult {
   matches: Array<{ path: string; line: number; content: string }>;
   totalMatches: number;
@@ -194,10 +156,6 @@ export interface WorkspaceToolDefinitions {
   read_file: ToolDefinition<ReadFileInput, ToolResult<ReadFileResult>>;
   write_file: ToolDefinition<WriteFileInput, ToolResult<WriteResult>>;
   edit_file: ToolDefinition<EditFileInput, ToolResult<WriteResult>>;
-  list_files: ToolDefinition<ListFilesInput, ToolResult<ListFilesResult>>;
-  delete: ToolDefinition<DeleteInput, ToolResult<WriteResult>>;
-  mkdir: ToolDefinition<MkdirInput, ToolResult<WriteResult>>;
-  file_stat: ToolDefinition<FileStatInput, ToolResult<FileStatResult>>;
   grep: ToolDefinition<GrepInput, ToolResult<GrepResult>>;
   glob: ToolDefinition<GlobInput, ToolResult<GlobResult>>;
   execute_command: ToolDefinition<ExecuteCommandInput, ToolResult<ExecuteResult>>;

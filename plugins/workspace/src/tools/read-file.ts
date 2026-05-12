@@ -5,16 +5,12 @@ import type { ReadFileInput, ReadFileResult, ToolResult } from "../types";
 import type { Workspace } from "../workspace";
 import { createError, formatLine, limitLines, stripAnsi } from "./helpers";
 
-const TOOL_NAME = "workspace_read_file";
+const DEFAULT_MAX_LINES = 2000;
+const DEFAULT_MAX_BYTES = 50 * 1024;
 
-const DESCRIPTION = `Read file contents from workspace. Supports line range selection for large files.
+const TOOL_NAME = "read_file";
 
-Usage:
-- Read entire file: { path: "src/index.ts" }
-- Read specific lines: { path: "src/index.ts", offset: 10, limit: 20 }
-- Disable line numbers: { path: "config.json", showLineNumbers: false }
-
-Default format includes line numbers (cat -n style). Use offset/limit for large files.`;
+const DESCRIPTION = `Read the contents of a file. Use offset/limit for large files. For text files, output is truncated to ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). When you need the full file, continue with offset until complete.`;
 
 export function createReadFileTool(
   workspace: Workspace,
@@ -22,18 +18,16 @@ export function createReadFileTool(
   return {
     name: TOOL_NAME,
     description: DESCRIPTION,
-    promptSnippet: "path, offset?, limit?, showLineNumbers?",
-    promptGuidelines: [
-      "Use offset/limit to read specific line ranges for large files",
-      "Default format includes line numbers (cat -n style)",
-      "Paths are relative to workspace root (/home/user)",
-    ],
+    promptSnippet: "Read file contents",
+    promptGuidelines: ["Use read to examine files instead of cat or sed."],
     inputSchema: z.object({
-      path: z
-        .string()
-        .min(1, "Path cannot be empty")
-        .describe('File path relative to workspace root (e.g., "src/index.ts")'),
-      offset: z.number().int().positive().optional().describe("Start line number (1-indexed)"),
+      path: z.string().describe("Path to the file to read (relative or absolute)"),
+      offset: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe("Line number to start reading from (1-indexed)"),
       limit: z.number().int().positive().optional().describe("Maximum number of lines to read"),
       showLineNumbers: z
         .boolean()
@@ -109,7 +103,7 @@ export function createReadFileTool(
         formatLine(line, startLine + i, showLineNumbers),
       );
 
-      const { content, truncated } = limitLines(formattedLines.join("\n"), 2000);
+      const { content, truncated } = limitLines(formattedLines.join("\n"), DEFAULT_MAX_LINES);
 
       const resultData: ReadFileResult = {
         content,

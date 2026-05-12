@@ -11,6 +11,7 @@ import { Workspace } from "./workspace";
 
 export interface WorkspacePluginConfig {
   root: string;
+  cwd: string;
   persistPaths?: Record<string, string>;
   timeoutMs?: number;
   enableNetwork?: boolean;
@@ -26,6 +27,7 @@ export default class WorkspacePlugin extends Service<WorkspacePluginConfig> {
     root: Schema.path({ filters: ["directory"], allowCreate: true })
       .default("data/yesimbot/workspace")
       .description("工作区根目录"),
+    cwd: Schema.string().default("/home/workspace").description("虚拟文件系统默认目录"),
     persistPaths: Schema.dict(
       Schema.path({ filters: ["directory", "file"], allowCreate: true }),
     ).description("持久化路径映射"),
@@ -73,6 +75,7 @@ export default class WorkspacePlugin extends Service<WorkspacePluginConfig> {
         persistPaths,
       },
       bash: {
+        cwd: this.config.cwd,
         timeoutMs: this.config.timeoutMs,
         network: this.config.enableNetwork ? {} : undefined,
         python: this.config.enablePython,
@@ -89,6 +92,13 @@ export default class WorkspacePlugin extends Service<WorkspacePluginConfig> {
     this.ctx["yesimbot.extension"].registerExtension({
       id: "workspace",
       setup(api: ExtensionAPI) {
+        api.on("agent:before-start", (event) => {
+          return {
+            systemPrompt:
+              event.systemPrompt + `\n\nCurrent working directory: ${workspaceConfig.bash.cwd}`,
+          };
+        });
+
         logger.info("Registering workspace tools...");
 
         const tools = createWorkspaceTools(workspace);

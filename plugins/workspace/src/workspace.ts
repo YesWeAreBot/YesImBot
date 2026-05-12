@@ -17,7 +17,7 @@ export class Workspace {
 
     this.bash = new Bash({
       fs,
-      cwd: config.bash?.cwd ?? "/home/user",
+      cwd: config.bash.cwd,
       env: config.bash?.env,
       executionLimits: config.bash?.executionLimits,
       network: config.bash?.network,

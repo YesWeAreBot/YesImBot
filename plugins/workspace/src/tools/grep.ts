@@ -5,7 +5,7 @@ import type { GrepInput, GrepResult, ToolResult } from "../types";
 import type { Workspace } from "../workspace";
 import { createError, stripAnsi } from "./helpers";
 
-const TOOL_NAME = "workspace_grep";
+const TOOL_NAME = "grep";
 
 const DESCRIPTION = `Search file contents using a regex pattern. Returns matching lines with file paths and line numbers.
 
@@ -21,12 +21,6 @@ export function createGrepTool(
   return {
     name: TOOL_NAME,
     description: DESCRIPTION,
-    promptSnippet: "pattern, path?, caseSensitive?, contextLines?, maxResults?",
-    promptGuidelines: [
-      "Use regex patterns for flexible matching",
-      "Default search path is workspace root",
-      "Results include file path, line number, and content",
-    ],
     inputSchema: z.object({
       pattern: z.string().min(1, "Pattern cannot be empty").describe("Regex pattern to search for"),
       path: z.string().optional().default(".").describe('Search path (default: ".")'),
