@@ -1,5 +1,5 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
-import type { ChatModelConfig, ModelProvider } from "@yesimbot/shared-model";
+import type { ChatModelConfig, ModelProvider } from "@yesimbot/agent/ai";
 import { Context, Schema } from "koishi";
 
 export const name = "yesimbot-provider-anthropic";

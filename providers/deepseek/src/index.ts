@@ -1,10 +1,10 @@
 import { createDeepSeek } from "@ai-sdk/deepseek";
 import {
+  ChatModelConfig,
   defaultSettingsMiddleware,
+  ModelProvider,
   wrapLanguageModel,
-  type ChatModelConfig,
-  type ModelProvider,
-} from "@yesimbot/shared-model";
+} from "@yesimbot/agent/ai";
 import { Context, Schema } from "koishi";
 
 import enUS from "./locales/en-US.json";

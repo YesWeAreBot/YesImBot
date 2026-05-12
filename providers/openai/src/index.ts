@@ -1,5 +1,5 @@
 import { createOpenAI } from "@ai-sdk/openai";
-import type { ChatModelConfig, EmbeddingModelConfig, ModelProvider } from "@yesimbot/shared-model";
+import { ChatModelConfig, EmbeddingModelConfig, ModelProvider } from "@yesimbot/agent/ai";
 import { Context, Schema } from "koishi";
 
 export const name = "yesimbot-provider-openai";

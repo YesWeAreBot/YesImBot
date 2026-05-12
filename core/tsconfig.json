@@ -4,10 +4,5 @@
     "outDir": "./dist",
     "rootDir": "./src"
   },
-  "include": ["src/**/*", "src/**/*.json"],
-  "references": [
-    {
-      "path": "../packages/shared-model"
-    }
-  ]
+  "include": ["src/**/*", "src/**/*.json"]
 }

@@ -1,14 +1,9 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
-import { LanguageModelV3 } from "@yesimbot/shared-model";
-import {
-  ImagePart,
-  LanguageModel,
-  TextPart,
-  wrapLanguageModel,
-  type LanguageModelMiddleware,
-} from "ai";
+import type { LanguageModelV3 } from "@ai-sdk/provider";
+import type { ImagePart, LanguageModel, LanguageModelMiddleware, TextPart } from "ai";
+import { wrapLanguageModel } from "ai";
 
 import { Agent } from "../agent/agent.js";
 import {
@@ -1713,27 +1708,49 @@ export class AgentSession {
 
     // 合并 base tools + extension tools + custom tools
     const toolRegistry = new Map<string, AgentTool>();
+    const definitionRegistry = new Map<string, ToolDefinition>();
 
     // base tools
     for (const [name, tool] of this._baseToolDefinitions) {
       if (isAllowedTool(name)) {
         toolRegistry.set(name, tool);
+        definitionRegistry.set(name, tool);
       }
     }
 
     // extension tools
     for (const [name, tool] of extensionTools) {
       toolRegistry.set(name, tool);
+      definitionRegistry.set(name, tool);
     }
 
     // custom tools
     for (const [name, tool] of this._customTools) {
       if (isAllowedTool(name)) {
         toolRegistry.set(name, tool);
+        definitionRegistry.set(name, tool);
       }
     }
 
     this._toolRegistry = toolRegistry;
+
+    this._toolPromptSnippets = new Map(
+      Array.from(definitionRegistry.values())
+        .map((definition) => {
+          const snippet = this._normalizePromptSnippet(definition.promptSnippet);
+          return snippet ? ([definition.name, snippet] as const) : undefined;
+        })
+        .filter((entry): entry is readonly [string, string] => entry !== undefined),
+    );
+
+    this._toolPromptGuidelines = new Map(
+      Array.from(definitionRegistry.values())
+        .map((definition) => {
+          const guidelines = this._normalizePromptGuidelines(definition.promptGuidelines);
+          return guidelines.length > 0 ? ([definition.name, guidelines] as const) : undefined;
+        })
+        .filter((entry): entry is readonly [string, string[]] => entry !== undefined),
+    );
 
     // 计算 active tools
     const nextActiveToolNames = (options?.activeToolNames ?? previousActiveToolNames).filter(

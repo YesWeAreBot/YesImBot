@@ -1,4 +1,4 @@
-import { EmbeddingModel, LanguageModel } from "ai";
+import type { EmbeddingModel, LanguageModel } from "ai";
 
 export type ModelId = `${string}:${string}`;
 

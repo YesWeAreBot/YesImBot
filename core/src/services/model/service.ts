@@ -7,8 +7,8 @@ import type {
   ModelId,
   ModelProvider,
   ModelRegistry,
-} from "@yesimbot/shared-model";
-import { formatModelId, parseModelId } from "@yesimbot/shared-model";
+} from "@yesimbot/agent/ai";
+import { formatModelId, parseModelId } from "@yesimbot/agent/ai";
 import { Context, Schema, Service } from "koishi";
 
 import { loadModelsConfig } from "./models-config";

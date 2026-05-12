@@ -1,8 +1,9 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 
-import "@yesimbot/agent";
+import type {} from "@yesimbot/agent";
 import { Agent, AgentMessage } from "@yesimbot/agent/agent";
+import type {} from "@yesimbot/agent/ai";
 import {
   AgentSession,
   convertToLlm,

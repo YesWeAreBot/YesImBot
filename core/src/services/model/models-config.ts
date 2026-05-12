@@ -1,7 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 
-import type { ChatModelConfig, EmbeddingModelConfig, ModelId } from "@yesimbot/shared-model";
-import { parseModelId } from "@yesimbot/shared-model";
+import { ChatModelConfig, EmbeddingModelConfig, ModelId, parseModelId } from "@yesimbot/agent/ai";
 
 type JsonObject = Record<string, unknown>;
 

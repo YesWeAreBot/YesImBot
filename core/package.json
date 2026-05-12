@@ -41,8 +41,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@yesimbot/agent": "workspace:^",
-    "@yesimbot/shared-model": "workspace:^"
+    "@yesimbot/agent": "workspace:^"
   },
   "devDependencies": {
     "@types/json-schema": "^7.0.15",
