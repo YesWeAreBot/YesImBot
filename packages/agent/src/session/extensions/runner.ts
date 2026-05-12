@@ -7,12 +7,12 @@ import { ImagePart, LanguageModel } from "ai";
 import { AgentMessage } from "../../agent/types.js";
 import { EventBus } from "../event-bus.js";
 import { SessionManager } from "../session-manager.js";
-import { BuildSystemPromptOptions } from "../system-prompt.js";
 import { createExtensionBinding, createExtensionBindingSync } from "./loader.js";
 import type {
   BeforeAgentStartEvent,
   BeforeAgentStartEventResult,
   BeforeProviderRequestEvent,
+  BuildSystemPromptOptions,
   CompactOptions,
   ContextEvent,
   ContextEventResult,

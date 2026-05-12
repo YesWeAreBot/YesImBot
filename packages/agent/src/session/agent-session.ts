@@ -44,10 +44,10 @@ import {
   TurnEndEvent,
   TurnStartEvent,
 } from "./extensions/types.js";
+import type { BuildSystemPromptOptions } from "./extensions/types.js";
 import type { CustomMessage } from "./messages.js";
 import type { CompactionEntry, SessionManager } from "./session-manager.js";
 import { getLatestCompactionEntry, type SessionHeader } from "./session-manager.js";
-import { buildSystemPrompt, type BuildSystemPromptOptions } from "./system-prompt.js";
 
 /** Session-specific events that extend the core AgentEvent */
 export type AgentSessionEvent =
@@ -123,17 +123,6 @@ export interface AgentSessionConfig {
    * Context window size for the agent.
    */
   contextWindow?: number;
-  /**
-   * Custom system prompt (replaces the default prompt).
-   * When provided, this replaces the built-in system prompt entirely.
-   * Use appendSystemPrompt to add content after the default prompt instead.
-   */
-  customSystemPrompt?: string;
-  /**
-   * Text appended to the end of the system prompt.
-   * Useful for adding project-specific instructions without replacing the default prompt.
-   */
-  appendSystemPrompt?: string;
   /**
    * Compaction settings. Controls when and how context compaction triggers.
    * Default: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000 }
@@ -228,11 +217,6 @@ export class AgentSession {
   private _toolPromptSnippets: Map<string, string> = new Map();
   private _toolPromptGuidelines: Map<string, string[]> = new Map();
 
-  // Base system prompt (without extension appends) - used to apply fresh appends each turn
-  private _baseSystemPrompt = "";
-  private _baseSystemPromptOptions!: BuildSystemPromptOptions;
-  private _customSystemPrompt?: string;
-  private _appendSystemPrompt?: string;
   private _retrySettings!: RetrySettings;
   private _compactionSettings: CompactionSettings;
   private _contextWindow: number;
@@ -264,8 +248,6 @@ export class AgentSession {
       baseDelayMs: config.retrySettings?.baseDelayMs ?? 2000,
       maxDelayMs: config.retrySettings?.maxDelayMs ?? 60000,
     };
-    this._customSystemPrompt = config.customSystemPrompt;
-    this._appendSystemPrompt = config.appendSystemPrompt;
 
     if (config.initialSteeringMode) {
       this.agent.steeringMode = config.initialSteeringMode;
@@ -746,24 +728,17 @@ export class AgentSession {
   /**
    * Set active tools by name.
    * Only tools in the registry can be enabled. Unknown tool names are ignored.
-   * Also rebuilds the system prompt to reflect the new tool set.
    * Changes take effect on the next agent turn.
    */
   setActiveToolsByName(toolNames: string[]): void {
     const tools: Record<string, AgentTool> = {};
-    const validToolNames: string[] = [];
     for (const name of toolNames) {
       const tool = this._toolRegistry.get(name);
       if (tool) {
         tools[name] = tool;
-        validToolNames.push(name);
       }
     }
     this.agent.state.tools = tools;
-
-    // Rebuild base system prompt with new tool set
-    this._baseSystemPrompt = this._rebuildSystemPrompt(validToolNames);
-    this.agent.state.systemPrompt = this._baseSystemPrompt;
   }
 
   /** Whether compaction or branch summarization is currently running */
@@ -829,34 +804,29 @@ export class AgentSession {
     return Array.from(unique);
   }
 
-  private _rebuildSystemPrompt(toolNames: string[]): string {
-    const validToolNames = toolNames.filter((name) => this._toolRegistry.has(name));
+  private _collectToolPromptContext(): BuildSystemPromptOptions {
+    const activeToolNames = Object.keys(this.agent.state.tools);
     const toolSnippets: Record<string, string> = {};
     const promptGuidelines: string[] = [];
-    for (const name of validToolNames) {
+
+    for (const name of activeToolNames) {
       const snippet = this._toolPromptSnippets.get(name);
       if (snippet) {
         toolSnippets[name] = snippet;
       }
-
-      const toolGuidelines = this._toolPromptGuidelines.get(name);
-      if (toolGuidelines) {
-        promptGuidelines.push(...toolGuidelines);
+      const guidelines = this._toolPromptGuidelines.get(name);
+      if (guidelines) {
+        promptGuidelines.push(...guidelines);
       }
     }
 
-    const loaderSystemPrompt = this._customSystemPrompt;
-    const appendSystemPrompt = this._appendSystemPrompt;
-
-    this._baseSystemPromptOptions = {
+    return {
       cwd: this._cwd,
-      customPrompt: loaderSystemPrompt,
-      appendSystemPrompt,
-      selectedTools: validToolNames,
+      baseSystemPrompt: this.agent.state.systemPrompt,
+      selectedTools: activeToolNames,
       toolSnippets,
       promptGuidelines,
     };
-    return buildSystemPrompt(this._baseSystemPromptOptions);
   }
 
   // =========================================================================
@@ -871,11 +841,13 @@ export class AgentSession {
     promptText: string,
     images?: ImagePart[],
   ): Promise<AgentMessage[]> {
+    const toolPromptContext = this._collectToolPromptContext();
+
     const result = await this._extensionRunner.emitBeforeAgentStart(
       promptText,
       images,
-      this._baseSystemPrompt,
-      this._baseSystemPromptOptions,
+      this.agent.state.systemPrompt,
+      toolPromptContext,
     );
 
     const injected: AgentMessage[] =
@@ -888,7 +860,9 @@ export class AgentSession {
         timestamp: Date.now(),
       })) ?? [];
 
-    this.agent.state.systemPrompt = result?.systemPrompt ?? this._baseSystemPrompt;
+    if (result?.systemPrompt !== undefined) {
+      this.agent.state.systemPrompt = result.systemPrompt;
+    }
     return injected;
   }
 

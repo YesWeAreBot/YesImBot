@@ -15,7 +15,30 @@ import { CompactionPreparation, CompactionResult } from "../compaction/index.js"
 import { EventBus } from "../event-bus.js";
 import { CustomMessage } from "../messages.js";
 import { CompactionEntry, SessionEntry, SessionManager } from "../session-manager.js";
-import { BuildSystemPromptOptions } from "../system-prompt.js";
+
+/**
+ * Options passed to agent:before-start for system prompt construction.
+ *
+ * Extensions can use these fields to construct the system prompt.
+ * The base extension (order: -1000) uses toolSnippets/promptGuidelines
+ * to build a full prompt; other extensions may ignore or append to baseSystemPrompt.
+ */
+export interface BuildSystemPromptOptions {
+  /** Working directory. */
+  cwd: string;
+  /**
+   * Current value of agent.state.systemPrompt at the time of the event.
+   * Equals AgentOptions.systemPrompt on first call, or a previous extension's
+   * result on subsequent calls. Extensions can ignore, use as base, or replace.
+   */
+  baseSystemPrompt: string;
+  /** Tool names currently active. */
+  selectedTools: string[];
+  /** One-line tool snippets keyed by tool name. */
+  toolSnippets: Record<string, string>;
+  /** Guideline bullets from tools. */
+  promptGuidelines: string[];
+}
 
 // ============================================================================
 // Extension Context

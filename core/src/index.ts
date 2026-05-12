@@ -22,6 +22,41 @@ interface Config extends ModelServiceConfig {
   chatModel: string;
 }
 
+function buildPrompt(
+  opts: import("@yesimbot/agent/session").BuildSystemPromptOptions,
+  platform: string,
+  channelId: string,
+): string {
+  const { selectedTools, toolSnippets, promptGuidelines } = opts;
+
+  const visibleTools = selectedTools.filter((name) => !!toolSnippets[name]);
+  const toolsList =
+    visibleTools.length > 0
+      ? visibleTools.map((name) => `- ${name}: ${toolSnippets[name]}`).join("\n")
+      : "(none)";
+
+  const guidelinesSet = new Set<string>();
+  for (const g of promptGuidelines ?? []) {
+    const normalized = g.trim();
+    if (normalized.length > 0) guidelinesSet.add(normalized);
+  }
+  guidelinesSet.add("Be concise in your responses");
+  guidelinesSet.add("Show file paths clearly when working with files");
+  const guidelines = Array.from(guidelinesSet)
+    .map((g) => `- ${g}`)
+    .join("\n");
+
+  return `你现在正在${platform}的频道${channelId}中与用户进行对话。请根据用户的输入生成回复，并在需要时调用工具。
+
+Available tools:
+${toolsList}
+
+In addition to the tools above, you may have access to other custom tools depending on the project.
+
+Guidelines:
+${guidelines}`;
+}
+
 export const name = "yesimbot";
 export const inject = [];
 
@@ -150,12 +185,24 @@ class RuntimeService extends Service {
         model: chatModel.model,
         convertToLlm: (messages) => convertToLlm(convertAthenaMessages(messages)),
       });
+
+      const promptExtension: ExtensionDefinition = {
+        id: "yesimbot:system-prompt",
+        order: -1000,
+        setup(api) {
+          api.on("agent:before-start", (event) => {
+            return {
+              systemPrompt: buildPrompt(event.systemPromptOptions, platform, channelId),
+            };
+          });
+        },
+      };
+
       const agentSession = new AgentSession({
         cwd: this.config.basePath,
         agent,
         sessionManager,
-        extensions: this.ctx["yesimbot.extension"].getAllExtensions(),
-        customSystemPrompt: `你现在正在${platform}的频道${channelId}中与用户进行对话。请根据用户的输入生成回复，并在需要时调用工具。`,
+        extensions: [...this.ctx["yesimbot.extension"].getAllExtensions(), promptExtension],
       });
       this.ctx["yesimbot.extension"].registerRunner(agentSession.extensionRunner);
 
