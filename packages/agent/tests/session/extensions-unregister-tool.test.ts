@@ -421,4 +421,50 @@ describe("ExtensionRegistry", () => {
 
     expect(mockRunner.reload).not.toHaveBeenCalled();
   });
+
+  it("lifecycle: add -> registerRunner -> remove broadcasts updated definitions to runner", () => {
+    const registry = new ExtensionRegistry();
+    const defA: ExtensionDefinition = { id: "ext-a", setup() {} };
+    const defB: ExtensionDefinition = { id: "ext-b", setup() {} };
+
+    registry.add(defA);
+    registry.add(defB);
+
+    const mockRunner = {
+      reload: vi.fn().mockResolvedValue(undefined),
+    } as unknown as ExtensionRunner;
+
+    registry.registerRunner(mockRunner);
+
+    // Remove ext-a — runner should receive [ext-b]
+    registry.remove("ext-a");
+
+    expect(mockRunner.reload).toHaveBeenCalledTimes(1);
+    expect(mockRunner.reload).toHaveBeenCalledWith([expect.objectContaining({ id: "ext-b" })]);
+
+    // Remove ext-b — runner should receive []
+    registry.remove("ext-b");
+
+    expect(mockRunner.reload).toHaveBeenCalledTimes(2);
+    expect(mockRunner.reload).toHaveBeenCalledWith([]);
+  });
+
+  it("lifecycle: unregisterRunner after session dispose prevents stale broadcasts", () => {
+    const registry = new ExtensionRegistry();
+    const defA: ExtensionDefinition = { id: "ext-a", setup() {} };
+    registry.add(defA);
+
+    const mockRunner = {
+      reload: vi.fn().mockResolvedValue(undefined),
+    } as unknown as ExtensionRunner;
+
+    registry.registerRunner(mockRunner);
+
+    // Simulate session dispose: unregister runner first, then remove extension
+    registry.unregisterRunner(mockRunner);
+    registry.remove("ext-a");
+
+    // Stale runner should NOT receive the broadcast
+    expect(mockRunner.reload).not.toHaveBeenCalled();
+  });
 });

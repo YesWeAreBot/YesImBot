@@ -102,7 +102,9 @@ export default class SkillPlugin extends Service<SkillConfig> {
     });
   }
 
-  override async stop(): Promise<void> {}
+  override async stop(): Promise<void> {
+    this.ctx["yesimbot.extension"].unregisterExtension("skill");
+  }
 }
 
 type LoadSkillToolInput = {

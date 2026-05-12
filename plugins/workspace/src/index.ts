@@ -33,8 +33,12 @@ export default class WorkspacePlugin extends Service<WorkspacePluginConfig> {
     ).description("持久化路径映射"),
     timeoutMs: Schema.number().default(30000).description("命令执行超时（毫秒）"),
     enableNetwork: Schema.boolean().default(false).description("启用网络访问"),
-    enablePython: Schema.boolean().default(false).description("启用 Python 执行"),
-    enableJavascript: Schema.boolean().default(false).description("启用 JavaScript 执行"),
+    /**
+     * Python and JavaScript execution are disabled due to wasm loader issues in the current environment.
+     * https://github.com/vercel-labs/just-bash/issues/159
+     */
+    // enablePython: Schema.boolean().default(false).description("启用 Python 执行"),
+    // enableJavascript: Schema.boolean().default(false).description("启用 JavaScript 执行"),
   });
 
   private ws?: Workspace;
@@ -78,8 +82,8 @@ export default class WorkspacePlugin extends Service<WorkspacePluginConfig> {
         cwd: this.config.cwd,
         timeoutMs: this.config.timeoutMs,
         network: this.config.enableNetwork ? {} : undefined,
-        python: this.config.enablePython,
-        javascript: this.config.enableJavascript,
+        // python: this.config.enablePython,
+        // javascript: this.config.enableJavascript,
       },
     };
 
@@ -93,9 +97,18 @@ export default class WorkspacePlugin extends Service<WorkspacePluginConfig> {
       id: "workspace",
       setup(api: ExtensionAPI) {
         api.on("agent:before-start", (event) => {
+          const sandboxInstruction = `## Bash Sandbox Environment
+You are operating in a sandboxed bash environment with the following configuration:
+- Current working directory: ${workspaceConfig.bash.cwd}
+- Network access: ${workspaceConfig.bash.network ? "Enabled" : "Disabled"}
+- Command execution timeout: ${workspaceConfig.bash.timeoutMs} ms
+- Use \`help\` command to see available commands and tools.
+
+Use this environment to execute commands safely. Always be mindful of the limitations and configurations when running commands.
+          `;
+
           return {
-            systemPrompt:
-              event.systemPrompt + `\n\nCurrent working directory: ${workspaceConfig.bash.cwd}`,
+            systemPrompt: event.systemPrompt + `\n\n${sandboxInstruction}`,
           };
         });
 
@@ -119,6 +132,7 @@ export default class WorkspacePlugin extends Service<WorkspacePluginConfig> {
   }
 
   async stop(): Promise<void> {
+    this.ctx["yesimbot.extension"].unregisterExtension("workspace");
     this.logger.info("Workspace plugin stopped");
   }
 }

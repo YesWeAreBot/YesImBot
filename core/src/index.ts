@@ -120,6 +120,10 @@ export class ExtensionService extends Service {
   public registerRunner(runner: ExtensionRunner) {
     this.extensionRegistry.registerRunner(runner);
   }
+
+  public unregisterRunner(runner: ExtensionRunner) {
+    this.extensionRegistry.unregisterRunner(runner);
+  }
 }
 
 function convertAthenaMessages(messages: AgentMessage[]): AgentMessage[] {
@@ -215,7 +219,6 @@ class RuntimeService extends Service {
       };
 
       agentSession.subscribe((event) => {
-        this.ctx.logger.info(`Agent event: ${event.type}`);
         switch (event.type) {
           case "agent_start":
             break;
@@ -278,6 +281,7 @@ class RuntimeService extends Service {
       const key: ChannelKey = `${platform}:${channelId}`;
       const existing = channels.get(key);
       if (existing) {
+        this.ctx["yesimbot.extension"].unregisterRunner(existing.agentSession.extensionRunner);
         existing.agentSession.dispose();
         const newCtx = createSessionContext(platform, channelId, sessionManager, existing.bot);
         channels.set(key, newCtx);
