@@ -780,6 +780,11 @@ export class AgentSession {
     return this.sessionManager.getSessionName();
   }
 
+  /** Set the display name for the current session */
+  set sessionName(name: string) {
+    this.sessionManager.appendSessionInfo(name);
+  }
+
   private _normalizePromptSnippet(text: string | undefined): string | undefined {
     if (!text) return undefined;
     const oneLine = text

@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 
-import type {} from "@yesimbot/agent";
+import type { BuildSystemPromptOptions } from "@yesimbot/agent";
 import { Agent, AgentMessage } from "@yesimbot/agent/agent";
 import type {} from "@yesimbot/agent/ai";
 import {
@@ -18,14 +18,22 @@ import { AthenaMessage, ChatMessage } from "./messages";
 import { ModelService, ModelServiceConfig } from "./services/model";
 import { SessionService } from "./services/session";
 
+interface ChannelIdentifier {
+  platform: string;
+  channelId: string;
+  type: "private" | "group";
+}
+
 interface Config extends ModelServiceConfig {
   chatModel: string;
+  allowedChannels: ChannelIdentifier[];
 }
 
 function buildPrompt(
-  opts: import("@yesimbot/agent/session").BuildSystemPromptOptions,
+  opts: BuildSystemPromptOptions,
   platform: string,
   channelId: string,
+  type: "private" | "group",
 ): string {
   const { selectedTools, toolSnippets, promptGuidelines } = opts;
 
@@ -40,21 +48,20 @@ function buildPrompt(
     const normalized = g.trim();
     if (normalized.length > 0) guidelinesSet.add(normalized);
   }
-  guidelinesSet.add("Be concise in your responses");
-  guidelinesSet.add("Show file paths clearly when working with files");
   const guidelines = Array.from(guidelinesSet)
     .map((g) => `- ${g}`)
     .join("\n");
 
-  return `你现在正在${platform}的频道${channelId}中与用户进行对话。请根据用户的输入生成回复，并在需要时调用工具。
+    const curDate = new Date().toLocaleString();
+    const curGroupName = type === "group" ? `${platform}:${channelId}` : "a private chat" + ` of ${channelId}`;
+  return `接下来, 你将不是一个 Assistant, 你要**作为一名某个线上聊天软件内一名成员**, 参与其他人的聊天。
 
-Available tools:
-${toolsList}
+=== 背景 ===
 
-In addition to the tools above, you may have access to other custom tools depending on the project.
+这个群聊的名称是 ${curGroupName}。
 
-Guidelines:
-${guidelines}`;
+当前时间是 ${curDate}。
+`;
 }
 
 export const name = "yesimbot";
@@ -62,6 +69,15 @@ export const inject = [];
 
 export const Config = Schema.object({
   chatModel: Schema.dynamic("registry.chatModels"),
+  allowedChannels: Schema.array(
+    Schema.object({
+      platform: Schema.string().required(),
+      channelId: Schema.string().required(),
+      type: Schema.union(["private", "group"] as const).required(),
+    }),
+  )
+    .role("table")
+    .default([]),
   basePath: Schema.path({ filters: ["directory"], allowCreate: true }).default("data/yesimbot"),
   modelsConfigPath: Schema.path({ filters: ["file"], allowCreate: true }),
   logLevel: Schema.union([0, 1, 2, 3]).default(2),
@@ -74,6 +90,7 @@ interface SessionContext {
   sessionManager: SessionManager;
   platform: string;
   channelId: string;
+  type: "private" | "group";
   bot: Bot;
 }
 
@@ -182,6 +199,7 @@ class RuntimeService extends Service {
     const createSessionContext = (
       platform: string,
       channelId: string,
+      type: "private" | "group",
       sessionManager: SessionManager,
       bot: Bot,
     ): SessionContext => {
@@ -196,7 +214,7 @@ class RuntimeService extends Service {
         setup(api) {
           api.on("agent:before-start", (event) => {
             return {
-              systemPrompt: buildPrompt(event.systemPromptOptions, platform, channelId),
+              systemPrompt: buildPrompt(event.systemPromptOptions, platform, channelId, type),
             };
           });
         },
@@ -206,8 +224,10 @@ class RuntimeService extends Service {
         cwd: this.config.basePath,
         agent,
         sessionManager,
+        contextWindow: 65536,
         extensions: [...this.ctx["yesimbot.extension"].getAllExtensions(), promptExtension],
       });
+      agentSession.sessionName = `${platform}:${channelId}`;
       this.ctx["yesimbot.extension"].registerRunner(agentSession.extensionRunner);
 
       const sessionContext: SessionContext = {
@@ -215,6 +235,7 @@ class RuntimeService extends Service {
         sessionManager,
         platform,
         channelId,
+        type,
         bot,
       };
 
@@ -246,10 +267,12 @@ class RuntimeService extends Service {
 
               if (reasoningContent) {
                 this.logger.info(`Agent reasoning:\n${reasoningContent}`);
-                sessionContext.bot.sendMessage(
-                  sessionContext.channelId,
-                  `[Reasoning]\n${reasoningContent}`,
-                );
+                if (sessionContext.type !== "private") {
+                  sessionContext.bot.sendMessage(
+                    sessionContext.channelId,
+                    `[Reasoning]\n${reasoningContent}`,
+                  );
+                }
               }
               if (textContent) {
                 this.logger.info(`Agent response:\n${textContent}`);
@@ -283,7 +306,13 @@ class RuntimeService extends Service {
       if (existing) {
         this.ctx["yesimbot.extension"].unregisterRunner(existing.agentSession.extensionRunner);
         existing.agentSession.dispose();
-        const newCtx = createSessionContext(platform, channelId, sessionManager, existing.bot);
+        const newCtx = createSessionContext(
+          platform,
+          channelId,
+          existing.type,
+          sessionManager,
+          existing.bot,
+        );
         channels.set(key, newCtx);
         this.logger.info(`Session replaced for channel ${key}`);
       }
@@ -295,10 +324,12 @@ class RuntimeService extends Service {
         const sessionManager = await this.ctx["yesimbot.session"].getOrCreate(
           session.platform!,
           session.channelId!,
+          session.isDirect ? "private" : "group",
         );
         const sessionContext = createSessionContext(
           session.platform,
           session.channelId!,
+          session.isDirect ? "private" : "group",
           sessionManager,
           session.bot,
         );
@@ -306,6 +337,17 @@ class RuntimeService extends Service {
         this.logger.info(`Created new agent session for channel ${cid}`);
       }
       const sessionContext = channels.get(cid)!;
+
+      const channelAllowed = isChannelAllowed(
+        session.platform!,
+        session.channelId!,
+        session.isDirect ? "private" : "group",
+        this.config.allowedChannels,
+      );
+
+      const isMentioned = session.stripped.atSelf;
+
+      const shouldTriggerTurn = channelAllowed && (session.isDirect || isMentioned);
 
       await sessionContext.agentSession.sendCustomMessage(
         {
@@ -323,12 +365,30 @@ class RuntimeService extends Service {
             timestamp: Date.now(),
           },
         } as ChatMessage,
-        { triggerTurn: true, deliverAs: "followUp" },
+        { triggerTurn: shouldTriggerTurn, deliverAs: "followUp" },
       );
 
       return next();
     });
   }
+}
+
+function isChannelAllowed(
+  platform: string,
+  channelId: string,
+  type: "private" | "group",
+  allowedChannels: ChannelIdentifier[],
+) {
+  /**
+   * platform -> * matches all platforms
+   * channelId -> * matches all channels under the specified platform
+   */
+  return allowedChannels.some((c) => {
+    const platformMatch = c.platform === "*" || c.platform === platform;
+    const channelMatch = c.channelId === "*" || c.channelId === channelId;
+    const typeMatch = c.type === type;
+    return platformMatch && channelMatch && typeMatch;
+  });
 }
 
 export async function apply(ctx: Context, config: Config) {
