@@ -26,6 +26,11 @@ export interface SessionNewEvent {
   sessionManager: SessionManager;
 }
 
+export interface ChannelMapEntry {
+  platform: string;
+  channel: string;
+}
+
 declare module "koishi" {
   interface Context {
     "yesimbot.session": SessionService;
@@ -95,6 +100,7 @@ export class SessionService extends Service<SessionConfig> {
     const channelDir = this.getChannelDir(platform, channel);
     if (!existsSync(channelDir)) {
       mkdirSync(channelDir, { recursive: true });
+      this.updateChannelMap(platform, channel);
     }
 
     const meta = readMeta(channelDir);
@@ -134,6 +140,7 @@ export class SessionService extends Service<SessionConfig> {
     const channelDir = this.getChannelDir(platform, channel);
     if (!existsSync(channelDir)) {
       mkdirSync(channelDir, { recursive: true });
+      this.updateChannelMap(platform, channel);
     }
 
     const sessionManager = SessionManager.create(this.basePath, channelDir);
@@ -151,6 +158,38 @@ export class SessionService extends Service<SessionConfig> {
   async getMetadata(platform: string, channel: string): Promise<ChannelMeta | null> {
     const channelDir = this.getChannelDir(platform, channel);
     return readMeta(channelDir);
+  }
+
+  getChannelKey(platform: string, channel: string): string {
+    return encodeChannelId(platform, channel);
+  }
+
+  decodeChannelId(channelKey: string): ChannelMapEntry | null {
+    const map = this.getChannelMap();
+    return map[channelKey] ?? null;
+  }
+
+  getChannelMap(): Record<string, ChannelMapEntry> {
+    const mapPath = join(this.basePath, "sessions", "channel-map.json");
+    if (!existsSync(mapPath)) return {};
+    try {
+      return JSON.parse(readFileSync(mapPath, "utf-8"));
+    } catch {
+      return {};
+    }
+  }
+
+  private updateChannelMap(platform: string, channel: string): void {
+    const channelKey = encodeChannelId(platform, channel);
+    const map = this.getChannelMap();
+    map[channelKey] = { platform, channel };
+
+    const mapPath = join(this.basePath, "sessions", "channel-map.json");
+    const sessionsDir = join(this.basePath, "sessions");
+    if (!existsSync(sessionsDir)) {
+      mkdirSync(sessionsDir, { recursive: true });
+    }
+    writeFileSync(mapPath, JSON.stringify(map, null, 2));
   }
 }
 

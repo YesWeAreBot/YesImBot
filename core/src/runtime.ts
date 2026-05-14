@@ -9,6 +9,7 @@ import {
 } from "@yesimbot/agent/session";
 import { Bot, Context, Logger, Service } from "koishi";
 
+import type { ChannelContext } from "./extension.js";
 import { AthenaMessage, ChatMessage } from "./messages.js";
 
 interface ChannelIdentifier {
@@ -64,12 +65,11 @@ export class RuntimeService extends Service<RuntimeConfig> {
     const channels = new Map<ChannelKey, SessionContext>();
 
     const createSessionContext = (
-      platform: string,
-      channelId: string,
-      type: "private" | "group",
+      context: ChannelContext,
       sessionManager: SessionManager,
       bot: Bot,
     ): SessionContext => {
+      const { platform, channelId, type } = context;
       const agent = new Agent({
         model: chatModel.model,
         convertToLlm: (messages) => convertToLlm(convertAthenaMessages(messages)),
@@ -92,10 +92,10 @@ export class RuntimeService extends Service<RuntimeConfig> {
         agent,
         sessionManager,
         contextWindow: 65536,
-        extensions: [...this.ctx["yesimbot.extension"].getAllExtensions(), promptExtension],
+        extensions: [...this.ctx["yesimbot.extension"].getAllExtensions(context), promptExtension],
       });
       agentSession.sessionName = `${platform}:${channelId}`;
-      this.ctx["yesimbot.extension"].registerRunner(agentSession.extensionRunner);
+      this.ctx["yesimbot.extension"].registerRunner(agentSession.extensionRunner, context);
 
       const sessionContext: SessionContext = {
         agentSession,
@@ -174,9 +174,7 @@ export class RuntimeService extends Service<RuntimeConfig> {
         this.ctx["yesimbot.extension"].unregisterRunner(existing.agentSession.extensionRunner);
         existing.agentSession.dispose();
         const newCtx = createSessionContext(
-          platform,
-          channelId,
-          existing.type,
+          { platform, channelId, type: existing.type },
           sessionManager,
           existing.bot,
         );
@@ -194,9 +192,11 @@ export class RuntimeService extends Service<RuntimeConfig> {
           session.isDirect ? "private" : "group",
         );
         const sessionContext = createSessionContext(
-          session.platform,
-          session.channelId!,
-          session.isDirect ? "private" : "group",
+          {
+            platform: session.platform,
+            channelId: session.channelId!,
+            type: session.isDirect ? "private" : "group",
+          },
           sessionManager,
           session.bot,
         );
@@ -284,20 +284,48 @@ function buildPrompt(
     const normalized = g.trim();
     if (normalized.length > 0) guidelinesSet.add(normalized);
   }
+  guidelinesSet.add("发言是行为的一种，沉默、观望、延迟回应同样是正当行为");
+  guidelinesSet.add("先判断是否应该介入，再决定如何表达");
+  guidelinesSet.add("回复简洁自然，避免冗长解释和过度礼貌");
+  guidelinesSet.add("被提及或私聊时优先回应；群聊中观察节奏，不打断对话流");
   const guidelines = Array.from(guidelinesSet)
     .map((g) => `- ${g}`)
     .join("\n");
 
-  const curDate = new Date().toLocaleString();
-  const curGroupName =
-    type === "group" ? `${platform}:${channelId}` : "a private chat" + ` of ${channelId}`;
-  return `接下来, 你将不是一个 Assistant, 你要**作为一名某个线上聊天软件内一名成员**, 参与其他人的聊天。
+  const curDate = new Date().toISOString().split("T")[0];
 
-=== 背景 ===
+  const envLabel =
+    type === "group" ? `群聊: ${platform}:${channelId}` : `私聊: ${platform}:${channelId}`;
 
-这个群聊的名称是 ${curGroupName}。
+  const sceneGuide =
+    type === "group"
+      ? `你在这个群聊中长期存在。
+- 被直接提及时优先回应
+- 观察群聊节奏和氛围，不打断正在进行的对话
+- 适度参与，不过度发言；沉默和观望是正常行为
+- 轻量接话、延迟回应、补充信息都是正当的参与方式`
+      : `这是一次私聊对话。
+- 用户主动发起对话，通常期望得到回应
+- 保持专注，围绕用户当前话题展开
+- 回复可以更详细，但仍保持简洁自然
+- 如需检索信息或执行操作，优先使用可用工具`;
 
-当前时间是 ${curDate}。
+  return `=== 身份 ===
+你是一个长期存在于聊天环境中的成员，不是助手、不是客服、不是问答机器人。
+你不以"我能帮你什么"开场，不主动提供未被请求的服务。
+你的价值来自持续存在感、节奏感和判断力，而非频繁发言。
+
+=== 当前环境 ===
+${envLabel}
+日期: ${curDate}
+
+${sceneGuide}
+
+=== 可用工具 ===
+${toolsList}
+
+=== 行为准则 ===
+${guidelines}
 `;
 }
 

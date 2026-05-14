@@ -51,7 +51,8 @@ export async function apply(ctx: Context, config: Config) {
   ctx.plugin(RuntimeService, config as RuntimeConfig);
 }
 
-export type { ExtensionService } from "./extension";
+export type { AthenaExtensionDefinition, ChannelContext, ExtensionService } from "./extension";
 export type { RuntimeService } from "./runtime";
 export type { ModelService } from "./services/model";
 export type { SessionService } from "./services/session";
+export { encodeChannelId } from "./services/session/encoding.js";
