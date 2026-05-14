@@ -35,7 +35,12 @@ declare module "koishi" {
   }
 }
 
-export class SessionService extends Service {
+export interface SessionConfig {
+  basePath: string;
+  logLevel?: number;
+}
+
+export class SessionService extends Service<SessionConfig> {
   static inject = ["yesimbot.model"];
   readonly logger: Logger;
 
@@ -44,7 +49,7 @@ export class SessionService extends Service {
 
   constructor(
     public ctx: Context,
-    public config: { basePath: string; logLevel?: number },
+    public config: SessionConfig,
   ) {
     super(ctx, "yesimbot.session");
     this.logger = ctx.logger("yesimbot.session");
