@@ -5,6 +5,18 @@ import type { GlobInput, GlobResult, ToolResult } from "../types";
 import type { Workspace } from "../workspace";
 import { createError, stripAnsi } from "./helpers";
 
+function toFindPattern(glob: string): { searchPath: string; namePattern: string } {
+  const starPattern = glob.replace(/\*\*/g, "*");
+  const lastSlash = starPattern.lastIndexOf("/");
+  if (lastSlash === -1) {
+    return { searchPath: ".", namePattern: starPattern };
+  }
+  return {
+    searchPath: starPattern.substring(0, lastSlash) || ".",
+    namePattern: starPattern.substring(lastSlash + 1) || "*",
+  };
+}
+
 const TOOL_NAME = "glob";
 
 const DESCRIPTION = `Find files by glob pattern. Returns matching file paths sorted by modification time.
@@ -36,10 +48,11 @@ export function createGlobTool(
       }
 
       const maxResults = 100;
+      const { namePattern } = toFindPattern(pattern);
 
       try {
         const result = await bash.exec(
-          `find "${path}" -name "${pattern}" -type f 2>/dev/null | sort | head -n ${maxResults + 1}`,
+          `find "${path}" -name "${namePattern}" -type f 2>/dev/null | sort | head -n ${maxResults + 1}`,
         );
 
         if (result.exitCode !== 0) {
