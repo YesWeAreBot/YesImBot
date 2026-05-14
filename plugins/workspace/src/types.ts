@@ -13,6 +13,8 @@ export interface WorkspaceConfig {
   filesystem: {
     /** 持久化路径映射：虚拟路径 → 宿主机路径 */
     persistPaths?: Record<string, string>;
+    /** 只读路径映射：虚拟路径 → 宿主机路径 */
+    readOnlyPaths?: Record<string, string>;
     /** 初始文件（注入到虚拟文件系统） */
     initialFiles?: Record<string, string>;
   };
@@ -34,6 +36,13 @@ export interface WorkspaceConfig {
     /** 启用 JavaScript（默认: false） */
     javascript?: boolean;
   };
+
+  /**
+   * 会话隔离模式
+   * - true: 只挂载当前频道的会话目录到 /data/session
+   * - false: 挂载整个会话根目录到 /data/sessions
+   */
+  sessionIsolation?: boolean;
 }
 
 export interface ExecutionLimits {

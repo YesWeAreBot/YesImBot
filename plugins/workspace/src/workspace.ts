@@ -29,6 +29,7 @@ export class Workspace {
   private buildFilesystem(): MountableFs {
     const root = resolve(this.config.root);
     const persistPaths = this.config.filesystem?.persistPaths ?? {};
+    const readOnlyPaths = this.config.filesystem?.readOnlyPaths ?? {};
     const initialFiles = this.config.filesystem?.initialFiles ?? {};
     const memoryFiles: InitialFiles = {};
     for (const [path, to] of Object.entries(initialFiles)) {
@@ -46,6 +47,10 @@ export class Workspace {
         ...Object.entries(persistPaths).map(([mountPoint, hostPath]) => ({
           mountPoint,
           filesystem: new ReadWriteFs({ root: resolve(hostPath) }),
+        })),
+        ...Object.entries(readOnlyPaths).map(([mountPoint, hostPath]) => ({
+          mountPoint,
+          filesystem: new OverlayFs({ root: resolve(hostPath), mountPoint: "/", readOnly: true }),
         })),
       ],
     });
