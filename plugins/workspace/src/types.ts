@@ -36,13 +36,6 @@ export interface WorkspaceConfig {
     /** 启用 JavaScript（默认: false） */
     javascript?: boolean;
   };
-
-  /**
-   * 会话隔离模式
-   * - true: 只挂载当前频道的会话目录到 /data/session
-   * - false: 挂载整个会话根目录到 /data/sessions
-   */
-  sessionIsolation?: boolean;
 }
 
 export interface ExecutionLimits {
