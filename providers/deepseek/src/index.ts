@@ -38,6 +38,7 @@ export const Config = Schema.object({
       { id: "deepseek-v4-flash", toolCall: true, reasoning: true },
       { id: "deepseek-v4-pro", toolCall: true, reasoning: true },
     ])
+    .role("table")
     .description("可用聊天模型列表"),
 }).i18n({
   "en-US": enUS._config,
