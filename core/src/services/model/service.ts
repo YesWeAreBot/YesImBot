@@ -1,4 +1,4 @@
-import { dirname, join } from "node:path";
+import { resolve } from "node:path";
 
 import type {
   ChatModelRef,
@@ -16,7 +16,6 @@ import { loadModelsConfig } from "./models-config";
 export interface ModelServiceConfig {
   basePath: string;
   logLevel?: number;
-  modelsConfigPath?: string;
 }
 
 function cloneChatModelConfig(config: ChatModelConfig): ChatModelConfig {
@@ -72,12 +71,8 @@ export class ModelService extends Service<ModelServiceConfig> implements ModelRe
     this.logger.level = config.logLevel ?? 2;
   }
 
-  private getModelsConfigPath(): string | undefined {
-    if (this.config.modelsConfigPath) {
-      return this.config.modelsConfigPath;
-    }
-
-    return join(this.ctx.baseDir, dirname(this.config.basePath), "models.json");
+  private getModelsConfigPath(): string {
+    return resolve(this.ctx.baseDir, this.config.basePath, "models.json");
   }
 
   private refreshSchemas(): void {

@@ -127,20 +127,20 @@ export class RuntimeService extends Service<RuntimeConfig> {
                 .filter((part) => part.type === "text")
                 .map((part) => part.text)
                 .join("");
-              const reasoningContent = event.message.content
-                .filter((part) => part.type === "reasoning")
-                .map((part) => part.text)
-                .join("");
+              // const reasoningContent = event.message.content
+              //   .filter((part) => part.type === "reasoning")
+              //   .map((part) => part.text)
+              //   .join("");
 
-              if (reasoningContent) {
-                this.logger.info(`Agent reasoning:\n${reasoningContent}`);
-                if (sessionContext.type !== "private") {
-                  sessionContext.bot.sendMessage(
-                    sessionContext.channelId,
-                    `[Reasoning]\n${reasoningContent}`,
-                  );
-                }
-              }
+              // if (reasoningContent) {
+              //   this.logger.info(`Agent reasoning:\n${reasoningContent}`);
+              //   if (sessionContext.type !== "private") {
+              //     sessionContext.bot.sendMessage(
+              //       sessionContext.channelId,
+              //       `[Reasoning]\n${reasoningContent}`,
+              //     );
+              //   }
+              // }
               if (textContent) {
                 this.logger.info(`Agent response:\n${textContent}`);
                 sessionContext.bot.sendMessage(sessionContext.channelId, textContent);
@@ -206,15 +206,21 @@ export class RuntimeService extends Service<RuntimeConfig> {
       const sessionContext = channels.get(cid)!;
 
       const channelAllowed = isChannelAllowed(
-        session.platform!,
+        session.platform,
         session.channelId!,
         session.isDirect ? "private" : "group",
         this.config.allowedChannels,
       );
 
-      const isMentioned = session.stripped.atSelf;
+      const isMentioned =
+        session.stripped.atSelf ||
+        session.elements?.some((el) => el.type === "at" && el.attrs.id === session.bot.selfId);
 
       const shouldTriggerTurn = channelAllowed && (session.isDirect || isMentioned);
+
+      const options = shouldTriggerTurn
+        ? { triggerTurn: true, deliverAs: "followUp" as const }
+        : { triggerTurn: false };
 
       await sessionContext.agentSession.sendCustomMessage(
         {
@@ -232,7 +238,7 @@ export class RuntimeService extends Service<RuntimeConfig> {
             timestamp: Date.now(),
           },
         } as ChatMessage,
-        { triggerTurn: shouldTriggerTurn, deliverAs: "followUp" },
+        options,
       );
 
       return next();
