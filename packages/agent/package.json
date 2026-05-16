@@ -6,23 +6,28 @@
   ],
   "type": "module",
   "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "require": "./dist/index.cjs"
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.js"
     },
     "./ai": {
       "types": "./dist/ai/index.d.ts",
-      "require": "./dist/ai/index.cjs"
+      "require": "./dist/ai/index.cjs",
+      "default": "./dist/ai/index.js"
     },
     "./agent": {
       "types": "./dist/agent/index.d.ts",
-      "require": "./dist/agent/index.cjs"
+      "require": "./dist/agent/index.cjs",
+      "default": "./dist/agent/index.js"
     },
     "./session": {
       "types": "./dist/session/index.d.ts",
-      "require": "./dist/session/index.cjs"
+      "require": "./dist/session/index.cjs",
+      "default": "./dist/session/index.js"
     },
     "./package.json": "./package.json"
   },

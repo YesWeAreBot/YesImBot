@@ -1,10 +1,4 @@
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 // ============================================================================
@@ -18,13 +12,7 @@ import { dirname } from "node:path";
 export interface Settings {
   // Model
   defaultModel?: string;
-  defaultThinkingLevel?:
-    | "off"
-    | "minimal"
-    | "low"
-    | "medium"
-    | "high"
-    | "xhigh";
+  defaultThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
   // Session behavior
   steeringMode?: "all" | "one-at-a-time";
@@ -57,10 +45,7 @@ export interface Settings {
 // ============================================================================
 
 export const DEFAULT_SETTINGS: Required<
-  Pick<
-    Settings,
-    "contextWindow" | "steeringMode" | "followUpMode"
-  >
+  Pick<Settings, "contextWindow" | "steeringMode" | "followUpMode">
 > & {
   compaction: Required<NonNullable<Settings["compaction"]>>;
   retry: Required<NonNullable<Settings["retry"]>>;
@@ -115,8 +100,7 @@ export class FileSettingsStorage implements SettingsStorage {
       return JSON.parse(content) as Settings;
     } catch (error) {
       // JSON parse error - warn and backup corrupted file
-      const message =
-        error instanceof Error ? error.message : String(error);
+      const message = error instanceof Error ? error.message : String(error);
       console.warn(
         `[SettingsManager] Failed to parse ${filePath}: ${message}. Backing up and using empty settings.`,
       );
@@ -235,10 +219,7 @@ export class SettingsManager {
         typeof targetVal === "object" &&
         !Array.isArray(targetVal)
       ) {
-        result[key] = this._deepMerge(
-          targetVal as Settings,
-          sourceVal as Settings,
-        );
+        result[key] = this._deepMerge(targetVal as Settings, sourceVal as Settings);
       } else if (sourceVal !== undefined) {
         result[key] = sourceVal;
       }
@@ -280,19 +261,11 @@ export class SettingsManager {
   }
 
   get steeringMode(): "all" | "one-at-a-time" {
-    return (
-      this._local.steeringMode ??
-      this._global.steeringMode ??
-      DEFAULT_SETTINGS.steeringMode
-    );
+    return this._local.steeringMode ?? this._global.steeringMode ?? DEFAULT_SETTINGS.steeringMode;
   }
 
   get followUpMode(): "all" | "one-at-a-time" {
-    return (
-      this._local.followUpMode ??
-      this._global.followUpMode ??
-      DEFAULT_SETTINGS.followUpMode
-    );
+    return this._local.followUpMode ?? this._global.followUpMode ?? DEFAULT_SETTINGS.followUpMode;
   }
 
   get defaultModel(): string | undefined {
@@ -300,9 +273,7 @@ export class SettingsManager {
   }
 
   get defaultThinkingLevel(): Settings["defaultThinkingLevel"] {
-    return (
-      this._local.defaultThinkingLevel ?? this._global.defaultThinkingLevel
-    );
+    return this._local.defaultThinkingLevel ?? this._global.defaultThinkingLevel;
   }
 
   // =========================================================================
@@ -326,100 +297,50 @@ export class SettingsManager {
     this.set("contextWindow", value, scope);
   }
 
-  setCompactionEnabled(
-    enabled: boolean,
-    scope: "global" | "local" = "local",
-  ): void {
+  setCompactionEnabled(enabled: boolean, scope: "global" | "local" = "local"): void {
     const current = scope === "global" ? this._global : this._local;
-    this.set(
-      "compaction",
-      { ...(current.compaction ?? {}), enabled },
-      scope,
-    );
+    this.set("compaction", { ...(current.compaction ?? {}), enabled }, scope);
   }
 
-  setCompactionReserveTokens(
-    tokens: number,
-    scope: "global" | "local" = "local",
-  ): void {
+  setCompactionReserveTokens(tokens: number, scope: "global" | "local" = "local"): void {
     const current = scope === "global" ? this._global : this._local;
-    this.set(
-      "compaction",
-      { ...(current.compaction ?? {}), reserveTokens: tokens },
-      scope,
-    );
+    this.set("compaction", { ...(current.compaction ?? {}), reserveTokens: tokens }, scope);
   }
 
-  setCompactionKeepRecentTokens(
-    tokens: number,
-    scope: "global" | "local" = "local",
-  ): void {
+  setCompactionKeepRecentTokens(tokens: number, scope: "global" | "local" = "local"): void {
     const current = scope === "global" ? this._global : this._local;
-    this.set(
-      "compaction",
-      { ...(current.compaction ?? {}), keepRecentTokens: tokens },
-      scope,
-    );
+    this.set("compaction", { ...(current.compaction ?? {}), keepRecentTokens: tokens }, scope);
   }
 
-  setRetryEnabled(
-    enabled: boolean,
-    scope: "global" | "local" = "local",
-  ): void {
+  setRetryEnabled(enabled: boolean, scope: "global" | "local" = "local"): void {
     const current = scope === "global" ? this._global : this._local;
     this.set("retry", { ...(current.retry ?? {}), enabled }, scope);
   }
 
-  setRetryMaxRetries(
-    maxRetries: number,
-    scope: "global" | "local" = "local",
-  ): void {
+  setRetryMaxRetries(maxRetries: number, scope: "global" | "local" = "local"): void {
     const current = scope === "global" ? this._global : this._local;
-    this.set(
-      "retry",
-      { ...(current.retry ?? {}), maxRetries },
-      scope,
-    );
+    this.set("retry", { ...(current.retry ?? {}), maxRetries }, scope);
   }
 
-  setRetryBaseDelayMs(
-    delayMs: number,
-    scope: "global" | "local" = "local",
-  ): void {
+  setRetryBaseDelayMs(delayMs: number, scope: "global" | "local" = "local"): void {
     const current = scope === "global" ? this._global : this._local;
-    this.set(
-      "retry",
-      { ...(current.retry ?? {}), baseDelayMs: delayMs },
-      scope,
-    );
+    this.set("retry", { ...(current.retry ?? {}), baseDelayMs: delayMs }, scope);
   }
 
-  setRetryMaxDelayMs(
-    delayMs: number,
-    scope: "global" | "local" = "local",
-  ): void {
+  setRetryMaxDelayMs(delayMs: number, scope: "global" | "local" = "local"): void {
     const current = scope === "global" ? this._global : this._local;
     this.set("retry", { ...(current.retry ?? {}), maxDelayMs: delayMs }, scope);
   }
 
-  setSteeringMode(
-    mode: "all" | "one-at-a-time",
-    scope: "global" | "local" = "local",
-  ): void {
+  setSteeringMode(mode: "all" | "one-at-a-time", scope: "global" | "local" = "local"): void {
     this.set("steeringMode", mode, scope);
   }
 
-  setFollowUpMode(
-    mode: "all" | "one-at-a-time",
-    scope: "global" | "local" = "local",
-  ): void {
+  setFollowUpMode(mode: "all" | "one-at-a-time", scope: "global" | "local" = "local"): void {
     this.set("followUpMode", mode, scope);
   }
 
-  setDefaultModel(
-    model: string | undefined,
-    scope: "global" | "local" = "local",
-  ): void {
+  setDefaultModel(model: string | undefined, scope: "global" | "local" = "local"): void {
     this.set("defaultModel", model, scope);
   }
 
@@ -430,11 +351,7 @@ export class SettingsManager {
     this.set("defaultThinkingLevel", level, scope);
   }
 
-  setExtensionSetting(
-    key: string,
-    value: unknown,
-    scope: "global" | "local" = "local",
-  ): void {
+  setExtensionSetting(key: string, value: unknown, scope: "global" | "local" = "local"): void {
     const current = scope === "global" ? this._global : this._local;
     const extensions = { ...(current.extensions ?? {}), [key]: value };
     this.set("extensions", extensions, scope);
@@ -468,8 +385,7 @@ export class SettingsManager {
     const dirty = scope === "global" ? this._dirtyGlobal : this._dirtyLocal;
     if (dirty.size === 0) return;
 
-    const filePath =
-      scope === "global" ? this._globalPath : this._localPath;
+    const filePath = scope === "global" ? this._globalPath : this._localPath;
     if (!filePath) return;
 
     const source = scope === "global" ? this._global : this._local;
@@ -477,9 +393,7 @@ export class SettingsManager {
     // Build partial object with only dirty fields
     const partial: Settings = {};
     for (const key of dirty) {
-      (partial as Record<string, unknown>)[key] = (
-        source as Record<string, unknown>
-      )[key];
+      (partial as Record<string, unknown>)[key] = (source as Record<string, unknown>)[key];
     }
 
     // Load existing, merge partial, save

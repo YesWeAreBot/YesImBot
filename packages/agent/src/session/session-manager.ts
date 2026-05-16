@@ -847,13 +847,13 @@ export class SessionManager {
   ): string {
     const entry: CustomMessageEntry<T> = {
       type: "custom_message",
+      id: generateId(this.byId),
+      parentId: this.leafId,
+      timestamp: new Date().toISOString(),
       customType,
       content,
       display,
       details,
-      id: generateId(this.byId),
-      parentId: this.leafId,
-      timestamp: new Date().toISOString(),
     };
     this._appendEntry(entry);
     return entry.id;
