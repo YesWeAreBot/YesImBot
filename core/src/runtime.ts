@@ -6,7 +6,9 @@ import {
   convertToLlm,
   ExtensionDefinition,
   SessionManager,
+  SettingsManager,
 } from "@yesimbot/agent/session";
+import { join } from "node:path";
 import { Bot, Context, Logger, Service } from "koishi";
 
 import type { ChannelContext } from "./extension.js";
@@ -87,11 +89,19 @@ export class RuntimeService extends Service<RuntimeConfig> {
         },
       };
 
+      // Create SettingsManager for dual-scope settings
+      const channelDir = this.ctx["yesimbot.session"].getChannelDir(platform, channelId);
+      const settingsManager = new SettingsManager({
+        globalPath: join(this.config.basePath, "settings.json"),
+        localPath: join(channelDir, "settings.json"),
+        logger: this.logger,
+      });
+
       const agentSession = new AgentSession({
         cwd: this.config.basePath,
         agent,
         sessionManager,
-        contextWindow: 65536,
+        settingsManager,
         extensions: [...this.ctx["yesimbot.extension"].getAllExtensions(context), promptExtension],
       });
       agentSession.sessionName = `${platform}:${channelId}`;

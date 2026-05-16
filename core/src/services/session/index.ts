@@ -28,7 +28,7 @@ export interface SessionNewEvent {
 
 export interface ChannelMapEntry {
   platform: string;
-  channel: string;
+  channelId: string;
 }
 
 declare module "koishi" {
@@ -86,6 +86,10 @@ export class SessionService extends Service<SessionConfig> {
   getChannelDir(platform: string, channel: string): string {
     const encoded = encodeChannelId(platform, channel);
     return join(this.basePath, "sessions", encoded);
+  }
+
+  getChannelSettingsPath(platform: string, channel: string): string {
+    return join(this.getChannelDir(platform, channel), "settings.json");
   }
 
   async getOrCreate(
@@ -182,7 +186,7 @@ export class SessionService extends Service<SessionConfig> {
   private updateChannelMap(platform: string, channel: string): void {
     const channelKey = encodeChannelId(platform, channel);
     const map = this.getChannelMap();
-    map[channelKey] = { platform, channel };
+    map[channelKey] = { platform, channelId: channel };
 
     const mapPath = join(this.basePath, "sessions", "channel-map.json");
     const sessionsDir = join(this.basePath, "sessions");
