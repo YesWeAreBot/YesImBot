@@ -785,6 +785,42 @@ export class AgentSession {
     this.sessionManager.appendSessionInfo(name);
   }
 
+  /** Update the context window used for compaction checks. */
+  setContextWindow(value: number, scope: "global" | "local" = "local"): void {
+    this._contextWindow = value;
+    this._settingsManager.setContextWindow(value, scope);
+  }
+
+  /** Update the compaction reserve token threshold. */
+  setCompactionReserveTokens(tokens: number, scope: "global" | "local" = "local"): void {
+    this._compactionSettings = { ...this._compactionSettings, reserveTokens: tokens };
+    this._settingsManager.setCompactionReserveTokens(tokens, scope);
+  }
+
+  /** Update the compaction keep-recent token threshold. */
+  setCompactionKeepRecentTokens(tokens: number, scope: "global" | "local" = "local"): void {
+    this._compactionSettings = { ...this._compactionSettings, keepRecentTokens: tokens };
+    this._settingsManager.setCompactionKeepRecentTokens(tokens, scope);
+  }
+
+  /** Update the retry attempt limit. */
+  setRetryMaxRetries(maxRetries: number, scope: "global" | "local" = "local"): void {
+    this._retrySettings = { ...this._retrySettings, maxRetries };
+    this._settingsManager.setRetryMaxRetries(maxRetries, scope);
+  }
+
+  /** Update the retry base delay. */
+  setRetryBaseDelayMs(delayMs: number, scope: "global" | "local" = "local"): void {
+    this._retrySettings = { ...this._retrySettings, baseDelayMs: delayMs };
+    this._settingsManager.setRetryBaseDelayMs(delayMs, scope);
+  }
+
+  /** Update the retry max delay. */
+  setRetryMaxDelayMs(delayMs: number, scope: "global" | "local" = "local"): void {
+    this._retrySettings = { ...this._retrySettings, maxDelayMs: delayMs };
+    this._settingsManager.setRetryMaxDelayMs(delayMs, scope);
+  }
+
   private _normalizePromptSnippet(text: string | undefined): string | undefined {
     if (!text) return undefined;
     const oneLine = text
@@ -1151,18 +1187,18 @@ export class AgentSession {
    * Set steering message mode.
    * Saves to settings.
    */
-  setSteeringMode(mode: "all" | "one-at-a-time"): void {
+  setSteeringMode(mode: "all" | "one-at-a-time", scope: "global" | "local" = "local"): void {
     this.agent.steeringMode = mode;
-    this._settingsManager.setSteeringMode(mode);
+    this._settingsManager.setSteeringMode(mode, scope);
   }
 
   /**
    * Set follow-up message mode.
    * Saves to settings.
    */
-  setFollowUpMode(mode: "all" | "one-at-a-time"): void {
+  setFollowUpMode(mode: "all" | "one-at-a-time", scope: "global" | "local" = "local"): void {
     this.agent.followUpMode = mode;
-    this._settingsManager.setFollowUpMode(mode);
+    this._settingsManager.setFollowUpMode(mode, scope);
   }
 
   // =========================================================================
@@ -1610,9 +1646,9 @@ export class AgentSession {
   /**
    * Toggle auto-compaction setting.
    */
-  setAutoCompactionEnabled(enabled: boolean): void {
+  setAutoCompactionEnabled(enabled: boolean, scope: "global" | "local" = "local"): void {
     this._compactionSettings.enabled = enabled;
-    this._settingsManager.setCompactionEnabled(enabled);
+    this._settingsManager.setCompactionEnabled(enabled, scope);
   }
 
   /** Whether auto-compaction is enabled */
@@ -1971,9 +2007,9 @@ export class AgentSession {
   /**
    * Toggle auto-retry setting.
    */
-  setAutoRetryEnabled(enabled: boolean): void {
+  setAutoRetryEnabled(enabled: boolean, scope: "global" | "local" = "local"): void {
     this._retrySettings = { ...this._retrySettings, enabled };
-    this._settingsManager.setRetryEnabled(enabled);
+    this._settingsManager.setRetryEnabled(enabled, scope);
   }
 
   // =========================================================================
