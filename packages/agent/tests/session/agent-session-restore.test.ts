@@ -22,7 +22,11 @@ function createMockModel() {
       request: { body: "{}" },
     }),
     doStream: async () => ({
-      stream: new ReadableStream({ start(c) { c.close(); } }),
+      stream: new ReadableStream({
+        start(c) {
+          c.close();
+        },
+      }),
     }),
   };
 }

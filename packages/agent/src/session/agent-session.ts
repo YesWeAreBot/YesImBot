@@ -181,6 +181,8 @@ export class AgentSession {
   private _compactionAbortController: AbortController | undefined = undefined;
   private _autoCompactionAbortController: AbortController | undefined = undefined;
   private _overflowRecoveryAttempted = false;
+  /** Prevents the context-window-limit check from running more than once per prompt cycle. */
+  private _contextWindowCheckDone = false;
 
   // Branch summarization state
   private _branchSummaryAbortController: AbortController | undefined = undefined;
@@ -450,6 +452,7 @@ export class AgentSession {
     // This ensures the UI sees the updated queue state
     if (event.type === "message_start" && event.message.role === "user") {
       this._overflowRecoveryAttempted = false;
+      this._contextWindowCheckDone = false;
       const messageText = this._getUserMessageText(event.message);
       if (messageText) {
         // Check steering queue first
@@ -519,6 +522,7 @@ export class AgentSession {
 
     // Check auto-retry and auto-compaction after agent completes
     if (event.type === "agent_end" && this._lastAssistantMessage) {
+      this._contextWindowCheckDone = false;
       const msg = this._lastAssistantMessage;
       this._lastAssistantMessage = undefined;
 
@@ -909,6 +913,9 @@ export class AgentSession {
 
         return;
       }
+
+      // Check if context window limit is exceeded (handles restored sessions without usage data)
+      await this._ensureContextWindowLimit();
 
       // Check if we need to compact before sending (catches aborted responses)
       const lastAssistant = this._findLastAssistantMessage();
@@ -1324,6 +1331,28 @@ export class AgentSession {
    */
   abortBranchSummary(): void {
     this._branchSummaryAbortController?.abort();
+  }
+
+  /**
+   * Ensure the current context does not exceed the context window limit.
+   * Uses estimateContextTokens (works without assistant usage data) so restored
+   * messages are correctly sized. Runs at most once per prompt cycle via
+   * `_contextWindowCheckDone` to avoid infinite compaction loops.
+   */
+  private async _ensureContextWindowLimit(): Promise<void> {
+    if (this._contextWindowCheckDone) return;
+    this._contextWindowCheckDone = true;
+
+    if (!this._compactionSettings.enabled) return;
+
+    const estimate = estimateContextTokens(this.agent.state.messages);
+    if (shouldCompact(estimate.tokens, this._contextWindow, this._compactionSettings)) {
+      if (!this.model) {
+        // No model available — cannot compact, log and degrade gracefully
+        return;
+      }
+      await this._runAutoCompaction("threshold", false);
+    }
   }
 
   /**
