@@ -5,6 +5,7 @@ import { AgentSession } from "../../src/session/agent-session.js";
 import type { CustomMessage } from "../../src/session/messages.js";
 import { convertToLlm } from "../../src/session/messages.js";
 import { SessionManager } from "../../src/session/session-manager.js";
+import { InMemorySettingsStorage, SettingsManager } from "../../src/session/settings-manager.js";
 
 function createMockModel() {
   return {
@@ -37,11 +38,15 @@ function createTestAgentAndSession(sessionManager: SessionManager) {
     model: model as any,
     convertToLlm: (messages) => convertToLlm(messages),
   });
+  const settingsManager = new SettingsManager({
+    globalPath: "/tmp/test/settings.json",
+    storage: new InMemorySettingsStorage(),
+  });
   const session = new AgentSession({
     cwd: "/tmp/test",
     agent,
     sessionManager,
-    contextWindow: 65536,
+    settingsManager,
   });
   return { agent, session };
 }

@@ -48,6 +48,7 @@ import type { BuildSystemPromptOptions } from "./extensions/types.js";
 import type { CustomMessage } from "./messages.js";
 import type { CompactionEntry, SessionManager } from "./session-manager.js";
 import { getLatestCompactionEntry, type SessionHeader } from "./session-manager.js";
+import type { SettingsManager } from "./settings-manager.js";
 
 /** Session-specific events that extend the core AgentEvent */
 export type AgentSessionEvent =
@@ -100,6 +101,8 @@ export interface AgentSessionConfig {
   agent: Agent;
   sessionManager: SessionManager;
   cwd: string;
+  /** Settings manager for dual-scope settings persistence */
+  settingsManager: SettingsManager;
   /** SDK custom tools registered outside extensions */
   customTools?: Map<string, ToolDefinition>;
   /** Initial active built-in tool names. Default: [read, bash, edit, write] */
@@ -119,30 +122,6 @@ export interface AgentSessionConfig {
   sessionStartEvent?: SessionStartEvent;
   /** Extension definitions list, provided by core or ExtensionRegistry */
   extensions?: ExtensionDefinition[];
-  /**
-   * Context window size for the agent.
-   */
-  contextWindow?: number;
-  /**
-   * Compaction settings. Controls when and how context compaction triggers.
-   * Default: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000 }
-   */
-  compactionSettings?: Partial<CompactionSettings>;
-  /**
-   * Auto-retry settings for transient errors (overloaded, rate limit, server errors).
-   * Default: { enabled: true, maxRetries: 3, baseDelayMs: 2000, maxDelayMs: 60000 }
-   */
-  retrySettings?: Partial<RetrySettings>;
-  /**
-   * Initial steering message mode.
-   * Default: agent default (typically "one-at-a-time")
-   */
-  initialSteeringMode?: "all" | "one-at-a-time";
-  /**
-   * Initial follow-up message mode.
-   * Default: agent default (typically "one-at-a-time")
-   */
-  initialFollowUpMode?: "all" | "one-at-a-time";
 }
 
 export interface ExtensionBindings {
@@ -219,6 +198,7 @@ export class AgentSession {
   private _toolPromptSnippets: Map<string, string> = new Map();
   private _toolPromptGuidelines: Map<string, string[]> = new Map();
 
+  private _settingsManager: SettingsManager;
   private _retrySettings!: RetrySettings;
   private _compactionSettings: CompactionSettings;
   private _contextWindow: number;
@@ -238,24 +218,27 @@ export class AgentSession {
       reason: "startup",
     };
 
-    this._contextWindow = config.contextWindow ?? 128000;
+    // Read settings from SettingsManager
+    this._settingsManager = config.settingsManager;
+    const settings = this._settingsManager.settings;
+    this._contextWindow = settings.contextWindow ?? 128000;
     this._compactionSettings = {
-      enabled: config.compactionSettings?.enabled ?? true,
-      reserveTokens: config.compactionSettings?.reserveTokens ?? 16384,
-      keepRecentTokens: config.compactionSettings?.keepRecentTokens ?? 20000,
+      enabled: settings.compaction?.enabled ?? true,
+      reserveTokens: settings.compaction?.reserveTokens ?? 16384,
+      keepRecentTokens: settings.compaction?.keepRecentTokens ?? 20000,
     };
     this._retrySettings = {
-      enabled: config.retrySettings?.enabled ?? true,
-      maxRetries: config.retrySettings?.maxRetries ?? 3,
-      baseDelayMs: config.retrySettings?.baseDelayMs ?? 2000,
-      maxDelayMs: config.retrySettings?.maxDelayMs ?? 60000,
+      enabled: settings.retry?.enabled ?? true,
+      maxRetries: settings.retry?.maxRetries ?? 3,
+      baseDelayMs: settings.retry?.baseDelayMs ?? 2000,
+      maxDelayMs: settings.retry?.maxDelayMs ?? 60000,
     };
 
-    if (config.initialSteeringMode) {
-      this.agent.steeringMode = config.initialSteeringMode;
+    if (settings.steeringMode) {
+      this.agent.steeringMode = settings.steeringMode;
     }
-    if (config.initialFollowUpMode) {
-      this.agent.followUpMode = config.initialFollowUpMode;
+    if (settings.followUpMode) {
+      this.agent.followUpMode = settings.followUpMode;
     }
 
     // Restore persisted messages from SessionManager into Agent state.
@@ -777,6 +760,11 @@ export class AgentSession {
     return this.agent.followUpMode;
   }
 
+  /** Settings manager for dual-scope settings */
+  get settings(): SettingsManager {
+    return this._settingsManager;
+  }
+
   /** Current session file path, or undefined if sessions are disabled */
   get sessionFile(): string | undefined {
     return this.sessionManager.getSessionFile();
@@ -1165,6 +1153,7 @@ export class AgentSession {
    */
   setSteeringMode(mode: "all" | "one-at-a-time"): void {
     this.agent.steeringMode = mode;
+    this._settingsManager.setSteeringMode(mode);
   }
 
   /**
@@ -1173,6 +1162,7 @@ export class AgentSession {
    */
   setFollowUpMode(mode: "all" | "one-at-a-time"): void {
     this.agent.followUpMode = mode;
+    this._settingsManager.setFollowUpMode(mode);
   }
 
   // =========================================================================
@@ -1622,6 +1612,7 @@ export class AgentSession {
    */
   setAutoCompactionEnabled(enabled: boolean): void {
     this._compactionSettings.enabled = enabled;
+    this._settingsManager.setCompactionEnabled(enabled);
   }
 
   /** Whether auto-compaction is enabled */
@@ -1982,6 +1973,7 @@ export class AgentSession {
    */
   setAutoRetryEnabled(enabled: boolean): void {
     this._retrySettings = { ...this._retrySettings, enabled };
+    this._settingsManager.setRetryEnabled(enabled);
   }
 
   // =========================================================================
