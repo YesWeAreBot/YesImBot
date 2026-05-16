@@ -1,7 +1,7 @@
 import { join } from "node:path";
 
 import type { ToolDefinition } from "@yesimbot/agent/session";
-import { z } from "zod/v4";
+import { z } from "zod";
 
 import { resolveChannelLocator } from "../channel-store.js";
 import { readJsonlWindow } from "../jsonl-parser.js";

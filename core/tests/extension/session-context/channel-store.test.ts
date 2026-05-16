@@ -4,7 +4,10 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { normalizeChannelMeta, resolveChannelLocator } from "../src/channel-store";
+import {
+  normalizeChannelMeta,
+  resolveChannelLocator,
+} from "../../../src/extension/session-context/channel-store";
 import { channelKeyFor, writeChannelFixture } from "./helpers";
 
 describe("channel-store", () => {

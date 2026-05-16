@@ -4,7 +4,11 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { parseJsonlLineDetailed, readJsonlWindow, scanJsonlFile } from "../src/jsonl-parser";
+import {
+  parseJsonlLineDetailed,
+  readJsonlWindow,
+  scanJsonlFile,
+} from "../../../src/extension/session-context/jsonl-parser";
 import { writeJsonl } from "./helpers";
 
 describe("jsonl-parser", () => {

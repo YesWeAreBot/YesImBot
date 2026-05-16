@@ -1,8 +1,7 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 
-import { encodeChannelId } from "koishi-plugin-yesimbot";
-
+import { encodeChannelId } from "../../services/session/encoding.js";
 import type {
   ChannelLocator,
   ChannelSummary,

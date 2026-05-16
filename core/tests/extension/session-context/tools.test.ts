@@ -6,11 +6,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   createFindChannelsTool,
+  createSearchSessionTool,
   createListSessionsTool,
   createReadSessionWindowTool,
-  createSearchSessionTool,
-} from "../src/tools";
-import type { SessionContextConfig } from "../src/types";
+} from "../../../src/extension/session-context/tools";
+import { SessionContextConfig } from "../../../src/extension/session-context/types";
 
 let tmpDir: string;
 

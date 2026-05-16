@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildSessionContextPrompt } from "../src/prompt";
+import { buildSessionContextPrompt } from "../../../src/extension/session-context/prompt";
 
 describe("session-context prompt", () => {
   it("describes platform + channelId as preferred locator", () => {

@@ -4,8 +4,8 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { createSearchSessionTool } from "../src/tools";
-import type { SessionContextConfig } from "../src/types";
+import { createSearchSessionTool } from "../../../src/extension/session-context/tools";
+import { SessionContextConfig } from "../../../src/extension/session-context/types";
 import { writeChannelFixture, writeJsonl } from "./helpers";
 
 async function mergeChannelMap(

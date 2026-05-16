@@ -4,8 +4,11 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { createFindChannelsTool, createListSessionsTool } from "../src/tools";
-import type { SessionContextConfig } from "../src/types";
+import {
+  createFindChannelsTool,
+  createListSessionsTool,
+} from "../../../src/extension/session-context/tools";
+import { SessionContextConfig } from "../../../src/extension/session-context/types";
 import { channelKeyFor, writeChannelFixture, writeJson, writeJsonl } from "./helpers";
 
 function makeConfig(tempDir: string, isolation = false): SessionContextConfig {

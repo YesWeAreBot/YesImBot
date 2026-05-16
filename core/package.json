@@ -21,11 +21,13 @@
   ],
   "type": "module",
   "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "require": "./dist/index.cjs"
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.js"
     },
     "./package.json": "./package.json"
   },
@@ -41,7 +43,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@yesimbot/agent": "workspace:^"
+    "@yesimbot/agent": "workspace:^",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/json-schema": "^7.0.15",

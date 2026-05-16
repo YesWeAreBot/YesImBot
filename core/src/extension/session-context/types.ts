@@ -1,15 +1,7 @@
-// ============================================================================
-// 配置类型
-// ============================================================================
-
 export interface SessionContextConfig {
-  /** 会话文件根目录（相对于 koishi app 目录） */
   sessionsDir: string;
-  /** 隔离模式：true 只显示当前频道，false 显示所有频道 */
   isolation: boolean;
-  /** search_session 默认返回条数 */
   defaultLimit: number;
-  /** search_session 最大返回条数 */
   maxLimit: number;
 }
 

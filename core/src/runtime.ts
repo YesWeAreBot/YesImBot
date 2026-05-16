@@ -2,6 +2,7 @@ import { join } from "node:path";
 
 import type {} from "@yesimbot/agent";
 import { Agent, AgentMessage } from "@yesimbot/agent/agent";
+import { ChatModelRef } from "@yesimbot/agent/ai";
 import {
   AgentSession,
   BuildSystemPromptOptions,
@@ -14,6 +15,7 @@ import type { Settings } from "@yesimbot/agent/session";
 import { Bot, Context, Logger, Service } from "koishi";
 
 import type { ChannelContext } from "./extension.js";
+import { createSessionContextExtension } from "./extension/session-context/index.js";
 import { AthenaMessage, ChatMessage } from "./messages.js";
 
 interface ChannelIdentifier {
@@ -66,7 +68,7 @@ export class RuntimeService extends Service<RuntimeConfig> {
     }
     const globalSettingsPath = join(this.config.basePath, "settings.json");
 
-    let chatModel: import("@yesimbot/agent/ai").ChatModelRef;
+    let chatModel: ChatModelRef;
     try {
       chatModel = this.ctx["yesimbot.model"].resolveChatModel(this.config.chatModel);
     } catch (error) {
@@ -116,9 +118,17 @@ export class RuntimeService extends Service<RuntimeConfig> {
         agent,
         sessionManager,
         settingsManager,
-        extensions: [...this.ctx["yesimbot.extension"].getAllExtensions(context), promptExtension],
+        extensions: [
+          ...this.ctx["yesimbot.extension"].getAllExtensions(context),
+          promptExtension,
+          createSessionContextExtension(this.ctx, {
+            sessionsDir: this.config.basePath,
+            isolation: false,
+            defaultLimit: 10,
+            maxLimit: 100,
+          }),
+        ],
       });
-      agentSession.sessionName = `${platform}:${channelId}`;
       this.ctx["yesimbot.extension"].registerRunner(agentSession.extensionRunner, context);
 
       const sessionContext: SessionContext = {

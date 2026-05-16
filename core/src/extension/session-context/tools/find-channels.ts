@@ -1,5 +1,5 @@
 import type { ToolDefinition } from "@yesimbot/agent/session";
-import { z } from "zod/v4";
+import { z } from "zod";
 
 import { listChannelSummaries, resolveChannelLocator } from "../channel-store.js";
 import type { ChannelLocator, FindChannelsInput, SessionContextConfig } from "../types.js";
