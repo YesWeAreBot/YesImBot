@@ -1,155 +1,103 @@
-import { describe, it, expect } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import { parseJsonlLine, extractTextContent } from "../src/jsonl-parser";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-describe("parseJsonlLine", () => {
-  it("parses user message (athena:message)", () => {
-    const line = JSON.stringify({
-      type: "custom_message",
-      customType: "athena:message",
-      content: "你好",
-      details: {
-        kind: "chat_message",
-        senderId: "1293865264",
-        timestamp: 1778848392302,
+import { parseJsonlLineDetailed, readJsonlWindow, scanJsonlFile } from "../src/jsonl-parser";
+import { writeJsonl } from "./helpers";
+
+describe("jsonl-parser", () => {
+  let tempDir: string;
+  let filePath: string;
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "session-context-jsonl-"));
+    filePath = join(tempDir, "session.jsonl");
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it("classifies skipped tool and session_info lines", () => {
+    expect(
+      parseJsonlLineDetailed(
+        JSON.stringify({
+          type: "message",
+          timestamp: "2026-05-15T12:00:00.000Z",
+          message: { role: "assistant", content: [{ type: "tool-call", toolName: "grep" }] },
+        }),
+      ),
+    ).toEqual({ skipped: "toolCall" });
+
+    expect(parseJsonlLineDetailed(JSON.stringify({ type: "session_info" }))).toEqual({
+      skipped: "sessionInfo",
+    });
+  });
+
+  it("aggregates filtered counters while scanning", async () => {
+    await writeJsonl(tempDir, "session.jsonl", [
+      { type: "session", id: "current", timestamp: "2026-05-15T12:00:00.000Z" },
+      {
+        type: "custom_message",
+        customType: "athena:message",
+        timestamp: "2026-05-15T12:00:01.000Z",
+        content: "hello world",
+        details: { senderId: "alice" },
       },
-      timestamp: "2026-05-15T12:33:12.310Z",
-    });
-    const result = parseJsonlLine(line);
-    expect(result).not.toBeNull();
-    expect(result!.type).toBe("user");
-    expect(result!.content).toBe("你好");
-    expect(result!.sender).toBe("1293865264");
-  });
-
-  it("parses assistant text message", () => {
-    const line = JSON.stringify({
-      type: "message",
-      timestamp: "2026-05-15T12:33:16.500Z",
-      message: {
-        role: "assistant",
-        content: [
-          { type: "reasoning", text: "thinking..." },
-          { type: "text", text: "诶，你好呀！" },
-        ],
+      {
+        type: "message",
+        timestamp: "2026-05-15T12:00:02.000Z",
+        message: { role: "assistant", content: [{ type: "tool-call", toolName: "bash" }] },
       },
-    });
-    const result = parseJsonlLine(line);
-    expect(result).not.toBeNull();
-    expect(result!.type).toBe("assistant");
-    expect(result!.content).toBe("诶，你好呀！");
-  });
-
-  it("returns null for tool-call", () => {
-    const line = JSON.stringify({
-      type: "message",
-      timestamp: "2026-05-15T12:33:13.790Z",
-      message: {
-        role: "assistant",
-        content: [{ type: "tool-call", toolName: "grep", input: {} }],
+      {
+        type: "message",
+        timestamp: "2026-05-15T12:00:03.000Z",
+        message: { role: "assistant", content: [{ type: "text", text: "reply" }] },
       },
+    ]);
+
+    const result = await scanJsonlFile(filePath, {
+      messageTypes: new Set(["user", "assistant"]),
     });
-    const result = parseJsonlLine(line);
-    expect(result).toBeNull();
+
+    expect(result.entries).toHaveLength(2);
+    expect(result.filtered.toolCall).toBe(1);
+    expect(result.filtered.toolResult).toBe(0);
   });
 
-  it("returns null for tool-result", () => {
-    const line = JSON.stringify({
-      type: "message",
-      timestamp: "2026-05-15T12:33:13.839Z",
-      message: {
-        role: "tool",
-        content: [{ type: "tool-result", toolName: "grep", output: {} }],
+  it("reads window around anchor timestamp", async () => {
+    await writeJsonl(tempDir, "session.jsonl", [
+      {
+        type: "custom_message",
+        customType: "athena:message",
+        timestamp: "2026-05-15T12:00:00.000Z",
+        content: "before",
+        details: { senderId: "alice" },
       },
-    });
-    const result = parseJsonlLine(line);
-    expect(result).toBeNull();
-  });
-
-  it("parses session header", () => {
-    const line = JSON.stringify({
-      type: "session",
-      id: "abc-123",
-      timestamp: "2026-05-15T12:33:12.287Z",
-    });
-    const result = parseJsonlLine(line);
-    expect(result).not.toBeNull();
-    expect(result!.type).toBe("session");
-    expect(result!.sessionId).toBe("abc-123");
-  });
-
-  it("returns null for session_info", () => {
-    const line = JSON.stringify({
-      type: "session_info",
-      id: "2300f8d5",
-      name: "onebot:679014594",
-    });
-    const result = parseJsonlLine(line);
-    expect(result).toBeNull();
-  });
-
-  it("returns null for malformed JSON", () => {
-    const result = parseJsonlLine("not json");
-    expect(result).toBeNull();
-  });
-
-  it("returns null for empty line", () => {
-    const result = parseJsonlLine("");
-    expect(result).toBeNull();
-  });
-
-  it("handles assistant message with only reasoning (no text)", () => {
-    const line = JSON.stringify({
-      type: "message",
-      timestamp: "2026-05-15T12:33:13.790Z",
-      message: {
-        role: "assistant",
-        content: [
-          { type: "reasoning", text: "just thinking" },
-          { type: "tool-call", toolName: "grep", input: {} },
-        ],
+      {
+        type: "custom_message",
+        customType: "athena:message",
+        timestamp: "2026-05-15T12:00:01.000Z",
+        content: "anchor",
+        details: { senderId: "alice" },
       },
+      {
+        type: "message",
+        timestamp: "2026-05-15T12:00:02.000Z",
+        message: { role: "assistant", content: [{ type: "text", text: "after" }] },
+      },
+    ]);
+
+    const result = await readJsonlWindow(filePath, {
+      anchorTimestamp: "2026-05-15T12:00:01.000Z",
+      before: 1,
+      after: 1,
+      messageTypes: new Set(["user", "assistant"]),
     });
-    const result = parseJsonlLine(line);
-    // Has tool-call in content → null (filtered)
-    expect(result).toBeNull();
-  });
 
-  it("truncates content to 500 chars with ellipsis", () => {
-    const longText = "a".repeat(600);
-    const line = JSON.stringify({
-      type: "custom_message",
-      customType: "athena:message",
-      content: longText,
-      details: { senderId: "user1" },
-      timestamp: "2026-05-15T12:33:12.310Z",
-    });
-    const result = parseJsonlLine(line);
-    expect(result).not.toBeNull();
-    expect(result!.content.length).toBeLessThanOrEqual(503); // 500 + "..."
-    expect(result!.content).toContain("...");
-  });
-});
-
-describe("extractTextContent", () => {
-  it("extracts text parts from content array", () => {
-    const content = [
-      { type: "reasoning", text: "thinking..." },
-      { type: "text", text: "hello" },
-      { type: "text", text: " world" },
-    ];
-    expect(extractTextContent(content)).toBe("hello world");
-  });
-
-  it("returns empty string when no text parts", () => {
-    const content = [
-      { type: "reasoning", text: "thinking..." },
-      { type: "tool-call", toolName: "grep", input: {} },
-    ];
-    expect(extractTextContent(content)).toBe("");
-  });
-
-  it("handles string content", () => {
-    expect(extractTextContent("direct text")).toBe("direct text");
+    expect(result.anchorFound).toBe(true);
+    expect(result.window.map((entry) => entry.content)).toEqual(["before", "anchor", "after"]);
   });
 });

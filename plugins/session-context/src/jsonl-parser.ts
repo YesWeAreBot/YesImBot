@@ -1,9 +1,7 @@
 import { createReadStream } from "node:fs";
 import { createInterface } from "node:readline";
 
-import type { JsonlFilter, ParsedEntry } from "./types";
-
-const MAX_CONTENT_LENGTH = 500;
+import type { FilteredStats, JsonlFilter, ParsedEntry } from "./types.js";
 
 /**
  * 从 message.content 数组中提取文本部分
@@ -20,111 +18,104 @@ export function extractTextContent(
 }
 
 /**
- * 解析单行 JSONL，返回 ParsedEntry 或 null（应过滤的行）
- *
- * 过滤规则：
- * - tool-call → null
- * - tool-result → null
- * - session_info → null
- * - 畸形 JSON → null
- * - 空行 → null
+ * 详细解析单行 JSONL，返回 { entry } 或 { skipped: reason }
  */
-export function parseJsonlLine(line: string): ParsedEntry | null {
+export function parseJsonlLineDetailed(
+  line: string,
+):
+  | { entry: ParsedEntry }
+  | { skipped: "toolCall" | "toolResult" | "sessionInfo" | "malformed" | "emptyText" } {
   const trimmed = line.trim();
-  if (!trimmed) return null;
+  if (!trimmed) return { skipped: "emptyText" };
 
   let obj: Record<string, unknown>;
   try {
     obj = JSON.parse(trimmed);
   } catch {
-    return null;
+    return { skipped: "malformed" };
   }
 
-  const type = obj.type as string;
-  const timestamp = (obj.timestamp as string) ?? "";
+  if (obj.type === "session_info") return { skipped: "sessionInfo" };
 
-  // session header
-  if (type === "session") {
+  if (obj.type === "session") {
     return {
-      timestamp,
-      type: "session",
-      content: `Session started: ${obj.id ?? ""}`,
-      sessionId: obj.id as string,
+      entry: {
+        timestamp: String(obj.timestamp ?? ""),
+        type: "session",
+        content: `Session started: ${obj.id ?? ""}`,
+        sessionId: typeof obj.id === "string" ? obj.id : undefined,
+      },
     };
   }
 
-  // session_info — skip
-  if (type === "session_info") {
-    return null;
-  }
-
-  // custom_message (user messages, e.g. athena:message)
-  if (type === "custom_message" && obj.customType === "athena:message") {
-    const content = String(obj.content ?? "");
+  if (obj.type === "custom_message" && obj.customType === "athena:message") {
     const details = (obj.details ?? {}) as Record<string, unknown>;
     return {
-      timestamp,
-      type: "user",
-      sender: details.senderId as string | undefined,
-      content:
-        content.length > MAX_CONTENT_LENGTH
-          ? content.slice(0, MAX_CONTENT_LENGTH) + "..."
-          : content,
+      entry: {
+        timestamp: String(obj.timestamp ?? ""),
+        type: "user",
+        senderId: typeof details.senderId === "string" ? details.senderId : undefined,
+        content: String(obj.content ?? "").slice(0, 500),
+      },
     };
   }
 
-  // message (assistant / tool)
-  if (type === "message") {
-    const msg = (obj.message ?? {}) as Record<string, unknown>;
-    const role = msg.role as string;
-    const contentArr = msg.content;
-
-    if (!Array.isArray(contentArr)) return null;
-
-    // tool result — skip
-    if (role === "tool") return null;
-
-    // assistant message
-    if (role === "assistant") {
-      const hasToolCall = contentArr.some((p) => p.type === "tool-call");
-      if (hasToolCall) return null;
-
-      const text = extractTextContent(contentArr);
-      if (!text) return null;
-
-      return {
-        timestamp,
-        type: "assistant",
-        content:
-          text.length > MAX_CONTENT_LENGTH ? text.slice(0, MAX_CONTENT_LENGTH) + "..." : text,
-      };
+  if (obj.type === "message") {
+    const message = (obj.message ?? {}) as Record<string, unknown>;
+    const role = message.role;
+    const content = Array.isArray(message.content) ? message.content : [];
+    if (role === "tool") return { skipped: "toolResult" };
+    if (
+      role === "assistant" &&
+      content.some((part: { type: string }) => part.type === "tool-call")
+    ) {
+      return { skipped: "toolCall" };
     }
+    const text = extractTextContent(content);
+    if (!text) return { skipped: "emptyText" };
+    return {
+      entry: {
+        timestamp: String(obj.timestamp ?? ""),
+        type: "assistant",
+        content: text.slice(0, 500),
+      },
+    };
   }
 
-  return null;
+  return { skipped: "emptyText" };
 }
 
 /**
- * 流式读取 JSONL 文件，逐行解析并应用过滤器
+ * 扫描 JSONL 文件，返回过滤后的 entries 和统计信息
  */
-export async function* streamJsonl(
+export async function scanJsonlFile(
   filePath: string,
   filter: JsonlFilter,
-): AsyncGenerator<ParsedEntry> {
-  const stream = createReadStream(filePath, { encoding: "utf-8" });
-  const rl = createInterface({ input: stream, crlfDelay: Infinity });
+): Promise<{ entries: ParsedEntry[]; filtered: FilteredStats }> {
+  const filtered: FilteredStats = {
+    toolCall: 0,
+    toolResult: 0,
+    sessionInfo: 0,
+    malformed: 0,
+    emptyText: 0,
+  };
+  const entries: ParsedEntry[] = [];
 
-  for await (const line of rl) {
-    const entry = parseJsonlLine(line);
-    if (!entry) continue;
+  for await (const line of createInterface({
+    input: createReadStream(filePath, { encoding: "utf-8" }),
+  })) {
+    const parsed = parseJsonlLineDetailed(line);
+    if ("skipped" in parsed) {
+      filtered[parsed.skipped] += 1;
+      continue;
+    }
 
-    // 消息类型过滤
+    const entry = parsed.entry;
     if (filter.messageTypes && !filter.messageTypes.has(entry.type)) continue;
+    if (filter.senderId && entry.senderId !== filter.senderId) continue;
+    if (filter.senderMatcher && !filter.senderMatcher(entry.senderId)) continue;
+    if (filter.contentMatcher && !filter.contentMatcher(entry.content)) continue;
 
-    // 用户过滤
-    if (filter.user && entry.sender !== filter.user) continue;
-
-    // 时间范围过滤
     if (filter.since || filter.until) {
       const ts = new Date(entry.timestamp).getTime();
       if (Number.isNaN(ts)) continue;
@@ -132,9 +123,54 @@ export async function* streamJsonl(
       if (filter.until && ts > filter.until) continue;
     }
 
-    // 关键词过滤
-    if (filter.keyword && !filter.keyword.test(entry.content)) continue;
-
-    yield entry;
+    entries.push(entry);
   }
+
+  return { entries, filtered };
+}
+
+/**
+ * 在已解析 entries 中按锚点截取窗口
+ */
+export async function readJsonlWindow(
+  filePath: string,
+  options: {
+    anchorTimestamp?: string;
+    anchorQuery?: string;
+    before: number;
+    after: number;
+    messageTypes?: Set<"user" | "assistant" | "session">;
+  },
+): Promise<{
+  anchorFound: boolean;
+  window: ParsedEntry[];
+  truncated: { before: boolean; after: boolean; content: boolean };
+}> {
+  const { entries } = await scanJsonlFile(filePath, { messageTypes: options.messageTypes });
+  const anchorIndex = entries.findIndex((entry) => {
+    if (options.anchorTimestamp) return entry.timestamp === options.anchorTimestamp;
+    if (options.anchorQuery) return entry.content.includes(options.anchorQuery);
+    return false;
+  });
+
+  if (anchorIndex < 0) {
+    return {
+      anchorFound: false,
+      window: [],
+      truncated: { before: false, after: false, content: false },
+    };
+  }
+
+  const start = Math.max(0, anchorIndex - options.before);
+  const end = Math.min(entries.length, anchorIndex + options.after + 1);
+
+  return {
+    anchorFound: true,
+    window: entries.slice(start, end),
+    truncated: {
+      before: start > 0,
+      after: end < entries.length,
+      content: false,
+    },
+  };
 }
