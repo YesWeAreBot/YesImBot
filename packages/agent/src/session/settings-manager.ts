@@ -1,6 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
+import type { CompactionPrompts } from "./compaction/index.js";
+
 // ============================================================================
 // Settings Interface
 // ============================================================================
@@ -23,6 +25,7 @@ export interface Settings {
     enabled?: boolean;
     reserveTokens?: number;
     keepRecentTokens?: number;
+    prompts?: CompactionPrompts;
   };
 
   // Retry
@@ -44,12 +47,7 @@ export interface Settings {
 // Default Settings
 // ============================================================================
 
-export const DEFAULT_SETTINGS: Required<
-  Pick<Settings, "contextWindow" | "steeringMode" | "followUpMode">
-> & {
-  compaction: Required<NonNullable<Settings["compaction"]>>;
-  retry: Required<NonNullable<Settings["retry"]>>;
-} = {
+export const DEFAULT_SETTINGS: Settings = {
   contextWindow: 128000,
   steeringMode: "all",
   followUpMode: "all",
@@ -241,7 +239,7 @@ export class SettingsManager {
   }
 
   get contextWindow(): number {
-    return this.settings.contextWindow ?? DEFAULT_SETTINGS.contextWindow;
+    return this.settings.contextWindow ?? DEFAULT_SETTINGS.contextWindow!;
   }
 
   get compaction(): NonNullable<Settings["compaction"]> {
@@ -261,11 +259,11 @@ export class SettingsManager {
   }
 
   get steeringMode(): "all" | "one-at-a-time" {
-    return this._local.steeringMode ?? this._global.steeringMode ?? DEFAULT_SETTINGS.steeringMode;
+    return this._local.steeringMode ?? this._global.steeringMode ?? DEFAULT_SETTINGS.steeringMode!;
   }
 
   get followUpMode(): "all" | "one-at-a-time" {
-    return this._local.followUpMode ?? this._global.followUpMode ?? DEFAULT_SETTINGS.followUpMode;
+    return this._local.followUpMode ?? this._global.followUpMode ?? DEFAULT_SETTINGS.followUpMode!;
   }
 
   get defaultModel(): string | undefined {

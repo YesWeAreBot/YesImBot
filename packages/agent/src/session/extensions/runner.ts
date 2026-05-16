@@ -188,50 +188,59 @@ export class ExtensionRunner {
    * Context values are resolved at call time, so changes via bindCore/bindUI are reflected.
    */
   createContext(): ExtensionContext {
-    const runner = this;
-    const getModel = this.getModel;
+    const assertActive = () => this.assertActive();
+    const getModel = () => this.getModel();
+    const getCwd = () => this.cwd;
+    const getSessionManager = () => this.sessionManager;
+    const isIdle = () => this.isIdleFn();
+    const getSignal = () => this.getSignalFn();
+    const abort = () => this.abortFn();
+    const hasPendingMessages = () => this.hasPendingMessagesFn();
+    const getContextUsage = () => this.getContextUsageFn();
+    const compact = (options?: CompactOptions) => this.compactFn(options);
+    const getSystemPrompt = () => this.getSystemPromptFn();
     return {
       get cwd() {
-        runner.assertActive();
-        return runner.cwd;
+        assertActive();
+        return getCwd();
       },
       get sessionManager() {
-        runner.assertActive();
-        return runner.sessionManager;
+        assertActive();
+        return getSessionManager();
       },
 
       get model() {
-        runner.assertActive();
+        assertActive();
         return getModel();
       },
       isIdle: () => {
-        runner.assertActive();
-        return runner.isIdleFn();
+        assertActive();
+        return isIdle();
       },
       get signal() {
-        runner.assertActive();
-        return runner.getSignalFn();
+        assertActive();
+        return getSignal();
       },
       abort: () => {
-        runner.assertActive();
-        runner.abortFn();
+        assertActive();
+        abort();
       },
       hasPendingMessages: () => {
-        runner.assertActive();
-        return runner.hasPendingMessagesFn();
+        assertActive();
+        return hasPendingMessages();
       },
 
       getContextUsage: () => {
-        runner.assertActive();
-        return runner.getContextUsageFn();
+        assertActive();
+        return getContextUsage();
       },
       compact: (options) => {
-        runner.assertActive();
-        runner.compactFn(options);
+        assertActive();
+        compact(options);
       },
       getSystemPrompt: () => {
-        runner.assertActive();
-        return runner.getSystemPromptFn();
+        assertActive();
+        return getSystemPrompt();
       },
     };
   }

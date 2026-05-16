@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import type { LanguageModel } from "ai";
 
 import { Agent } from "../../src/agent/agent.js";
 import { AgentSession } from "../../src/session/agent-session.js";
@@ -35,7 +36,7 @@ function createMockModel() {
 function createTestAgentAndSession(sessionManager: SessionManager) {
   const model = createMockModel();
   const agent = new Agent({
-    model: model as any,
+    model: model as LanguageModel,
     convertToLlm: (messages) => convertToLlm(messages),
   });
   const settingsManager = new SettingsManager({

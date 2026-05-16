@@ -10,7 +10,8 @@ describe("ExtensionRunner dispose cleanup", () => {
       generation: 0,
       handlers: new Map(),
       tools: new Map(),
-      cleanup: { dispose: vi.fn() },
+      cleanup: { dispose: vi.fn<() => void>() },
+      registeredToolNames: new Set(),
     };
 
     // We can't easily construct a full ExtensionRunner without a runtime,
@@ -21,7 +22,7 @@ describe("ExtensionRunner dispose cleanup", () => {
   });
 
   it("async dispose should have its rejection caught", async () => {
-    const disposeFn = vi.fn().mockRejectedValue(new Error("cleanup failed"));
+    const disposeFn = vi.fn<() => Promise<void>>().mockRejectedValue(new Error("cleanup failed"));
     const binding: ExtensionBinding = {
       id: "test-async",
       order: 0,
@@ -29,6 +30,7 @@ describe("ExtensionRunner dispose cleanup", () => {
       handlers: new Map(),
       tools: new Map(),
       cleanup: { dispose: disposeFn },
+      registeredToolNames: new Set(),
     };
 
     // Simulate the dispose pattern from AgentSession.dispose()

@@ -17,8 +17,10 @@ import {
 import {
   calculateContextTokens,
   compact,
+  type CompactionPrompts,
   type CompactionResult,
   CompactionSettings,
+  DEFAULT_COMPACTION_PROMPTS,
   estimateContextTokens,
   prepareCompaction,
   shouldCompact,
@@ -122,6 +124,8 @@ export interface AgentSessionConfig {
   sessionStartEvent?: SessionStartEvent;
   /** Extension definitions list, provided by core or ExtensionRegistry */
   extensions?: ExtensionDefinition[];
+  /** Customizable compaction prompts. Overrides settings and defaults. */
+  compactionPrompts?: CompactionPrompts;
 }
 
 export interface ExtensionBindings {
@@ -201,6 +205,7 @@ export class AgentSession {
   private _settingsManager: SettingsManager;
   private _retrySettings!: RetrySettings;
   private _compactionSettings: CompactionSettings;
+  private _compactionPrompts: CompactionPrompts;
   private _contextWindow: number;
 
   constructor(config: AgentSessionConfig) {
@@ -226,6 +231,12 @@ export class AgentSession {
       enabled: settings.compaction?.enabled ?? true,
       reserveTokens: settings.compaction?.reserveTokens ?? 16384,
       keepRecentTokens: settings.compaction?.keepRecentTokens ?? 20000,
+    };
+    // Merge compaction prompts: Config > Settings > defaults
+    this._compactionPrompts = {
+      ...DEFAULT_COMPACTION_PROMPTS,
+      ...(settings.compaction?.prompts ?? {}),
+      ...(config.compactionPrompts ?? {}),
     };
     this._retrySettings = {
       enabled: settings.retry?.enabled ?? true,
@@ -273,11 +284,10 @@ export class AgentSession {
    * before each provider request, allowing extensions to inspect/modify the request.
    */
   private _wrapModelForProviderEvents(): void {
-    const self = this;
     const middleware: LanguageModelMiddleware = {
       specificationVersion: "v3",
       wrapStream: async (options) => {
-        const runner = self._extensionRunner;
+        const runner = this._extensionRunner;
         if (runner) {
           try {
             const modified = await runner.emitBeforeProviderRequest(options.params);
@@ -919,59 +929,55 @@ export class AgentSession {
   async prompt(text: string, options?: PromptOptions): Promise<void> {
     let messages: AgentMessage[] | undefined;
 
-    try {
-      let currentImages = options?.images;
+    const currentImages = options?.images;
 
-      // If streaming, queue via steer() or followUp() based on option
-      if (this.isStreaming) {
-        if (!options?.streamingBehavior) {
-          throw new Error(
-            "Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.",
-          );
-        }
-        if (options.streamingBehavior === "followUp") {
-          await this._queueFollowUp(text, currentImages);
-        } else {
-          await this._queueSteer(text, currentImages);
-        }
-
-        return;
+    // If streaming, queue via steer() or followUp() based on option
+    if (this.isStreaming) {
+      if (!options?.streamingBehavior) {
+        throw new Error(
+          "Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.",
+        );
+      }
+      if (options.streamingBehavior === "followUp") {
+        await this._queueFollowUp(text, currentImages);
+      } else {
+        await this._queueSteer(text, currentImages);
       }
 
-      // Check if context window limit is exceeded (handles restored sessions without usage data)
-      await this._ensureContextWindowLimit();
-
-      // Check if we need to compact before sending (catches aborted responses)
-      const lastAssistant = this._findLastAssistantMessage();
-      if (lastAssistant) {
-        await this._checkCompaction(lastAssistant, false);
-      }
-
-      // Build messages array (custom message if any, then user message)
-      messages = [];
-
-      // Add user message
-      const userContent: (TextPart | ImagePart)[] = [{ type: "text", text: text }];
-      if (currentImages) {
-        userContent.push(...currentImages);
-      }
-      messages.push({
-        role: "user",
-        content: userContent,
-        timestamp: Date.now(),
-      });
-
-      // Inject any pending "nextTurn" messages as context alongside the user message
-      for (const msg of this._pendingNextTurnMessages) {
-        messages.push(msg);
-      }
-      this._pendingNextTurnMessages = [];
-
-      // Emit before_agent_start extension event and apply system prompt
-      messages.push(...(await this._applyBeforeAgentStart(text, currentImages)));
-    } catch (error) {
-      throw error;
+      return;
     }
+
+    // Check if context window limit is exceeded (handles restored sessions without usage data)
+    await this._ensureContextWindowLimit();
+
+    // Check if we need to compact before sending (catches aborted responses)
+    const lastAssistant = this._findLastAssistantMessage();
+    if (lastAssistant) {
+      await this._checkCompaction(lastAssistant, false);
+    }
+
+    // Build messages array (custom message if any, then user message)
+    messages = [];
+
+    // Add user message
+    const userContent: (TextPart | ImagePart)[] = [{ type: "text", text: text }];
+    if (currentImages) {
+      userContent.push(...currentImages);
+    }
+    messages.push({
+      role: "user",
+      content: userContent,
+      timestamp: Date.now(),
+    });
+
+    // Inject any pending "nextTurn" messages as context alongside the user message
+    for (const msg of this._pendingNextTurnMessages) {
+      messages.push(msg);
+    }
+    this._pendingNextTurnMessages = [];
+
+    // Emit before_agent_start extension event and apply system prompt
+    messages.push(...(await this._applyBeforeAgentStart(text, currentImages)));
 
     if (!messages) {
       return;
@@ -1275,6 +1281,7 @@ export class AgentSession {
           {},
           customInstructions,
           this._compactionAbortController.signal,
+          this._compactionPrompts,
         );
         summary = result.summary;
         firstKeptEntryId = result.firstKeptEntryId;
@@ -1555,6 +1562,7 @@ export class AgentSession {
           {},
           undefined,
           this._autoCompactionAbortController.signal,
+          this._compactionPrompts,
         );
         summary = compactResult.summary;
         firstKeptEntryId = compactResult.firstKeptEntryId;

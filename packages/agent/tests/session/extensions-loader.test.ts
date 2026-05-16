@@ -8,7 +8,7 @@ import type { ExtensionDefinition } from "../../src/session/extensions/types.js"
 describe("createExtensionBindingSync", () => {
   it("should call refreshTools after async setup completes when generation matches", async () => {
     const runtime = createExtensionRuntime();
-    const refreshTools = vi.fn();
+    const refreshTools = vi.fn<() => void>();
     runtime.refreshTools = refreshTools;
     const eventBus = createEventBus();
 
@@ -43,7 +43,7 @@ describe("createExtensionBindingSync", () => {
 
   it("should NOT call refreshTools from .then() when generation mismatches (stale)", async () => {
     const runtime = createExtensionRuntime();
-    const refreshTools = vi.fn();
+    const refreshTools = vi.fn<() => void>();
     runtime.refreshTools = refreshTools;
     const eventBus = createEventBus();
 
@@ -67,7 +67,7 @@ describe("createExtensionBindingSync", () => {
 
   it("should call refreshTools from registerTool but NOT from .then() when generation mismatches", async () => {
     const runtime = createExtensionRuntime();
-    const refreshTools = vi.fn();
+    const refreshTools = vi.fn<() => void>();
     runtime.refreshTools = refreshTools;
     const eventBus = createEventBus();
 
@@ -100,7 +100,7 @@ describe("createExtensionBindingSync", () => {
 
   it("should call refreshTools synchronously for sync setup that returns cleanup", () => {
     const runtime = createExtensionRuntime();
-    const refreshTools = vi.fn();
+    const refreshTools = vi.fn<() => void>();
     runtime.refreshTools = refreshTools;
     const eventBus = createEventBus();
 

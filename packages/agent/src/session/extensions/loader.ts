@@ -1,4 +1,4 @@
-import { createEventBus, type EventBus } from "../event-bus.js";
+import type { EventBus } from "../event-bus.js";
 import type {
   ExtensionAPI,
   ExtensionBinding,

@@ -1,4 +1,5 @@
 export * from "./agent-session.js";
+export * from "./compaction/index.js";
 export * from "./extensions/registry.js";
 export * from "./extensions/runner.js";
 export * from "./extensions/types.js";

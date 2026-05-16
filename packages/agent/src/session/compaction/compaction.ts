@@ -71,6 +71,99 @@ export const DEFAULT_COMPACTION_SETTINGS: CompactionSettings = {
 };
 
 // ============================================================================
+// CompactionPrompts (configurable prompts)
+// ============================================================================
+
+/**
+ * Configurable prompts for compaction summarization.
+ * All fields are optional; missing fields use chat-scenario defaults.
+ */
+export interface CompactionPrompts {
+  /** System prompt for summarization LLM call */
+  systemPrompt?: string;
+  /** Prompt for initial compaction (no previous summary) */
+  summarizationPrompt?: string;
+  /** Prompt for updating existing summary with new messages */
+  updateSummarizationPrompt?: string;
+  /** Prompt for turn prefix summarization (split turn) */
+  turnPrefixPrompt?: string;
+}
+
+export const DEFAULT_COMPACTION_PROMPTS: Required<CompactionPrompts> = {
+  systemPrompt: SUMMARIZATION_SYSTEM_PROMPT,
+
+  summarizationPrompt: `The messages above are a conversation to summarize. Create a structured context summary that preserves the most useful information for continuing the conversation.
+
+Use this EXACT format:
+
+## User Profile & Preferences
+- [User identity, language preference, communication style, long-term preferences]
+- [Or "(none)" if not mentioned]
+
+## Current Goals & Open Items
+- [What the user is trying to accomplish]
+- [Unfinished tasks, pending questions, items awaiting response]
+
+## Key Facts & Context
+- [Important facts, data, entities, timelines relevant to future replies]
+- [Or "(none)" if not applicable]
+
+## Confirmed Conclusions & Agreements
+- [Decisions made, conclusions reached, explicit agreements]
+- [Or "(none)" if none were reached]
+
+## Notes for Next Reply
+- [Things the user explicitly asked to remember]
+- [Topics marked for later continuation]
+- [Or "(none)" if not applicable]
+
+Keep each section concise. Preserve exact names, dates, and references. Remove greetings, small talk, resolved items with no future value, and repetitive content.`,
+
+  updateSummarizationPrompt: `The messages above are NEW conversation messages to incorporate into the existing summary provided in <previous-summary> tags.
+
+Update the existing summary with new information. RULES:
+- PRESERVE all existing information from the previous summary
+- ADD new facts, preferences, goals, and conclusions from the new messages
+- UPDATE open items: move completed items out, add new ones
+- REMOVE outdated information that was explicitly corrected by the user
+- If conflicting information exists, keep the latest user-confirmed version and note the update
+
+Use this EXACT format:
+
+## User Profile & Preferences
+- [Preserve existing, add new discoveries]
+
+## Current Goals & Open Items
+- [Update based on progress, add new goals]
+
+## Key Facts & Context
+- [Preserve existing, add new facts, remove outdated]
+
+## Confirmed Conclusions & Agreements
+- [Preserve existing, add new conclusions]
+
+## Notes for Next Reply
+- [Update based on current state]
+
+Keep each section concise. Preserve exact names, dates, and references.`,
+
+  turnPrefixPrompt: `This is the PREFIX of a turn that was too large to keep. The SUFFIX (recent messages) is retained.
+
+Summarize the prefix to provide context for the retained suffix:
+
+## Original Request
+[What did the user ask for in this turn?]
+
+## Key Context
+- [Important information from the prefix needed to understand the suffix]
+
+## Early Progress
+- [Key points discussed or decided in the prefix]
+
+Be concise. Focus on what's needed to understand the kept suffix.`,
+};
+
+// ============================================================================
 // Token calculation
 // ============================================================================
 
@@ -426,78 +519,6 @@ export function findCutPoint(
 // Summarization
 // ============================================================================
 
-const SUMMARIZATION_PROMPT = `The messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work.
-
-Use this EXACT format:
-
-## Goal
-[What is the user trying to accomplish? Can be multiple items if the session covers different tasks.]
-
-## Constraints & Preferences
-- [Any constraints, preferences, or requirements mentioned by user]
-- [Or "(none)" if none were mentioned]
-
-## Progress
-### Done
-- [x] [Completed tasks/changes]
-
-### In Progress
-- [ ] [Current work]
-
-### Blocked
-- [Issues preventing progress, if any]
-
-## Key Decisions
-- **[Decision]**: [Brief rationale]
-
-## Next Steps
-1. [Ordered list of what should happen next]
-
-## Critical Context
-- [Any data, examples, or references needed to continue]
-- [Or "(none)" if not applicable]
-
-Keep each section concise. Preserve exact file paths, function names, and error messages.`;
-
-const UPDATE_SUMMARIZATION_PROMPT = `The messages above are NEW conversation messages to incorporate into the existing summary provided in <previous-summary> tags.
-
-Update the existing structured summary with new information. RULES:
-- PRESERVE all existing information from the previous summary
-- ADD new progress, decisions, and context from the new messages
-- UPDATE the Progress section: move items from "In Progress" to "Done" when completed
-- UPDATE "Next Steps" based on what was accomplished
-- PRESERVE exact file paths, function names, and error messages
-- If something is no longer relevant, you may remove it
-
-Use this EXACT format:
-
-## Goal
-[Preserve existing goals, add new ones if the task expanded]
-
-## Constraints & Preferences
-- [Preserve existing, add new ones discovered]
-
-## Progress
-### Done
-- [x] [Include previously done items AND newly completed items]
-
-### In Progress
-- [ ] [Current work - update based on progress]
-
-### Blocked
-- [Current blockers - remove if resolved]
-
-## Key Decisions
-- **[Decision]**: [Brief rationale] (preserve all previous, add new)
-
-## Next Steps
-1. [Update based on current state]
-
-## Critical Context
-- [Preserve important context, add new if needed]
-
-Keep each section concise. Preserve exact file paths, function names, and error messages.`;
-
 /**
  * Generate a summary of the conversation using the LLM.
  * If previousSummary is provided, uses the update prompt to merge.
@@ -510,11 +531,15 @@ export async function generateSummary(
   signal?: AbortSignal,
   customInstructions?: string,
   previousSummary?: string,
+  prompts?: CompactionPrompts,
 ): Promise<string> {
   const maxTokens = Math.floor(0.8 * reserveTokens);
 
   // Use update prompt if we have a previous summary, otherwise initial prompt
-  let basePrompt = previousSummary ? UPDATE_SUMMARIZATION_PROMPT : SUMMARIZATION_PROMPT;
+  const effectivePrompts = { ...DEFAULT_COMPACTION_PROMPTS, ...prompts };
+  let basePrompt = previousSummary
+    ? effectivePrompts.updateSummarizationPrompt
+    : effectivePrompts.summarizationPrompt;
   if (customInstructions) {
     basePrompt = `${basePrompt}\n\nAdditional focus: ${customInstructions}`;
   }
@@ -541,7 +566,7 @@ export async function generateSummary(
 
   const response = await streamText({
     model,
-    system: SUMMARIZATION_SYSTEM_PROMPT,
+    system: effectivePrompts.systemPrompt,
     messages: summarizationMessages,
     maxOutputTokens: maxTokens,
     abortSignal: signal,
@@ -661,27 +686,13 @@ export function prepareCompaction(
 // Main compaction function
 // ============================================================================
 
-const TURN_PREFIX_SUMMARIZATION_PROMPT = `This is the PREFIX of a turn that was too large to keep. The SUFFIX (recent work) is retained.
-
-Summarize the prefix to provide context for the retained suffix:
-
-## Original Request
-[What did the user ask for in this turn?]
-
-## Early Progress
-- [Key decisions and work done in the prefix]
-
-## Context for Suffix
-- [Information needed to understand the retained recent work]
-
-Be concise. Focus on what's needed to understand the kept suffix.`;
-
 /**
  * Generate summaries for compaction using prepared data.
  * Returns CompactionResult - SessionManager adds uuid/parentUuid when saving.
  *
  * @param preparation - Pre-calculated preparation from prepareCompaction()
  * @param customInstructions - Optional custom focus for the summary
+ * @param prompts - Optional configurable prompts for summarization
  */
 export async function compact(
   preparation: CompactionPreparation,
@@ -689,6 +700,7 @@ export async function compact(
   headers?: Record<string, string>,
   customInstructions?: string,
   signal?: AbortSignal,
+  prompts?: CompactionPrompts,
 ): Promise<CompactionResult> {
   const {
     firstKeptEntryId,
@@ -717,6 +729,7 @@ export async function compact(
             signal,
             customInstructions,
             previousSummary,
+            prompts,
           )
         : Promise.resolve("No prior history."),
       generateTurnPrefixSummary(
@@ -726,6 +739,7 @@ export async function compact(
 
         headers,
         signal,
+        prompts,
       ),
     ]);
     // Merge into single summary
@@ -741,6 +755,7 @@ export async function compact(
       signal,
       customInstructions,
       previousSummary,
+      prompts,
     );
   }
 
@@ -764,11 +779,13 @@ async function generateTurnPrefixSummary(
   reserveTokens: number,
   headers?: Record<string, string>,
   signal?: AbortSignal,
+  prompts?: CompactionPrompts,
 ): Promise<string> {
+  const effectivePrompts = { ...DEFAULT_COMPACTION_PROMPTS, ...prompts };
   const maxTokens = Math.floor(0.5 * reserveTokens); // Smaller budget for turn prefix
   const llmMessages = convertToLlm(messages);
   const conversationText = serializeConversation(llmMessages);
-  const promptText = `<conversation>\n${conversationText}\n</conversation>\n\n${TURN_PREFIX_SUMMARIZATION_PROMPT}`;
+  const promptText = `<conversation>\n${conversationText}\n</conversation>\n\n${effectivePrompts.turnPrefixPrompt}`;
   const summarizationMessages = [
     {
       role: "user" as const,
@@ -787,7 +804,7 @@ async function generateTurnPrefixSummary(
 
   const response = await streamText({
     model,
-    system: SUMMARIZATION_SYSTEM_PROMPT,
+    system: effectivePrompts.systemPrompt,
     messages: summarizationMessages,
     maxOutputTokens: maxTokens,
     abortSignal: signal,

@@ -8,9 +8,14 @@ import {
 } from "../../src/session/extensions/loader.js";
 import { ExtensionRegistry } from "../../src/session/extensions/registry.js";
 import { ExtensionRunner } from "../../src/session/extensions/runner.js";
-import type { ExtensionBinding, ExtensionDefinition } from "../../src/session/extensions/types.js";
+import type {
+  ExtensionAPI,
+  ExtensionBinding,
+  ExtensionDefinition,
+  ToolDefinition,
+} from "../../src/session/extensions/types.js";
 
-function makeToolDef(name: string) {
+function makeToolDef(name: string): ToolDefinition<Record<string, never>, { type: "text"; value: string }> {
   return {
     name,
     description: `tool ${name}`,
@@ -22,11 +27,11 @@ function makeToolDef(name: string) {
 describe("unregisterTool", () => {
   it("should remove tool from binding and call refreshTools", () => {
     const runtime = createExtensionRuntime();
-    const refreshTools = vi.fn();
+    const refreshTools = vi.fn<() => void>();
     runtime.refreshTools = refreshTools;
     const eventBus = createEventBus();
 
-    let api: any;
+    let api: ExtensionAPI | undefined;
     const def: ExtensionDefinition = {
       id: "test",
       setup(_api) {
@@ -42,7 +47,7 @@ describe("unregisterTool", () => {
     expect(binding.tools.has("tool_b")).toBe(true);
     expect(refreshTools).toHaveBeenCalledTimes(2);
 
-    api.unregisterTool("tool_a");
+    api?.unregisterTool("tool_a");
 
     expect(binding.tools.has("tool_a")).toBe(false);
     expect(binding.tools.has("tool_b")).toBe(true);
@@ -51,11 +56,11 @@ describe("unregisterTool", () => {
 
   it("should silently ignore non-existent tool name", () => {
     const runtime = createExtensionRuntime();
-    const refreshTools = vi.fn();
+    const refreshTools = vi.fn<() => void>();
     runtime.refreshTools = refreshTools;
     const eventBus = createEventBus();
 
-    let api: any;
+    let api: ExtensionAPI | undefined;
     const def: ExtensionDefinition = {
       id: "test",
       setup(_api) {
@@ -66,7 +71,7 @@ describe("unregisterTool", () => {
     createExtensionBindingSync(def, 0, runtime, eventBus, () => 0);
 
     // Should not throw, should not call refreshTools
-    api.unregisterTool("nonexistent");
+    api?.unregisterTool("nonexistent");
     expect(refreshTools).not.toHaveBeenCalled();
   });
 });
@@ -94,7 +99,7 @@ describe("registeredToolNames tracking", () => {
     const runtime = createExtensionRuntime();
     const eventBus = createEventBus();
 
-    let api: any;
+    let api: ExtensionAPI | undefined;
     const def: ExtensionDefinition = {
       id: "test",
       setup(_api) {
@@ -108,7 +113,7 @@ describe("registeredToolNames tracking", () => {
 
     expect(binding.registeredToolNames).toEqual(new Set(["tool_a", "tool_b"]));
 
-    api.unregisterTool("tool_a");
+    api?.unregisterTool("tool_a");
 
     // registeredToolNames still contains tool_a (historical record)
     expect(binding.registeredToolNames).toEqual(new Set(["tool_a", "tool_b"]));
@@ -159,7 +164,7 @@ describe("registerTool triggers refreshTools via loader", () => {
 
   it("createExtensionBindingSync should call refreshTools for sync registerTool", () => {
     const runtime = createExtensionRuntime();
-    const refreshTools = vi.fn();
+    const refreshTools = vi.fn<() => void>();
     runtime.refreshTools = refreshTools;
     const eventBus = createEventBus();
 
@@ -178,7 +183,7 @@ describe("registerTool triggers refreshTools via loader", () => {
 
   it("createExtensionBinding should call refreshTools for async registerTool", async () => {
     const runtime = createExtensionRuntime();
-    const refreshTools = vi.fn();
+    const refreshTools = vi.fn<() => void>();
     runtime.refreshTools = refreshTools;
     const eventBus = createEventBus();
 
@@ -202,7 +207,7 @@ describe("registerTool triggers refreshTools via loader", () => {
 
   it("multiple extensions register tools independently", () => {
     const runtime = createExtensionRuntime();
-    const refreshTools = vi.fn();
+    const refreshTools = vi.fn<() => void>();
     runtime.refreshTools = refreshTools;
     const eventBus = createEventBus();
 
@@ -237,8 +242,7 @@ describe("registerTool triggers refreshTools via loader", () => {
     const runtime = createExtensionRuntime();
     const eventBus = createEventBus();
 
-    let api1: any;
-    let api2: any;
+    let api1: ExtensionAPI | undefined;
 
     const def1: ExtensionDefinition = {
       id: "ext-a",
@@ -251,7 +255,6 @@ describe("registerTool triggers refreshTools via loader", () => {
     const def2: ExtensionDefinition = {
       id: "ext-b",
       setup(api) {
-        api2 = api;
         api.registerTool(makeToolDef("shared_name"));
       },
     };
@@ -263,7 +266,7 @@ describe("registerTool triggers refreshTools via loader", () => {
     expect(binding2.tools.has("shared_name")).toBe(true);
 
     // Unregister from ext-a only
-    api1.unregisterTool("shared_name");
+    api1?.unregisterTool("shared_name");
 
     expect(binding1.tools.has("shared_name")).toBe(false);
     // ext-b still has its own "shared_name"
@@ -273,13 +276,13 @@ describe("registerTool triggers refreshTools via loader", () => {
 
 describe("dispose auto-cleanup semantics", () => {
   it("dispose is called on old bindings during reload lifecycle", async () => {
-    const disposeFn = vi.fn();
+    const disposeFn = vi.fn<() => void>();
     const binding: ExtensionBinding = {
       id: "test",
       order: 0,
       generation: 0,
       handlers: new Map(),
-      tools: new Map([["tool_a", makeToolDef("tool_a") as any]]),
+      tools: new Map([["tool_a", makeToolDef("tool_a")]]),
       cleanup: { dispose: disposeFn },
       registeredToolNames: new Set(["tool_a"]),
     };
@@ -294,7 +297,7 @@ describe("dispose auto-cleanup semantics", () => {
   });
 
   it("dispose returning Promise is awaited", async () => {
-    const disposeFn = vi.fn().mockResolvedValue(undefined);
+    const disposeFn = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
     const binding: ExtensionBinding = {
       id: "test",
       order: 0,
@@ -312,7 +315,7 @@ describe("dispose auto-cleanup semantics", () => {
   });
 
   it("dispose rejection is caught (does not propagate)", async () => {
-    const disposeFn = vi.fn().mockRejectedValue(new Error("dispose failed"));
+    const disposeFn = vi.fn<() => Promise<void>>().mockRejectedValue(new Error("dispose failed"));
     const binding: ExtensionBinding = {
       id: "test",
       order: 0,
@@ -382,7 +385,7 @@ describe("ExtensionRegistry", () => {
     const registry = new ExtensionRegistry();
 
     const mockRunner = {
-      reload: vi.fn().mockResolvedValue(undefined),
+      reload: vi.fn<(definitions: ExtensionDefinition[]) => Promise<void>>().mockResolvedValue(undefined),
     } as unknown as ExtensionRunner;
 
     registry.registerRunner(mockRunner);
@@ -398,7 +401,7 @@ describe("ExtensionRegistry", () => {
     registry.add({ id: "ext-a", setup() {} });
 
     const mockRunner = {
-      reload: vi.fn().mockResolvedValue(undefined),
+      reload: vi.fn<(definitions: ExtensionDefinition[]) => Promise<void>>().mockResolvedValue(undefined),
     } as unknown as ExtensionRunner;
 
     registry.registerRunner(mockRunner);
@@ -412,7 +415,7 @@ describe("ExtensionRegistry", () => {
   it("unregisterRunner stops receiving broadcasts", () => {
     const registry = new ExtensionRegistry();
     const mockRunner = {
-      reload: vi.fn().mockResolvedValue(undefined),
+      reload: vi.fn<(definitions: ExtensionDefinition[]) => Promise<void>>().mockResolvedValue(undefined),
     } as unknown as ExtensionRunner;
 
     registry.registerRunner(mockRunner);
@@ -431,7 +434,7 @@ describe("ExtensionRegistry", () => {
     registry.add(defB);
 
     const mockRunner = {
-      reload: vi.fn().mockResolvedValue(undefined),
+      reload: vi.fn<(definitions: ExtensionDefinition[]) => Promise<void>>().mockResolvedValue(undefined),
     } as unknown as ExtensionRunner;
 
     registry.registerRunner(mockRunner);
@@ -455,7 +458,7 @@ describe("ExtensionRegistry", () => {
     registry.add(defA);
 
     const mockRunner = {
-      reload: vi.fn().mockResolvedValue(undefined),
+      reload: vi.fn<(definitions: ExtensionDefinition[]) => Promise<void>>().mockResolvedValue(undefined),
     } as unknown as ExtensionRunner;
 
     registry.registerRunner(mockRunner);
