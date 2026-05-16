@@ -233,6 +233,7 @@ export class RuntimeService extends Service<RuntimeConfig> {
             platform: session.platform,
             channelId: session.channelId,
             senderId: session.author.id,
+            senderName: session.author.name,
             quoteMessageId: session.quote?.id,
             quoteMessageContent: session.quote?.content,
             timestamp: Date.now(),
