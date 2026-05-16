@@ -256,6 +256,14 @@ export class AgentSession {
       this.agent.followUpMode = config.initialFollowUpMode;
     }
 
+    // Restore persisted messages from SessionManager into Agent state.
+    // This ensures historical messages (before restart) are available in LLM context.
+    // buildSessionContext() handles: regular messages, custom messages, compaction summaries.
+    const sessionContext = this.sessionManager.buildSessionContext();
+    if (sessionContext.messages.length > 0) {
+      this.agent.state.messages = sessionContext.messages;
+    }
+
     // Always subscribe to agent events for internal handling
     // (session persistence, extensions, auto-compaction, retry logic)
     this._unsubscribeAgent = this.agent.subscribe(this._handleAgentEvent);
