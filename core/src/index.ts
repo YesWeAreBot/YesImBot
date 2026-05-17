@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 
 import { Context, Schema } from "koishi";
 
+import { AdapterServiceImpl } from "./adapter/index.js";
 import { ExtensionConfig, ExtensionService } from "./extension.js";
 import { RuntimeConfig, RuntimeService } from "./runtime.js";
 import { ModelService, ModelServiceConfig } from "./services/model/index.js";
@@ -48,6 +49,7 @@ export async function apply(ctx: Context, config: Config) {
   ctx.plugin(ModelService, config);
   ctx.plugin(ExtensionService, config as ExtensionConfig);
   ctx.plugin(SessionService, config as SessionConfig);
+  ctx.plugin(AdapterServiceImpl);
   ctx.plugin(RuntimeService, config as RuntimeConfig);
 }
 
@@ -55,4 +57,5 @@ export type { AthenaExtensionDefinition, ChannelContext, ExtensionService } from
 export type { RuntimeService } from "./runtime";
 export type { ModelService } from "./services/model";
 export type { SessionService } from "./services/session";
+export type { AthenaEvent, PlatformAdapter } from "./adapter/index.js";
 export { encodeChannelId } from "./services/session/encoding.js";

@@ -3,6 +3,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   resolve: {
     alias: {
+      "@yesimbot/agent/ai": "../packages/agent/src/ai/index.ts",
       "@yesimbot/agent/session": "../packages/agent/src/session/index.ts",
       "@yesimbot/agent/agent": "../packages/agent/src/agent/index.ts",
       "@yesimbot/agent": "../packages/agent/src/index.ts",

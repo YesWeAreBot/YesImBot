@@ -14,9 +14,9 @@ import {
 import type { Settings } from "@yesimbot/agent/session";
 import { Bot, Context, Logger, Service } from "koishi";
 
+import type { AthenaEvent, ChatMessageDetails } from "./adapter/types.js";
 import type { ChannelContext } from "./extension.js";
 import { createSessionContextExtension } from "./extension/session-context/index.js";
-import { AthenaMessage, ChatMessage } from "./messages.js";
 
 interface ChannelIdentifier {
   platform: string;
@@ -43,7 +43,7 @@ export interface RuntimeConfig {
 }
 
 export class RuntimeService extends Service<RuntimeConfig> {
-  static inject = ["yesimbot.model", "yesimbot.extension", "yesimbot.session"];
+  static inject = ["yesimbot.model", "yesimbot.extension", "yesimbot.session", "yesimbot.adapter"];
   readonly logger: Logger;
 
   /** Active sessions map — promoted to class property for debug command access */
@@ -90,7 +90,7 @@ export class RuntimeService extends Service<RuntimeConfig> {
       const { platform, channelId, type } = context;
       const agent = new Agent({
         model: chatModel.model,
-        convertToLlm: (messages) => convertToLlm(convertAthenaMessages(messages)),
+        convertToLlm: (messages) => convertToLlm(messages),
       });
 
       const promptExtension: ExtensionDefinition = {
@@ -180,6 +180,7 @@ export class RuntimeService extends Service<RuntimeConfig> {
                 sessionContext.bot.sendMessage(sessionContext.channelId, textContent);
               }
             }
+            break;
           }
           case "tool_execution_start":
             break;
@@ -217,40 +218,54 @@ export class RuntimeService extends Service<RuntimeConfig> {
       }
     });
 
-    this.ctx.middleware(async (session, next) => {
-      const cid = session.cid as ChannelKey;
-      if (!this._channels.has(cid)) {
+    this.ctx.on("athena/event", async (event: AthenaEvent) => {
+      const key: ChannelKey = `${event.source.platform}:${event.source.channelId}`;
+
+      if (!this._channels.has(key)) {
         const sessionManager = await this.ctx["yesimbot.session"].getOrCreate(
-          session.platform!,
-          session.channelId!,
-          session.isDirect ? "private" : "group",
+          event.source.platform,
+          event.source.channelId,
+          event.source.conversationType === "private" ? "private" : "group",
         );
+
+        const bot = (event.meta.rawRef as { bot?: Bot } | undefined)?.bot;
+        if (!bot) {
+          this.logger.warn(`No bot reference available for channel ${key}, skipping`);
+          return;
+        }
+
         const sessionContext = createSessionContext(
           {
-            platform: session.platform,
-            channelId: session.channelId!,
-            type: session.isDirect ? "private" : "group",
+            platform: event.source.platform,
+            channelId: event.source.channelId,
+            type: event.source.conversationType === "private" ? "private" : "group",
           },
           sessionManager,
-          session.bot,
+          bot,
         );
-        this._channels.set(cid, sessionContext);
-        this.logger.info(`Created new agent session for channel ${cid}`);
+        this._channels.set(key, sessionContext);
+        this.logger.info(`Created new agent session for channel ${key}`);
       }
-      const sessionContext = this._channels.get(cid)!;
+      const sessionContext = this._channels.get(key)!;
 
       const channelAllowed = isChannelAllowed(
-        session.platform,
-        session.channelId!,
-        session.isDirect ? "private" : "group",
+        event.source.platform,
+        event.source.channelId,
+        event.source.conversationType === "private" ? "private" : "group",
         this.config.allowedChannels,
       );
 
-      const isMentioned =
-        session.stripped.atSelf ||
-        session.elements?.some((el) => el.type === "at" && el.attrs.id === session.bot.selfId);
+      const shouldTriggerTurn = channelAllowed && event.meta.triggerCandidate;
 
-      const shouldTriggerTurn = channelAllowed && (session.isDirect || isMentioned);
+      // Format for LLM
+      const formatted = await this.ctx["yesimbot.adapter"].formatters.format(event, {
+        conversationType: event.source.conversationType,
+        selfId: sessionContext.bot.selfId,
+      });
+
+      if (formatted === null) return;
+
+      if (!event.meta.persist && !shouldTriggerTurn) return;
 
       const options = shouldTriggerTurn
         ? { triggerTurn: true, deliverAs: "followUp" as const }
@@ -259,24 +274,25 @@ export class RuntimeService extends Service<RuntimeConfig> {
       await sessionContext.agentSession.sendCustomMessage(
         {
           customType: "athena:message",
-          content: String(session.content),
+          content: formatted,
           display: true,
           details: {
-            kind: "chat_message",
-            messageId: session.messageId,
-            platform: session.platform,
-            channelId: session.channelId,
-            senderId: session.author.id,
-            senderName: session.author.name,
-            quoteMessageId: session.quote?.id,
-            quoteMessageContent: session.quote?.content,
-            timestamp: Date.now(),
+            kind: event.kind,
+            platform: event.source.platform,
+            channelId: event.source.channelId,
+            timestamp: event.timestamp,
+            ...(event.kind === "chat_message"
+              ? {
+                  messageId: (event.details as ChatMessageDetails).messageId,
+                  senderId: event.actor.id,
+                  senderName: event.actor.name,
+                  quoteMessageId: (event.details as ChatMessageDetails).quoteMessageId,
+                }
+              : {}),
           },
-        } as ChatMessage,
+        },
         options,
       );
-
-      return next();
     });
 
     // =========================================================================
@@ -503,31 +519,6 @@ export class RuntimeService extends Service<RuntimeConfig> {
         }
       });
   }
-}
-
-function convertAthenaMessages(messages: AgentMessage[]): AgentMessage[] {
-  return messages.map((message) => {
-    if (message.role === "custom" && message.customType === "athena:message") {
-      const athenaMessage = message as AthenaMessage;
-      switch (athenaMessage.details.kind) {
-        case "chat_message":
-          return {
-            ...message,
-            role: "custom" as const,
-            rawContent: athenaMessage.content,
-            content: `${athenaMessage.details.senderName || athenaMessage.details.senderId} said: ${athenaMessage.content}`,
-          };
-        case "group_notice":
-          return {
-            ...message,
-            role: "custom" as const,
-            rawContent: athenaMessage.content,
-            content: athenaMessage.content,
-          };
-      }
-    }
-    return message;
-  });
 }
 
 function buildPrompt(
