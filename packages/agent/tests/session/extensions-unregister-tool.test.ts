@@ -15,7 +15,9 @@ import type {
   ToolDefinition,
 } from "../../src/session/extensions/types.js";
 
-function makeToolDef(name: string): ToolDefinition<Record<string, never>, { type: "text"; value: string }> {
+function makeToolDef(
+  name: string,
+): ToolDefinition<Record<string, never>, { type: "text"; value: string }> {
   return {
     name,
     description: `tool ${name}`,
@@ -385,7 +387,9 @@ describe("ExtensionRegistry", () => {
     const registry = new ExtensionRegistry();
 
     const mockRunner = {
-      reload: vi.fn<(definitions: ExtensionDefinition[]) => Promise<void>>().mockResolvedValue(undefined),
+      reload: vi
+        .fn<(definitions: ExtensionDefinition[]) => Promise<void>>()
+        .mockResolvedValue(undefined),
     } as unknown as ExtensionRunner;
 
     registry.registerRunner(mockRunner);
@@ -401,7 +405,9 @@ describe("ExtensionRegistry", () => {
     registry.add({ id: "ext-a", setup() {} });
 
     const mockRunner = {
-      reload: vi.fn<(definitions: ExtensionDefinition[]) => Promise<void>>().mockResolvedValue(undefined),
+      reload: vi
+        .fn<(definitions: ExtensionDefinition[]) => Promise<void>>()
+        .mockResolvedValue(undefined),
     } as unknown as ExtensionRunner;
 
     registry.registerRunner(mockRunner);
@@ -415,7 +421,9 @@ describe("ExtensionRegistry", () => {
   it("unregisterRunner stops receiving broadcasts", () => {
     const registry = new ExtensionRegistry();
     const mockRunner = {
-      reload: vi.fn<(definitions: ExtensionDefinition[]) => Promise<void>>().mockResolvedValue(undefined),
+      reload: vi
+        .fn<(definitions: ExtensionDefinition[]) => Promise<void>>()
+        .mockResolvedValue(undefined),
     } as unknown as ExtensionRunner;
 
     registry.registerRunner(mockRunner);
@@ -434,7 +442,9 @@ describe("ExtensionRegistry", () => {
     registry.add(defB);
 
     const mockRunner = {
-      reload: vi.fn<(definitions: ExtensionDefinition[]) => Promise<void>>().mockResolvedValue(undefined),
+      reload: vi
+        .fn<(definitions: ExtensionDefinition[]) => Promise<void>>()
+        .mockResolvedValue(undefined),
     } as unknown as ExtensionRunner;
 
     registry.registerRunner(mockRunner);
@@ -458,7 +468,9 @@ describe("ExtensionRegistry", () => {
     registry.add(defA);
 
     const mockRunner = {
-      reload: vi.fn<(definitions: ExtensionDefinition[]) => Promise<void>>().mockResolvedValue(undefined),
+      reload: vi
+        .fn<(definitions: ExtensionDefinition[]) => Promise<void>>()
+        .mockResolvedValue(undefined),
     } as unknown as ExtensionRunner;
 
     registry.registerRunner(mockRunner);

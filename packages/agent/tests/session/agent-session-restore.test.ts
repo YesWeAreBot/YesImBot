@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
 import type { LanguageModel } from "ai";
+import { describe, it, expect } from "vitest";
 
 import { Agent } from "../../src/agent/agent.js";
 import { AgentSession } from "../../src/session/agent-session.js";

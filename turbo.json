@@ -10,12 +10,6 @@
     "//#lint:fix": {
       "cache": false
     },
-    "//#quality": {
-      "dependsOn": ["//#lint", "//#fmt"]
-    },
-    "//#quality:fix": {
-      "dependsOn": ["//#lint:fix", "//#fmt:fix"]
-    },
     "build": {
       "dependsOn": ["check-types", "^build"],
       "outputs": ["dist/**", "lib/**"]

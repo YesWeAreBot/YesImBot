@@ -70,8 +70,12 @@ function createSession(options?: {
 describe("compaction prompts configuration", () => {
   it("uses chat-oriented default prompts", () => {
     expect(DEFAULT_COMPACTION_PROMPTS.systemPrompt).toContain("context summarization assistant");
-    expect(DEFAULT_COMPACTION_PROMPTS.summarizationPrompt).toContain("## User Profile & Preferences");
-    expect(DEFAULT_COMPACTION_PROMPTS.summarizationPrompt.toLowerCase()).not.toContain("coding agent");
+    expect(DEFAULT_COMPACTION_PROMPTS.summarizationPrompt).toContain(
+      "## User Profile & Preferences",
+    );
+    expect(DEFAULT_COMPACTION_PROMPTS.summarizationPrompt.toLowerCase()).not.toContain(
+      "coding agent",
+    );
   });
 
   it("merges compaction prompts with priority config > settings > defaults", () => {

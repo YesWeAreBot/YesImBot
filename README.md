@@ -99,7 +99,19 @@ Athena/
 
 ## Star 趋势
 
-[![Star History Chart](https://api.star-history.com/svg?repos=YesWeAreBot/YesImBot&type=Date)](https://star-history.com/#YesWeAreBot/YesImBot&Date)
+<div align="center">
+
+<a href="https://www.star-history.com/?repos=vmoranv%2Fjshookmcp&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=YesWeAreBot/YesImBot&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=YesWeAreBot/YesImBot&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=YesWeAreBot/YesImBot&type=date&legend=top-left" />
+ </picture>
+</a>
+
+![Activity](https://repobeats.axiom.co/api/embed/6e29e048274c301e59d2c774189029f6f0085a37.svg "Repobeats analytics image")
+
+</div>
 
 ---
 
