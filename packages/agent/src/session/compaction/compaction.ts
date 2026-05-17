@@ -469,10 +469,12 @@ export function findCutPoint(
 
   for (let i = endIndex - 1; i >= startIndex; i--) {
     const entry = entries[i];
-    if (entry.type !== "message") continue;
+    // Count tokens from ALL entry types that contribute to context,
+    // not just "message" entries — custom_message entries also consume tokens.
+    const msg = getMessageFromEntry(entry);
+    if (!msg) continue;
 
-    // Estimate this message's size
-    const messageTokens = estimateTokens(entry.message);
+    const messageTokens = estimateTokens(msg);
     accumulatedTokens += messageTokens;
 
     // Check if we've exceeded the budget
@@ -644,7 +646,27 @@ export function prepareCompaction(
 
   const tokensBefore = estimateContextTokens(buildSessionContext(pathEntries).messages).tokens;
 
-  const cutPoint = findCutPoint(pathEntries, boundaryStart, boundaryEnd, settings.keepRecentTokens);
+  // Use the same estimation method for findCutPoint as for tokensBefore.
+  // estimateContextTokens uses LLM usage data which can be much higher than
+  // the chars/4 heuristic used inside findCutPoint. To avoid the situation where
+  // tokensBefore > keepRecentTokens (triggering compaction) but findCutPoint
+  // can't find a cut (because its heuristic underestimates), we scale
+  // keepRecentTokens proportionally to the heuristic estimate.
+  let heuristicTotal = 0;
+  for (let i = boundaryStart; i < boundaryEnd; i++) {
+    const msg = getMessageFromEntry(pathEntries[i]);
+    if (msg) heuristicTotal += estimateTokens(msg);
+  }
+
+  // Scale keepRecentTokens so the cut point is proportional to the real context usage.
+  // If heuristic says 10k tokens but usage says 21k, and we want to keep 20k of usage,
+  // that's equivalent to keeping (20/21)*10k ≈ 9.5k of heuristic tokens.
+  let effectiveKeepTokens = settings.keepRecentTokens;
+  if (tokensBefore > 0 && heuristicTotal > 0 && tokensBefore !== heuristicTotal) {
+    effectiveKeepTokens = Math.round((settings.keepRecentTokens / tokensBefore) * heuristicTotal);
+  }
+
+  const cutPoint = findCutPoint(pathEntries, boundaryStart, boundaryEnd, effectiveKeepTokens);
 
   // Get UUID of first kept entry
   const firstKeptEntry = pathEntries[cutPoint.firstKeptEntryIndex];
@@ -655,11 +677,22 @@ export function prepareCompaction(
 
   const historyEnd = cutPoint.isSplitTurn ? cutPoint.turnStartIndex : cutPoint.firstKeptEntryIndex;
 
+  // If the cut point is at boundaryStart, there's nothing to summarize.
+  // This can happen when keepRecentTokens >= actual context tokens.
+  if (historyEnd <= boundaryStart) {
+    return undefined;
+  }
+
   // Messages to summarize (will be discarded after summary)
   const messagesToSummarize: AgentMessage[] = [];
   for (let i = boundaryStart; i < historyEnd; i++) {
     const msg = getMessageFromEntryForCompaction(pathEntries[i]);
     if (msg) messagesToSummarize.push(msg);
+  }
+
+  // If no actual messages to summarize (all entries in range are non-message types), bail out
+  if (messagesToSummarize.length === 0) {
+    return undefined;
   }
 
   // Messages for turn prefix summary (if splitting a turn)
