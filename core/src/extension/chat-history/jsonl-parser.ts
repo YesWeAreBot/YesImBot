@@ -38,18 +38,25 @@ export function parseJsonlLine(line: string): ParsedMessage | null {
     return null;
   }
 
-  if (type === "custom_message" && obj.customType === "athena:message") {
+  if (type === "custom_message" && obj.customType === "athena:event") {
     const details = (obj.details ?? {}) as Record<string, unknown>;
+    if (details.version !== 1) return null;
+    if (details.kind !== "chat_message") return null;
+
     const content = obj.content;
     const text = extractText(content);
     if (!text) return null;
 
-    const actor = details.actor as { userId?: string; nickname?: string } | undefined;
-    const speaker = actor?.nickname ?? (details.senderId as string) ?? "unknown";
+    const actor = details.actor as { id?: string; name?: string } | undefined;
+    const speaker = actor?.name ?? actor?.id ?? "unknown";
+
+    const ts = details.timestamp;
+    const timestamp =
+      typeof ts === "number" ? new Date(ts).toISOString() : String(ts ?? "");
 
     return {
-      id: String(obj.id ?? ""),
-      timestamp: String(obj.timestamp ?? ""),
+      id: String(details.id ?? obj.id ?? ""),
+      timestamp,
       role: "user",
       speaker,
       content: text,

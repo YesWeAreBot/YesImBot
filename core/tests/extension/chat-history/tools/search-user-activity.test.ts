@@ -46,15 +46,16 @@ describe("search_user_activity tool", () => {
           JSON.stringify({
             type: "custom_message",
             id: "msg-100",
-            parentId: null,
-            timestamp: "2026-05-17T12:01:00Z",
-            customType: "athena:message",
+            customType: "athena:event",
             content: [{ type: "text", text: "Alice 在另一个频道说话" }],
-            display: true,
             details: {
-              senderId: "user-alice",
-              kind: "message",
-              actor: { userId: "user-alice", nickname: "Alice" },
+              version: 1,
+              id: "msg-100",
+              kind: "chat_message",
+              timestamp: 1747483260000,
+              source: { platform: "onebot", channelId: "group-456", conversationType: "group" },
+              actor: { id: "user-alice", name: "Alice" },
+              payload: { messageId: "msg-100", content: "Alice 在另一个频道说话" },
             },
           }) +
           "\n",

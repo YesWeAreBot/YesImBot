@@ -7,32 +7,89 @@ import { parseJsonlLine, scanJsonlFile } from "../../../src/extension/chat-histo
 import { FIXTURE_DIR } from "./fixtures/helpers.js";
 
 describe("parseJsonlLine", () => {
-  it("parses athena:message (custom_message) correctly", () => {
+  it("parses athena:event (custom_message) correctly", () => {
     const line = JSON.stringify({
       type: "custom_message",
       id: "msg-001",
-      parentId: null,
-      timestamp: "2026-05-17T10:01:00Z",
-      customType: "athena:message",
+      customType: "athena:event",
       content: [{ type: "text", text: "Hello world" }],
-      display: true,
       details: {
-        senderId: "user-alice",
-        kind: "message",
-        platform: "onebot",
-        channelId: "group-123",
-        actor: { userId: "user-alice", nickname: "Alice" },
+        version: 1,
+        id: "msg-001",
+        kind: "chat_message",
+        timestamp: 1747476060000,
+        source: { platform: "onebot", channelId: "group-123", conversationType: "group" },
+        actor: { id: "user-alice", name: "Alice" },
+        payload: { messageId: "msg-001", content: "Hello world" },
       },
     });
     const result = parseJsonlLine(line);
     expect(result).toEqual({
       id: "msg-001",
-      timestamp: "2026-05-17T10:01:00Z",
+      timestamp: new Date(1747476060000).toISOString(),
       role: "user",
       speaker: "Alice",
       content: "Hello world",
       channelKey: "",
     });
+  });
+
+  it("returns null for non-chat_message events", () => {
+    const line = JSON.stringify({
+      type: "custom_message",
+      id: "evt-001",
+      customType: "athena:event",
+      content: [],
+      details: {
+        version: 1,
+        id: "evt-001",
+        kind: "member_change",
+        timestamp: 1747476060000,
+        source: { platform: "onebot", channelId: "group-123" },
+        actor: { id: "user-alice", name: "Alice" },
+        payload: {},
+      },
+    });
+    expect(parseJsonlLine(line)).toBeNull();
+  });
+
+  it("falls back to actor.id when name is missing", () => {
+    const line = JSON.stringify({
+      type: "custom_message",
+      id: "msg-010",
+      customType: "athena:event",
+      content: [{ type: "text", text: "Hi" }],
+      details: {
+        version: 1,
+        id: "msg-010",
+        kind: "chat_message",
+        timestamp: 1747476060000,
+        source: { platform: "onebot", channelId: "group-123" },
+        actor: { id: "user-alice" },
+        payload: { messageId: "msg-010", content: "Hi" },
+      },
+    });
+    const result = parseJsonlLine(line);
+    expect(result?.speaker).toBe("user-alice");
+  });
+
+  it("returns null for unsupported event versions", () => {
+    const line = JSON.stringify({
+      type: "custom_message",
+      id: "msg-011",
+      customType: "athena:event",
+      content: [{ type: "text", text: "Hi" }],
+      details: {
+        version: 2,
+        id: "msg-011",
+        kind: "chat_message",
+        timestamp: 1747476060000,
+        source: { platform: "onebot", channelId: "group-123" },
+        actor: { id: "user-alice", name: "Alice" },
+        payload: { messageId: "msg-011", content: "Hi" },
+      },
+    });
+    expect(parseJsonlLine(line)).toBeNull();
   });
 
   it("parses assistant message correctly", () => {
@@ -115,20 +172,6 @@ describe("parseJsonlLine", () => {
     expect(parseJsonlLine("   ")).toBeNull();
   });
 
-  it("falls back to senderId when nickname is missing", () => {
-    const line = JSON.stringify({
-      type: "custom_message",
-      id: "msg-010",
-      parentId: null,
-      timestamp: "2026-05-17T10:01:00Z",
-      customType: "athena:message",
-      content: [{ type: "text", text: "Hi" }],
-      display: true,
-      details: { senderId: "user-alice", kind: "message" },
-    });
-    const result = parseJsonlLine(line);
-    expect(result?.speaker).toBe("user-alice");
-  });
 });
 
 describe("scanJsonlFile", () => {

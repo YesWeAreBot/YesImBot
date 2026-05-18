@@ -13,7 +13,8 @@ import {
 } from "@yesimbot/agent/session";
 import { Bot, Context, Logger, Service } from "koishi";
 
-import type { AthenaEvent, ChatMessageDetails } from "./adapter/types.js";
+import type { AthenaEvent } from "./adapter/types.js";
+import { serializeEvent } from "./adapter/types.js";
 import type { ChannelContext } from "./extension.js";
 
 interface ChannelIdentifier {
@@ -221,7 +222,7 @@ export class RuntimeService extends Service<RuntimeConfig> {
           event.source.conversationType === "private" ? "private" : "group",
         );
 
-        const bot = event.meta.bot;
+        const bot = event.metadata.bot;
         if (!bot) {
           this.logger.warn(`No bot reference available for channel ${key}, skipping`);
           return;
@@ -248,7 +249,7 @@ export class RuntimeService extends Service<RuntimeConfig> {
         this.config.allowedChannels,
       );
 
-      const shouldTriggerTurn = channelAllowed && event.meta.triggerCandidate;
+      const shouldTriggerTurn = channelAllowed && event.metadata.triggerCandidate;
 
       // Format for LLM
       const formatted = await this.ctx["yesimbot.adapter"].formatters.format(event, {
@@ -256,9 +257,12 @@ export class RuntimeService extends Service<RuntimeConfig> {
         selfId: sessionContext.bot.selfId,
       });
 
-      if (formatted === null) return;
+      // Decide persistence
+      if (formatted === null && !event.metadata.persist) return;
+      if (!event.metadata.persist && !shouldTriggerTurn) return;
 
-      if (!event.meta.persist && !shouldTriggerTurn) return;
+      const display = formatted !== null;
+      const content = formatted ?? [];
 
       const options = shouldTriggerTurn
         ? { triggerTurn: true, deliverAs: "followUp" as const }
@@ -266,23 +270,10 @@ export class RuntimeService extends Service<RuntimeConfig> {
 
       await sessionContext.agentSession.sendCustomMessage(
         {
-          customType: "athena:message",
-          content: formatted,
-          display: true,
-          details: {
-            kind: event.kind,
-            platform: event.source.platform,
-            channelId: event.source.channelId,
-            timestamp: event.timestamp,
-            ...(event.kind === "chat_message"
-              ? {
-                  messageId: (event.details as ChatMessageDetails).messageId,
-                  senderId: event.actor.id,
-                  senderName: event.actor.name,
-                  quoteMessageId: (event.details as ChatMessageDetails).quoteMessageId,
-                }
-              : {}),
-          },
+          customType: "athena:event",
+          content,
+          display,
+          details: serializeEvent(event),
         },
         options,
       );
