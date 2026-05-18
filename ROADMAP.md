@@ -43,6 +43,10 @@
 - **Extension 最小插件开发模型验证**
   - `plugins/mcp-client` 作为首个真实 Extension 插件：Koishi Service + Schema 配置 + MCP SDK 集成
   - 通过 `ExtensionAPI.registerTool()` 注册工具，验证异步 setup → 工具注册 → Agent 可用完整链路
+- **chat-history 扩展实现**
+  - 替换旧 `session-context` 扩展，提供 3 个简洁的聊天记录搜索工具
+  - 完整搜索引擎架构：QueryGuard → ChannelResolver → FileScanner → ResultFormatter
+  - 74 个测试覆盖单元和集成场景
 - **旧版清理**
   - 删除 `@yesimbot/plugin-sdk`（与新 Extension 系统不兼容）
   - 删除旧版 plugins（mcp-client, search-service, skill, workspace）

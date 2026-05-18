@@ -37,15 +37,15 @@ export interface ParsedMessage {
   id: string;
   timestamp: string;
   role: "user" | "assistant";
-  speaker: string;       // userId/nickname for user, "assistant" for assistant
-  content: string;       // full text content
-  channelKey: string;    // which channel this belongs to
+  speaker: string; // userId/nickname for user, "assistant" for assistant
+  content: string; // full text content
+  channelKey: string; // which channel this belongs to
 }
 
 export interface QueryValidation {
   valid: boolean;
-  normalized?: string;   // normalized query string
-  hint?: string;         // rejection reason
+  normalized?: string; // normalized query string
+  hint?: string; // rejection reason
 }
 
 // ============================================================================

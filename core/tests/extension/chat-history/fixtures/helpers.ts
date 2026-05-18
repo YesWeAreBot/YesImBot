@@ -1,10 +1,13 @@
-// core/tests/extension/chat-history/fixtures/helpers.ts
-import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { randomUUID } from "node:crypto";
+// core/tests/extension/chat-history/fixtures/helpers.ts
+import { join } from "node:path";
 
-import type { ChannelLocator, SearchContext } from "../../../../src/extension/chat-history/types.js";
+import type {
+  ChannelLocator,
+  SearchContext,
+} from "../../../../src/extension/chat-history/types.js";
 
 export const FIXTURE_DIR = join(import.meta.dirname, ".");
 

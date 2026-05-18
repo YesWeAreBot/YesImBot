@@ -2,6 +2,9 @@
 import type { ToolDefinition } from "@yesimbot/agent/session";
 import { z } from "zod";
 
+import { ChannelResolver } from "../engine/channel-resolver.js";
+import { FileScanner } from "../engine/file-scanner.js";
+import { extractSnippet } from "../engine/result-formatter.js";
 import type {
   ChatHistoryConfig,
   ChannelLocator,
@@ -10,9 +13,6 @@ import type {
   SearchUserActivityOutput,
   UserActivityChannel,
 } from "../types.js";
-import { ChannelResolver } from "../engine/channel-resolver.js";
-import { FileScanner } from "../engine/file-scanner.js";
-import { extractSnippet } from "../engine/result-formatter.js";
 
 export function createSearchUserActivityTool(
   config: ChatHistoryConfig,

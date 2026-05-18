@@ -1,7 +1,8 @@
-// core/tests/extension/chat-history/engine/file-scanner.test.ts
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { rmSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+
+// core/tests/extension/chat-history/engine/file-scanner.test.ts
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 
 import { FileScanner } from "../../../../src/extension/chat-history/engine/file-scanner.js";
 import {
@@ -16,10 +17,7 @@ describe("FileScanner", () => {
 
   beforeEach(() => {
     sessionsDir = createTempSessionsDir();
-    const fixtureContent = readFileSync(
-      join(FIXTURE_DIR, "sample-session.jsonl"),
-      "utf-8",
-    );
+    const fixtureContent = readFileSync(join(FIXTURE_DIR, "sample-session.jsonl"), "utf-8");
     setupTestChannel(sessionsDir, "onebot_group-123", {
       platform: "onebot",
       channelId: "group-123",

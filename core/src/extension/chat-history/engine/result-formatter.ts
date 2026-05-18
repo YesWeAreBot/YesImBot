@@ -66,14 +66,16 @@ export function formatCompactLine(
   msg: { timestamp: string; role: string; speaker: string; content: string },
   isAnchor: boolean,
 ): string {
-  const time = msg.timestamp.replace("T", " ").replace(/:\d{2}\.\d+Z$|:\d{2}Z$/, "").slice(0, 16);
-  const content = msg.content.length > MAX_COMPACT_CONTENT
-    ? msg.content.slice(0, MAX_COMPACT_CONTENT) + "…"
-    : msg.content;
+  const time = msg.timestamp
+    .replace("T", " ")
+    .replace(/:\d{2}\.\d+Z$|:\d{2}Z$/, "")
+    .slice(0, 16);
+  const content =
+    msg.content.length > MAX_COMPACT_CONTENT
+      ? msg.content.slice(0, MAX_COMPACT_CONTENT) + "…"
+      : msg.content;
 
-  const rolePrefix = msg.role === "assistant"
-    ? "assistant"
-    : `user ${msg.speaker}`;
+  const rolePrefix = msg.role === "assistant" ? "assistant" : `user ${msg.speaker}`;
 
   const line = `[${time}] ${rolePrefix}: ${content}`;
   return isAnchor ? `>>> ${line}` : line;
@@ -103,9 +105,11 @@ export function formatSearchResults(
     results: formattedResults,
     total_found: results.length,
     ...(results.length === 0
-      ? { hint: "未找到匹配结果。尝试换个关键词、扩大时间范围、或使用 where=\"all\" 跨频道搜索。" }
+      ? { hint: '未找到匹配结果。尝试换个关键词、扩大时间范围、或使用 where="all" 跨频道搜索。' }
       : results.length > limit
-        ? { hint: `共找到 ${results.length} 条结果，已返回最近 ${limit} 条。可缩小时间范围获取更精确的结果。` }
+        ? {
+            hint: `共找到 ${results.length} 条结果，已返回最近 ${limit} 条。可缩小时间范围获取更精确的结果。`,
+          }
         : {}),
   };
 }

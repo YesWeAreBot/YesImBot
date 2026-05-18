@@ -1,4 +1,4 @@
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 
 import type {} from "@yesimbot/agent";
 import { Agent } from "@yesimbot/agent/agent";
@@ -15,7 +15,6 @@ import { Bot, Context, Logger, Service } from "koishi";
 
 import type { AthenaEvent, ChatMessageDetails } from "./adapter/types.js";
 import type { ChannelContext } from "./extension.js";
-import { createChatHistoryExtension } from "./extension/chat-history/index.js";
 
 interface ChannelIdentifier {
   platform: string;
@@ -97,7 +96,13 @@ export class RuntimeService extends Service<RuntimeConfig> {
         setup(api) {
           api.on("agent:before-start", (event) => {
             return {
-              systemPrompt: buildPrompt(event.systemPromptOptions, platform, channelId, type),
+              systemPrompt: buildPrompt(event.systemPromptOptions, {
+                platform,
+                channelId,
+                type,
+                selfId: bot.selfId,
+                selfName: bot.user?.nick || bot.user?.name || "(unknown)",
+              }),
             };
           });
         },
@@ -115,20 +120,7 @@ export class RuntimeService extends Service<RuntimeConfig> {
         agent,
         sessionManager,
         settingsManager,
-        extensions: [
-          ...this.ctx["yesimbot.extension"].getAllExtensions(context),
-          promptExtension,
-          createChatHistoryExtension(
-            this.ctx,
-            {
-              sessionsDir: resolve(this.config.basePath, "sessions"),
-              isolation: false,
-              defaultLimit: 10,
-              maxLimit: 30,
-            },
-            context,
-          ),
-        ],
+        extensions: [...this.ctx["yesimbot.extension"].getAllExtensions(context), promptExtension],
       });
       this.ctx["yesimbot.extension"].registerRunner(agentSession.extensionRunner, context);
 
@@ -300,9 +292,13 @@ export class RuntimeService extends Service<RuntimeConfig> {
 
 function buildPrompt(
   opts: BuildSystemPromptOptions,
-  platform: string,
-  channelId: string,
-  type: "private" | "group",
+  envCtx: {
+    platform: string;
+    channelId: string;
+    type: "private" | "group";
+    selfId: string;
+    selfName: string;
+  },
 ): string {
   const { selectedTools, toolSnippets, promptGuidelines } = opts;
 
@@ -325,13 +321,15 @@ function buildPrompt(
     .map((g) => `- ${g}`)
     .join("\n");
 
-  const curDate = new Date().toISOString().split("T")[0];
-
-  const envLabel =
-    type === "group" ? `群聊: ${platform}:${channelId}` : `私聊: ${platform}:${channelId}`;
+  const curDate = new Date().toLocaleDateString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const curWeekday = new Date().toLocaleDateString("zh-CN", { weekday: "long" });
 
   const sceneGuide =
-    type === "group"
+    envCtx.type === "group"
       ? `你在这个群聊中长期存在。
 - 被直接提及时优先回应
 - 观察群聊节奏和氛围，不打断正在进行的对话
@@ -349,8 +347,12 @@ function buildPrompt(
 你的价值来自持续存在感、节奏感和判断力，而非频繁发言。
 
 === 当前环境 ===
-${envLabel}
-日期: ${curDate}
+Platform: ${envCtx.platform}
+Channel ID: ${envCtx.channelId}
+Chat Type: ${envCtx.type === "private" ? "私聊" : "群聊"}
+你的ID: ${envCtx.selfId}
+你在此频道的昵称: ${envCtx.selfName}
+当前日期: ${curDate} (${curWeekday})
 
 ${sceneGuide}
 

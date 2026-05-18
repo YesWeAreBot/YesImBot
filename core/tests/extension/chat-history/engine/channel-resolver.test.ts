@@ -1,12 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { rmSync } from "node:fs";
 
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+
 import { ChannelResolver } from "../../../../src/extension/chat-history/engine/channel-resolver.js";
-import {
-  createTempSessionsDir,
-  setupTestChannel,
-  makeSearchContext,
-} from "../fixtures/helpers.js";
+import { createTempSessionsDir, setupTestChannel, makeSearchContext } from "../fixtures/helpers.js";
 
 describe("ChannelResolver", () => {
   let sessionsDir: string;

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { UserContent } from "@yesimbot/agent/ai";
-import type { Element } from "koishi";
+import type { Bot, Context, Session } from "koishi";
 
 // ===== Event Source =====
 export interface EventSource {
@@ -17,14 +17,15 @@ export interface Actor {
   id: string;
   name?: string;
   avatar?: string;
-  isBot?: boolean;
+  isSelf?: boolean;
 }
 
 // ===== Event Meta =====
 export interface EventMeta {
   persist: boolean;
   triggerCandidate: boolean;
-  rawRef?: unknown;
+  bot: Bot;
+  raw: Session;
 }
 
 // ===== Base Event =====
@@ -42,7 +43,7 @@ export interface AthenaEvent<K extends string = string, D = unknown> {
 // ===== Concrete Event Details =====
 export interface ChatMessageDetails {
   messageId: string;
-  elements: Element[];
+  content: string;
   quoteMessageId?: string;
   quoteSender?: Actor;
 }
@@ -91,9 +92,13 @@ export interface FormatterRegistry {
 }
 
 // ===== Platform Adapter Interface =====
-export interface PlatformAdapter {
-  platform: string;
-  install(ctx: import("koishi").Context, emit: (event: AthenaEvent) => void): void;
+export abstract class PlatformAdapter<C = unknown> {
+  abstract platform: string;
+  constructor(
+    public ctx: Context,
+    public config: C,
+  ) {}
+  abstract install(emit: (event: AthenaEvent) => void): void;
   formatters?: Record<string, EventFormatter>;
   capabilities?: Record<string, (...args: unknown[]) => Promise<unknown>>;
 }

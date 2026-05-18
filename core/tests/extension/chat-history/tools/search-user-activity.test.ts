@@ -1,11 +1,15 @@
-// core/tests/extension/chat-history/tools/search-user-activity.test.ts
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { rmSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+// core/tests/extension/chat-history/tools/search-user-activity.test.ts
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+
 import { createSearchUserActivityTool } from "../../../../src/extension/chat-history/tools/search-user-activity.js";
+import type {
+  ChannelLocator,
+  ChatHistoryConfig,
+} from "../../../../src/extension/chat-history/types.js";
 import { createTempSessionsDir, setupTestChannel, FIXTURE_DIR } from "../fixtures/helpers.js";
-import type { ChannelLocator, ChatHistoryConfig } from "../../../../src/extension/chat-history/types.js";
 
 describe("search_user_activity tool", () => {
   let sessionsDir: string;
@@ -14,10 +18,7 @@ describe("search_user_activity tool", () => {
 
   beforeEach(() => {
     sessionsDir = createTempSessionsDir();
-    const fixtureContent = readFileSync(
-      join(FIXTURE_DIR, "sample-session.jsonl"),
-      "utf-8",
-    );
+    const fixtureContent = readFileSync(join(FIXTURE_DIR, "sample-session.jsonl"), "utf-8");
     setupTestChannel(sessionsDir, "onebot_group-123", {
       platform: "onebot",
       channelId: "group-123",

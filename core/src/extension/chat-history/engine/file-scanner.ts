@@ -1,7 +1,7 @@
-// core/src/extension/chat-history/engine/file-scanner.ts
-import type { ChannelSummary, ParsedMessage, SearchContext, ScanOptions } from "../types.js";
 import { listSessionFiles } from "../channel-store.js";
 import { scanJsonlFile } from "../jsonl-parser.js";
+// core/src/extension/chat-history/engine/file-scanner.ts
+import type { ChannelSummary, ParsedMessage, SearchContext, ScanOptions } from "../types.js";
 
 const DEFAULT_MAX_FILES_PER_CHANNEL = 5;
 const DEFAULT_MAX_LINES = 5000;

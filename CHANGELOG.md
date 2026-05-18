@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Extension**: New `chat-history` extension replacing `session-context` with 3 simplified tools: `search_conversation`, `search_user_activity`, `read_conversation_context`
+- **Extension**: Chat history search engine architecture with QueryGuard, ChannelResolver, FileScanner, and ResultFormatter
+- **Extension**: JSONL parser aligned with SessionEntry types for user/assistant message extraction
+- **Extension**: System prompt injection for chat history tools via `agent:before-start` event
 - **Agent**: New `@yesimbot/agent` package — standalone agent loop, session management, and extension framework
 - **Agent**: `normalizeToolResult` function for unified tool return value normalization
 - **Agent**: `ToolExecuteReturn<OUTPUT, DETAILS>` three-generic-parameter type design

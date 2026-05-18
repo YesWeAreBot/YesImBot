@@ -1,5 +1,5 @@
-import type { ChannelSummary, SearchContext, ToolError } from "../types.js";
 import { listChannelSummaries, toolError } from "../channel-store.js";
+import type { ChannelSummary, SearchContext, ToolError } from "../types.js";
 
 const DEFAULT_MAX_CHANNELS = 10;
 
@@ -34,7 +34,7 @@ export class ChannelResolver {
       return toolError(
         "隔离模式下无法跨频道搜索。",
         "ISOLATION_VIOLATION",
-        "请使用 where=\"here\" 搜索当前频道。",
+        '请使用 where="here" 搜索当前频道。',
       );
     }
 

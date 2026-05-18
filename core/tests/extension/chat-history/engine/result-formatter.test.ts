@@ -47,9 +47,30 @@ describe("extractSnippet", () => {
 describe("deduplicateResults", () => {
   it("removes consecutive hits within 60s", () => {
     const results = [
-      { id: "1", timestamp: "2026-05-17T10:00:00Z", role: "user" as const, speaker: "Alice", content: "a", channelKey: "ch1" },
-      { id: "2", timestamp: "2026-05-17T10:00:30Z", role: "user" as const, speaker: "Alice", content: "b", channelKey: "ch1" },
-      { id: "3", timestamp: "2026-05-17T10:05:00Z", role: "user" as const, speaker: "Alice", content: "c", channelKey: "ch1" },
+      {
+        id: "1",
+        timestamp: "2026-05-17T10:00:00Z",
+        role: "user" as const,
+        speaker: "Alice",
+        content: "a",
+        channelKey: "ch1",
+      },
+      {
+        id: "2",
+        timestamp: "2026-05-17T10:00:30Z",
+        role: "user" as const,
+        speaker: "Alice",
+        content: "b",
+        channelKey: "ch1",
+      },
+      {
+        id: "3",
+        timestamp: "2026-05-17T10:05:00Z",
+        role: "user" as const,
+        speaker: "Alice",
+        content: "c",
+        channelKey: "ch1",
+      },
     ];
     const { deduped, totalFound } = deduplicateResults(results);
     expect(deduped).toHaveLength(2); // first and third
@@ -58,8 +79,22 @@ describe("deduplicateResults", () => {
 
   it("does not deduplicate across different channels", () => {
     const results = [
-      { id: "1", timestamp: "2026-05-17T10:00:00Z", role: "user" as const, speaker: "Alice", content: "a", channelKey: "ch1" },
-      { id: "2", timestamp: "2026-05-17T10:00:30Z", role: "user" as const, speaker: "Alice", content: "b", channelKey: "ch2" },
+      {
+        id: "1",
+        timestamp: "2026-05-17T10:00:00Z",
+        role: "user" as const,
+        speaker: "Alice",
+        content: "a",
+        channelKey: "ch1",
+      },
+      {
+        id: "2",
+        timestamp: "2026-05-17T10:00:30Z",
+        role: "user" as const,
+        speaker: "Alice",
+        content: "b",
+        channelKey: "ch2",
+      },
     ];
     const { deduped } = deduplicateResults(results);
     expect(deduped).toHaveLength(2);
@@ -74,42 +109,54 @@ describe("deduplicateResults", () => {
 
 describe("formatCompactLine", () => {
   it("formats user message correctly", () => {
-    const line = formatCompactLine({
-      timestamp: "2026-05-17T10:01:00Z",
-      role: "user",
-      speaker: "Alice",
-      content: "Hello world",
-    }, false);
+    const line = formatCompactLine(
+      {
+        timestamp: "2026-05-17T10:01:00Z",
+        role: "user",
+        speaker: "Alice",
+        content: "Hello world",
+      },
+      false,
+    );
     expect(line).toBe("[2026-05-17 10:01] user Alice: Hello world");
   });
 
   it("formats assistant message correctly", () => {
-    const line = formatCompactLine({
-      timestamp: "2026-05-17T10:02:00Z",
-      role: "assistant",
-      speaker: "assistant",
-      content: "Hi there",
-    }, false);
+    const line = formatCompactLine(
+      {
+        timestamp: "2026-05-17T10:02:00Z",
+        role: "assistant",
+        speaker: "assistant",
+        content: "Hi there",
+      },
+      false,
+    );
     expect(line).toBe("[2026-05-17 10:02] assistant: Hi there");
   });
 
   it("adds anchor prefix", () => {
-    const line = formatCompactLine({
-      timestamp: "2026-05-17T10:01:00Z",
-      role: "user",
-      speaker: "Alice",
-      content: "Hello",
-    }, true);
+    const line = formatCompactLine(
+      {
+        timestamp: "2026-05-17T10:01:00Z",
+        role: "user",
+        speaker: "Alice",
+        content: "Hello",
+      },
+      true,
+    );
     expect(line.startsWith(">>> ")).toBe(true);
   });
 
   it("truncates long content to 1000 chars", () => {
-    const line = formatCompactLine({
-      timestamp: "2026-05-17T10:01:00Z",
-      role: "user",
-      speaker: "Alice",
-      content: "X".repeat(1500),
-    }, false);
+    const line = formatCompactLine(
+      {
+        timestamp: "2026-05-17T10:01:00Z",
+        role: "user",
+        speaker: "Alice",
+        content: "X".repeat(1500),
+      },
+      false,
+    );
     expect(line.length).toBeLessThan(1100);
   });
 });
@@ -117,8 +164,22 @@ describe("formatCompactLine", () => {
 describe("formatSearchResults", () => {
   it("sorts by time descending", () => {
     const results = [
-      { id: "1", timestamp: "2026-05-17T10:00:00Z", role: "user" as const, speaker: "Alice", content: "old", channelKey: "ch1" },
-      { id: "2", timestamp: "2026-05-18T10:00:00Z", role: "user" as const, speaker: "Alice", content: "new", channelKey: "ch1" },
+      {
+        id: "1",
+        timestamp: "2026-05-17T10:00:00Z",
+        role: "user" as const,
+        speaker: "Alice",
+        content: "old",
+        channelKey: "ch1",
+      },
+      {
+        id: "2",
+        timestamp: "2026-05-18T10:00:00Z",
+        role: "user" as const,
+        speaker: "Alice",
+        content: "new",
+        channelKey: "ch1",
+      },
     ];
     const formatted = formatSearchResults(results, "test", 10, false);
     expect(formatted.results[0].id).toBe("2");
@@ -126,7 +187,14 @@ describe("formatSearchResults", () => {
 
   it("includes channel field when showChannel is true", () => {
     const results = [
-      { id: "1", timestamp: "2026-05-17T10:00:00Z", role: "user" as const, speaker: "Alice", content: "hi", channelKey: "onebot_group-123" },
+      {
+        id: "1",
+        timestamp: "2026-05-17T10:00:00Z",
+        role: "user" as const,
+        speaker: "Alice",
+        content: "hi",
+        channelKey: "onebot_group-123",
+      },
     ];
     const formatted = formatSearchResults(results, "hi", 10, true);
     expect(formatted.results[0].channel).toBeDefined();
@@ -134,8 +202,12 @@ describe("formatSearchResults", () => {
 
   it("respects limit", () => {
     const results = Array.from({ length: 20 }, (_, i) => ({
-      id: `${i}`, timestamp: `2026-05-17T10:${String(i).padStart(2, "0")}:00Z`,
-      role: "user" as const, speaker: "Alice", content: `msg ${i}`, channelKey: "ch1",
+      id: `${i}`,
+      timestamp: `2026-05-17T10:${String(i).padStart(2, "0")}:00Z`,
+      role: "user" as const,
+      speaker: "Alice",
+      content: `msg ${i}`,
+      channelKey: "ch1",
     }));
     const formatted = formatSearchResults(results, "msg", 5, false);
     expect(formatted.results).toHaveLength(5);

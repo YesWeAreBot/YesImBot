@@ -2,6 +2,9 @@
 import type { ToolDefinition } from "@yesimbot/agent/session";
 import { z } from "zod";
 
+import { listChannelSummaries, listSessionFiles } from "../channel-store.js";
+import { formatCompactLine } from "../engine/result-formatter.js";
+import { scanJsonlFile } from "../jsonl-parser.js";
 import type {
   ChatHistoryConfig,
   ChannelLocator,
@@ -9,9 +12,6 @@ import type {
   ReadConversationContextOutput,
   SearchContext,
 } from "../types.js";
-import { listChannelSummaries, listSessionFiles } from "../channel-store.js";
-import { scanJsonlFile } from "../jsonl-parser.js";
-import { formatCompactLine } from "../engine/result-formatter.js";
 
 const MAX_BEFORE = 20;
 const MAX_AFTER = 20;
@@ -43,9 +43,10 @@ export function createReadConversationContextTool(
       const after = Math.min(input.after ?? 5, MAX_AFTER);
       const targetId = input.id;
 
-      const channels = ctx.isolation && ctx.currentChannel
-        ? [ctx.currentChannel]
-        : await listChannelSummaries(ctx.sessionsDir);
+      const channels =
+        ctx.isolation && ctx.currentChannel
+          ? [ctx.currentChannel]
+          : await listChannelSummaries(ctx.sessionsDir);
 
       for (const channel of channels) {
         const channelKey = channel.channelKey;

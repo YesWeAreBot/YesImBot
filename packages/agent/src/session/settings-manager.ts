@@ -174,7 +174,6 @@ export class SettingsManager {
   private _globalPath: string;
   private _localPath: string | undefined;
   private _storage: SettingsStorage;
-  private _logger?: { warn: (msg: string) => void };
 
   private _global: Settings = {};
   private _local: Settings = {};
@@ -182,16 +181,10 @@ export class SettingsManager {
   private _dirtyLocal = new Set<string>();
   private _writeQueue: Promise<void> = Promise.resolve();
 
-  constructor(options: {
-    globalPath: string;
-    localPath?: string;
-    storage?: SettingsStorage;
-    logger?: { warn: (msg: string) => void };
-  }) {
+  constructor(options: { globalPath: string; localPath?: string; storage?: SettingsStorage }) {
     this._globalPath = options.globalPath;
     this._localPath = options.localPath;
     this._storage = options.storage ?? new FileSettingsStorage();
-    this._logger = options.logger;
 
     // Load initial settings
     this._global = this._storage.load(this._globalPath);
@@ -371,12 +364,7 @@ export class SettingsManager {
   // =========================================================================
 
   private _enqueueSave(scope: "global" | "local"): void {
-    this._writeQueue = this._writeQueue.then(() =>
-      this._saveScope(scope).catch((err) => {
-        const message = err instanceof Error ? err.message : String(err);
-        this._logger?.warn(`[SettingsManager] Failed to save ${scope} settings: ${message}`);
-      }),
-    );
+    this._writeQueue = this._writeQueue.then(() => this._saveScope(scope).catch((err) => {}));
   }
 
   private async _saveScope(scope: "global" | "local"): Promise<void> {

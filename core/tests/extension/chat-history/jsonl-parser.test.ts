@@ -1,6 +1,7 @@
+import { join } from "node:path";
+
 // core/tests/extension/chat-history/jsonl-parser.test.ts
 import { describe, it, expect } from "vitest";
-import { join } from "node:path";
 
 import { parseJsonlLine, scanJsonlFile } from "../../../src/extension/chat-history/jsonl-parser.js";
 import { FIXTURE_DIR } from "./fixtures/helpers.js";

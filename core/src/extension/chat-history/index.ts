@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@yesimbot/agent/session";
 import { Context, Logger, Service } from "koishi";
 
-import { AthenaExtensionDefinition, ChannelContext } from "../../extension.js";
+import { ChannelContext } from "../../extension.js";
 import { encodeChannelId } from "../../services/session/encoding.js";
 import { buildChatHistoryPrompt } from "./prompt.js";
 import { createReadConversationContextTool } from "./tools/read-conversation-context.js";
@@ -10,46 +10,6 @@ import { createSearchUserActivityTool } from "./tools/search-user-activity.js";
 import type { ChatHistoryConfig } from "./types.js";
 
 export type { ChatHistoryConfig };
-
-export function createChatHistoryExtension(
-  ctx: Context,
-  config: ChatHistoryConfig,
-  context: ChannelContext,
-): AthenaExtensionDefinition {
-  return {
-    id: "chat-history",
-    setup(api: ExtensionAPI) {
-      const currentChannel = context
-        ? {
-            platform: context.platform,
-            channelId: context.channelId,
-            channelKey: encodeChannelId(context.platform, context.channelId),
-          }
-        : null;
-
-      api.on("agent:before-start", (event) => ({
-        systemPrompt:
-          event.systemPrompt +
-          buildChatHistoryPrompt({
-            isolation: config.isolation,
-            currentChannel,
-          }),
-      }));
-
-      const searchConv = createSearchConversationTool(config, currentChannel);
-      const searchUser = createSearchUserActivityTool(config, currentChannel);
-      const readCtx = createReadConversationContextTool(config, currentChannel);
-
-      api.registerTool(searchConv);
-      api.registerTool(searchUser);
-      api.registerTool(readCtx);
-
-      return {
-        dispose() {},
-      };
-    },
-  };
-}
 
 export class ChatHistoryPlugin extends Service<ChatHistoryConfig> {
   static name = "yesimbot.chat-history";
@@ -64,8 +24,40 @@ export class ChatHistoryPlugin extends Service<ChatHistoryConfig> {
   }
 
   async start(): Promise<void> {
-    this.logger.info("Starting chat-history plugin...");
-    this.logger.success("Chat-history plugin started");
+    const config = this.config;
+    this.ctx["yesimbot.extension"].registerExtension({
+      id: "chat-history",
+      setup(api: ExtensionAPI, context: ChannelContext) {
+        const currentChannel = context
+          ? {
+              platform: context.platform,
+              channelId: context.channelId,
+              channelKey: encodeChannelId(context.platform, context.channelId),
+            }
+          : null;
+
+        api.on("agent:before-start", (event) => ({
+          systemPrompt:
+            event.systemPrompt +
+            buildChatHistoryPrompt({
+              isolation: config.isolation,
+              currentChannel,
+            }),
+        }));
+
+        const searchConv = createSearchConversationTool(config, currentChannel);
+        const searchUser = createSearchUserActivityTool(config, currentChannel);
+        const readCtx = createReadConversationContextTool(config, currentChannel);
+
+        api.registerTool(searchConv);
+        api.registerTool(searchUser);
+        api.registerTool(readCtx);
+
+        return {
+          dispose() {},
+        };
+      },
+    });
   }
 
   async stop(): Promise<void> {

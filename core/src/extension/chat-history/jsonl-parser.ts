@@ -44,11 +44,8 @@ export function parseJsonlLine(line: string): ParsedMessage | null {
     const text = extractText(content);
     if (!text) return null;
 
-    const actor = details.actor as
-      | { userId?: string; nickname?: string }
-      | undefined;
-    const speaker =
-      actor?.nickname ?? (details.senderId as string) ?? "unknown";
+    const actor = details.actor as { userId?: string; nickname?: string } | undefined;
+    const speaker = actor?.nickname ?? (details.senderId as string) ?? "unknown";
 
     return {
       id: String(obj.id ?? ""),
@@ -69,9 +66,7 @@ export function parseJsonlLine(line: string): ParsedMessage | null {
     if (role === "assistant") {
       const content = message.content;
       if (!Array.isArray(content)) return null;
-      const hasToolCall = content.some(
-        (p: { type: string }) => p.type === "tool-call",
-      );
+      const hasToolCall = content.some((p: { type: string }) => p.type === "tool-call");
       if (hasToolCall) return null;
       const text = extractText(content);
       if (!text) return null;
@@ -109,10 +104,8 @@ export async function scanJsonlFile(
     if (!parsed) continue;
 
     if (options.roleMatcher && !options.roleMatcher(parsed.role)) continue;
-    if (options.senderMatcher && !options.senderMatcher(parsed.speaker))
-      continue;
-    if (options.contentMatcher && !options.contentMatcher(parsed.content))
-      continue;
+    if (options.senderMatcher && !options.senderMatcher(parsed.speaker)) continue;
+    if (options.contentMatcher && !options.contentMatcher(parsed.content)) continue;
 
     if (options.since || options.until) {
       const ts = new Date(parsed.timestamp).getTime();

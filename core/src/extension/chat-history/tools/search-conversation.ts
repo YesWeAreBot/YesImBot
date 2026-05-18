@@ -2,6 +2,10 @@
 import type { ToolDefinition } from "@yesimbot/agent/session";
 import { z } from "zod";
 
+import { ChannelResolver } from "../engine/channel-resolver.js";
+import { FileScanner } from "../engine/file-scanner.js";
+import { validateQuery } from "../engine/query-guard.js";
+import { deduplicateResults, formatSearchResults } from "../engine/result-formatter.js";
 import type {
   ChatHistoryConfig,
   ChannelLocator,
@@ -9,10 +13,6 @@ import type {
   SearchConversationOutput,
   SearchContext,
 } from "../types.js";
-import { validateQuery } from "../engine/query-guard.js";
-import { ChannelResolver } from "../engine/channel-resolver.js";
-import { FileScanner } from "../engine/file-scanner.js";
-import { deduplicateResults, formatSearchResults } from "../engine/result-formatter.js";
 
 export function createSearchConversationTool(
   config: ChatHistoryConfig,
@@ -49,7 +49,7 @@ export function createSearchConversationTool(
         return {
           results: [],
           total_found: 0,
-          hint: "隔离模式下无法跨频道搜索。请使用 where=\"here\" 搜索当前频道。",
+          hint: '隔离模式下无法跨频道搜索。请使用 where="here" 搜索当前频道。',
         };
       }
 

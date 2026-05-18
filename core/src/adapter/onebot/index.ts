@@ -1,34 +1,31 @@
-import type { UserContent } from "@yesimbot/agent/ai";
+import { UserContent } from "@yesimbot/agent/ai";
 import { h } from "koishi";
 
-import type { AthenaEvent, ChatMessageDetails, EventFormatter, FormatterContext } from "./types.js";
-import { createEvent, PlatformAdapter } from "./types.js";
+import {
+  AthenaEvent,
+  ChatMessageDetails,
+  EventFormatter,
+  FormatterContext,
+  PlatformAdapter,
+} from "../types";
+import { createEvent } from "../types";
 
-export class GenericAdapter extends PlatformAdapter {
-  platform = "*"; // wildcard — handles all platforms without a dedicated adapter
+export interface OneBotConfig {
+  logLevel?: number;
+}
 
-  private _skipPlatforms = new Set<string>();
-
-  /** Mark a platform as handled by a dedicated adapter — GenericAdapter will skip it. */
-  addSkipPlatform(platform: string): void {
-    this._skipPlatforms.add(platform);
-  }
-
-  removeSkipPlatform(platform: string): void {
-    this._skipPlatforms.delete(platform);
-  }
-
+export class OneBotAdapter extends PlatformAdapter<OneBotConfig> {
+  platform = "onebot";
   install(emit: (event: AthenaEvent) => void): void {
-    this.ctx.middleware(async (session, next) => {
-      // Skip if a dedicated adapter handles this platform
-      if (this._skipPlatforms.has(session.platform!)) {
-        return next();
-      }
-
+    const logger = this.ctx.logger("OneBotAdapter");
+    logger.level = this.config?.logLevel ?? 2;
+    this.ctx.platform("onebot").on("message", async (session) => {
+      logger.debug(
+        `Message Event | type=${session.type}, id=${session.messageId}, author=${session.author?.id}, channel=${session.channelId}, content=${session.content}`,
+      );
       const isMentioned =
         session.stripped?.atSelf ||
         session.elements?.some((el) => el.type === "at" && el.attrs.id === session.bot.selfId);
-
       const event = createEvent<"chat_message", ChatMessageDetails>("chat_message", {
         source: {
           platform: session.platform!,
@@ -61,16 +58,14 @@ export class GenericAdapter extends PlatformAdapter {
       });
 
       emit(event);
-      return next();
     });
   }
-
-  formatters: Record<string, EventFormatter> = {
-    chat_message: formatChatMessageDefault as EventFormatter,
+  formatters = {
+    chat_message: formatChatMessage as EventFormatter,
   };
 }
 
-function formatChatMessageDefault(
+function formatChatMessage(
   event: AthenaEvent<"chat_message", ChatMessageDetails>,
   ctx: FormatterContext,
 ): UserContent | null {

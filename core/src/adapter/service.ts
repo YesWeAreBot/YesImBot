@@ -2,18 +2,23 @@ import { Context, Service } from "koishi";
 
 import { createFormatterRegistry } from "./formatter.js";
 import { GenericAdapter } from "./generic.js";
+import { OneBotAdapter } from "./onebot/index.js";
 import type { AthenaEvent, EventFormatter, FormatterRegistry, PlatformAdapter } from "./types.js";
 
 declare module "koishi" {
   interface Context {
-    "yesimbot.adapter": AdapterServiceImpl;
+    "yesimbot.adapter": AdapterService;
   }
   interface Events {
     "athena/event"(event: AthenaEvent): void;
   }
 }
 
-export class AdapterServiceImpl extends Service {
+export interface AdapterConfig {
+  logLevel?: number;
+}
+
+export class AdapterService extends Service<AdapterConfig> {
   static inject = [];
 
   private _adapters = new Map<string, PlatformAdapter>();
@@ -21,14 +26,18 @@ export class AdapterServiceImpl extends Service {
   private _genericAdapter?: GenericAdapter;
   readonly formatters: FormatterRegistry;
 
-  constructor(ctx: Context) {
+  constructor(ctx: Context, config: AdapterConfig) {
     super(ctx, "yesimbot.adapter");
+    this.config = config;
+    this.logger = ctx.logger("AdapterService");
+    this.logger.level = config.logLevel ?? 2;
     this.formatters = createFormatterRegistry();
   }
 
   protected async start() {
-    this._genericAdapter = new GenericAdapter();
+    this._genericAdapter = new GenericAdapter(this.ctx, {});
     this.register(this._genericAdapter);
+    this.register(new OneBotAdapter(this.ctx, { logLevel: this.config.logLevel }));
   }
 
   register(adapter: PlatformAdapter): () => void {
@@ -57,7 +66,7 @@ export class AdapterServiceImpl extends Service {
     const emit = (event: AthenaEvent) => {
       this.ctx.emit("athena/event", event);
     };
-    adapter.install(this.ctx, emit);
+    adapter.install(emit);
 
     this._disposeCallbacks.set(adapter.platform, disposeCallbacks);
 

@@ -3,22 +3,23 @@ import { resolve } from "node:path";
 
 import { Context, Schema } from "koishi";
 
-import { AdapterServiceImpl } from "./adapter/index.js";
+import { AdapterService } from "./adapter/index.js";
+import { AdapterConfig } from "./adapter/service.js";
 import { ExtensionConfig, ExtensionService } from "./extension.js";
+import { ChatHistoryPlugin } from "./extension/chat-history/index.js";
 import { RuntimeConfig, RuntimeService } from "./runtime.js";
 import { ModelService, ModelServiceConfig } from "./services/model/index.js";
 import { SessionConfig, SessionService } from "./services/session/index.js";
 
-export type Config =
-  | ModelServiceConfig
-  | SessionConfig
-  | RuntimeConfig
-  | ExtensionConfig
-  | {
-      basePath: string;
-      chatModel: string;
-      logLevel?: number;
-    };
+export type Config = ModelServiceConfig &
+  SessionConfig &
+  RuntimeConfig &
+  ExtensionConfig &
+  AdapterConfig & {
+    basePath: string;
+    chatModel: string;
+    logLevel?: number;
+  };
 
 export const name = "yesimbot";
 export const inject = [];
@@ -35,7 +36,6 @@ export const Config = Schema.object({
     .role("table")
     .default([]),
   basePath: Schema.path({ filters: ["directory"], allowCreate: true }).default("data/yesimbot"),
-  modelsConfigPath: Schema.path({ filters: ["file"], allowCreate: true }),
   logLevel: Schema.union([0, 1, 2, 3]).default(2),
 });
 
@@ -46,11 +46,17 @@ export async function apply(ctx: Context, config: Config) {
       mkdirSync(config.basePath, { recursive: true });
     }
   }
-  ctx.plugin(ModelService, config);
+  ctx.plugin(ModelService, config as ModelServiceConfig);
   ctx.plugin(ExtensionService, config as ExtensionConfig);
   ctx.plugin(SessionService, config as SessionConfig);
-  ctx.plugin(AdapterServiceImpl);
+  ctx.plugin(AdapterService, config as AdapterConfig);
   ctx.plugin(RuntimeService, config as RuntimeConfig);
+  ctx.plugin(ChatHistoryPlugin, {
+    isolation: false,
+    sessionsDir: resolve(config.basePath, "sessions"),
+    defaultLimit: 5,
+    maxLimit: 20,
+  });
 }
 
 export type { AthenaExtensionDefinition, ChannelContext, ExtensionService } from "./extension";
