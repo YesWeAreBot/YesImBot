@@ -11,7 +11,7 @@ function makeEvent(kind: string, actor = "Alice"): AthenaEvent {
     source: { platform: "onebot", channelId: "123", conversationType: "group" },
     actor: { id: "u1", name: actor },
     details: {},
-    meta: { persist: true, triggerCandidate: true },
+    metadata: { persist: true, triggerCandidate: true },
   };
 }
 

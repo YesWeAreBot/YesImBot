@@ -1,7 +1,7 @@
 import type { UserContent } from "@yesimbot/agent/ai";
 import { h } from "koishi";
 
-import type { AthenaEvent, ChatMessageDetails, EventFormatter, FormatterContext } from "./types.js";
+import type { AthenaEvent, ChatMessagePayload, EventFormatter, FormatterContext } from "./types.js";
 import { createEvent, PlatformAdapter } from "./types.js";
 
 export class GenericAdapter extends PlatformAdapter {
@@ -29,7 +29,7 @@ export class GenericAdapter extends PlatformAdapter {
         session.stripped?.atSelf ||
         session.elements?.some((el) => el.type === "at" && el.attrs.id === session.bot.selfId);
 
-      const event = createEvent<"chat_message", ChatMessageDetails>("chat_message", {
+      const event = createEvent<"chat_message", ChatMessagePayload>("chat_message", {
         source: {
           platform: session.platform!,
           channelId: session.channelId!,
@@ -41,7 +41,7 @@ export class GenericAdapter extends PlatformAdapter {
           avatar: session.author?.avatar,
           isSelf: session.author?.id === session.bot.selfId,
         },
-        details: {
+        payload: {
           messageId: session.messageId!,
           content: session.content ?? "",
           quoteMessageId: session.quote?.id,
@@ -52,7 +52,7 @@ export class GenericAdapter extends PlatformAdapter {
               }
             : undefined,
         },
-        meta: {
+        metadata: {
           persist: true,
           triggerCandidate: session.isDirect || !!isMentioned,
           bot: session.bot,
@@ -71,10 +71,10 @@ export class GenericAdapter extends PlatformAdapter {
 }
 
 function formatChatMessageDefault(
-  event: AthenaEvent<"chat_message", ChatMessageDetails>,
+  event: AthenaEvent<"chat_message", ChatMessagePayload>,
   ctx: FormatterContext,
 ): UserContent | null {
-  const elements = h.parse(event.details.content);
+  const elements = h.parse(event.payload.content);
   const textParts = elements
     .map((el) => {
       switch (el.type) {

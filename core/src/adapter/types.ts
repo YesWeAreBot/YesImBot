@@ -20,8 +20,8 @@ export interface Actor {
   isSelf?: boolean;
 }
 
-// ===== Event Meta =====
-export interface EventMeta {
+// ===== Event Metadata =====
+export interface EventMetadata {
   persist: boolean;
   triggerCandidate: boolean;
   bot: Bot;
@@ -29,51 +29,51 @@ export interface EventMeta {
 }
 
 // ===== Base Event =====
-export interface AthenaEvent<K extends string = string, D = unknown> {
+export interface AthenaEvent<K extends string = string, P = unknown> {
   id: string;
   kind: K;
   timestamp: number;
   source: EventSource;
   actor: Actor;
   target?: Actor;
-  details: D;
-  meta: EventMeta;
+  payload: P;
+  metadata: EventMetadata;
 }
 
-// ===== Concrete Event Details =====
-export interface ChatMessageDetails {
+// ===== Concrete Event Payloads =====
+export interface ChatMessagePayload {
   messageId: string;
   content: string;
   quoteMessageId?: string;
   quoteSender?: Actor;
 }
 
-export interface MemberChangeDetails {
+export interface MemberChangePayload {
   action: "join" | "leave" | "kick" | "ban" | "unban";
   groupId: string;
 }
 
-export interface MessageRecallDetails {
+export interface MessageRecallPayload {
   messageId: string;
   originalSender?: Actor;
 }
 
-export interface ReactionDetails {
+export interface ReactionPayload {
   messageId: string;
   emoji: string;
   action: "add" | "remove";
 }
 
-export interface PokeDetails {
+export interface PokePayload {
   targetId: string;
 }
 
 // ===== Concrete Event Types =====
-export type ChatMessageEvent = AthenaEvent<"chat_message", ChatMessageDetails>;
-export type MemberChangeEvent = AthenaEvent<"member_change", MemberChangeDetails>;
-export type MessageRecallEvent = AthenaEvent<"message_recall", MessageRecallDetails>;
-export type ReactionEvent = AthenaEvent<"reaction", ReactionDetails>;
-export type PokeEvent = AthenaEvent<"poke", PokeDetails>;
+export type ChatMessageEvent = AthenaEvent<"chat_message", ChatMessagePayload>;
+export type MemberChangeEvent = AthenaEvent<"member_change", MemberChangePayload>;
+export type MessageRecallEvent = AthenaEvent<"message_recall", MessageRecallPayload>;
+export type ReactionEvent = AthenaEvent<"reaction", ReactionPayload>;
+export type PokeEvent = AthenaEvent<"poke", PokePayload>;
 
 // ===== Formatter Types =====
 export interface FormatterContext {
@@ -104,22 +104,41 @@ export abstract class PlatformAdapter<C = unknown> {
 }
 
 // ===== Factory Helper =====
-export interface CreateEventInput<K extends string, D> {
+export interface CreateEventInput<K extends string, P> {
   source: EventSource;
   actor: Actor;
   target?: Actor;
-  details: D;
-  meta: EventMeta;
+  payload: P;
+  metadata: EventMetadata;
 }
 
-export function createEvent<K extends string, D>(
+export function createEvent<K extends string, P>(
   kind: K,
-  input: CreateEventInput<K, D>,
-): AthenaEvent<K, D> {
+  input: CreateEventInput<K, P>,
+): AthenaEvent<K, P> {
   return {
     id: randomUUID(),
     kind,
     timestamp: Date.now(),
     ...input,
   };
+}
+
+// ===== Serialization =====
+export interface SerializedEvent<K extends string = string, P = unknown> {
+  version: 1;
+  id: string;
+  kind: K;
+  timestamp: number;
+  source: EventSource;
+  actor: Actor;
+  target?: Actor;
+  payload: P;
+}
+
+export function serializeEvent<K extends string, P>(
+  event: AthenaEvent<K, P>,
+): SerializedEvent<K, P> {
+  const { metadata: _, ...rest } = event;
+  return { version: 1, ...rest };
 }

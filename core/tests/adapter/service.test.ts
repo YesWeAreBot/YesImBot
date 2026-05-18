@@ -17,7 +17,7 @@ vi.mock("koishi", () => {
   };
 });
 
-import { AdapterServiceImpl } from "../../src/adapter/service.js";
+import { AdapterService } from "../../src/adapter/service.js";
 import type { PlatformAdapter, AthenaEvent } from "../../src/adapter/types.js";
 
 // Minimal Koishi Context mock
@@ -37,17 +37,18 @@ function createMockCtx() {
     },
     middleware: vi.fn(),
     platform: vi.fn().mockReturnThis(),
+    logger: vi.fn().mockReturnValue({ level: 2, info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
     _listeners: listeners,
   };
 }
 
-describe("AdapterServiceImpl", () => {
+describe("AdapterService", () => {
   let ctx: ReturnType<typeof createMockCtx>;
-  let service: AdapterServiceImpl;
+  let service: AdapterService;
 
   beforeEach(() => {
     ctx = createMockCtx();
-    service = new AdapterServiceImpl(ctx as any);
+    service = new AdapterService(ctx as any, {});
   });
 
   it("should register an adapter and make it retrievable", () => {
@@ -63,7 +64,7 @@ describe("AdapterServiceImpl", () => {
     const install = vi.fn();
     const adapter: PlatformAdapter = { platform: "test", install };
     service.register(adapter);
-    expect(install).toHaveBeenCalledWith(expect.anything(), expect.any(Function));
+    expect(install).toHaveBeenCalledWith(expect.any(Function));
   });
 
   it("should emit athena/event when adapter calls emit", () => {
@@ -72,15 +73,15 @@ describe("AdapterServiceImpl", () => {
 
     const adapter: PlatformAdapter = {
       platform: "test",
-      install(_ctx, emit) {
+      install(emit) {
         emit({
           id: "e1",
           kind: "chat_message",
           timestamp: 1,
           source: { platform: "test", channelId: "c1", conversationType: "group" },
           actor: { id: "u1" },
-          details: {},
-          meta: { persist: true, triggerCandidate: true },
+          payload: {},
+          metadata: { persist: true, triggerCandidate: true },
         } as AthenaEvent);
       },
     };

@@ -1,12 +1,13 @@
+import { Context } from "koishi";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import { GenericAdapter } from "../../src/adapter/generic.js";
 import type { AthenaEvent } from "../../src/adapter/types.js";
 
-function createMockCtx() {
-  let middlewareHandler: ((session: any, next: any) => any) | null = null;
+function createMockCtx(): Context {
+  let middlewareHandler: ((session: unknown, next: unknown) => unknown) | null = null;
   return {
-    middleware(handler: (session: any, next: any) => any) {
+    middleware(handler: (session: unknown, next: unknown) => unknown) {
       middlewareHandler = handler;
       return () => {
         middlewareHandler = null;
@@ -17,7 +18,7 @@ function createMockCtx() {
     get _middlewareHandler() {
       return middlewareHandler;
     },
-  };
+  } as unknown as Context;
 }
 
 function createMockSession(overrides: Record<string, any> = {}) {
@@ -45,8 +46,8 @@ describe("GenericAdapter", () => {
   beforeEach(() => {
     ctx = createMockCtx();
     emitted = [];
-    adapter = new GenericAdapter();
-    adapter.install(ctx as any, (event) => emitted.push(event));
+    adapter = new GenericAdapter(ctx, {});
+    adapter.install((event) => emitted.push(event));
   });
 
   it("should register a middleware", () => {
@@ -65,10 +66,10 @@ describe("GenericAdapter", () => {
     expect(emitted[0].source.conversationType).toBe("group");
     expect(emitted[0].actor.id).toBe("user1");
     expect(emitted[0].actor.name).toBe("Bob");
-    expect(emitted[0].details.messageId).toBe("msg1");
-    expect(emitted[0].details.elements).toEqual(session.elements);
-    expect(emitted[0].meta.persist).toBe(true);
-    expect(emitted[0].meta.triggerCandidate).toBe(true);
+    expect(emitted[0].payload.messageId).toBe("msg1");
+    expect(emitted[0].payload.content).toBe("hello world");
+    expect(emitted[0].metadata.persist).toBe(true);
+    expect(emitted[0].metadata.triggerCandidate).toBe(true);
     expect(next).toHaveBeenCalled();
   });
 
@@ -78,7 +79,7 @@ describe("GenericAdapter", () => {
     await ctx._middlewareHandler!(session, next);
 
     expect(emitted[0].source.conversationType).toBe("private");
-    expect(emitted[0].meta.triggerCandidate).toBe(true);
+    expect(emitted[0].metadata.triggerCandidate).toBe(true);
   });
 
   it("should set triggerCandidate false when not mentioned and not direct", async () => {
@@ -86,7 +87,7 @@ describe("GenericAdapter", () => {
     const next = vi.fn();
     await ctx._middlewareHandler!(session, next);
 
-    expect(emitted[0].meta.triggerCandidate).toBe(false);
+    expect(emitted[0].metadata.triggerCandidate).toBe(false);
   });
 
   it("should set triggerCandidate true when at element targets bot", async () => {
@@ -101,7 +102,7 @@ describe("GenericAdapter", () => {
     const next = vi.fn();
     await ctx._middlewareHandler!(session, next);
 
-    expect(emitted[0].meta.triggerCandidate).toBe(true);
+    expect(emitted[0].metadata.triggerCandidate).toBe(true);
   });
 
   it("should include quote info when session has a quote", async () => {
@@ -111,8 +112,8 @@ describe("GenericAdapter", () => {
     const next = vi.fn();
     await ctx._middlewareHandler!(session, next);
 
-    expect(emitted[0].details.quoteMessageId).toBe("quoted-msg");
-    expect(emitted[0].details.quoteSender).toEqual({ id: "u2", name: "Carol" });
+    expect(emitted[0].payload.quoteMessageId).toBe("quoted-msg");
+    expect(emitted[0].payload.quoteSender).toEqual({ id: "u2", name: "Carol" });
   });
 
   it("should provide a default chat_message formatter", () => {
