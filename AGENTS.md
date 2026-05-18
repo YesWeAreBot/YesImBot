@@ -80,6 +80,36 @@ Load on demand when deeper context is needed:
 - `@packages/agent/src/session/extensions/` — extension system (types, runner, loader, registry).
 - `@packages/shared-model/` — cross-package model/provider type contracts.
 
+## Superpowers Task Workflow
+
+新任务使用任务目录结构，所有相关文档聚合在同一目录：
+
+```text
+docs/superpowers/tasks/YYYY-MM-DD_NN-task-slug/
+├── CONTEXT.md          # 灰区问题和用户决策（绝对权威）
+├── SPEC.md             # 设计规范
+├── PLAN.md             # 实现计划
+├── SUMMARY.md          # 任务结束总结
+├── RETROSPECTIVE.md    # 可选，反思与经验
+└── HANDOFF.md          # 可选，跨会话移交
+```
+
+### 任务生命周期
+
+1. `/before-superpowers` — 创建目录、加载上下文、进入 brainstorming
+2. `superpowers:brainstorming` — 讨论 → CONTEXT.md + SPEC.md
+3. `superpowers:writing-plans` — PLAN.md（写入任务目录）
+4. 执行（`superpowers:subagent-driven-development` 或 `superpowers:executing-plans`）
+5. `/after-superpowers` — SUMMARY + RETROSPECTIVE + CHANGELOG/ROADMAP 更新
+
+### 规则
+
+- CONTEXT.md 中的用户决策具有约束力，后续文档不得违背
+- SPEC.md 和 PLAN.md 写入任务目录，不再写入 `docs/superpowers/specs/` 或 `plans/`
+- HANDOFF.md 仅在跨会话移交时创建（产出 PLAN 后因上下文不足需新会话）
+- ROADMAP.md 更新：Agent 可在阶段内做事实性更新，不动阶段划分和方向性描述
+- CHANGELOG.md 更新：在 `[Unreleased]` 节追加条目，遵循 Keep a Changelog 格式
+
 ## Reference Projects
 
 `references/` 目录存放设计参考与文档，按需用绝对路径读取：
