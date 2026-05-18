@@ -1,3 +1,4 @@
+// core/src/extension/chat-history/channel-store.ts
 import { readFile, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -6,7 +7,7 @@ import type {
   ChannelLocator,
   ChannelSummary,
   NormalizedChannelMeta,
-  ResolveChannelLocatorInput,
+  SessionFileInfo,
   ToolError,
 } from "./types.js";
 
@@ -15,7 +16,7 @@ interface ChannelMapEntry {
   channel: string;
 }
 
-function toolError(error: string, code: string, hint: string): ToolError {
+export function toolError(error: string, code: string, hint: string): ToolError {
   return { error, code, hint };
 }
 
@@ -39,7 +40,9 @@ export function normalizeChannelMeta(raw: unknown): NormalizedChannelMeta | null
   };
 }
 
-async function readChannelMap(sessionsDir: string): Promise<Record<string, ChannelMapEntry>> {
+export async function readChannelMap(
+  sessionsDir: string,
+): Promise<Record<string, ChannelMapEntry>> {
   try {
     const content = await readFile(join(sessionsDir, "channel-map.json"), "utf-8");
     return JSON.parse(content) as Record<string, ChannelMapEntry>;
@@ -48,10 +51,15 @@ async function readChannelMap(sessionsDir: string): Promise<Record<string, Chann
   }
 }
 
-export async function resolveChannelLocator(
-  input: ResolveChannelLocatorInput,
-): Promise<ChannelLocator | ToolError> {
-  const currentChannel = input.currentChannel;
+export async function resolveChannelLocator(input: {
+  sessionsDir: string;
+  isolation: boolean;
+  currentChannel: ChannelLocator | null;
+  platform?: string;
+  channelId?: string;
+  channelKey?: string;
+}): Promise<ChannelLocator | ToolError> {
+  const { currentChannel } = input;
   const requestedKey =
     input.platform && input.channelId
       ? encodeChannelId(input.platform, input.channelId)
@@ -60,20 +68,18 @@ export async function resolveChannelLocator(
   if (input.isolation) {
     if (!currentChannel) {
       return toolError(
-        "Current channel context is required in isolation mode.",
+        "当前频道上下文不可用。",
         "CURRENT_CHANNEL_REQUIRED",
-        "Retry from a channel-bound session.",
+        "请在频道绑定的会话中重试。",
       );
     }
-
     if (requestedKey && requestedKey !== currentChannel.channelKey) {
       return toolError(
-        "Isolation mode only allows current channel.",
+        "隔离模式下只能访问当前频道。",
         "ISOLATION_VIOLATION",
-        "Search current channel or disable isolation mode.",
+        "请搜索当前频道，或联系管理员开启共享模式。",
       );
     }
-
     return currentChannel;
   }
 
@@ -90,12 +96,11 @@ export async function resolveChannelLocator(
     const entry = map[input.channelKey];
     if (!entry) {
       return toolError(
-        `Unknown channelKey: ${input.channelKey}`,
+        `未找到频道: ${input.channelKey}`,
         "CHANNEL_NOT_FOUND",
-        "Use find_channels or provide platform + channelId.",
+        "请检查频道标识是否正确。",
       );
     }
-
     return {
       platform: entry.platform,
       channelId: entry.channel,
@@ -103,14 +108,12 @@ export async function resolveChannelLocator(
     };
   }
 
-  if (input.current && currentChannel) {
-    return currentChannel;
-  }
+  if (currentChannel) return currentChannel;
 
   return toolError(
-    "Channel locator required.",
+    "无法确定目标频道。",
     "CHANNEL_REQUIRED",
-    "Provide platform + channelId, channelKey, or current=true.",
+    "请提供频道信息或在频道绑定的会话中使用。",
   );
 }
 
@@ -139,11 +142,9 @@ export async function listChannelSummaries(sessionsDir: string): Promise<Channel
         currentSessionId: meta?.currentSessionId,
         sessionCount: meta?.sessionCount,
         lastActiveAt: meta?.updatedAt ?? meta?.lastActiveAt,
-        matchReason: "channel-map",
       } satisfies ChannelSummary;
     }),
   );
-
   return summaries;
 }
 
@@ -151,10 +152,15 @@ export async function listSessionFiles(
   sessionsDir: string,
   channelKey: string,
   currentSessionId?: string,
-) {
+): Promise<SessionFileInfo[]> {
   const dir = join(sessionsDir, channelKey);
-  const entries = await readdir(dir);
-  const jsonlFiles = entries.filter((entry) => entry.endsWith(".jsonl")).sort();
+  let entries: string[];
+  try {
+    entries = await readdir(dir);
+  } catch {
+    return [];
+  }
+  const jsonlFiles = entries.filter((e) => e.endsWith(".jsonl")).sort();
 
   return Promise.all(
     jsonlFiles.map(async (filename) => {
@@ -164,8 +170,9 @@ export async function listSessionFiles(
       return {
         sessionId,
         filename,
+        fullPath,
         size: stats.size,
-        modified: stats.mtime.toISOString(),
+        modified: stats.mtime,
         isCurrent: sessionId === currentSessionId,
       };
     }),
