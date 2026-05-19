@@ -104,8 +104,10 @@ export class SessionService extends Service<SessionConfig> {
     const channelDir = this.getChannelDir(platform, channel);
     if (!existsSync(channelDir)) {
       mkdirSync(channelDir, { recursive: true });
-      this.updateChannelMap(platform, channel);
     }
+
+    // 总是更新 channel-map.json，确保频道映射存在
+    this.updateChannelMap(platform, channel);
 
     const meta = readMeta(channelDir);
     let sessionManager: SessionManager;
@@ -144,8 +146,10 @@ export class SessionService extends Service<SessionConfig> {
     const channelDir = this.getChannelDir(platform, channel);
     if (!existsSync(channelDir)) {
       mkdirSync(channelDir, { recursive: true });
-      this.updateChannelMap(platform, channel);
     }
+
+    // 总是更新 channel-map.json，确保频道映射存在
+    this.updateChannelMap(platform, channel);
 
     const sessionManager = SessionManager.create(this.basePath, channelDir);
     const meta = readMeta(channelDir);
