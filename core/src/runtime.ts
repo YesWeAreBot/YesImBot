@@ -155,20 +155,20 @@ export class RuntimeService extends Service<RuntimeConfig> {
                 .filter((part) => part.type === "text")
                 .map((part) => part.text)
                 .join("");
-              // const reasoningContent = event.message.content
-              //   .filter((part) => part.type === "reasoning")
-              //   .map((part) => part.text)
-              //   .join("");
+              const reasoningContent = event.message.content
+                .filter((part) => part.type === "reasoning")
+                .map((part) => part.text)
+                .join("");
 
-              // if (reasoningContent) {
-              //   this.logger.info(`Agent reasoning:\n${reasoningContent}`);
-              //   if (sessionContext.type !== "private") {
-              //     sessionContext.bot.sendMessage(
-              //       sessionContext.channelId,
-              //       `[Reasoning]\n${reasoningContent}`,
-              //     );
-              //   }
-              // }
+              if (reasoningContent) {
+                this.logger.info(`Agent reasoning:\n${reasoningContent}`);
+                // if (sessionContext.type !== "private") {
+                //   sessionContext.bot.sendMessage(
+                //     sessionContext.channelId,
+                //     `[Reasoning]\n${reasoningContent}`,
+                //   );
+                // }
+              }
               if (textContent) {
                 this.logger.info(`Agent response:\n${textContent}`);
                 sessionContext.bot.sendMessage(sessionContext.channelId, textContent);

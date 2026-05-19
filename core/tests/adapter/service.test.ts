@@ -37,7 +37,9 @@ function createMockCtx() {
     },
     middleware: vi.fn(),
     platform: vi.fn().mockReturnThis(),
-    logger: vi.fn().mockReturnValue({ level: 2, info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+    logger: vi
+      .fn()
+      .mockReturnValue({ level: 2, info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
     _listeners: listeners,
   };
 }

@@ -1,5 +1,13 @@
-import { Context } from "koishi";
+import type { Context } from "koishi";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+
+vi.mock("koishi", () => ({
+  h: {
+    parse(content: string) {
+      return [{ type: "text", attrs: { content }, children: [] }];
+    },
+  },
+}));
 
 import { GenericAdapter } from "../../src/adapter/generic.js";
 import type { AthenaEvent } from "../../src/adapter/types.js";
@@ -107,7 +115,7 @@ describe("GenericAdapter", () => {
 
   it("should include quote info when session has a quote", async () => {
     const session = createMockSession({
-      quote: { id: "quoted-msg", userId: "u2", username: "Carol", content: "original" },
+      quote: { id: "quoted-msg", user: { id: "u2", name: "Carol" }, content: "original" },
     });
     const next = vi.fn();
     await ctx._middlewareHandler!(session, next);

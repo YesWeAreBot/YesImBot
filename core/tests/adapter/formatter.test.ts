@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
 
 import { createFormatterRegistry } from "../../src/adapter/formatter.js";
-import type { AthenaEvent, FormatterContext } from "../../src/adapter/types.js";
+import type { AthenaEvent, EventMetadata, FormatterContext } from "../../src/adapter/types.js";
+
+const stubMetadata = { persist: true, triggerCandidate: true } as EventMetadata;
 
 function makeEvent(kind: string, actor = "Alice"): AthenaEvent {
   return {
@@ -10,8 +12,8 @@ function makeEvent(kind: string, actor = "Alice"): AthenaEvent {
     timestamp: Date.now(),
     source: { platform: "onebot", channelId: "123", conversationType: "group" },
     actor: { id: "u1", name: actor },
-    details: {},
-    metadata: { persist: true, triggerCandidate: true },
+    payload: {},
+    metadata: stubMetadata,
   };
 }
 

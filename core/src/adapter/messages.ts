@@ -1,6 +1,6 @@
 import type { UserContent } from "@yesimbot/agent/ai";
 
-import type { ChatMessagePayload, SerializedEvent } from "./adapter/types.js";
+import type { ChatMessagePayload, SerializedEvent } from "./types.js";
 
 export interface AthenaEventMessage<K extends string = string, P = unknown> {
   customType: "athena:event";
