@@ -20,6 +20,8 @@ import type {
 const CONTEXT_WINDOW_MS = 5 * 60 * 1000; // 前后5分钟
 const MAX_CONTEXT_MESSAGES = 5; // 每个时间段最多5条上下文
 const MAX_SNIPPET_LENGTH = 150; // 消息摘要最大长度
+// 全局输出字符数硬限制，防止上下文溢出；超出时按时间分组整体截断
+const MAX_OUTPUT_CHARS = 2000;
 
 /**
  * 截取消息摘要
@@ -48,69 +50,6 @@ function formatMessageLine(
 }
 
 /**
- * 将消息按时间段分组，返回格式化的文本
- */
-function formatChannelActivity(
-  channelLabel: string,
-  channelType: string,
-  allMessages: ScanResult[],
-  hitIds: Set<string>,
-): string {
-  if (allMessages.length === 0) return "";
-
-  // 按时间排序（从早到晚）
-  const sorted = [...allMessages].sort((a, b) => a.timestamp - b.timestamp);
-
-  const lines: string[] = [];
-  lines.push(`## ${channelLabel} (${channelType})`);
-  lines.push("");
-
-  // 按时间段分组
-  let groupStart = 0;
-  let lastTime = sorted[0].timestamp;
-
-  const flushGroup = (startIdx: number, endIdx: number) => {
-    const group = sorted.slice(startIdx, endIdx + 1);
-    if (group.length === 0) return;
-
-    const startTime = formatTimestamp(group[0].timestamp);
-    const endTime = formatTimestamp(group[group.length - 1].timestamp);
-
-    if (group.length === 1 || startTime === endTime) {
-      lines.push(`### ${startTime}`);
-    } else {
-      lines.push(`### ${startTime} ~ ${endTime}`);
-    }
-
-    // 判断是否需要显示时间（组内消息跨度较大时显示）
-    const timeSpan = group[group.length - 1].timestamp - group[0].timestamp;
-    // const showTime = timeSpan > 60_000; // 超过1分钟显示时间
-    const showTime = false; // 统一不显示时间，避免过于冗长
-
-    for (const msg of group) {
-      const isHit = hitIds.has(msg.id);
-      const timeStr = showTime ? formatTimestamp(msg.timestamp) : undefined;
-      lines.push(formatMessageLine(msg, isHit, showTime, timeStr));
-    }
-    lines.push("");
-  };
-
-  for (let i = 0; i < sorted.length; i++) {
-    const msg = sorted[i];
-    // 如果与上一条消息间隔超过 CONTEXT_WINDOW_MS，开始新分组
-    if (i > 0 && msg.timestamp - lastTime > CONTEXT_WINDOW_MS) {
-      flushGroup(groupStart, i - 1);
-      groupStart = i;
-    }
-    lastTime = msg.timestamp;
-  }
-  // 处理最后一个分组
-  flushGroup(groupStart, sorted.length - 1);
-
-  return lines.join("\n");
-}
-
-/**
  * 从 meta.json 读取当前会话 ID
  */
 async function readCurrentSessionId(
@@ -126,6 +65,29 @@ async function readCurrentSessionId(
   } catch {
     return undefined;
   }
+}
+
+/**
+ * 预估单个时间分组格式化后的字符数（用于截断判断）
+ */
+function formatGroupText(messages: ScanResult[], hitIds: Set<string>): string {
+  const sorted = [...messages].sort((a, b) => a.timestamp - b.timestamp);
+  const lines: string[] = [];
+
+  const startTime = formatTimestamp(sorted[0].timestamp);
+  const endTime = formatTimestamp(sorted[sorted.length - 1].timestamp);
+  if (sorted.length === 1 || startTime === endTime) {
+    lines.push(`### ${startTime}`);
+  } else {
+    lines.push(`### ${startTime} ~ ${endTime}`);
+  }
+
+  for (const msg of sorted) {
+    const isHit = hitIds.has(msg.id);
+    lines.push(formatMessageLine(msg, isHit, false));
+  }
+  lines.push("");
+  return lines.join("\n");
 }
 
 export function createSearchUserActivityTool(
@@ -150,7 +112,7 @@ export function createSearchUserActivityTool(
       query: z.string().optional().describe("进一步按内容过滤"),
       since: z.string().optional().describe("起始日期 (ISO格式)"),
       until: z.string().optional().describe("截止日期 (ISO格式)"),
-      limit: z.number().int().positive().optional().describe("返回频道数上限，默认10，最大30"),
+      limit: z.number().int().positive().optional().describe("返回命中消息数上限，默认10，最大30"),
     }),
 
     async execute(input: SearchUserActivityInput): Promise<SearchUserActivityOutput> {
@@ -234,45 +196,39 @@ export function createSearchUserActivityTool(
         byChannel.set(msg.channelKey, existing);
       }
 
-      // ========== 第三阶段：格式化输出 ==========
-      const channelTexts: string[] = [];
-      let processedChannels = 0;
+      // ========== 第三阶段：构建时间分组并截断输出 ==========
+
+      // 3a. 为每个频道提取命中消息和上下文，构建时间分组
+      interface TimeGroup {
+        channelKey: string;
+        messages: ScanResult[];
+        hitCount: number; // 该分组内命中消息数
+        latestHitTimestamp: number; // 该分组内最新命中消息时间戳
+        earliestHitTimestamp: number; // 该分组内最早命中消息时间戳
+      }
+
+      const allGroups: TimeGroup[] = [];
 
       for (const channelKey of hitChannelKeys) {
-        if (processedChannels >= limit) break;
-
         const messages = byChannel.get(channelKey) ?? [];
         const channelHitIds = new Set<string>();
         for (const msg of messages) {
-          if (hitIds.has(msg.id)) {
-            channelHitIds.add(msg.id);
-          }
+          if (hitIds.has(msg.id)) channelHitIds.add(msg.id);
         }
-        // 也包含第一阶段扫描到但第二阶段可能未覆盖的命中
         for (const msg of userHits) {
           if (msg.channelKey === channelKey) channelHitIds.add(msg.id);
         }
-
         if (channelHitIds.size === 0) continue;
 
-        // 获取频道元信息
-        const channelInfo = channelsWithSession.find((c) => c.channelKey === channelKey);
-        const platform = channelInfo?.platform ?? "unknown";
-        const channelId = channelInfo?.channelId ?? channelKey;
-        const channelType = channelInfo?.type ?? "unknown";
-        const channelLabel = `${platform}:${channelId}`;
-
-        // 提取上下文：为每个命中消息获取前后5分钟的消息
+        // 提取上下文
         const contextIds = new Set<string>();
         const sortedMessages = [...messages].sort((a, b) => a.timestamp - b.timestamp);
 
         for (const hitId of channelHitIds) {
           const hitMsg = messages.find((m) => m.id === hitId);
           if (!hitMsg) continue;
-
           const windowStart = hitMsg.timestamp - CONTEXT_WINDOW_MS;
           const windowEnd = hitMsg.timestamp + CONTEXT_WINDOW_MS;
-
           let contextCount = 0;
           for (const msg of sortedMessages) {
             if (msg.id === hitId) continue;
@@ -283,19 +239,137 @@ export function createSearchUserActivityTool(
           }
         }
 
-        // 合并命中消息和上下文消息
+        // 合并命中和上下文消息，按时间排序
         const relevantIds = new Set([...channelHitIds, ...contextIds]);
-        const relevantMessages = messages.filter((m) => relevantIds.has(m.id));
+        const relevantMessages = sortedMessages.filter((m) => relevantIds.has(m.id));
 
-        const text = formatChannelActivity(channelLabel, channelType, relevantMessages, hitIds);
-        if (text) {
-          channelTexts.push(text);
-          processedChannels++;
+        // 按 CONTEXT_WINDOW_MS 间隔分组
+        let groupStart = 0;
+        let lastTime = relevantMessages[0]?.timestamp ?? 0;
+
+        for (let i = 0; i < relevantMessages.length; i++) {
+          if (i > 0 && relevantMessages[i].timestamp - lastTime > CONTEXT_WINDOW_MS) {
+            const groupMsgs = relevantMessages.slice(groupStart, i);
+            const groupHits = groupMsgs.filter((m) => hitIds.has(m.id));
+            if (groupHits.length > 0) {
+              allGroups.push({
+                channelKey,
+                messages: groupMsgs,
+                hitCount: groupHits.length,
+                latestHitTimestamp: Math.max(...groupHits.map((m) => m.timestamp)),
+                earliestHitTimestamp: Math.min(...groupHits.map((m) => m.timestamp)),
+              });
+            }
+            groupStart = i;
+          }
+          lastTime = relevantMessages[i].timestamp;
         }
+        // 最后一个分组
+        if (groupStart < relevantMessages.length) {
+          const groupMsgs = relevantMessages.slice(groupStart);
+          const groupHits = groupMsgs.filter((m) => hitIds.has(m.id));
+          if (groupHits.length > 0) {
+            allGroups.push({
+              channelKey,
+              messages: groupMsgs,
+              hitCount: groupHits.length,
+              latestHitTimestamp: Math.max(...groupHits.map((m) => m.timestamp)),
+              earliestHitTimestamp: Math.min(...groupHits.map((m) => m.timestamp)),
+            });
+          }
+        }
+      }
+
+      // 3b. 全局按最新命中时间降序排列，从新到旧逐个纳入
+      allGroups.sort((a, b) => b.latestHitTimestamp - a.latestHitTimestamp);
+
+      const acceptedGroups: TimeGroup[] = [];
+      let totalHits = 0;
+      let totalChars = 0;
+      let truncated = false;
+
+      for (const group of allGroups) {
+        // 检查 limit（仅计命中消息数）
+        if (totalHits + group.hitCount > limit) {
+          truncated = true;
+          break;
+        }
+        // 预估该分组格式化后的字符数
+        const groupText = formatGroupText(group.messages, hitIds);
+        if (totalChars + groupText.length > MAX_OUTPUT_CHARS) {
+          truncated = true;
+          break;
+        }
+        acceptedGroups.push(group);
+        totalHits += group.hitCount;
+        totalChars += groupText.length;
+      }
+
+      // 3c. 按频道重新分组，保持频道内时间连续（从早到晚）
+      const groupsByChannel = new Map<string, TimeGroup[]>();
+      for (const group of acceptedGroups) {
+        const list = groupsByChannel.get(group.channelKey) ?? [];
+        list.push(group);
+        groupsByChannel.set(group.channelKey, list);
+      }
+
+      // 频道按其最新命中时间降序排列
+      const channelOrder = [...groupsByChannel.entries()].sort((a, b) => {
+        const aMax = Math.max(...a[1].map((g) => g.latestHitTimestamp));
+        const bMax = Math.max(...b[1].map((g) => g.latestHitTimestamp));
+        return bMax - aMax;
+      });
+
+      const channelTexts: string[] = [];
+      for (const [channelKey, groups] of channelOrder) {
+        // 频道内分组按时间从早到晚
+        groups.sort((a, b) => a.earliestHitTimestamp - b.earliestHitTimestamp);
+
+        const channelInfo = channelsWithSession.find((c) => c.channelKey === channelKey);
+        const platform = channelInfo?.platform ?? "unknown";
+        const channelId = channelInfo?.channelId ?? channelKey;
+        const channelType = channelInfo?.type ?? "unknown";
+        const channelLabel = `${platform}:${channelId}`;
+
+        const lines: string[] = [];
+        lines.push(`## ${channelLabel} (${channelType})`);
+        lines.push("");
+
+        for (const group of groups) {
+          const sorted = [...group.messages].sort((a, b) => a.timestamp - b.timestamp);
+          const startTime = formatTimestamp(sorted[0].timestamp);
+          const endTime = formatTimestamp(sorted[sorted.length - 1].timestamp);
+
+          if (sorted.length === 1 || startTime === endTime) {
+            lines.push(`### ${startTime}`);
+          } else {
+            lines.push(`### ${startTime} ~ ${endTime}`);
+          }
+
+          for (const msg of sorted) {
+            const isHit = hitIds.has(msg.id);
+            lines.push(formatMessageLine(msg, isHit, false));
+          }
+          lines.push("");
+        }
+
+        channelTexts.push(lines.join("\n"));
+      }
+
+      // 3d. 构建 hint
+      let hint: string | undefined;
+      if (truncated && acceptedGroups.length > 0) {
+        // 取被保留结果中最早命中消息的时间戳
+        const earliestKept = Math.min(...acceptedGroups.map((g) => g.earliestHitTimestamp));
+        const earliestTime = new Date(earliestKept).toISOString();
+        hint = `还有更早的匹配消息未显示，可设置 until=${earliestTime} 继续查询。`;
+      } else if (truncated) {
+        hint = `匹配消息过多，请缩小时间范围重试。`;
       }
 
       return {
         text: channelTexts.join("\n---\n\n"),
+        hint,
       };
     },
   };

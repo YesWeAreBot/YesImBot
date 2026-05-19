@@ -54,8 +54,8 @@ export async function apply(ctx: Context, config: Config) {
   ctx.plugin(ChatHistoryPlugin, {
     isolation: false,
     sessionsDir: resolve(config.basePath, "sessions"),
-    defaultLimit: 5,
-    maxLimit: 20,
+    defaultLimit: 20,
+    maxLimit: 50,
   });
 }
 
