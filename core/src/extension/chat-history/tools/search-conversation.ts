@@ -14,6 +14,18 @@ import type {
   SearchContext,
 } from "../types.js";
 
+function matchesUser(
+  msg: { actorId?: string; actorName?: string; speaker: string },
+  userFilter: string,
+): boolean {
+  const userLower = userFilter.toLowerCase();
+  return (
+    msg.actorId?.toLowerCase().includes(userLower) ||
+    msg.actorName?.toLowerCase().includes(userLower) ||
+    msg.speaker.toLowerCase().includes(userLower)
+  );
+}
+
 export function createSearchConversationTool(
   config: ChatHistoryConfig,
   currentChannel: ChannelLocator | null,
@@ -31,9 +43,9 @@ export function createSearchConversationTool(
     description: "搜索历史聊天记录。提供关键词搜索当前频道或跨频道的对话内容。",
     promptSnippet: "搜索历史聊天记录",
     inputSchema: z.object({
-      query: z.string().describe("搜索关键词或短语"),
+      query: z.string().optional().describe("搜索关键词或短语"),
       where: z.enum(["here", "all"]).optional().describe("搜索范围，默认 here"),
-      user: z.string().optional().describe("按发言者过滤"),
+      user: z.string().optional().describe("按发言者过滤，匹配用户ID或昵称"),
       role: z.enum(["user", "assistant"]).optional().describe("按角色过滤"),
       since: z.string().optional().describe("起始日期 (ISO格式)"),
       until: z.string().optional().describe("截止日期 (ISO格式)"),
@@ -53,9 +65,9 @@ export function createSearchConversationTool(
         };
       }
 
-      // Validate query
+      // Validate query (支持无 query 但有时间过滤)
       const validation = validateQuery({
-        query: input.query,
+        query: input.query ?? "",
         where,
         hasUserFilter: !!input.user,
         hasTimeFilter: !!(input.since || input.until),
@@ -74,13 +86,12 @@ export function createSearchConversationTool(
       }
 
       // Build scan options
-      const normalizedQuery = validation.normalized!;
       const scanner = new FileScanner(ctx);
       const results = await scanner.scan(channelsOrError, {
-        contentMatcher: (content) => content.toLowerCase().includes(normalizedQuery),
-        senderMatcher: input.user
-          ? (speaker) => speaker.toLowerCase().includes(input.user!.toLowerCase())
+        contentMatcher: input.query
+          ? (content) => content.toLowerCase().includes(input.query!.toLowerCase())
           : undefined,
+        senderMatcher: input.user ? (msg) => matchesUser(msg, input.user!) : undefined,
         roleMatcher: input.role ? (role) => role === input.role : undefined,
         since: input.since ? new Date(input.since).getTime() : undefined,
         until: input.until ? new Date(input.until).getTime() : undefined,
@@ -91,7 +102,7 @@ export function createSearchConversationTool(
       const { deduped } = deduplicateResults(results);
 
       // Format
-      return formatSearchResults(deduped, normalizedQuery, limit, where === "all");
+      return formatSearchResults(deduped, input.query ?? "", limit, where === "all");
     },
   };
 }

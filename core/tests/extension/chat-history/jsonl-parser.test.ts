@@ -26,9 +26,11 @@ describe("parseJsonlLine", () => {
     const result = parseJsonlLine(line);
     expect(result).toEqual({
       id: "msg-001",
-      timestamp: new Date(1747476060000).toISOString(),
+      timestamp: 1747476060000, // 改为数字
       role: "user",
       speaker: "Alice",
+      actorId: "user-alice", // 新增
+      actorName: "Alice", // 新增
       content: "Hello world",
       channelKey: "",
     });
@@ -106,7 +108,7 @@ describe("parseJsonlLine", () => {
     const result = parseJsonlLine(line);
     expect(result).toEqual({
       id: "msg-002",
-      timestamp: "2026-05-17T10:02:00Z",
+      timestamp: new Date("2026-05-17T10:02:00Z").getTime(), // 改为数字
       role: "assistant",
       speaker: "assistant",
       content: "I can help with that.",
@@ -172,6 +174,68 @@ describe("parseJsonlLine", () => {
     expect(parseJsonlLine("   ")).toBeNull();
   });
 
+  it("returns compaction_marker for compactionSummary", () => {
+    const line = JSON.stringify({
+      type: "message",
+      id: "msg-compaction",
+      timestamp: "2026-05-17T11:00:00Z",
+      message: {
+        role: "compactionSummary",
+        summary: "压缩了10条消息",
+        tokensBefore: 5000,
+        timestamp: 1747478400000,
+      },
+    });
+    const result = parseJsonlLine(line);
+    expect(result).toEqual({ type: "compaction_marker" });
+  });
+
+  it("uses details.timestamp over top-level timestamp", () => {
+    const line = JSON.stringify({
+      type: "custom_message",
+      id: "msg-ts",
+      timestamp: "2026-05-19T10:00:00.000Z", // 顶层：10:00 UTC
+      customType: "athena:event",
+      content: [{ type: "text", text: "test" }],
+      details: {
+        version: 1,
+        id: "msg-ts",
+        kind: "chat_message",
+        timestamp: 1779181200000, // details：09:00 UTC (毫秒)
+        source: { platform: "test", channelId: "ch-1", conversationType: "private" },
+        actor: { id: "user-1", name: "Test" },
+        payload: { messageId: "msg-ts", content: "test" },
+      },
+    });
+    const result = parseJsonlLine(line);
+    expect(result).not.toBeNull();
+    if (result && !("type" in result)) {
+      expect(result.timestamp).toBe(1779181200000); // 应使用 details
+    }
+  });
+
+  it("converts seconds-level timestamp to milliseconds", () => {
+    const line = JSON.stringify({
+      type: "custom_message",
+      id: "msg-sec",
+      customType: "athena:event",
+      content: [{ type: "text", text: "test" }],
+      details: {
+        version: 1,
+        id: "msg-sec",
+        kind: "chat_message",
+        timestamp: 1779181200, // 秒级（10位数字）
+        source: { platform: "test", channelId: "ch-1", conversationType: "private" },
+        actor: { id: "user-1", name: "Test" },
+        payload: { messageId: "msg-sec", content: "test" },
+      },
+    });
+    const result = parseJsonlLine(line);
+    expect(result).not.toBeNull();
+    if (result && !("type" in result)) {
+      expect(result.timestamp).toBe(1779181200000); // 应转换为毫秒
+    }
+  });
 });
 
 describe("scanJsonlFile", () => {
@@ -206,7 +270,7 @@ describe("scanJsonlFile", () => {
 
   it("filters by sender matcher", async () => {
     const results = await scanJsonlFile(fixturePath, {
-      senderMatcher: (s) => s === "Alice",
+      senderMatcher: (msg) => msg.speaker === "Alice",
     });
     expect(results.length).toBeGreaterThan(0);
     expect(results.every((r) => r.speaker === "Alice")).toBe(true);
@@ -222,6 +286,6 @@ describe("scanJsonlFile", () => {
   it("filters by time range", async () => {
     const since = new Date("2026-05-17T14:00:00Z").getTime();
     const results = await scanJsonlFile(fixturePath, { since });
-    expect(results.every((r) => new Date(r.timestamp).getTime() >= since)).toBe(true);
+    expect(results.every((r) => r.timestamp >= since)).toBe(true);
   });
 });

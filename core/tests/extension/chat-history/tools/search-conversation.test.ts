@@ -85,4 +85,63 @@ describe("search_conversation tool", () => {
     expect(result.results.length).toBeGreaterThan(0);
     expect(result.results[0].id).toMatch(/^msg-/);
   });
+
+  it("supports time-range search without query", async () => {
+    const tool = createSearchConversationTool(config, currentChannel);
+    // 执行无 query 的时间范围搜索（使用足够宽的时间范围包含文件修改时间）
+    const result = await tool.execute({
+      since: "2026-05-17T00:00:00Z",
+      until: "2026-05-20T00:00:00Z",
+    });
+
+    expect(result.results.length).toBeGreaterThan(0);
+    expect(result.total_found).toBeGreaterThan(0);
+  });
+
+  it("filters by user ID and name", async () => {
+    const tool = createSearchConversationTool(config, currentChannel);
+
+    // 按昵称过滤
+    const resultByName = await tool.execute({
+      query: "讨论",
+      user: "Alice",
+    });
+
+    // 按 ID 过滤（actor ID）
+    const resultById = await tool.execute({
+      query: "讨论",
+      user: "user-alice",
+    });
+
+    expect(resultByName.results.length).toBeGreaterThan(0);
+    expect(resultByName.results.every((r) => r.speaker === "Alice")).toBe(true);
+
+    expect(resultById.results.length).toBeGreaterThan(0);
+    expect(resultById.results.every((r) => r.speaker === "Alice")).toBe(true);
+  });
+
+  it("searches for numeric ID in message content", async () => {
+    // 创建包含数字 ID 的测试数据
+    const testContent = `{"type":"session","id":"test-sess","timestamp":"2026-05-19T09:00:00.000Z","cwd":"/tmp"}
+{"type":"custom_message","id":"msg-1","timestamp":"2026-05-19T09:01:00.000Z","customType":"athena:event","content":"用户ID是1293865264","display":true,"details":{"version":1,"id":"evt-1","kind":"chat_message","timestamp":1779181260000,"source":{"platform":"test","channelId":"ch-1","conversationType":"private"},"actor":{"id":"user-1","name":"Alice"},"payload":{"messageId":"m-1","content":"用户ID是1293865264"}}}`;
+
+    const testSessionsDir = createTempSessionsDir();
+    setupTestChannel(testSessionsDir, "test_ch-1", {
+      platform: "test",
+      channelId: "ch-1",
+      jsonlFiles: { "test-sess.jsonl": testContent },
+      meta: { platform: "test", channel: "ch-1", type: "private", current_session: "test-sess" },
+    });
+
+    const testConfig = { ...config, sessionsDir: testSessionsDir };
+    const testChannel = { platform: "test", channelId: "ch-1", channelKey: "test_ch-1" };
+    const tool = createSearchConversationTool(testConfig, testChannel);
+
+    const result = await tool.execute({ query: "1293865264" });
+
+    expect(result.results.length).toBe(1);
+    expect(result.results[0].snippet).toContain("1293865264");
+
+    rmSync(testSessionsDir, { recursive: true, force: true });
+  });
 });

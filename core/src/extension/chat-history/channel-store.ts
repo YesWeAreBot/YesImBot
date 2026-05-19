@@ -131,20 +131,53 @@ export async function readChannelMeta(
 
 export async function listChannelSummaries(sessionsDir: string): Promise<ChannelSummary[]> {
   const map = await readChannelMap(sessionsDir);
-  const summaries = await Promise.all(
-    Object.entries(map).map(async ([channelKey, entry]) => {
-      const meta = await readChannelMeta(sessionsDir, channelKey);
-      return {
-        channelKey,
-        platform: entry.platform,
-        channelId: entry.channel,
-        type: meta?.type,
-        currentSessionId: meta?.currentSessionId,
-        sessionCount: meta?.sessionCount,
-        lastActiveAt: meta?.updatedAt ?? meta?.lastActiveAt,
-      } satisfies ChannelSummary;
-    }),
-  );
+
+  // 扫描 sessions 目录下的所有子目录，确保不遗漏任何频道
+  let entries: string[];
+  try {
+    entries = await readdir(sessionsDir);
+  } catch {
+    return [];
+  }
+
+  // 将所有子目录视为潜在的频道目录
+  const channelDirs = entries.filter((e) => !e.includes(".") && e !== "channel-map.json");
+
+  // 合并 channel-map 中的条目和实际存在的目录
+  const allChannelKeys = new Set<string>();
+  for (const key of Object.keys(map)) {
+    allChannelKeys.add(key);
+  }
+  for (const dir of channelDirs) {
+    allChannelKeys.add(dir);
+  }
+
+  const summaries: ChannelSummary[] = [];
+
+  for (const channelKey of allChannelKeys) {
+    const entry = map[channelKey];
+    const meta = await readChannelMeta(sessionsDir, channelKey);
+
+    // 如果 channel-map 中有条目，使用它；否则尝试从 meta.json 中读取
+    const platform = entry?.platform ?? meta?.platform;
+    const channelId = entry?.channel ?? meta?.channelId;
+
+    if (!platform || !channelId) {
+      // 无法确定平台和频道ID，跳过
+      continue;
+    }
+
+    summaries.push({
+      channelKey,
+      platform,
+      channelId,
+      type: meta?.type,
+      currentSessionId: meta?.currentSessionId,
+      sessionCount: meta?.sessionCount,
+      lastActiveAt: meta?.updatedAt ?? meta?.lastActiveAt,
+    });
+  }
+
   return summaries;
 }
 

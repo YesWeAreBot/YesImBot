@@ -24,9 +24,11 @@ export function buildChatHistoryPrompt(ctx: PromptContext): string {
 
 <工具>
 1. search_conversation — 搜索聊天记录
-   - 必须提供 query（关键词或短语）
+   - 提供 query 搜索关键词内容
+   - 提供 since/until 按时间范围浏览（可无 query）
+   - user 参数匹配发言者ID或昵称
    - where="here" 搜索当前频道（默认），where="all" 跨频道搜索（仅共享模式）
-   - 可选按用户、角色、时间范围过滤
+   - 可选按角色、时间范围过滤
 
 2. search_user_activity — 查看某用户的活动
    - 必须提供 user（用户ID或昵称）
@@ -39,7 +41,9 @@ export function buildChatHistoryPrompt(ctx: PromptContext): string {
 </工具>
 
 <使用建议>
-- 知道关键词 → search_conversation
+- 知道关键词 → search_conversation (query="关键词")
+- 想查某个时间段的聊天 → search_conversation (since="...", until="...")
+- 想查看某用户的历史消息 → search_conversation (user="用户ID或昵称")
 - 想了解某人最近聊了什么 → search_user_activity
 - 搜索结果需要更多上下文 → read_conversation_context
 - 搜索无结果时：换关键词、扩大时间范围、或改用 where="all"
@@ -48,7 +52,7 @@ export function buildChatHistoryPrompt(ctx: PromptContext): string {
 <限制>
 - 历史记录只能通过以上工具检索，不要尝试通过文件系统访问
 - 隔离模式下无法跨频道搜索
-- 过于宽泛的查询会被拒绝，请提供具体关键词
+- 过于宽泛的查询会被拒绝，请提供具体关键词或时间范围
 </限制>
 `;
 }

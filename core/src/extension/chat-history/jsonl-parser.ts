@@ -13,7 +13,25 @@ function extractText(content: unknown): string {
     .join("");
 }
 
-export function parseJsonlLine(line: string): ParsedMessage | null {
+function parseTimestamp(obj: Record<string, unknown>, details?: Record<string, unknown>): number {
+  if (details?.timestamp && typeof details.timestamp === "number") {
+    if (details.timestamp >= 1e9 && details.timestamp < 1e10) {
+      return details.timestamp * 1000;
+    }
+    return details.timestamp;
+  }
+
+  if (obj.timestamp && typeof obj.timestamp === "string") {
+    const ts = new Date(obj.timestamp).getTime();
+    if (!Number.isNaN(ts)) return ts;
+  }
+
+  return 0;
+}
+
+export type ParseResult = ParsedMessage | null | { type: "compaction_marker" };
+
+export function parseJsonlLine(line: string): ParseResult {
   const trimmed = line.trim();
   if (!trimmed) return null;
 
@@ -50,15 +68,15 @@ export function parseJsonlLine(line: string): ParsedMessage | null {
     const actor = details.actor as { id?: string; name?: string } | undefined;
     const speaker = actor?.name ?? actor?.id ?? "unknown";
 
-    const ts = details.timestamp;
-    const timestamp =
-      typeof ts === "number" ? new Date(ts).toISOString() : String(ts ?? "");
+    const timestamp = parseTimestamp(obj as Record<string, unknown>, details);
 
     return {
       id: String(details.id ?? obj.id ?? ""),
       timestamp,
       role: "user",
       speaker,
+      actorId: actor?.id,
+      actorName: actor?.name,
       content: text,
       channelKey: "",
     };
@@ -67,6 +85,10 @@ export function parseJsonlLine(line: string): ParsedMessage | null {
   if (type === "message") {
     const message = (obj.message ?? {}) as Record<string, unknown>;
     const role = message.role;
+
+    if (role === "compactionSummary") {
+      return { type: "compaction_marker" };
+    }
 
     if (role === "tool") return null;
 
@@ -78,9 +100,11 @@ export function parseJsonlLine(line: string): ParsedMessage | null {
       const text = extractText(content);
       if (!text) return null;
 
+      const timestamp = parseTimestamp(obj as Record<string, unknown>, undefined);
+
       return {
         id: String(obj.id ?? ""),
-        timestamp: String(obj.timestamp ?? ""),
+        timestamp,
         role: "assistant",
         speaker: "assistant",
         content: text,
@@ -100,6 +124,7 @@ export async function scanJsonlFile(
 ): Promise<ParsedMessage[]> {
   const results: ParsedMessage[] = [];
   let lineCount = 0;
+  let compactionFound = false;
 
   for await (const line of createInterface({
     input: createReadStream(filePath, { encoding: "utf-8" }),
@@ -108,17 +133,26 @@ export async function scanJsonlFile(
     if (options.maxLines && lineCount > options.maxLines) break;
 
     const parsed = parseJsonlLine(line);
+
+    if (parsed && "type" in parsed && parsed.type === "compaction_marker") {
+      compactionFound = true;
+      continue;
+    }
+
+    if (options.isCurrentSession && compactionFound) {
+      continue;
+    }
+
     if (!parsed) continue;
+    if ("type" in parsed) continue;
 
     if (options.roleMatcher && !options.roleMatcher(parsed.role)) continue;
-    if (options.senderMatcher && !options.senderMatcher(parsed.speaker)) continue;
+    if (options.senderMatcher && !options.senderMatcher(parsed)) continue;
     if (options.contentMatcher && !options.contentMatcher(parsed.content)) continue;
 
     if (options.since || options.until) {
-      const ts = new Date(parsed.timestamp).getTime();
-      if (Number.isNaN(ts)) continue;
-      if (options.since && ts < options.since) continue;
-      if (options.until && ts > options.until) continue;
+      if (options.since && parsed.timestamp < options.since) continue;
+      if (options.until && parsed.timestamp > options.until) continue;
     }
 
     results.push(parsed);

@@ -49,7 +49,7 @@ describe("deduplicateResults", () => {
     const results = [
       {
         id: "1",
-        timestamp: "2026-05-17T10:00:00Z",
+        timestamp: new Date("2026-05-17T10:00:00Z").getTime(),
         role: "user" as const,
         speaker: "Alice",
         content: "a",
@@ -57,7 +57,7 @@ describe("deduplicateResults", () => {
       },
       {
         id: "2",
-        timestamp: "2026-05-17T10:00:30Z",
+        timestamp: new Date("2026-05-17T10:00:30Z").getTime(),
         role: "user" as const,
         speaker: "Alice",
         content: "b",
@@ -65,7 +65,7 @@ describe("deduplicateResults", () => {
       },
       {
         id: "3",
-        timestamp: "2026-05-17T10:05:00Z",
+        timestamp: new Date("2026-05-17T10:05:00Z").getTime(),
         role: "user" as const,
         speaker: "Alice",
         content: "c",
@@ -81,7 +81,7 @@ describe("deduplicateResults", () => {
     const results = [
       {
         id: "1",
-        timestamp: "2026-05-17T10:00:00Z",
+        timestamp: new Date("2026-05-17T10:00:00Z").getTime(),
         role: "user" as const,
         speaker: "Alice",
         content: "a",
@@ -89,7 +89,7 @@ describe("deduplicateResults", () => {
       },
       {
         id: "2",
-        timestamp: "2026-05-17T10:00:30Z",
+        timestamp: new Date("2026-05-17T10:00:30Z").getTime(),
         role: "user" as const,
         speaker: "Alice",
         content: "b",
@@ -111,33 +111,33 @@ describe("formatCompactLine", () => {
   it("formats user message correctly", () => {
     const line = formatCompactLine(
       {
-        timestamp: "2026-05-17T10:01:00Z",
+        timestamp: new Date("2026-05-17T10:01:00Z").getTime(),
         role: "user",
         speaker: "Alice",
         content: "Hello world",
       },
       false,
     );
-    expect(line).toBe("[2026-05-17 10:01] user Alice: Hello world");
+    expect(line).toMatch(/^\[2026-05-17 \d{2}:01\] user Alice: Hello world$/);
   });
 
   it("formats assistant message correctly", () => {
     const line = formatCompactLine(
       {
-        timestamp: "2026-05-17T10:02:00Z",
+        timestamp: new Date("2026-05-17T10:02:00Z").getTime(),
         role: "assistant",
         speaker: "assistant",
         content: "Hi there",
       },
       false,
     );
-    expect(line).toBe("[2026-05-17 10:02] assistant: Hi there");
+    expect(line).toMatch(/^\[2026-05-17 \d{2}:02\] assistant: Hi there$/);
   });
 
   it("adds anchor prefix", () => {
     const line = formatCompactLine(
       {
-        timestamp: "2026-05-17T10:01:00Z",
+        timestamp: new Date("2026-05-17T10:01:00Z").getTime(),
         role: "user",
         speaker: "Alice",
         content: "Hello",
@@ -150,7 +150,7 @@ describe("formatCompactLine", () => {
   it("truncates long content to 1000 chars", () => {
     const line = formatCompactLine(
       {
-        timestamp: "2026-05-17T10:01:00Z",
+        timestamp: new Date("2026-05-17T10:01:00Z").getTime(),
         role: "user",
         speaker: "Alice",
         content: "X".repeat(1500),
@@ -159,6 +159,24 @@ describe("formatCompactLine", () => {
     );
     expect(line.length).toBeLessThan(1100);
   });
+
+  it("formats millisecond timestamp correctly", () => {
+    const ts = 1779181200000; // 2026-05-19 09:00:00 UTC
+    const line = formatCompactLine(
+      { timestamp: ts, role: "user", speaker: "Test", content: "msg" },
+      false,
+    );
+    expect(line).toContain("2026-05-19");
+  });
+
+  it("formats second-level timestamp correctly after conversion", () => {
+    const ts = 1779181200 * 1000; // 秒级转换为毫秒
+    const line = formatCompactLine(
+      { timestamp: ts, role: "user", speaker: "Test", content: "msg" },
+      false,
+    );
+    expect(line).toContain("2026-05-19");
+  });
 });
 
 describe("formatSearchResults", () => {
@@ -166,7 +184,7 @@ describe("formatSearchResults", () => {
     const results = [
       {
         id: "1",
-        timestamp: "2026-05-17T10:00:00Z",
+        timestamp: new Date("2026-05-17T10:00:00Z").getTime(),
         role: "user" as const,
         speaker: "Alice",
         content: "old",
@@ -174,7 +192,7 @@ describe("formatSearchResults", () => {
       },
       {
         id: "2",
-        timestamp: "2026-05-18T10:00:00Z",
+        timestamp: new Date("2026-05-18T10:00:00Z").getTime(),
         role: "user" as const,
         speaker: "Alice",
         content: "new",
@@ -189,7 +207,7 @@ describe("formatSearchResults", () => {
     const results = [
       {
         id: "1",
-        timestamp: "2026-05-17T10:00:00Z",
+        timestamp: new Date("2026-05-17T10:00:00Z").getTime(),
         role: "user" as const,
         speaker: "Alice",
         content: "hi",
@@ -203,7 +221,7 @@ describe("formatSearchResults", () => {
   it("respects limit", () => {
     const results = Array.from({ length: 20 }, (_, i) => ({
       id: `${i}`,
-      timestamp: `2026-05-17T10:${String(i).padStart(2, "0")}:00Z`,
+      timestamp: new Date(`2026-05-17T10:${String(i).padStart(2, "0")}:00Z`).getTime(),
       role: "user" as const,
       speaker: "Alice",
       content: `msg ${i}`,

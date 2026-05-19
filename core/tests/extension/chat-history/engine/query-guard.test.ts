@@ -58,4 +58,34 @@ describe("validateQuery", () => {
     const result = validateQuery({ query: "test", where: "all", hasTimeFilter: true });
     expect(result.valid).toBe(true);
   });
+
+  it("allows empty query with time filter", () => {
+    const result = validateQuery({
+      query: "",
+      where: "here",
+      hasTimeFilter: true,
+    });
+    expect(result.valid).toBe(true);
+    expect(result.normalized).toBe("");
+  });
+
+  it("rejects empty query without time filter", () => {
+    const result = validateQuery({
+      query: "",
+      where: "here",
+      hasTimeFilter: false,
+    });
+    expect(result.valid).toBe(false);
+    expect(result.hint).toContain("时间范围");
+  });
+
+  it("allows empty query with user filter", () => {
+    const result = validateQuery({
+      query: "",
+      where: "here",
+      hasUserFilter: true,
+    });
+    expect(result.valid).toBe(true);
+    expect(result.normalized).toBe("");
+  });
 });

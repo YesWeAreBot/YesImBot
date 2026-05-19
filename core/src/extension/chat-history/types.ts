@@ -29,17 +29,20 @@ export interface SearchContext {
   sessionsDir: string;
   isolation: boolean;
   currentChannel: ChannelLocator | null;
+  currentSessionId?: string;
   defaultLimit: number;
   maxLimit: number;
 }
 
 export interface ParsedMessage {
   id: string;
-  timestamp: string;
+  timestamp: number; // 毫秒数字
   role: "user" | "assistant";
-  speaker: string; // userId/nickname for user, "assistant" for assistant
-  content: string; // full text content
-  channelKey: string; // which channel this belongs to
+  speaker: string; // 显示用：actor.name ?? actor.id
+  actorId?: string; // actor.id
+  actorName?: string; // actor.name
+  content: string;
+  channelKey: string;
 }
 
 export interface QueryValidation {
@@ -53,7 +56,7 @@ export interface QueryValidation {
 // ============================================================================
 
 export interface SearchConversationInput {
-  query: string;
+  query?: string;
   where?: "here" | "all";
   user?: string;
   role?: "user" | "assistant";
@@ -154,10 +157,11 @@ export interface SessionFileInfo {
 
 export interface ScanOptions {
   roleMatcher?: (role: "user" | "assistant") => boolean;
-  senderMatcher?: (speaker: string) => boolean;
+  senderMatcher?: (msg: ParsedMessage) => boolean;
   contentMatcher?: (content: string) => boolean;
   since?: number;
   until?: number;
   maxLines?: number;
   maxHits?: number;
+  isCurrentSession?: boolean;
 }

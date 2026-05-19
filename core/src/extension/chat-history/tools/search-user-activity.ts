@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { ChannelResolver } from "../engine/channel-resolver.js";
 import { FileScanner } from "../engine/file-scanner.js";
-import { extractSnippet } from "../engine/result-formatter.js";
+import { extractSnippet, formatTimestamp } from "../engine/result-formatter.js";
 import type {
   ChatHistoryConfig,
   ChannelLocator,
@@ -53,7 +53,10 @@ export function createSearchUserActivityTool(
       const userLower = input.user.toLowerCase();
 
       const results = await scanner.scan(channelsOrError, {
-        senderMatcher: (speaker) => speaker.toLowerCase().includes(userLower),
+        senderMatcher: (msg) =>
+          msg.speaker.toLowerCase().includes(userLower) ||
+          !!msg.actorId?.toLowerCase().includes(userLower) ||
+          !!msg.actorName?.toLowerCase().includes(userLower),
         contentMatcher: input.query
           ? (content) => content.toLowerCase().includes(input.query!.toLowerCase())
           : undefined,
@@ -79,17 +82,17 @@ export function createSearchUserActivityTool(
       // Build activity summaries
       const activities: UserActivityChannel[] = [];
       for (const [channelKey, messages] of byChannel) {
-        messages.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        messages.sort((a, b) => b.timestamp - a.timestamp);
 
         const recentMessages = messages.slice(0, 3).map((m) => ({
           id: m.id,
-          time: m.timestamp,
+          time: formatTimestamp(m.timestamp),
           snippet: extractSnippet(m.content, input.query ?? input.user),
         }));
 
         activities.push({
           channel: channelKey,
-          last_active: messages[0].timestamp,
+          last_active: formatTimestamp(messages[0].timestamp),
           message_count: messages.length,
           recent_messages: recentMessages,
         });

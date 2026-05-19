@@ -13,10 +13,20 @@ interface ValidateOptions {
 export function validateQuery(options: ValidateOptions): QueryValidation {
   const { query, where, hasUserFilter, hasTimeFilter } = options;
 
-  const trimmed = query.trim().replace(/\s+/g, " ");
+  // 允许无 query 但有时间过滤
+  if (!query && hasTimeFilter) {
+    return { valid: true, normalized: "" };
+  }
+
+  // 允许无 query 但有过滤条件（user）
+  if (!query && hasUserFilter) {
+    return { valid: true, normalized: "" };
+  }
+
+  const trimmed = (query ?? "").trim().replace(/\s+/g, " ");
 
   if (!trimmed) {
-    return { valid: false, hint: "请提供搜索关键词。" };
+    return { valid: false, hint: "请提供搜索关键词或时间范围（since/until）。" };
   }
 
   if (trimmed.length === 1) {

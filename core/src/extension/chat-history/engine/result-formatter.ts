@@ -2,7 +2,7 @@ import type { SearchConversationOutput, SearchResult } from "../types.js";
 
 interface ScanResult {
   id: string;
-  timestamp: string;
+  timestamp: number;
   role: "user" | "assistant";
   speaker: string;
   content: string;
@@ -12,6 +12,21 @@ interface ScanResult {
 const SNIPPET_RADIUS = 200;
 const MAX_COMPACT_CONTENT = 1000;
 const DEDUP_INTERVAL_MS = 60_000;
+
+export function formatTimestamp(ts: number): string {
+  const date = new Date(ts);
+  return date
+    .toLocaleString("zh-CN", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+      timeZone: "Asia/Shanghai",
+    })
+    .replace(/\//g, "-");
+}
 
 export function extractSnippet(content: string, query: string): string {
   if (content.length <= 400) return content;
@@ -51,10 +66,7 @@ export function deduplicateResults(results: ScanResult[]): {
       continue;
     }
 
-    const prevTs = new Date(prev.timestamp).getTime();
-    const currTs = new Date(curr.timestamp).getTime();
-
-    if (Math.abs(currTs - prevTs) >= DEDUP_INTERVAL_MS) {
+    if (Math.abs(curr.timestamp - prev.timestamp) >= DEDUP_INTERVAL_MS) {
       deduped.push(curr);
     }
   }
@@ -63,13 +75,10 @@ export function deduplicateResults(results: ScanResult[]): {
 }
 
 export function formatCompactLine(
-  msg: { timestamp: string; role: string; speaker: string; content: string },
+  msg: { timestamp: number; role: string; speaker: string; content: string },
   isAnchor: boolean,
 ): string {
-  const time = msg.timestamp
-    .replace("T", " ")
-    .replace(/:\d{2}\.\d+Z$|:\d{2}Z$/, "")
-    .slice(0, 16);
+  const time = formatTimestamp(msg.timestamp);
   const content =
     msg.content.length > MAX_COMPACT_CONTENT
       ? msg.content.slice(0, MAX_COMPACT_CONTENT) + "…"
@@ -87,15 +96,13 @@ export function formatSearchResults(
   limit: number,
   showChannel: boolean,
 ): SearchConversationOutput {
-  const sorted = [...results].sort(
-    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
-  );
+  const sorted = [...results].sort((a, b) => b.timestamp - a.timestamp);
 
   const limited = sorted.slice(0, limit);
 
   const formattedResults: SearchResult[] = limited.map((r) => ({
     id: r.id,
-    time: r.timestamp,
+    time: formatTimestamp(r.timestamp),
     speaker: r.speaker,
     snippet: extractSnippet(r.content, query),
     ...(showChannel ? { channel: r.channelKey } : {}),

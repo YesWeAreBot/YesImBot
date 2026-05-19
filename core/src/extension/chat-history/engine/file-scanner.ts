@@ -44,10 +44,15 @@ export class FileScanner {
         if (results.length >= maxHits) break;
 
         const remaining = maxHits - results.length;
+
+        const isCurrentSession =
+          this.ctx.currentSessionId && file.sessionId === this.ctx.currentSessionId;
+
         const messages = await scanJsonlFile(file.fullPath, {
           ...options,
           maxLines: options.maxLines ?? DEFAULT_MAX_LINES,
           maxHits: remaining,
+          isCurrentSession: !!isCurrentSession,
         });
 
         for (const msg of messages) {
