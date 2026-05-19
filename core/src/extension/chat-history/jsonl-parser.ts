@@ -13,12 +13,24 @@ function extractText(content: unknown): string {
     .join("");
 }
 
-function parseTimestamp(obj: Record<string, unknown>, details?: Record<string, unknown>): number {
+function parseTimestamp(
+  obj: Record<string, unknown>,
+  details?: Record<string, unknown>,
+  message?: Record<string, unknown>,
+): number {
   if (details?.timestamp && typeof details.timestamp === "number") {
     if (details.timestamp >= 1e9 && details.timestamp < 1e10) {
       return details.timestamp * 1000;
     }
     return details.timestamp;
+  }
+
+  // assistant 消息的时间戳在 message 对象内部
+  if (message?.timestamp && typeof message.timestamp === "number") {
+    if (message.timestamp >= 1e9 && message.timestamp < 1e10) {
+      return message.timestamp * 1000;
+    }
+    return message.timestamp;
   }
 
   if (obj.timestamp && typeof obj.timestamp === "string") {
@@ -100,7 +112,7 @@ export function parseJsonlLine(line: string): ParseResult {
       const text = extractText(content);
       if (!text) return null;
 
-      const timestamp = parseTimestamp(obj as Record<string, unknown>, undefined);
+      const timestamp = parseTimestamp(obj as Record<string, unknown>, undefined, message);
 
       return {
         id: String(obj.id ?? ""),
@@ -139,6 +151,8 @@ export async function scanJsonlFile(
       continue;
     }
 
+    // 当前会话文件中，compaction marker 之后的消息是最近的，会进入 LLM 上下文，跳过
+    // 如果没有 compaction marker，整个文件都是最近的，全部跳过
     if (options.isCurrentSession && compactionFound) {
       continue;
     }
