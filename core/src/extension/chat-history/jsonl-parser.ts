@@ -130,6 +130,63 @@ export function parseJsonlLine(line: string): ParseResult {
   return null;
 }
 
+export async function scanJsonlFileReverse(
+  filePath: string,
+  options: ScanOptions,
+): Promise<ParsedMessage[]> {
+  const results: ParsedMessage[] = [];
+
+  // Read all lines into memory, then scan from end (newest first)
+  const lines: string[] = [];
+  for await (const line of createInterface({
+    input: createReadStream(filePath, { encoding: "utf-8" }),
+  })) {
+    lines.push(line);
+  }
+
+  // Detect compaction marker position (scan forward to find it)
+  let compactionIndex = -1;
+  if (options.isCurrentSession) {
+    for (let i = 0; i < lines.length; i++) {
+      const parsed = parseJsonlLine(lines[i]);
+      if (parsed && "type" in parsed && parsed.type === "compaction_marker") {
+        compactionIndex = i;
+        break;
+      }
+    }
+  }
+
+  // Scan from end (newest messages first)
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const parsed = parseJsonlLine(lines[i]);
+
+    if (parsed && "type" in parsed && parsed.type === "compaction_marker") continue;
+
+    // Current session: skip compacted messages (before compaction marker)
+    if (options.isCurrentSession && compactionIndex >= 0 && i < compactionIndex) {
+      continue;
+    }
+
+    if (!parsed) continue;
+    if ("type" in parsed) continue;
+
+    if (options.roleMatcher && !options.roleMatcher(parsed.role)) continue;
+    if (options.senderMatcher && !options.senderMatcher(parsed)) continue;
+    if (options.contentMatcher && !options.contentMatcher(parsed.content)) continue;
+
+    if (options.since || options.until) {
+      if (options.since && parsed.timestamp < options.since) continue;
+      if (options.until && parsed.timestamp > options.until) continue;
+    }
+
+    results.push(parsed);
+
+    if (options.maxHits && results.length >= options.maxHits) break;
+  }
+
+  return results;
+}
+
 export async function scanJsonlFile(
   filePath: string,
   options: ScanOptions,

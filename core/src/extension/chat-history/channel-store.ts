@@ -3,6 +3,7 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 
 import { encodeChannelId } from "../../services/session/encoding.js";
+import type { ChannelMapEntry } from "../../services/session/index.js";
 import type {
   ChannelLocator,
   ChannelSummary,
@@ -10,11 +11,6 @@ import type {
   SessionFileInfo,
   ToolError,
 } from "./types.js";
-
-interface ChannelMapEntry {
-  platform: string;
-  channel: string;
-}
 
 export function toolError(error: string, code: string, hint: string): ToolError {
   return { error, code, hint };
@@ -103,7 +99,7 @@ export async function resolveChannelLocator(input: {
     }
     return {
       platform: entry.platform,
-      channelId: entry.channel,
+      channelId: entry.channelId,
       channelKey: input.channelKey,
     };
   }
@@ -159,19 +155,23 @@ export async function listChannelSummaries(sessionsDir: string): Promise<Channel
     const meta = await readChannelMeta(sessionsDir, channelKey);
 
     // 如果 channel-map 中有条目，使用它；否则尝试从 meta.json 中读取
+    // channel-map.json 可能使用 'channel' 或 'channelId' 字段名（兼容两种格式）
     const platform = entry?.platform ?? meta?.platform;
-    const channelId = entry?.channel ?? meta?.channelId;
+    const channelId = entry?.channelId ?? meta?.channelId;
 
     if (!platform || !channelId) {
       // 无法确定平台和频道ID，跳过
       continue;
     }
 
+    // 从 meta.json 获取类型，如果没有则从 channelId 推断
+    const type = meta?.type ?? (channelId.startsWith("private") ? "private" : undefined);
+
     summaries.push({
       channelKey,
       platform,
       channelId,
-      type: meta?.type,
+      type,
       currentSessionId: meta?.currentSessionId,
       sessionCount: meta?.sessionCount,
       lastActiveAt: meta?.updatedAt ?? meta?.lastActiveAt,

@@ -84,7 +84,8 @@ function formatChannelActivity(
 
     // 判断是否需要显示时间（组内消息跨度较大时显示）
     const timeSpan = group[group.length - 1].timestamp - group[0].timestamp;
-    const showTime = timeSpan > 60_000; // 超过1分钟显示时间
+    // const showTime = timeSpan > 60_000; // 超过1分钟显示时间
+    const showTime = false; // 统一不显示时间，避免过于冗长
 
     for (const msg of group) {
       const isHit = hitIds.has(msg.id);
@@ -143,11 +144,7 @@ export function createSearchUserActivityTool(
     name: "search_user_activity",
     description:
       "查看某用户在各频道/私聊会话中的活动记录。结果按频道分组，每个频道内按时间段聚合，标记直接命中的消息。",
-    promptSnippet: `查看用户在各频道/私聊中的活动记录。
-- 结果按频道分组，标注频道类型（private/group）
-- 每个频道内按时间段聚合消息
-- >>> 标记表示直接命中的消息
-- 未标记的消息是上下文，帮助理解命中消息`,
+    promptSnippet: `查看用户在各频道/私聊中的活动记录。`,
     inputSchema: z.object({
       user: z.string().describe("用户ID或昵称"),
       query: z.string().optional().describe("进一步按内容过滤"),
@@ -161,7 +158,7 @@ export function createSearchUserActivityTool(
 
       const resolver = new ChannelResolver(ctx);
       const where = ctx.isolation ? "here" : "all";
-      const channelsOrError = await resolver.resolve(where);
+      const channelsOrError = await resolver.resolve(where, { maxChannels: config.maxLimit });
 
       if ("error" in channelsOrError) {
         return { text: "", hint: channelsOrError.hint ?? channelsOrError.error };
@@ -177,61 +174,83 @@ export function createSearchUserActivityTool(
 
       const scanner = new FileScanner(ctx);
       const userLower = input.user.toLowerCase();
-      const sinceMs = input.since ? new Date(input.since).getTime() : undefined;
+      const sinceMs = input.since
+        ? new Date(input.since).getTime()
+        : Date.now() - 30 * 24 * 60 * 60 * 1000; // 默认最近30天
       const untilMs = input.until ? new Date(input.until).getTime() : undefined;
 
-      // 第一步：扫描所有消息（不过滤用户），获取完整上下文
-      const allMessages = await scanner.scan(channelsWithSession, {
+      // 用户匹配函数
+      const userMatcher = (msg: { speaker: string; actorId?: string; actorName?: string }) =>
+        msg.speaker.toLowerCase().includes(userLower) ||
+        !!msg.actorId?.toLowerCase().includes(userLower) ||
+        !!msg.actorName?.toLowerCase().includes(userLower);
+
+      // 内容匹配函数
+      const contentMatcher = input.query
+        ? (content: string) => content.toLowerCase().includes(input.query!.toLowerCase())
+        : undefined;
+
+      // ========== 第一阶段：反向扫描定位命中频道 ==========
+      // 每频道限制扫描量，反向优先最新消息，快速定位哪些频道包含目标用户
+      const PER_CHANNEL_USER_HITS = limit * 10;
+
+      const userHits = await scanner.scan(channelsWithSession, {
+        reverse: true,
+        senderMatcher: (msg) => userMatcher(msg),
+        contentMatcher,
         since: sinceMs,
         until: untilMs,
+        maxHits: PER_CHANNEL_USER_HITS * channelsWithSession.length,
+        maxLines: PER_CHANNEL_USER_HITS,
       });
 
-      // 第二步：标记哪些消息是命中消息（匹配用户和可选的 query）
-      const hitIds = new Set<string>();
-      for (const msg of allMessages) {
-        const userMatch =
-          msg.speaker.toLowerCase().includes(userLower) ||
-          !!msg.actorId?.toLowerCase().includes(userLower) ||
-          !!msg.actorName?.toLowerCase().includes(userLower);
-
-        if (!userMatch) continue;
-
-        if (input.query) {
-          const contentLower = msg.content.toLowerCase();
-          if (!contentLower.includes(input.query.toLowerCase())) continue;
-        }
-
-        hitIds.add(msg.id);
-      }
-
-      if (hitIds.size === 0) {
+      if (userHits.length === 0) {
         return {
           text: "",
           hint: `未找到用户 "${input.user}" 的活动记录。请检查用户名是否正确，或扩大搜索时间范围。`,
         };
       }
 
-      // 第三步：按频道分组，每个频道内提取上下文
+      // 提取包含命中消息的频道集合
+      const hitChannelKeys = new Set(userHits.map((m) => m.channelKey));
+
+      // ========== 第二阶段：正向扫描命中频道获取完整上下文 ==========
+      const hitChannels = channelsWithSession.filter((ch) => hitChannelKeys.has(ch.channelKey));
+      // 不设 maxHits 上限——命中频道数量少（通常 1-3 个），需要完整上下文
+      const contextMessages = await scanner.scan(hitChannels, {
+        since: sinceMs,
+        until: untilMs,
+        maxHits: config.maxLimit * 500,
+      });
+
+      // 构建命中 ID 集合（从第一阶段）
+      const hitIds = new Set(userHits.map((m) => m.id));
+
+      // 按频道分组上下文消息
       const byChannel = new Map<string, ScanResult[]>();
-      for (const msg of allMessages) {
+      for (const msg of contextMessages) {
         const existing = byChannel.get(msg.channelKey) ?? [];
         existing.push(msg);
         byChannel.set(msg.channelKey, existing);
       }
 
-      // 只保留包含命中消息的频道，并提取上下文
+      // ========== 第三阶段：格式化输出 ==========
       const channelTexts: string[] = [];
       let processedChannels = 0;
 
-      for (const [channelKey, messages] of byChannel) {
+      for (const channelKey of hitChannelKeys) {
         if (processedChannels >= limit) break;
 
-        // 检查该频道是否有命中消息
+        const messages = byChannel.get(channelKey) ?? [];
         const channelHitIds = new Set<string>();
         for (const msg of messages) {
           if (hitIds.has(msg.id)) {
             channelHitIds.add(msg.id);
           }
+        }
+        // 也包含第一阶段扫描到但第二阶段可能未覆盖的命中
+        for (const msg of userHits) {
+          if (msg.channelKey === channelKey) channelHitIds.add(msg.id);
         }
 
         if (channelHitIds.size === 0) continue;
@@ -244,7 +263,7 @@ export function createSearchUserActivityTool(
         const channelLabel = `${platform}:${channelId}`;
 
         // 提取上下文：为每个命中消息获取前后5分钟的消息
-        const contextMessages = new Set<string>();
+        const contextIds = new Set<string>();
         const sortedMessages = [...messages].sort((a, b) => a.timestamp - b.timestamp);
 
         for (const hitId of channelHitIds) {
@@ -259,13 +278,13 @@ export function createSearchUserActivityTool(
             if (msg.id === hitId) continue;
             if (msg.timestamp < windowStart || msg.timestamp > windowEnd) continue;
             if (contextCount >= MAX_CONTEXT_MESSAGES) break;
-            contextMessages.add(msg.id);
+            contextIds.add(msg.id);
             contextCount++;
           }
         }
 
         // 合并命中消息和上下文消息
-        const relevantIds = new Set([...channelHitIds, ...contextMessages]);
+        const relevantIds = new Set([...channelHitIds, ...contextIds]);
         const relevantMessages = messages.filter((m) => relevantIds.has(m.id));
 
         const text = formatChannelActivity(channelLabel, channelType, relevantMessages, hitIds);

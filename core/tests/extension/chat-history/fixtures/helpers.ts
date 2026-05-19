@@ -32,7 +32,7 @@ export function setupTestChannel(
 
   // Write channel-map.json
   const mapPath = join(sessionsDir, "channel-map.json");
-  let map: Record<string, { platform: string; channel: string }> = {};
+  let map: Record<string, { platform: string; channel?: string; channelId?: string }> = {};
   if (existsSync(mapPath)) {
     map = JSON.parse(readFileSync(mapPath, "utf-8"));
   }

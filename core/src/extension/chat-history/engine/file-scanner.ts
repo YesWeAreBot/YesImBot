@@ -1,5 +1,5 @@
 import { listSessionFiles } from "../channel-store.js";
-import { scanJsonlFile } from "../jsonl-parser.js";
+import { scanJsonlFile, scanJsonlFileReverse } from "../jsonl-parser.js";
 // core/src/extension/chat-history/engine/file-scanner.ts
 import type { ChannelSummary, ParsedMessage, SearchContext, ScanOptions } from "../types.js";
 
@@ -8,6 +8,7 @@ const DEFAULT_MAX_LINES = 5000;
 
 export interface FileScanOptions extends ScanOptions {
   maxFilesPerChannel?: number;
+  reverse?: boolean;
 }
 
 export interface ScanResult extends ParsedMessage {
@@ -28,6 +29,8 @@ export class FileScanner {
     const results: ScanResult[] = [];
     const maxFilesPerChannel = options.maxFilesPerChannel ?? DEFAULT_MAX_FILES_PER_CHANNEL;
     const maxHits = options.maxHits ?? this.ctx.maxLimit * 2;
+    const reverse = options.reverse ?? false;
+    const scanFn = reverse ? scanJsonlFileReverse : scanJsonlFile;
 
     for (const channel of channels) {
       if (results.length >= maxHits) break;
@@ -38,6 +41,7 @@ export class FileScanner {
         channel.currentSessionId,
       );
 
+      // Reverse mode: scan newest files first; forward mode: also newest first
       files.sort((a, b) => b.modified.getTime() - a.modified.getTime());
 
       const filesToScan = files.slice(0, maxFilesPerChannel);
@@ -47,7 +51,7 @@ export class FileScanner {
 
         const remaining = maxHits - results.length;
 
-        const messages = await scanJsonlFile(file.fullPath, {
+        const messages = await scanFn(file.fullPath, {
           ...options,
           maxLines: options.maxLines ?? DEFAULT_MAX_LINES,
           maxHits: remaining,
