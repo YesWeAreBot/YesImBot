@@ -97,15 +97,8 @@ export interface SearchConversationOutput {
   hint?: string;
 }
 
-export interface UserActivityChannel {
-  channel: string;
-  last_active: string;
-  message_count: number;
-  recent_messages: { id: string; time: string; snippet: string }[];
-}
-
 export interface SearchUserActivityOutput {
-  activities: UserActivityChannel[];
+  text: string; // 格式化的文本结果
   hint?: string;
 }
 

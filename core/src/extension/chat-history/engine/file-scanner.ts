@@ -12,13 +12,17 @@ export interface FileScanOptions extends ScanOptions {
 
 export interface ScanResult extends ParsedMessage {
   channelKey: string;
+  channelType?: "private" | "group";
 }
 
 export class FileScanner {
   constructor(private ctx: SearchContext) {}
 
   async scan(
-    channels: Pick<ChannelSummary, "channelKey" | "platform" | "channelId">[],
+    channels: Pick<
+      ChannelSummary,
+      "channelKey" | "platform" | "channelId" | "type" | "currentSessionId"
+    >[],
     options: FileScanOptions,
   ): Promise<ScanResult[]> {
     const results: ScanResult[] = [];
@@ -28,35 +32,30 @@ export class FileScanner {
     for (const channel of channels) {
       if (results.length >= maxHits) break;
 
-      const files = await listSessionFiles(this.ctx.sessionsDir, channel.channelKey);
+      const files = await listSessionFiles(
+        this.ctx.sessionsDir,
+        channel.channelKey,
+        channel.currentSessionId,
+      );
 
       files.sort((a, b) => b.modified.getTime() - a.modified.getTime());
 
-      const filteredFiles = files.filter((f) => {
-        if (options.since && f.modified.getTime() < options.since) return false;
-        if (options.until && f.modified.getTime() > options.until) return false;
-        return true;
-      });
-
-      const filesToScan = filteredFiles.slice(0, maxFilesPerChannel);
+      const filesToScan = files.slice(0, maxFilesPerChannel);
 
       for (const file of filesToScan) {
         if (results.length >= maxHits) break;
 
         const remaining = maxHits - results.length;
 
-        const isCurrentSession =
-          this.ctx.currentSessionId && file.sessionId === this.ctx.currentSessionId;
-
         const messages = await scanJsonlFile(file.fullPath, {
           ...options,
           maxLines: options.maxLines ?? DEFAULT_MAX_LINES,
           maxHits: remaining,
-          isCurrentSession: !!isCurrentSession,
+          isCurrentSession: file.isCurrent,
         });
 
         for (const msg of messages) {
-          results.push({ ...msg, channelKey: channel.channelKey });
+          results.push({ ...msg, channelKey: channel.channelKey, channelType: channel.type });
         }
       }
     }

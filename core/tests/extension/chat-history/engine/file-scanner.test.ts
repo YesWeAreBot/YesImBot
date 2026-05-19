@@ -129,7 +129,14 @@ describe("compactionSummary 排除", () => {
     });
     const scanner = new FileScanner(ctx);
     const results = await scanner.scan(
-      [{ channelKey: "test_ch-1", platform: "test", channelId: "ch-1" }],
+      [
+        {
+          channelKey: "test_ch-1",
+          platform: "test",
+          channelId: "ch-1",
+          currentSessionId: "compaction-test-session",
+        },
+      ],
       { contentMatcher: () => true },
     );
 
@@ -144,7 +151,14 @@ describe("compactionSummary 排除", () => {
     });
     const scanner = new FileScanner(ctx);
     const results = await scanner.scan(
-      [{ channelKey: "test_ch-1", platform: "test", channelId: "ch-1" }],
+      [
+        {
+          channelKey: "test_ch-1",
+          platform: "test",
+          channelId: "ch-1",
+          currentSessionId: "compaction-test-session",
+        },
+      ],
       { contentMatcher: (content) => content.includes("旧消息") },
     );
 

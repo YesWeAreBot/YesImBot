@@ -30,9 +30,12 @@ export function buildChatHistoryPrompt(ctx: PromptContext): string {
    - where="here" 搜索当前频道（默认），where="all" 跨频道搜索（仅共享模式）
    - 可选按角色、时间范围过滤
 
-2. search_user_activity — 查看某用户的活动
+2. search_user_activity — 查看某用户在各频道/私聊中的活动
    - 必须提供 user（用户ID或昵称）
-   - 返回该用户在各频道的近期发言摘要
+   - 结果按频道分组，每个频道标注类型（private=私聊, group=群聊）
+   - 每个频道内消息按时间段聚合，显示起止时间
+   - >>> 标记表示直接命中的消息，未标记的是上下文
+   - 注意：这是用户在各频道的历史活动摘要，不是当前对话上下文
 
 3. read_conversation_context — 展开搜索结果的上下文
    - 传入搜索结果中的消息 id
