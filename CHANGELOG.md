@@ -31,9 +31,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Plugin**: `mcp-client` plugin — first real Extension plugin validating the full async setup → tool registration → Agent availability chain, with MCP SDK integration (stdio/http/sse transports)
 - **Plugin**: `mcp-client` stop lifecycle now properly closes MCP client connections and unregisters extension
 - Third-party notice (NOTICE) attributing code from `pi-mono` (MIT)
+- **Extension**: `chat-history` supports `search_conversation` without query for time-range-only and user-only searches
+- **Extension**: `chat-history` compactionSummary detection — messages after compactionSummary in current session are excluded from search results
+- **Extension**: `chat-history` enhanced user filtering — matches actor.id and actor.name (case-insensitive)
+- **Extension**: `chat-history` unified timestamp handling — millisecond storage with details.timestamp priority and seconds-level auto-conversion
+- **Extension**: `chat-history` whitelist filtering — only processes assistant plain text and chat_message
 
 ### Changed
 
+- **Core**: `AthenaEvent` now persists as versioned `athena:event` custom messages via `serializeEvent()`, with `payload` / `metadata` field naming
+- **Extension**: `chat-history` parser and fixtures now read serialized `athena:event` JSONL entries
 - **Architecture**: Complete v4 rewrite — `packages/agent` as generic framework, `core` as Athena business layer, `providers/*` as model backends, `plugins/*` as extensions
 - **Agent**: `AgentSession` constructor accepts `extensions: ExtensionDefinition[]` from core
 - **Agent**: `_refreshToolRegistry` restored from placeholder — merges base + extension + custom tools
@@ -44,9 +51,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Core**: Model service refactored to ai-sdk based Provider plugin architecture
 - **Core**: Message handling refactored with `convertToLlm` logic for `AthenaMessage` type
 - **Providers**: Updated for new agent architecture and shared-model contracts
+- **Extension**: `chat-history` `ParsedMessage` type extended with `actorId`, `actorName` fields and `timestamp` changed to number
+- **Extension**: `chat-history` `ScanOptions.senderMatcher` now receives full `ParsedMessage` instead of just speaker string
+- **Extension**: `chat-history` `search_conversation` query parameter changed from required to optional
+- **Core**: `channel-store` `listChannelSummaries` now scans sessions directory to find all channels, not just those in channel-map.json
+- **Core**: `session` `getOrCreate`/`newSession` now always update channel-map.json to ensure channel mapping exists
 
 ### Removed
 
+- **Core**: Removed stale `session-context` test files after the chat-history migration
 - **Agent**: `@yesimbot/plugin-sdk` package — incompatible with new Extension system
 - **Agent**: `setModel()` / `removeTool()` / `refreshTools()` from `ExtensionAPI` (internal to runner)
 - **Agent**: pi-coding-agent residual types: `SessionBeforeSwitchEvent`, `SessionBeforeForkEvent`, `SessionBeforeTreeEvent`, `ModelSelectEvent`, `ExtensionFactory`
@@ -65,6 +78,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Agent**: `registerTool()` now auto-activates new tools via `fromRegisterTool` flag in `_refreshToolRegistry`, fixing tools not appearing in Agent's active tool set after async registration
 - **Agent**: `AgentSession.dispose()` now calls `cleanup?.dispose()` on all extension bindings before invalidation, with async rejection catching
 - Corrected truncated wording in the project’s MIT License declaration
+- **Extension**: `chat-history` `search_user_activity` can now find channels not in channel-map.json by scanning sessions directory
+- **Core**: `channel-map.json` update logic — existing channels are now added to channel-map.json when accessed
 
 ## [4.0.0-beta.5] - 2026-03-17
 

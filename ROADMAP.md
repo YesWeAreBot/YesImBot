@@ -27,6 +27,7 @@
 - **core 业务层稳定**
   - ModelService 基于 ai-sdk，Provider 插件架构
   - `AthenaEvent` / `AthenaMessage` / `CustomMessage` 消息链路
+  - `AthenaEvent` 通过 `athena:event` custom message 进行版本化持久化
   - Koishi 集成、消息格式转换、事件调度
 - **Provider 层独立**
   - OpenAI / DeepSeek / Anthropic / Google provider 插件
@@ -46,7 +47,17 @@
 - **chat-history 扩展实现**
   - 替换旧 `session-context` 扩展，提供 3 个简洁的聊天记录搜索工具
   - 完整搜索引擎架构：QueryGuard → ChannelResolver → FileScanner → ResultFormatter
-  - 74 个测试覆盖单元和集成场景
+  - 76 个测试覆盖单元和集成场景
+  - `athena:event` 版本化事件格式已与 JSONL 持久化链路对齐
+- **chat-history 扩展增强**
+  - `search_conversation` 支持无 query 的时间窗口检索和仅 user 检索
+  - compactionSummary 检测 — 当前会话中 compactionSummary 之后的消息被排除
+  - user 过滤增强 — 支持 actor.id 和 actor.name 宽松匹配
+  - 时间戳统一 — 毫秒数字存储，优先 details.timestamp，秒级自动转换
+  - 白名单过滤 — 只处理 assistant 纯文本和 chat_message
+  - channel-map.json 更新逻辑修复 — 确保已存在的频道也会被添加
+  - listChannelSummaries 改进 — 扫描 sessions 目录补充 channel-map.json
+  - 92 个测试全部通过
 - **旧版清理**
   - 删除 `@yesimbot/plugin-sdk`（与新 Extension 系统不兼容）
   - 删除旧版 plugins（mcp-client, search-service, skill, workspace）
