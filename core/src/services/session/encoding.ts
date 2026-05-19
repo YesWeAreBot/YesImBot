@@ -1,5 +1,7 @@
-import { createHash } from "node:crypto";
+import sanitize from "sanitize-filename";
 
 export function encodeChannelId(platform: string, channel: string): string {
-  return createHash("sha256").update(`${platform}:${channel}`).digest("hex").slice(0, 16);
+  const sanitizedPlatform = sanitize(platform);
+  const sanitizedChannel = sanitize(channel);
+  return `${sanitizedPlatform}_${sanitizedChannel}`;
 }

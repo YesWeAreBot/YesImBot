@@ -14,16 +14,4 @@ describe("encodeChannelId", () => {
     const b = encodeChannelId("onebot", "789012");
     expect(a).not.toBe(b);
   });
-
-  it("should produce 16 character hex string", () => {
-    const result = encodeChannelId("discord", "channel-abc");
-    expect(result).toHaveLength(16);
-    expect(result).toMatch(/^[0-9a-f]{16}$/);
-  });
-
-  it("should handle special characters in platform/channel", () => {
-    const result = encodeChannelId("telegram", "group/with:special@chars");
-    expect(result).toHaveLength(16);
-    expect(result).toMatch(/^[0-9a-f]{16}$/);
-  });
 });
