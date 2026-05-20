@@ -1,6 +1,5 @@
 import { join } from "node:path";
 
-import type { AgentSessionConfig } from "@yesimbot/agent";
 import { Agent } from "@yesimbot/agent/agent";
 import { ChatModelRef } from "@yesimbot/agent/ai";
 import {
@@ -15,9 +14,8 @@ import type { AthenaEvent } from "../adapter/types.js";
 import { serializeEvent } from "../adapter/types.js";
 import { ChannelContext } from "../extension/service.js";
 import { Delivery } from "./delivery/delivery.js";
-import { DeliveryEventDetails } from "./delivery/index.js";
-import { RuntimeSettings } from "./settings/defaults.js";
-import { RuntimeSettingsManager } from "./settings/manager.js";
+import { buildAgentSessionConfig, persistDeliveryEvents } from "./helpers.js";
+import { RuntimeSettingsManager, type PartialRuntimeSettings } from "./settings/manager.js";
 import { buildAthenaSystemPrompt, ensurePersonaFile } from "./system-prompt.js";
 
 interface ChannelIdentifier {
@@ -43,6 +41,7 @@ export interface RuntimeConfig {
   chatModel: string;
   allowedChannels: ChannelIdentifier[];
   logLevel?: number;
+  runtimeSettings?: PartialRuntimeSettings;
 }
 
 export class RuntimeService extends Service<RuntimeConfig> {
@@ -83,6 +82,7 @@ export class RuntimeService extends Service<RuntimeConfig> {
 
     this._globalSettingsManager = new RuntimeSettingsManager({
       globalPath: globalSettingsPath,
+      seed: this.config.runtimeSettings,
     });
 
     const createSessionContext = (
@@ -138,6 +138,7 @@ export class RuntimeService extends Service<RuntimeConfig> {
       const settingsManager = new RuntimeSettingsManager({
         globalPath: globalSettingsPath,
         localPath: join(channelDir, "settings.json"),
+        seed: this.config.runtimeSettings,
       });
 
       const merged = settingsManager.settings;
@@ -382,55 +383,4 @@ function isChannelAllowed(
     const typeMatch = c.type === type;
     return platformMatch && channelMatch && typeMatch;
   });
-}
-
-export function buildAgentSessionConfig(
-  settings: RuntimeSettings,
-): Pick<
-  AgentSessionConfig,
-  | "contextWindow"
-  | "compactionSettings"
-  | "compactionPrompts"
-  | "retrySettings"
-  | "steeringMode"
-  | "followUpMode"
-> {
-  return {
-    contextWindow: settings.contextWindow,
-    compactionSettings: settings.compaction,
-    compactionPrompts: settings.compaction.prompts,
-    retrySettings: settings.retry,
-    steeringMode: settings.steeringMode,
-    followUpMode: settings.followUpMode,
-  };
-}
-
-export function persistDeliveryEvents(
-  sessionManager: SessionManager,
-  events: DeliveryEventDetails[],
-): void {
-  for (const event of events) {
-    sessionManager.appendCustomEntry("athena:delivery_event", {
-      display: false,
-      details: toSerializableDeliveryEvent(event),
-    });
-  }
-}
-
-function toSerializableDeliveryEvent(event: DeliveryEventDetails): DeliveryEventDetails {
-  return {
-    ...event,
-    ...(event.error !== undefined && { error: serializeError(event.error) }),
-  };
-}
-
-function serializeError(error: unknown): unknown {
-  if (error instanceof Error) {
-    return {
-      name: error.name,
-      message: error.message,
-      ...(error.stack !== undefined && { stack: error.stack }),
-    };
-  }
-  return error;
 }

@@ -2,9 +2,6 @@ import type { CompactionPrompts } from "@yesimbot/agent/session";
 
 import type { DeliverySettings } from "../delivery/types.js";
 
-// Re-export for consumers that import DeliverySettings from this module
-export type { DeliverySettings } from "../delivery/types.js";
-
 // ============================================================================
 // Runtime Settings Interface
 // ============================================================================

@@ -1,11 +1,8 @@
-import { UserContent } from "@yesimbot/agent/ai";
 import { h } from "koishi";
 
 import {
   AthenaEvent,
   ChatMessagePayload,
-  EventFormatter,
-  FormatterContext,
   PlatformAdapter,
   SubmitMessageInput,
   SubmitMessageResult,
@@ -72,51 +69,4 @@ export class OneBotAdapter extends PlatformAdapter<OneBotConfig> {
       emit(event);
     });
   }
-  formatters = {
-    chat_message: formatChatMessage as EventFormatter,
-  };
-}
-
-function formatChatMessage(
-  event: AthenaEvent<"chat_message", ChatMessagePayload>,
-  ctx: FormatterContext,
-): UserContent | null {
-  const elements = h.parse(event.payload.content);
-  const textParts = elements
-    .map((el) => {
-      switch (el.type) {
-        case "text":
-          return el.attrs.content ?? "";
-        case "at":
-          return `@${el.attrs.name || el.attrs.id}`;
-        case "img":
-          return "[图片]";
-        case "audio":
-          return "[语音]";
-        case "file":
-          return `[文件]`;
-        case "face":
-          return el.attrs.name ? `[${el.attrs.name}]` : "[表情]";
-        default:
-          return "";
-      }
-    })
-    .join("");
-
-  if (!textParts) return null;
-
-  const date = new Date(event.timestamp);
-  const fmt = new Intl.DateTimeFormat("zh-CN", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-  const timeStr = fmt.format(date);
-  const prefix = `[${timeStr}]`;
-
-  if (ctx.conversationType === "private") {
-    return textParts;
-  }
-  const sender = `${event.actor.name || "未知用户"} (${event.actor.id})`;
-  return `${prefix} ${sender}: ${textParts}`;
 }

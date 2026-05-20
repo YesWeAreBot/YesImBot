@@ -1,7 +1,7 @@
 import { SessionManager } from "@yesimbot/agent/session";
 import { describe, expect, it } from "vitest";
 
-import { buildAgentSessionConfig, persistDeliveryEvents } from "../../src/runtime/service";
+import { buildAgentSessionConfig, persistDeliveryEvents } from "../../src/runtime/helpers";
 import { RuntimeSettings } from "../../src/runtime/settings/defaults";
 
 const SETTINGS: RuntimeSettings = {

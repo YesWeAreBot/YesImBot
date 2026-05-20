@@ -123,9 +123,6 @@ function formatChatMessageDefault(
   const timeStr = fmt.format(date);
   const prefix = `[${timeStr}]`;
 
-  if (ctx.conversationType === "private") {
-    return textParts;
-  }
   const sender = `${event.actor.name || "未知用户"} (${event.actor.id})`;
   return `${prefix} ${sender}: ${textParts}`;
 }
