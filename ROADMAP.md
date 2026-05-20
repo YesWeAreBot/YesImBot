@@ -62,6 +62,18 @@
   - 删除 `@yesimbot/plugin-sdk`（与新 Extension 系统不兼容）
   - 删除旧版 plugins（mcp-client, search-service, skill, workspace）
   - 删除旧 session service 和 legacy trait 模块
+- **Runtime settings 已迁移到 core**
+  - `@yesimbot/agent` 不再拥有 `SettingsManager`，配置管理由 core `RuntimeSettingsManager` 统一负责
+  - `AgentSession` 只接收纯配置对象，setter 只更新内存状态，不持久化
+  - 全局 `settings.json` 为运行期权威，Koishi seed 只补缺不覆盖已有字段
+- **默认人格与系统提示词重构**
+  - `PERSONA.md` 作为默认人格唯一权威来源，首次启动时由 core 自动创建
+  - `buildAthenaSystemPrompt()` 替代旧版硬编码 `buildPrompt()`，结构化拼接 Role Boundary → Persona → Additional Instructions → Environment → Interaction Principles → Segmentation → Tools
+  - `plugins/persona` 退出默认 prompt 拼装路径，只在显式启用时生效
+- **Delivery 子模块独立**
+  - `<sep/>` 分段协议、随机合并（1-3 段，45%/40%/15% 分布）、自然延迟模型
+  - `submitMessage` 契约建立在 `PlatformAdapter` 上，core 不再直接调用 `bot.sendMessage()`
+  - `DeliveryEvent` 记录 cancelled/filtered/failed/partial_failed 异常
 - **工程基础设施**
   - Yarn 4 monorepo + Turborepo 构建
   - oxlint + oxfmt 代码规范
@@ -76,12 +88,12 @@
 
 ### 待完成
 
-| 优先级 | 项目                         | 说明                                                                |
-| ------ | ---------------------------- | ------------------------------------------------------------------- |
-| P0     | 上下文压缩端到端验证         | 压缩逻辑存在但未手动测试，需验证 compaction → 恢复 → 再压缩完整链路 |
-| P1     | `core/src/index.ts` 职责拆分 | 当前入口文件承载过多，需拆分为独立 service 模块                     |
-| P1     | Provider 层验证              | 新架构下 Provider 注册和调用链路需要端到端验证                      |
-| P2     | 残留硬编码清理               | `agent-session.ts` 中仍有 `//TODO`、`settingsManager` 残留引用      |
+| 优先级 | 项目                         | 说明                                                                                      |
+| ------ | ---------------------------- | ----------------------------------------------------------------------------------------- |
+| P0     | 上下文压缩端到端验证         | 压缩逻辑存在但未手动测试，需验证 compaction → 恢复 → 再压缩完整链路                       |
+| P1     | `core/src/index.ts` 职责拆分 | 当前入口文件承载过多，需拆分为独立 service 模块                                           |
+| P1     | Provider 层验证              | 新架构下 Provider 注册和调用链路需要端到端验证                                            |
+| P2     | 残留硬编码清理               | `agent-session.ts` 中仍有 `//TODO` 残留引用；`settingsManager` 残留已随自然交互层清理完成 |
 
 ---
 

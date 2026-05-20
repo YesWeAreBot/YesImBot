@@ -1,7 +1,14 @@
 import type { UserContent } from "@yesimbot/agent/ai";
 import { h } from "koishi";
 
-import type { AthenaEvent, ChatMessagePayload, EventFormatter, FormatterContext } from "./types.js";
+import type {
+  AthenaEvent,
+  ChatMessagePayload,
+  EventFormatter,
+  FormatterContext,
+  SubmitMessageInput,
+  SubmitMessageResult,
+} from "./types.js";
 import { createEvent, PlatformAdapter } from "./types.js";
 
 export class GenericAdapter extends PlatformAdapter {
@@ -16,6 +23,15 @@ export class GenericAdapter extends PlatformAdapter {
 
   removeSkipPlatform(platform: string): void {
     this._skipPlatforms.delete(platform);
+  }
+
+  async submitMessage(input: SubmitMessageInput): Promise<SubmitMessageResult> {
+    try {
+      await input.bot.sendMessage(input.channelId, input.text);
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error };
+    }
   }
 
   install(emit: (event: AthenaEvent) => void): void {

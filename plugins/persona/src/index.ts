@@ -4,12 +4,19 @@ import type { AthenaExtensionDefinition } from "koishi-plugin-yesimbot";
 
 export interface PersonaConfig {
   persona: string;
+  /** Whether to inject persona prompt into system prompt. Disabled by default since core handles persona via PERSONA.md. */
+  enabled: boolean;
 }
 
 export default class PersonaPlugin extends Service<PersonaConfig> {
   static readonly inject = ["yesimbot.extension", "yesimbot.session"];
   static readonly Config: Schema<PersonaConfig> = Schema.object({
-    persona: Schema.string().role("textarea").required(),
+    persona: Schema.string().role("textarea").default(""),
+    enabled: Schema.boolean()
+      .default(false)
+      .description(
+        "Enable persona plugin. Disabled by default since core handles persona via PERSONA.md.",
+      ),
   });
   readonly logger: Logger;
 
@@ -20,6 +27,20 @@ export default class PersonaPlugin extends Service<PersonaConfig> {
   }
 
   override async start() {
+    if (!this.config.enabled) {
+      this.logger.info("Persona plugin disabled. Core handles persona via PERSONA.md.");
+      return;
+    }
+
+    if (!this.config.persona) {
+      this.logger.warn("Persona plugin enabled but no persona text configured.");
+      return;
+    }
+
+    this.logger.warn(
+      "Persona plugin is deprecated. Core handles persona via PERSONA.md. This plugin will be removed in a future version.",
+    );
+
     this.ctx["yesimbot.extension"].registerExtension({
       id: "persona",
       order: 100,

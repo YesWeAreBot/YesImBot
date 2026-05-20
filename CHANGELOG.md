@@ -36,6 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Extension**: `chat-history` enhanced user filtering — matches actor.id and actor.name (case-insensitive)
 - **Extension**: `chat-history` unified timestamp handling — millisecond storage with details.timestamp priority and seconds-level auto-conversion
 - **Extension**: `chat-history` whitelist filtering — only processes assistant plain text and chat_message
+- **Core**: Runtime settings management migrated to core-owned `RuntimeSettingsManager`, replacing agent-owned `SettingsManager`
+- **Core**: Default `PERSONA.md` bootstrap and `buildAthenaSystemPrompt()` core system prompt builder
+- **Core**: Delivery module with `<sep/>` segmentation, random merge, natural delay timing, and adapter submission flow
+- **Core**: `submitMessage` contract on `PlatformAdapter` for platform-agnostic message delivery
+- **Core**: `DeliveryEvent` recording for cancelled/filtered/failed/partial_failed delivery anomalies
 
 ### Changed
 

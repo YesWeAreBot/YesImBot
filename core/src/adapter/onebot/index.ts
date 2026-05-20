@@ -7,6 +7,8 @@ import {
   EventFormatter,
   FormatterContext,
   PlatformAdapter,
+  SubmitMessageInput,
+  SubmitMessageResult,
 } from "../types";
 import { createEvent } from "../types";
 
@@ -16,6 +18,16 @@ export interface OneBotConfig {
 
 export class OneBotAdapter extends PlatformAdapter<OneBotConfig> {
   platform = "onebot";
+
+  async submitMessage(input: SubmitMessageInput): Promise<SubmitMessageResult> {
+    try {
+      await input.bot.sendMessage(input.channelId, input.text);
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error };
+    }
+  }
+
   install(emit: (event: AthenaEvent) => void): void {
     const logger = this.ctx.logger("OneBotAdapter");
     logger.level = this.config?.logLevel ?? 2;

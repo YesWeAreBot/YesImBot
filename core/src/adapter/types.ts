@@ -91,6 +91,17 @@ export interface FormatterRegistry {
   format(event: AthenaEvent, ctx: FormatterContext): Promise<UserContent | null>;
 }
 
+// ===== Submit Message =====
+export interface SubmitMessageInput {
+  platform: string;
+  channelId: string;
+  text: string;
+  quoteMessageId?: string;
+  bot: Bot;
+}
+
+export type SubmitMessageResult = { ok: true } | { ok: false; error: unknown };
+
 // ===== Platform Adapter Interface =====
 export abstract class PlatformAdapter<C = unknown> {
   abstract platform: string;
@@ -101,6 +112,7 @@ export abstract class PlatformAdapter<C = unknown> {
   abstract install(emit: (event: AthenaEvent) => void): void;
   formatters?: Record<string, EventFormatter>;
   capabilities?: Record<string, (...args: unknown[]) => Promise<unknown>>;
+  submitMessage?(input: SubmitMessageInput): Promise<SubmitMessageResult>;
 }
 
 // ===== Factory Helper =====
