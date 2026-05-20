@@ -69,7 +69,7 @@ export function splitDeliverySegments(
   // Step 2: Check if total text is very short
   const totalChineseChars = rawSegments.reduce((sum, seg) => sum + countChineseChars(seg), 0);
   if (totalChineseChars < shortTextChars) {
-    const merged = rawSegments.join("");
+    const merged = rawSegments.join(" ");
     return { rawSegments, finalSegments: [merged] };
   }
 

@@ -1,8 +1,8 @@
 import type { ExtensionAPI } from "@yesimbot/agent/session";
 import { Context, Logger, Service } from "koishi";
 
-import { ChannelContext } from "../../extension.js";
 import { encodeChannelId } from "../../services/session/encoding.js";
+import { ChannelContext } from "../service.js";
 import { buildChatHistoryPrompt } from "./prompt.js";
 import { createReadConversationContextTool } from "./tools/read-conversation-context.js";
 import { createSearchConversationTool } from "./tools/search-conversation.js";

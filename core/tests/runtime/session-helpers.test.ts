@@ -1,8 +1,8 @@
 import { SessionManager } from "@yesimbot/agent/session";
 import { describe, expect, it } from "vitest";
 
-import { buildAgentSessionConfig, persistDeliveryEvents } from "../../src/runtime-session.js";
-import type { RuntimeSettings } from "../../src/settings/defaults.js";
+import { buildAgentSessionConfig, persistDeliveryEvents } from "../../src/runtime/service";
+import { RuntimeSettings } from "../../src/runtime/settings/defaults";
 
 const SETTINGS: RuntimeSettings = {
   contextWindow: 128000,

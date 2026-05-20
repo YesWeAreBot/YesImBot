@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildAthenaSystemPrompt } from "../../src/prompt/system-prompt.js";
+import { buildAthenaSystemPrompt } from "../../src/runtime/system-prompt";
 
 describe("buildAthenaSystemPrompt", () => {
   const defaultOptions = {

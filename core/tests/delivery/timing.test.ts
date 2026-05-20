@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { planDeliveryTiming } from "../../src/delivery/timing.js";
+import { planDeliveryTiming } from "../../src/runtime/delivery";
 
 describe("planDeliveryTiming", () => {
   const baseInput = {

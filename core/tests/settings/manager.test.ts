@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_RUNTIME_SETTINGS } from "../../src/settings/defaults.js";
-import { InMemorySettingsStorage, RuntimeSettingsManager } from "../../src/settings/manager.js";
+import { DEFAULT_RUNTIME_SETTINGS } from "../../src/runtime/settings/defaults.js";
+import {
+  InMemorySettingsStorage,
+  RuntimeSettingsManager,
+} from "../../src/runtime/settings/manager.js";
 
 describe("RuntimeSettingsManager", () => {
   it("returns defaults when no seed, global, or local exist", () => {

@@ -5,9 +5,8 @@ import { Context, Schema } from "koishi";
 
 import { AdapterService } from "./adapter/index.js";
 import { AdapterConfig } from "./adapter/service.js";
-import { ExtensionConfig, ExtensionService } from "./extension.js";
-import { ChatHistoryPlugin } from "./extension/chat-history/index.js";
-import { RuntimeConfig, RuntimeService } from "./runtime.js";
+import { ExtensionConfig, ExtensionService } from "./extension/service.js";
+import { RuntimeConfig, RuntimeService } from "./runtime/service.js";
 import { ModelService, ModelServiceConfig } from "./services/model/index.js";
 import { SessionConfig, SessionService } from "./services/session/index.js";
 
@@ -51,17 +50,10 @@ export async function apply(ctx: Context, config: Config) {
   ctx.plugin(SessionService, config as SessionConfig);
   ctx.plugin(AdapterService, config as AdapterConfig);
   ctx.plugin(RuntimeService, config as RuntimeConfig);
-  ctx.plugin(ChatHistoryPlugin, {
-    isolation: false,
-    sessionsDir: resolve(config.basePath, "sessions"),
-    defaultLimit: 20,
-    maxLimit: 50,
-  });
 }
 
-export type { AthenaExtensionDefinition, ChannelContext, ExtensionService } from "./extension";
-export type { RuntimeService } from "./runtime";
 export type { ModelService } from "./services/model";
 export type { SessionService } from "./services/session";
 export type { AthenaEvent, PlatformAdapter } from "./adapter/index.js";
 export { encodeChannelId } from "./services/session/encoding.js";
+export type { AthenaExtensionDefinition, ChannelContext } from "./extension/service.js";

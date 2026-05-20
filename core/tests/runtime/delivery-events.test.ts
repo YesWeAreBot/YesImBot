@@ -1,8 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { Delivery } from "../../src/delivery/delivery.js";
-import { createDeliveryEvent } from "../../src/delivery/event.js";
-import type { DeliverySettings } from "../../src/delivery/types.js";
+import { DeliverySettings, Delivery, createDeliveryEvent } from "../../src/runtime/delivery";
 
 const DEFAULT_SETTINGS: DeliverySettings = {
   enabled: true,

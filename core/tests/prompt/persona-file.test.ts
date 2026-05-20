@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { ensurePersonaFile } from "../../src/prompt/persona-file.js";
+import { ensurePersonaFile } from "../../src/runtime/system-prompt";
 
 const testDir = join(import.meta.dirname, "../../.test-tmp/persona-file");
 

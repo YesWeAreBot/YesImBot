@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createDeliveryEvent } from "../../src/delivery/event.js";
+import { createDeliveryEvent } from "../../src/runtime/delivery";
 
 describe("createDeliveryEvent", () => {
   it("creates a cancelled event with required fields", () => {
