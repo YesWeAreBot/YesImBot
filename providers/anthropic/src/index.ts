@@ -25,9 +25,11 @@ export const Config = Schema.object({
     }),
   )
     .default([
-      { id: "claude-3-5-sonnet", toolCall: true, reasoning: false },
-      { id: "claude-3-opus", toolCall: true, reasoning: true },
+      { id: "claude-opus-4-6", toolCall: true, reasoning: true },
+      { id: "claude-sonnet-4-6", toolCall: true, reasoning: true },
+      { id: "claude-haiku-4-5-20251001", toolCall: true, reasoning: true },
     ])
+    .role("table")
     .description("可用聊天模型列表"),
 });
 
