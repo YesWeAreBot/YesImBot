@@ -50,7 +50,6 @@ import type { BuildSystemPromptOptions } from "./extensions/types.js";
 import type { CustomMessage } from "./messages.js";
 import type { CompactionEntry, SessionManager } from "./session-manager.js";
 import { getLatestCompactionEntry, type SessionHeader } from "./session-manager.js";
-import type { SettingsManager } from "./settings-manager.js";
 
 /** Session-specific events that extend the core AgentEvent */
 export type AgentSessionEvent =
@@ -103,8 +102,18 @@ export interface AgentSessionConfig {
   agent: Agent;
   sessionManager: SessionManager;
   cwd: string;
-  /** Settings manager for dual-scope settings persistence */
-  settingsManager: SettingsManager;
+  /** Context window size in tokens */
+  contextWindow?: number;
+  /** Compaction behavior settings */
+  compactionSettings?: Partial<CompactionSettings>;
+  /** Customizable compaction prompts. Overrides defaults. */
+  compactionPrompts?: CompactionPrompts;
+  /** Auto-retry behavior settings */
+  retrySettings?: Partial<RetrySettings>;
+  /** Steering message queue mode */
+  steeringMode?: "all" | "one-at-a-time";
+  /** Follow-up message queue mode */
+  followUpMode?: "all" | "one-at-a-time";
   /** SDK custom tools registered outside extensions */
   customTools?: Map<string, ToolDefinition>;
   /** Initial active built-in tool names. Default: [read, bash, edit, write] */
@@ -124,8 +133,6 @@ export interface AgentSessionConfig {
   sessionStartEvent?: SessionStartEvent;
   /** Extension definitions list, provided by core or ExtensionRegistry */
   extensions?: ExtensionDefinition[];
-  /** Customizable compaction prompts. Overrides settings and defaults. */
-  compactionPrompts?: CompactionPrompts;
 }
 
 export interface ExtensionBindings {
@@ -202,7 +209,6 @@ export class AgentSession {
   private _toolPromptSnippets: Map<string, string> = new Map();
   private _toolPromptGuidelines: Map<string, string[]> = new Map();
 
-  private _settingsManager: SettingsManager;
   private _retrySettings!: RetrySettings;
   private _compactionSettings: CompactionSettings;
   private _compactionPrompts: CompactionPrompts;
@@ -223,34 +229,27 @@ export class AgentSession {
       reason: "startup",
     };
 
-    // Read settings from SettingsManager
-    this._settingsManager = config.settingsManager;
-    const settings = this._settingsManager.settings;
-    this._contextWindow = settings.contextWindow ?? 128000;
+    // Read settings from plain config fields
+    this._contextWindow = config.contextWindow ?? 128000;
     this._compactionSettings = {
-      enabled: settings.compaction?.enabled ?? true,
-      reserveTokens: settings.compaction?.reserveTokens ?? 16384,
-      keepRecentTokens: settings.compaction?.keepRecentTokens ?? 20000,
+      enabled: config.compactionSettings?.enabled ?? true,
+      reserveTokens: config.compactionSettings?.reserveTokens ?? 16384,
+      keepRecentTokens: config.compactionSettings?.keepRecentTokens ?? 20000,
     };
-    // Merge compaction prompts: Config > Settings > defaults
+    // Merge compaction prompts: Config > defaults
     this._compactionPrompts = {
       ...DEFAULT_COMPACTION_PROMPTS,
-      ...(settings.compaction?.prompts ?? {}),
       ...(config.compactionPrompts ?? {}),
     };
     this._retrySettings = {
-      enabled: settings.retry?.enabled ?? true,
-      maxRetries: settings.retry?.maxRetries ?? 3,
-      baseDelayMs: settings.retry?.baseDelayMs ?? 2000,
-      maxDelayMs: settings.retry?.maxDelayMs ?? 60000,
+      enabled: config.retrySettings?.enabled ?? true,
+      maxRetries: config.retrySettings?.maxRetries ?? 3,
+      baseDelayMs: config.retrySettings?.baseDelayMs ?? 2000,
+      maxDelayMs: config.retrySettings?.maxDelayMs ?? 60000,
     };
 
-    if (settings.steeringMode) {
-      this.agent.steeringMode = settings.steeringMode;
-    }
-    if (settings.followUpMode) {
-      this.agent.followUpMode = settings.followUpMode;
-    }
+    this.agent.steeringMode = config.steeringMode ?? "all";
+    this.agent.followUpMode = config.followUpMode ?? "all";
 
     // Restore persisted messages from SessionManager into Agent state.
     // This ensures historical messages (before restart) are available in LLM context.
@@ -770,11 +769,6 @@ export class AgentSession {
     return this.agent.followUpMode;
   }
 
-  /** Settings manager for dual-scope settings */
-  get settings(): SettingsManager {
-    return this._settingsManager;
-  }
-
   /** Current session file path, or undefined if sessions are disabled */
   get sessionFile(): string | undefined {
     return this.sessionManager.getSessionFile();
@@ -796,39 +790,33 @@ export class AgentSession {
   }
 
   /** Update the context window used for compaction checks. */
-  setContextWindow(value: number, scope: "global" | "local" = "local"): void {
+  setContextWindow(value: number): void {
     this._contextWindow = value;
-    this._settingsManager.setContextWindow(value, scope);
   }
 
   /** Update the compaction reserve token threshold. */
-  setCompactionReserveTokens(tokens: number, scope: "global" | "local" = "local"): void {
+  setCompactionReserveTokens(tokens: number): void {
     this._compactionSettings = { ...this._compactionSettings, reserveTokens: tokens };
-    this._settingsManager.setCompactionReserveTokens(tokens, scope);
   }
 
   /** Update the compaction keep-recent token threshold. */
-  setCompactionKeepRecentTokens(tokens: number, scope: "global" | "local" = "local"): void {
+  setCompactionKeepRecentTokens(tokens: number): void {
     this._compactionSettings = { ...this._compactionSettings, keepRecentTokens: tokens };
-    this._settingsManager.setCompactionKeepRecentTokens(tokens, scope);
   }
 
   /** Update the retry attempt limit. */
-  setRetryMaxRetries(maxRetries: number, scope: "global" | "local" = "local"): void {
+  setRetryMaxRetries(maxRetries: number): void {
     this._retrySettings = { ...this._retrySettings, maxRetries };
-    this._settingsManager.setRetryMaxRetries(maxRetries, scope);
   }
 
   /** Update the retry base delay. */
-  setRetryBaseDelayMs(delayMs: number, scope: "global" | "local" = "local"): void {
+  setRetryBaseDelayMs(delayMs: number): void {
     this._retrySettings = { ...this._retrySettings, baseDelayMs: delayMs };
-    this._settingsManager.setRetryBaseDelayMs(delayMs, scope);
   }
 
   /** Update the retry max delay. */
-  setRetryMaxDelayMs(delayMs: number, scope: "global" | "local" = "local"): void {
+  setRetryMaxDelayMs(delayMs: number): void {
     this._retrySettings = { ...this._retrySettings, maxDelayMs: delayMs };
-    this._settingsManager.setRetryMaxDelayMs(delayMs, scope);
   }
 
   private _normalizePromptSnippet(text: string | undefined): string | undefined {
@@ -1191,20 +1179,16 @@ export class AgentSession {
 
   /**
    * Set steering message mode.
-   * Saves to settings.
    */
-  setSteeringMode(mode: "all" | "one-at-a-time", scope: "global" | "local" = "local"): void {
+  setSteeringMode(mode: "all" | "one-at-a-time"): void {
     this.agent.steeringMode = mode;
-    this._settingsManager.setSteeringMode(mode, scope);
   }
 
   /**
    * Set follow-up message mode.
-   * Saves to settings.
    */
-  setFollowUpMode(mode: "all" | "one-at-a-time", scope: "global" | "local" = "local"): void {
+  setFollowUpMode(mode: "all" | "one-at-a-time"): void {
     this.agent.followUpMode = mode;
-    this._settingsManager.setFollowUpMode(mode, scope);
   }
 
   // =========================================================================
@@ -1654,9 +1638,8 @@ export class AgentSession {
   /**
    * Toggle auto-compaction setting.
    */
-  setAutoCompactionEnabled(enabled: boolean, scope: "global" | "local" = "local"): void {
+  setAutoCompactionEnabled(enabled: boolean): void {
     this._compactionSettings.enabled = enabled;
-    this._settingsManager.setCompactionEnabled(enabled, scope);
   }
 
   /** Whether auto-compaction is enabled */
@@ -2015,9 +1998,8 @@ export class AgentSession {
   /**
    * Toggle auto-retry setting.
    */
-  setAutoRetryEnabled(enabled: boolean, scope: "global" | "local" = "local"): void {
+  setAutoRetryEnabled(enabled: boolean): void {
     this._retrySettings = { ...this._retrySettings, enabled };
-    this._settingsManager.setRetryEnabled(enabled, scope);
   }
 
   // =========================================================================
