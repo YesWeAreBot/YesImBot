@@ -1,19 +1,11 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
-import type { ChatModelConfig, ModelProvider } from "@yesimbot/agent/ai";
-import { Context, Schema } from "koishi";
+import { createProviderPlugin } from "@yesimbot/agent/ai";
+import type { BaseProviderConfig } from "@yesimbot/agent/ai";
+import { Schema } from "koishi";
 
-export const name = "yesimbot-provider-anthropic";
-export const reusable = true;
-export const inject = ["yesimbot.model"];
+interface Config extends BaseProviderConfig {}
 
-export interface Config {
-  id: string;
-  apiKey: string;
-  baseURL?: string;
-  chatModels: ChatModelConfig[];
-}
-
-export const Config = Schema.object({
+export const Config: Schema<Config> = Schema.object({
   id: Schema.string().default("anthropic").description("提供商标识"),
   apiKey: Schema.string().role("secret").required().description("API Key"),
   baseURL: Schema.string().description("API Base URL"),
@@ -33,26 +25,11 @@ export const Config = Schema.object({
     .description("可用聊天模型列表"),
 });
 
-export function apply(ctx: Context, config: Config) {
-  const client = createAnthropic({
-    apiKey: config.apiKey,
-    baseURL: config.baseURL,
-  });
-
-  const provider: ModelProvider = {
-    id: config.id,
-    capabilities: {
-      chat: true,
-      embedding: false,
-    },
-    chatModels: () => config.chatModels,
-    embeddingModels: () => [],
-    chat: (modelId) => client.chat(modelId),
-    embedding: () => {
-      throw new Error(`Provider "${config.id}" does not support embedding`);
-    },
-  };
-
-  ctx["yesimbot.model"].register(provider);
-  ctx.on("dispose", () => ctx["yesimbot.model"].unregister(config.id));
-}
+export default createProviderPlugin<Config, ReturnType<typeof createAnthropic>>({
+  name: "yesimbot-provider-anthropic",
+  defaultId: "anthropic",
+  capabilities: { chat: true, embedding: false },
+  Config,
+  createClient: ({ apiKey, baseURL }) => createAnthropic({ apiKey, baseURL }),
+  chat: (client, modelId) => client.chat(modelId),
+});

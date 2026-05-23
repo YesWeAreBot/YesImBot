@@ -10,4 +10,5 @@ declare module "@koishijs/core" {
 
 export * from "@ai-sdk/provider-utils";
 export * from "ai";
+export * from "./provider-factory";
 export * from "./types";

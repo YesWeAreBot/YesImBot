@@ -1,20 +1,11 @@
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { ChatModelConfig, EmbeddingModelConfig, ModelProvider } from "@yesimbot/agent/ai";
-import { Context, Schema } from "koishi";
+import { createProviderPlugin } from "@yesimbot/agent/ai";
+import type { BaseProviderConfig } from "@yesimbot/agent/ai";
+import { Schema } from "koishi";
 
-export const name = "yesimbot-provider-google";
-export const reusable = true;
-export const inject = ["yesimbot.model"];
+interface Config extends BaseProviderConfig {}
 
-export interface Config {
-  id: string;
-  apiKey: string;
-  baseURL?: string;
-  chatModels: ChatModelConfig[];
-  embeddingModels: EmbeddingModelConfig[];
-}
-
-export const Config = Schema.object({
+export const Config: Schema<Config> = Schema.object({
   id: Schema.string().default("google").description("提供商标识"),
   apiKey: Schema.string().role("secret").required().description("API Key"),
   baseURL: Schema.string().description("API Base URL"),
@@ -39,24 +30,12 @@ export const Config = Schema.object({
     .description("可用嵌入模型列表"),
 });
 
-export function apply(ctx: Context, config: Config) {
-  const client = createGoogleGenerativeAI({
-    apiKey: config.apiKey,
-    baseURL: config.baseURL,
-  });
-
-  const provider: ModelProvider = {
-    id: config.id,
-    capabilities: {
-      chat: true,
-      embedding: true,
-    },
-    chatModels: () => config.chatModels,
-    embeddingModels: () => config.embeddingModels,
-    chat: (modelId) => client.chat(modelId),
-    embedding: (modelId) => client.embedding(modelId),
-  };
-
-  ctx["yesimbot.model"].register(provider);
-  ctx.on("dispose", () => ctx["yesimbot.model"].unregister(config.id));
-}
+export default createProviderPlugin<Config, ReturnType<typeof createGoogleGenerativeAI>>({
+  name: "yesimbot-provider-google",
+  defaultId: "google",
+  capabilities: { chat: true, embedding: true },
+  Config,
+  createClient: ({ apiKey, baseURL }) => createGoogleGenerativeAI({ apiKey, baseURL }),
+  chat: (client, modelId) => client.chat(modelId),
+  embedding: (client, modelId) => client.embedding(modelId),
+});
