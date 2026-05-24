@@ -1,8 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { jsonSchema, JSONSchema7 } from "@yesimbot/agent/ai";
-import type { ExtensionAPI, ToolDefinition } from "@yesimbot/agent/session";
 import { Context, Schema, Service } from "koishi";
-import {} from "koishi-plugin-yesimbot";
+import type { ExtensionAPI, ToolDefinition } from "koishi-plugin-yesimbot";
 
 import { connectMcpServer } from "./transports";
 import type { McpClientConfig, McpClientTransport } from "./types";

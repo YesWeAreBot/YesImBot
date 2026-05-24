@@ -1,5 +1,5 @@
-import type { ToolDefinition } from "@yesimbot/agent/session";
 import type { NetworkConfig as BashNetworkConfig } from "just-bash";
+import type { ToolDefinition } from "koishi-plugin-yesimbot";
 
 // ============================================================================
 // 配置类型

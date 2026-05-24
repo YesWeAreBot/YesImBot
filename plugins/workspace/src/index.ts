@@ -1,9 +1,13 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 
-import type { ExtensionAPI, ToolDefinition } from "@yesimbot/agent/session";
 import { Context, Logger, Schema, Service } from "koishi";
-import type { AthenaExtensionDefinition, ChannelContext } from "koishi-plugin-yesimbot";
+import type {
+  AthenaExtensionDefinition,
+  ChannelContext,
+  ExtensionAPI,
+  ToolDefinition,
+} from "koishi-plugin-yesimbot";
 
 import { createWorkspaceTools } from "./tools";
 import type { WorkspaceConfig } from "./types";

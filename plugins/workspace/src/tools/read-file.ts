@@ -1,4 +1,4 @@
-import type { ToolDefinition } from "@yesimbot/agent/session";
+import type { ToolDefinition } from "koishi-plugin-yesimbot";
 import { z } from "zod/v4";
 
 import type { ReadFileInput, ReadFileResult, ToolResult } from "../types";
