@@ -1083,12 +1083,11 @@ export class SessionManager {
     const fileTimestamp = timestamp.replace(/[:.]/g, "-");
     const newSessionFile = join(dir, `${fileTimestamp}_${newSessionId}.jsonl`);
 
-    // Write new header pointing to source as parent, with updated cwd
+    // Write new header pointing to source as parent. New headers omit cwd.
     const newHeader: SessionHeader = {
       type: "session",
       id: newSessionId,
       timestamp,
-      cwd,
       parentSession: sourcePath,
     };
     appendFileSync(newSessionFile, `${JSON.stringify(newHeader)}\n`);

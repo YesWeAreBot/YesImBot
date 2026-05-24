@@ -91,6 +91,31 @@ describe("SessionHeader", () => {
       expect(header!.parentSession).toBe("/some/parent.jsonl");
       expect(header).not.toHaveProperty("cwd");
     });
+
+    it("forkFrom() header has no cwd field", () => {
+      const sourceHeader: SessionHeader & { cwd: string } = {
+        type: "session",
+        id: "source-session",
+        timestamp: "2026-05-24T00:00:00.000Z",
+        cwd: "/old/project",
+      };
+      const sourcePath = writeSessionFile(tempDir, "source.jsonl", [sourceHeader]);
+      const targetDir = join(tempDir, "forked");
+
+      const forked = SessionManager.forkFrom(sourcePath, targetDir, "/new/project");
+      const forkedPath = forked.getSessionFile();
+
+      expect(forkedPath).toBeDefined();
+
+      const entries = loadEntriesFromFile(forkedPath!);
+      const header = entries[0] as SessionHeader;
+
+      expect(header).toMatchObject({
+        type: "session",
+        parentSession: sourcePath,
+      });
+      expect(header).not.toHaveProperty("cwd");
+    });
   });
 
   describe("old header with cwd can be read", () => {
