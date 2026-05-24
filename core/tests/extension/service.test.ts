@@ -3,9 +3,9 @@ import { describe, expect, it, vi } from "vitest";
 // Mock koishi to provide a minimal Service base class
 vi.mock("koishi", () => {
   class Service {
-    ctx: any;
-    [Symbol.for("koishi.tracker")]: any;
-    constructor(ctx: any, _name: string) {
+    ctx: unknown;
+    [Symbol.for("koishi.tracker")]: unknown;
+    constructor(ctx: unknown, _name: string) {
       this.ctx = ctx;
     }
     protected start() {}
@@ -18,71 +18,49 @@ vi.mock("koishi", () => {
   };
 });
 
+import type { SessionManager } from "@yesimbot/agent/session";
 import { HookRunner, type AgentTool } from "@yesimbot/agent/session";
 
 import { ExtensionService } from "../../src/extension/service.js";
 import type {
-  ExtensionAPI,
+  Channel,
+  ExtensionContext,
   ExtensionDefinition,
-  ExtensionHost,
   ExtensionToolSnapshot,
 } from "../../src/extension/types.js";
-import type { ChannelContext } from "../../src/extension/types.js";
+
+type MockLogger = {
+  level: number;
+  info: () => void;
+  warn: () => void;
+  error: () => void;
+  debug: () => void;
+};
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 function createExtensionService() {
-  const ctx = {
-    on: vi.fn(),
-    emit: vi.fn(),
-    logger: vi
-      .fn()
-      .mockReturnValue({ level: 2, info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+  const logger: MockLogger = {
+    level: 2,
+    info: vi.fn<() => void>(),
+    warn: vi.fn<() => void>(),
+    error: vi.fn<() => void>(),
+    debug: vi.fn<() => void>(),
   };
-  return new ExtensionService(ctx as any, {
+  const ctx = {
+    on: vi.fn<(event: string, handler: (...args: unknown[]) => unknown) => void>(),
+    emit: vi.fn<(event: string, ...args: unknown[]) => void>(),
+    logger: vi.fn<(name: string) => MockLogger>().mockReturnValue(logger),
+  };
+  return new ExtensionService(ctx as never, {
     basePath: "/tmp/athena-test",
     chatModel: "test-model",
   });
 }
 
-function createHost(): ExtensionHost {
-  return {
-    hostId: "test-host",
-    channel: { platform: "test", channelId: "chan", type: "group" },
-    hookRunner: new HookRunner(() => ({
-      sessionManager: {} as never,
-      model: undefined,
-      isIdle: () => true,
-      signal: undefined,
-      abort: () => {},
-      hasPendingMessages: () => false,
-      getContextUsage: () => undefined,
-      compact: () => {},
-      getSystemPrompt: () => "",
-    })),
-    sessionManager: {} as never,
-    applyToolState: vi.fn(),
-    sendMessage: vi.fn().mockResolvedValue(undefined),
-    sendUserMessage: vi.fn().mockResolvedValue(undefined),
-    appendEntry: vi.fn(),
-    setSessionName: vi.fn(),
-    getSessionName: vi.fn().mockReturnValue(undefined),
-    getActiveTools: vi.fn().mockReturnValue([]),
-    setActiveTools: vi.fn(),
-    getModel: vi.fn().mockReturnValue(undefined),
-    isIdle: vi.fn().mockReturnValue(true),
-    getSignal: vi.fn().mockReturnValue(undefined),
-    abort: vi.fn(),
-    hasPendingMessages: vi.fn().mockReturnValue(false),
-    getContextUsage: vi.fn().mockReturnValue(undefined),
-    compact: vi.fn(),
-    getSystemPrompt: vi.fn().mockReturnValue(""),
-  };
-}
-
-function makeContext(overrides?: Partial<ChannelContext>): ChannelContext {
+function makeChannel(overrides?: Partial<Channel>): Channel {
   return {
     platform: "onebot",
     channelId: "123",
@@ -91,9 +69,41 @@ function makeContext(overrides?: Partial<ChannelContext>): ChannelContext {
   };
 }
 
+function createRuntimeOptions(overrides?: Partial<Channel>) {
+  const hookRunner = new HookRunner(() => ({
+    sessionManager: {} as SessionManager,
+    model: undefined,
+    isIdle: () => true,
+    signal: undefined,
+    abort: () => {},
+    hasPendingMessages: () => false,
+    getContextUsage: () => undefined,
+    compact: () => {},
+    getSystemPrompt: () => "",
+  }));
+
+  return {
+    channel: makeChannel(overrides),
+    hookRunner,
+    sessionManager: {} as SessionManager,
+    applyToolState: vi.fn<(snapshot: ExtensionToolSnapshot) => void>(),
+    sendMessage: vi
+      .fn<(message: unknown, options?: unknown) => Promise<void>>()
+      .mockResolvedValue(undefined),
+    sendUserMessage: vi
+      .fn<(content: unknown, options?: unknown) => Promise<void>>()
+      .mockResolvedValue(undefined),
+    appendEntry: vi.fn<(customType: string, data?: unknown) => void>(),
+    setSessionName: vi.fn<(name: string) => void>(),
+    getSessionName: vi.fn<() => string | undefined>().mockReturnValue(undefined),
+    getActiveTools: vi.fn<() => string[]>().mockReturnValue([]),
+    setActiveTools: vi.fn<(toolNames: string[]) => void>(),
+  };
+}
+
 function makeExtension(
   id: string,
-  opts?: { order?: number; setupFn?: (api: ExtensionAPI) => void },
+  opts?: { order?: number; setupFn?: (ctx: ExtensionContext) => void },
 ): ExtensionDefinition {
   return {
     id,
@@ -114,26 +124,51 @@ describe("ExtensionService", () => {
   describe("core-owned extension lifecycle", () => {
     it("sets up extensions through core-owned bindings", async () => {
       const service = createExtensionService();
-      const setup = vi.fn((api: ExtensionAPI) => {
-        api.on("agent:start", () => undefined);
+      const setup = vi.fn<(ctx: ExtensionContext) => void>((ctx) => {
+        ctx.on("agent:start", () => undefined);
       });
       const extension: ExtensionDefinition = { id: "core-owned", setup };
       await service.registerExtension(extension);
 
-      const host = createHost();
-      const runtime = await service.createChannelRuntime(
-        { platform: "test", channelId: "chan", type: "group" },
-        host,
-      );
+      const options = createRuntimeOptions({
+        platform: "test",
+        channelId: "chan",
+        type: "group",
+      });
+      const runtime = await service.createChannelRuntime(options);
 
       expect(setup).toHaveBeenCalledTimes(1);
       await runtime.hookRunner.emitLifecycle({ type: "agent:start" });
       expect(runtime.errors).toEqual([]);
     });
 
+    it("passes Koishi channel context including bot to extension setup", async () => {
+      const service = createExtensionService();
+      const bot = { selfId: "bot-001", user: { name: "Athena" } };
+      const seen: Array<ExtensionContext["channel"]> = [];
+
+      await service.registerExtension({
+        id: "channel-ext",
+        setup(ctx) {
+          seen.push(ctx.channel);
+        },
+      });
+
+      await service.createChannelRuntime(createRuntimeOptions({ bot: bot as never }));
+
+      expect(seen).toEqual([
+        expect.objectContaining({
+          platform: "onebot",
+          channelId: "123",
+          type: "group",
+          bot,
+        }),
+      ]);
+    });
+
     it("collects setup-declared tools and applies an AgentTool snapshot through the host", async () => {
       const service = createExtensionService();
-      const execute = vi.fn();
+      const execute = vi.fn<() => void>();
       const tool: AgentTool = {
         description: "Tool from extension",
         inputSchema: undefined,
@@ -141,19 +176,20 @@ describe("ExtensionService", () => {
       };
       await service.registerExtension({
         id: "tool-ext",
-        setup(api) {
-          api.registerTool({ name: "ext_tool", ...tool });
+        setup(ctx) {
+          ctx.registerTool({ name: "ext_tool", ...tool });
         },
       });
 
-      const host = createHost();
-      await service.createChannelRuntime(
-        { platform: "test", channelId: "chan", type: "group" },
-        host,
-      );
+      const options = createRuntimeOptions({
+        platform: "test",
+        channelId: "chan",
+        type: "group",
+      });
+      await service.createChannelRuntime(options);
 
-      expect(host.applyToolState).toHaveBeenCalledTimes(1);
-      const snapshot = vi.mocked(host.applyToolState).mock.calls[0][0] as ExtensionToolSnapshot;
+      expect(options.applyToolState).toHaveBeenCalledTimes(1);
+      const snapshot = vi.mocked(options.applyToolState).mock.calls[0][0] as ExtensionToolSnapshot;
       expect(snapshot.tools.get("ext_tool")).toMatchObject({
         description: "Tool from extension",
       });
@@ -162,7 +198,7 @@ describe("ExtensionService", () => {
 
     it("keeps successful extension setup when another extension fails", async () => {
       const service = createExtensionService();
-      const goodHandler = vi.fn();
+      const goodHandler = vi.fn<() => void>();
       await service.registerExtension({
         id: "bad",
         setup() {
@@ -171,16 +207,17 @@ describe("ExtensionService", () => {
       });
       await service.registerExtension({
         id: "good",
-        setup(api) {
-          api.on("agent:start", goodHandler);
+        setup(ctx) {
+          ctx.on("agent:start", goodHandler);
         },
       });
 
-      const host = createHost();
-      const runtime = await service.createChannelRuntime(
-        { platform: "test", channelId: "chan", type: "group" },
-        host,
-      );
+      const options = createRuntimeOptions({
+        platform: "test",
+        channelId: "chan",
+        type: "group",
+      });
+      const runtime = await service.createChannelRuntime(options);
 
       expect(runtime.errors).toEqual([
         expect.objectContaining({ extensionId: "bad", error: "setup failed" }),
