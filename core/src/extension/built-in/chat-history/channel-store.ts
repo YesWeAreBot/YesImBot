@@ -2,8 +2,8 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 
-import { encodeChannelId } from "../../services/session/encoding.js";
-import type { ChannelMapEntry } from "../../services/session/index.js";
+import { encodeChannelId } from "../../../services/session/encoding.js";
+import type { ChannelMapEntry } from "../../../services/session/index.js";
 import type {
   ChannelLocator,
   ChannelSummary,

@@ -2,9 +2,9 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import type { ToolDefinition } from "@yesimbot/agent/session";
 import { z } from "zod";
 
+import type { ToolDefinition } from "../../../service.js";
 import { ChannelResolver } from "../engine/channel-resolver.js";
 import { FileScanner, type ScanResult } from "../engine/file-scanner.js";
 import { formatTimestamp } from "../engine/result-formatter.js";

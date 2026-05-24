@@ -4,11 +4,11 @@ import { join } from "node:path";
 // core/tests/extension/chat-history/tools/search-conversation.test.ts
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 
-import { createSearchConversationTool } from "../../../../src/extension/chat-history/tools/search-conversation.js";
+import { createSearchConversationTool } from "../../../../src/extension/built-in/chat-history/tools/search-conversation.js";
 import type {
   ChannelLocator,
   ChatHistoryConfig,
-} from "../../../../src/extension/chat-history/types.js";
+} from "../../../../src/extension/built-in/chat-history/types.js";
 import { createTempSessionsDir, setupTestChannel, FIXTURE_DIR } from "../fixtures/helpers.js";
 
 describe("search_conversation tool", () => {

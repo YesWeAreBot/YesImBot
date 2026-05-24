@@ -1,7 +1,7 @@
-// core/src/extension/chat-history/tools/read-conversation-context.ts
-import type { ToolDefinition } from "@yesimbot/agent/session";
 import { z } from "zod";
 
+// core/src/extension/chat-history/tools/read-conversation-context.ts
+import type { ToolDefinition } from "../../../service.js";
 import { listChannelSummaries, listSessionFiles } from "../channel-store.js";
 import { formatCompactLine } from "../engine/result-formatter.js";
 import { scanJsonlFile } from "../jsonl-parser.js";

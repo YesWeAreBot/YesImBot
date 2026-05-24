@@ -3,7 +3,10 @@ import { join } from "node:path";
 // core/tests/extension/chat-history/jsonl-parser.test.ts
 import { describe, it, expect } from "vitest";
 
-import { parseJsonlLine, scanJsonlFile } from "../../../src/extension/chat-history/jsonl-parser.js";
+import {
+  parseJsonlLine,
+  scanJsonlFile,
+} from "../../../src/extension/built-in/chat-history/jsonl-parser.js";
 import { FIXTURE_DIR } from "./fixtures/helpers.js";
 
 describe("parseJsonlLine", () => {

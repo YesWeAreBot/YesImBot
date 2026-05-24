@@ -1,7 +1,7 @@
-// core/src/extension/chat-history/tools/search-conversation.ts
-import type { ToolDefinition } from "@yesimbot/agent/session";
 import { z } from "zod";
 
+// core/src/extension/chat-history/tools/search-conversation.ts
+import type { ToolDefinition } from "../../../service.js";
 import { ChannelResolver } from "../engine/channel-resolver.js";
 import { FileScanner } from "../engine/file-scanner.js";
 import { validateQuery } from "../engine/query-guard.js";

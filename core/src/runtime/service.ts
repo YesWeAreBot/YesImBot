@@ -2,21 +2,16 @@ import { join } from "node:path";
 
 import { Agent } from "@yesimbot/agent/agent";
 import { ChatModelRef } from "@yesimbot/agent/ai";
-import {
-  AgentSession,
-  convertToLlm,
-  ExtensionDefinition,
-  SessionManager,
-} from "@yesimbot/agent/session";
+import { AgentSession, convertToLlm, SessionManager } from "@yesimbot/agent/session";
 import { Bot, Context, Logger, Service } from "koishi";
 
 import type { AthenaEvent } from "../adapter/types.js";
 import { serializeEvent } from "../adapter/types.js";
-import { ChannelContext } from "../extension/service.js";
+import { createSystemPromptExtension } from "../extension/built-in/system-prompt.js";
+import type { ChannelContext } from "../extension/types.js";
 import { Delivery } from "./delivery/delivery.js";
 import { buildAgentSessionConfig, persistDeliveryEvents } from "./helpers.js";
 import { RuntimeSettingsManager, type PartialRuntimeSettings } from "./settings/manager.js";
-import { buildAthenaSystemPrompt, ensurePersonaFile } from "./system-prompt.js";
 
 interface ChannelIdentifier {
   platform: string;
@@ -85,53 +80,30 @@ export class RuntimeService extends Service<RuntimeConfig> {
       seed: this.config.runtimeSettings,
     });
 
-    const createSessionContext = (
+    const createSessionContext = async (
       context: ChannelContext,
       sessionManager: SessionManager,
       bot: Bot,
-    ): SessionContext => {
+    ): Promise<SessionContext> => {
       const { platform, channelId, type } = context;
       const agent = new Agent({
         model: chatModel.model,
         convertToLlm: (messages) => convertToLlm(messages),
       });
 
-      const personaPath = join(this.config.basePath, "PERSONA.md");
-      const agentsPath = join(this.config.basePath, "AGENTS.md");
+      // 注册 system-prompt 扩展（per-channel，通过 built-in factory 创建）
+      const promptExtension = createSystemPromptExtension({
+        basePath: this.config.basePath,
+        resolveBotInfo: (ctx) => ({
+          selfId: bot.selfId,
+          selfName: bot.user?.nick || bot.user?.name || "(unknown)",
+        }),
+      });
 
-      const promptExtension: ExtensionDefinition = {
-        id: "yesimbot:system-prompt",
-        order: -1000,
-        setup(api) {
-          api.on("agent:before-start", async (event) => {
-            const persona = await ensurePersonaFile(personaPath);
-            let additionalInstructions: string | undefined;
-            try {
-              const { readFile } = await import("node:fs/promises");
-              additionalInstructions = await readFile(agentsPath, "utf-8");
-            } catch {
-              // AGENTS.md is optional
-            }
-
-            return {
-              systemPrompt: buildAthenaSystemPrompt({
-                persona,
-                additionalInstructions,
-                environment: {
-                  platform,
-                  channelId,
-                  type,
-                  selfId: bot.selfId,
-                  selfName: bot.user?.nick || bot.user?.name || "(unknown)",
-                },
-                selectedTools: event.systemPromptOptions.selectedTools,
-                toolSnippets: event.systemPromptOptions.toolSnippets,
-                promptGuidelines: event.systemPromptOptions.promptGuidelines,
-              }),
-            };
-          });
-        },
-      };
+      // Create channel runtime via ExtensionService
+      const channelRuntime = await this.ctx["yesimbot.extension"].createChannelRuntime(context, [
+        promptExtension,
+      ]);
 
       // Create RuntimeSettingsManager for dual-scope settings
       const channelDir = this.ctx["yesimbot.session"].getChannelDir(platform, channelId);
@@ -169,13 +141,14 @@ export class RuntimeService extends Service<RuntimeConfig> {
       });
 
       const agentSession = new AgentSession({
-        cwd: this.config.basePath,
         agent,
         sessionManager,
+        hookRunner: channelRuntime.hookRunner,
         ...buildAgentSessionConfig(merged),
-        extensions: [...this.ctx["yesimbot.extension"].getAllExtensions(context), promptExtension],
       });
-      this.ctx["yesimbot.extension"].registerRunner(agentSession.extensionRunner, context);
+
+      // Apply extension tool snapshot atomically to AgentSession
+      agentSession.applyToolState(channelRuntime.toolSnapshot);
 
       const sessionContext: SessionContext = {
         agentSession,
@@ -265,9 +238,13 @@ export class RuntimeService extends Service<RuntimeConfig> {
       const key: ChannelKey = `${platform}:${channelId}`;
       const existing = this._channels.get(key);
       if (existing) {
-        this.ctx["yesimbot.extension"].unregisterRunner(existing.agentSession.extensionRunner);
+        await this.ctx["yesimbot.extension"].disposeChannelRuntime({
+          platform,
+          channelId,
+          type: existing.type,
+        });
         existing.agentSession.dispose();
-        const newCtx = createSessionContext(
+        const newCtx = await createSessionContext(
           { platform, channelId, type: existing.type },
           sessionManager,
           existing.bot,
@@ -293,7 +270,7 @@ export class RuntimeService extends Service<RuntimeConfig> {
           return;
         }
 
-        const sessionContext = createSessionContext(
+        const sessionContext = await createSessionContext(
           {
             platform: event.source.platform,
             channelId: event.source.channelId,
