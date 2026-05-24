@@ -3,9 +3,19 @@ import { resolve } from "path";
 
 import { jsonSchema } from "@yesimbot/agent/ai";
 import { Context, Logger, Schema, Service } from "koishi";
-import {} from "koishi-plugin-yesimbot";
+import type { ExtensionContext, ReloadSummary } from "koishi-plugin-yesimbot";
 
 import { formatSkillsForPrompt, loadSkills, Skill } from "./skills";
+
+function logReloadFailures(logger: Logger, action: string, summary: ReloadSummary): void {
+  if (summary.allSucceeded) return;
+  logger.warn(
+    `${action} completed with ${summary.failureCount} failed channel reload(s): ${summary.results
+      .filter((result) => !result.success)
+      .map((result) => `${result.channelKey}: ${result.error ?? "unknown error"}`)
+      .join("; ")}`,
+  );
+}
 
 export interface SkillConfig {
   skillPaths: string[];
@@ -54,10 +64,10 @@ export default class SkillPlugin extends Service<SkillConfig> {
   override async start(): Promise<void> {
     const skills = this.skills;
     const logger = this.logger;
-    this.ctx["yesimbot.extension"].registerExtension({
+    const summary = await this.ctx["yesimbot.extension"].registerExtension({
       id: "skill",
-      setup(api) {
-        api.on("agent:before-start", ((event: { systemPrompt: string }) => {
+      setup(ctx: ExtensionContext) {
+        ctx.on("agent:before-start", ((event: { systemPrompt: string }) => {
           logger.info(`正在准备技能，已加载 ${skills.length} 个技能`);
           const skillPrompt = formatSkillsForPrompt(skills);
 
@@ -65,7 +75,7 @@ export default class SkillPlugin extends Service<SkillConfig> {
             systemPrompt: event.systemPrompt + skillPrompt,
           };
         }) as (...args: unknown[]) => unknown);
-        api.registerTool<LoadSkillToolInput, LoadSkillToolOutput>({
+        ctx.registerTool<LoadSkillToolInput, LoadSkillToolOutput>({
           name: "load_skill",
           description: "加载技能",
           promptSnippet: "技能名称：{skillName}",
@@ -100,10 +110,12 @@ export default class SkillPlugin extends Service<SkillConfig> {
         });
       },
     });
+    logReloadFailures(this.logger, "Skill extension registration", summary);
   }
 
   override async stop(): Promise<void> {
-    this.ctx["yesimbot.extension"].unregisterExtension("skill");
+    const summary = await this.ctx["yesimbot.extension"].unregisterExtension("skill");
+    logReloadFailures(this.logger, "Skill extension unregistration", summary);
   }
 }
 

@@ -2,11 +2,26 @@ import { existsSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { Context, Logger, Schema, Service } from "koishi";
-import type { ExtensionAPI, ExtensionDefinition, ToolDefinition } from "koishi-plugin-yesimbot";
+import type {
+  ExtensionContext,
+  ExtensionDefinition,
+  ReloadSummary,
+  ToolDefinition,
+} from "koishi-plugin-yesimbot";
 
 import { createWorkspaceTools } from "./tools";
 import type { WorkspaceConfig } from "./types";
 import { Workspace } from "./workspace";
+
+function logReloadFailures(logger: Logger, action: string, summary: ReloadSummary): void {
+  if (summary.allSucceeded) return;
+  logger.warn(
+    `${action} completed with ${summary.failureCount} failed channel reload(s): ${summary.results
+      .filter((result) => !result.success)
+      .map((result) => `${result.channelKey}: ${result.error ?? "unknown error"}`)
+      .join("; ")}`,
+  );
+}
 
 export interface WorkspacePluginConfig {
   root: string;
@@ -92,10 +107,10 @@ export default class WorkspacePlugin extends Service<WorkspacePluginConfig> {
     const workspace = this.ws;
     const logger = this.logger;
 
-    this.ctx["yesimbot.extension"].registerExtension({
+    const summary = await this.ctx["yesimbot.extension"].registerExtension({
       id: "workspace",
-      setup(api: ExtensionAPI) {
-        api.on("agent:before-start", ((event: { systemPrompt: string }) => {
+      setup(ctx: ExtensionContext) {
+        ctx.on("agent:before-start", ((event: { systemPrompt: string }) => {
           const sandboxInstruction = `## Bash Sandbox Environment
 You are operating in a sandboxed bash environment with the following configuration:
 - Current working directory: ${workspaceConfig.bash.cwd}
@@ -115,7 +130,7 @@ Use this environment to execute commands safely. Always be mindful of the limita
 
         const tools = createWorkspaceTools(workspace);
         for (const tool of tools) {
-          api.registerTool(tool as ToolDefinition);
+          ctx.registerTool(tool as ToolDefinition);
           logger.info(`Registered tool: ${tool.name}`);
         }
 
@@ -126,12 +141,14 @@ Use this environment to execute commands safely. Always be mindful of the limita
         };
       },
     } satisfies ExtensionDefinition);
+    logReloadFailures(this.logger, "Workspace extension registration", summary);
 
     this.logger.success("Workspace plugin started");
   }
 
   async stop(): Promise<void> {
-    this.ctx["yesimbot.extension"].unregisterExtension("workspace");
+    const summary = await this.ctx["yesimbot.extension"].unregisterExtension("workspace");
+    logReloadFailures(this.logger, "Workspace extension unregistration", summary);
     this.logger.info("Workspace plugin stopped");
   }
 }
