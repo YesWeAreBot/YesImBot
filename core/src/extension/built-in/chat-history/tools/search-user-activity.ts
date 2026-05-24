@@ -1,10 +1,9 @@
-// core/src/extension/chat-history/tools/search-user-activity.ts
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { z } from "zod";
 
-import type { ToolDefinition } from "../../../service.js";
+import { ToolDefinition } from "../../../types.js";
 import { ChannelResolver } from "../engine/channel-resolver.js";
 import { FileScanner, type ScanResult } from "../engine/file-scanner.js";
 import { formatTimestamp } from "../engine/result-formatter.js";

@@ -2,12 +2,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { Context, Logger, Schema, Service } from "koishi";
-import type {
-  AthenaExtensionDefinition,
-  ChannelContext,
-  ExtensionAPI,
-  ToolDefinition,
-} from "koishi-plugin-yesimbot";
+import type { ExtensionAPI, ExtensionDefinition, ToolDefinition } from "koishi-plugin-yesimbot";
 
 import { createWorkspaceTools } from "./tools";
 import type { WorkspaceConfig } from "./types";
@@ -99,8 +94,8 @@ export default class WorkspacePlugin extends Service<WorkspacePluginConfig> {
 
     this.ctx["yesimbot.extension"].registerExtension({
       id: "workspace",
-      setup(api: ExtensionAPI, _context?: ChannelContext) {
-        api.on("agent:before-start", (event) => {
+      setup(api: ExtensionAPI) {
+        api.on("agent:before-start", ((event: { systemPrompt: string }) => {
           const sandboxInstruction = `## Bash Sandbox Environment
 You are operating in a sandboxed bash environment with the following configuration:
 - Current working directory: ${workspaceConfig.bash.cwd}
@@ -114,7 +109,7 @@ Use this environment to execute commands safely. Always be mindful of the limita
           return {
             systemPrompt: event.systemPrompt + `\n\n${sandboxInstruction}`,
           };
-        });
+        }) as (...args: unknown[]) => unknown);
 
         logger.info("Registering workspace tools...");
 
@@ -130,7 +125,7 @@ Use this environment to execute commands safely. Always be mindful of the limita
           },
         };
       },
-    } as AthenaExtensionDefinition);
+    } satisfies ExtensionDefinition);
 
     this.logger.success("Workspace plugin started");
   }

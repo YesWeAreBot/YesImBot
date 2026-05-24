@@ -2,7 +2,7 @@
  * Built-in system-prompt extension factory.
  *
  * Extracted from RuntimeService's inline extension.
- * Creates an AthenaExtensionDefinition that builds the Athena system prompt
+ * Creates an ExtensionDefinition that builds the Athena system prompt
  * on every agent:before-start event, reading persona and agent instructions
  * from the configured basePath.
  *
@@ -16,7 +16,7 @@
  */
 
 import { buildAthenaSystemPrompt, ensurePersonaFile } from "../../runtime/system-prompt.js";
-import type { AthenaExtensionDefinition, ChannelContext } from "../types.js";
+import type { ChannelContext, ExtensionDefinition } from "../types.js";
 
 // ============================================================================
 // Types
@@ -41,6 +41,16 @@ export interface SystemPromptExtensionOptions {
    * Called once per agent:before-start event.
    */
   resolveBotInfo: (context: ChannelContext) => BotInfo;
+  /**
+   * Resolve tool prompt context for a given channel context.
+   * When provided, the extension will use this to get selectedTools,
+   * toolSnippets, and promptGuidelines from core-owned bindings.
+   */
+  getToolPromptContext?: (context: ChannelContext) => {
+    selectedTools: string[];
+    toolSnippets: Record<string, string>;
+    promptGuidelines: string[];
+  };
 }
 
 // ============================================================================
@@ -54,16 +64,16 @@ export interface SystemPromptExtensionOptions {
  */
 export function createSystemPromptExtension(
   options: SystemPromptExtensionOptions,
-): AthenaExtensionDefinition {
-  const { basePath, resolveBotInfo } = options;
+): ExtensionDefinition {
+  const { basePath, resolveBotInfo, getToolPromptContext } = options;
   const personaPath = `${basePath}/PERSONA.md`;
   const agentsPath = `${basePath}/AGENTS.md`;
 
   return {
     id: "yesimbot:system-prompt",
     order: -1000,
-    setup(api, context?: ChannelContext) {
-      api.on("agent:before-start", async (event) => {
+    setup(api) {
+      api.on("agent:before-start", (async (event: { systemPrompt: string }) => {
         const persona = await ensurePersonaFile(personaPath);
 
         let additionalInstructions: string | undefined;
@@ -74,6 +84,7 @@ export function createSystemPromptExtension(
           // AGENTS.md is optional
         }
 
+        const context = api.channel;
         const env = context
           ? {
               platform: context.platform,
@@ -89,17 +100,27 @@ export function createSystemPromptExtension(
               selfName: "(unknown)",
             };
 
+        // Resolve tool prompt context from core helper
+        const toolContext =
+          context && getToolPromptContext
+            ? getToolPromptContext(context)
+            : {
+                selectedTools: [] as string[],
+                toolSnippets: {} as Record<string, string>,
+                promptGuidelines: [] as string[],
+              };
+
         return {
           systemPrompt: buildAthenaSystemPrompt({
             persona,
             additionalInstructions,
             environment: env,
-            selectedTools: event.systemPromptOptions.selectedTools,
-            toolSnippets: event.systemPromptOptions.toolSnippets,
-            promptGuidelines: event.systemPromptOptions.promptGuidelines,
+            selectedTools: toolContext.selectedTools,
+            toolSnippets: toolContext.toolSnippets,
+            promptGuidelines: toolContext.promptGuidelines,
           }),
         };
-      });
+      }) as (...args: unknown[]) => unknown);
     },
   };
 }

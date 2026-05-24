@@ -5,7 +5,15 @@
  * Agent package provides ExtensionRunner for per-channel execution.
  */
 
-import type { ExtensionAPI, ExtensionCleanup, ToolDefinition } from "@yesimbot/agent/session";
+import type { ToolResultOutput } from "@ai-sdk/provider-utils";
+import type { AgentTool } from "@yesimbot/agent/agent";
+import type {
+  CompactOptions,
+  ContextUsage,
+  HookRunner,
+  SessionManager,
+} from "@yesimbot/agent/session";
+import type { LanguageModel } from "ai";
 
 // ============================================================================
 // Channel Context
@@ -24,22 +32,59 @@ export interface ChannelContext {
 }
 
 // ============================================================================
-// Athena Extension Definition
+// Core-Owned Extension Types
 // ============================================================================
 
-/**
- * Athena 扩展定义，支持可选的频道上下文
- *
- * 已有扩展无需修改，context 参数可选
- * 新扩展可通过 context 实现频道感知
- */
-export interface AthenaExtensionDefinition {
+export interface ExtensionDefinition {
   id: string;
   order?: number;
-  setup(
-    api: ExtensionAPI,
-    context?: ChannelContext,
-  ): void | Promise<void> | ExtensionCleanup | Promise<ExtensionCleanup>;
+  setup(api: ExtensionAPI): void | Promise<void> | ExtensionCleanup | Promise<ExtensionCleanup>;
+}
+
+export interface ExtensionCleanup {
+  dispose?(): void | Promise<void>;
+}
+
+export type ToolDefinition<INPUT = unknown, OUTPUT = ToolResultOutput, DETAILS = never> = AgentTool<
+  INPUT,
+  OUTPUT,
+  DETAILS
+> & {
+  name: string;
+  promptSnippet?: string;
+  promptGuidelines?: string[];
+};
+
+// ============================================================================
+// Core-Owned Extension API
+// ============================================================================
+
+export interface ExtensionAPI {
+  readonly channel?: ChannelContext;
+  on(event: string, handler: (...args: unknown[]) => unknown): void;
+  registerTool<INPUT = unknown, OUTPUT = ToolResultOutput, DETAILS = never>(
+    tool: ToolDefinition<INPUT, OUTPUT, DETAILS>,
+  ): void;
+  unregisterTool(name: string): void;
+  sendMessage(message: unknown, options?: unknown): void;
+  sendUserMessage(content: unknown, options?: unknown): void;
+  appendEntry(customType: string, data?: unknown): void;
+  setSessionName(name: string): void;
+  getSessionName(): string | undefined;
+  getActiveTools(): string[];
+  setActiveTools(toolNames: string[]): void;
+}
+
+// ============================================================================
+// Extension Binding
+// ============================================================================
+
+export interface ExtensionBinding {
+  readonly id: string;
+  readonly order: number;
+  readonly handlers: Map<string, Array<(...args: unknown[]) => unknown>>;
+  readonly tools: Map<string, ToolDefinition>;
+  readonly cleanup?: ExtensionCleanup;
 }
 
 // ============================================================================
@@ -56,6 +101,24 @@ export interface ExtensionHost {
   readonly hostId: string;
   /** 频道上下文 */
   readonly channel: ChannelContext;
+  readonly hookRunner: HookRunner;
+  readonly sessionManager: SessionManager;
+  applyToolState(snapshot: ExtensionToolSnapshot): void;
+  sendMessage(message: unknown, options?: unknown): Promise<void>;
+  sendUserMessage(content: unknown, options?: unknown): Promise<void>;
+  appendEntry(customType: string, data?: unknown): void;
+  setSessionName(name: string): void;
+  getSessionName(): string | undefined;
+  getActiveTools(): string[];
+  setActiveTools(toolNames: string[]): void;
+  getModel(): LanguageModel | undefined;
+  isIdle(): boolean;
+  getSignal(): AbortSignal | undefined;
+  abort(): void;
+  hasPendingMessages(): boolean;
+  getContextUsage(): ContextUsage | undefined;
+  compact(options?: CompactOptions): void;
+  getSystemPrompt(): string;
 }
 
 // ============================================================================
@@ -70,7 +133,7 @@ export interface ExtensionHost {
  */
 export interface ExtensionToolSnapshot {
   /** 工具定义 Map（name → definition） */
-  readonly tools: Map<string, ToolDefinition>;
+  readonly tools: Map<string, AgentTool>;
   /** 活跃工具名称列表 */
   readonly activeToolNames: string[];
 }
@@ -128,9 +191,7 @@ export interface ChannelRuntime {
   /** 加载的扩展工具快照 */
   readonly toolSnapshot: ExtensionToolSnapshot;
   /** HookRunner — 传给 AgentSession 用于 hook 分发 */
-  readonly hookRunner: import("@yesimbot/agent/session").HookRunner;
-  /** ExtensionRunner — 扩展生命周期管理 */
-  readonly extensionRunner: import("@yesimbot/agent/session").ExtensionRunner;
+  readonly hookRunner: HookRunner;
   /** setup 过程中的错误（fail-open） */
   readonly errors: ChannelRuntimeError[];
   /** 销毁运行时，调用所有 cleanup */
@@ -148,6 +209,3 @@ export interface ChannelRuntimeError {
   /** 错误堆栈 */
   readonly stack?: string;
 }
-
-// Re-export agent extension types for core consumers
-export type { ExtensionAPI, ExtensionCleanup, ToolDefinition };

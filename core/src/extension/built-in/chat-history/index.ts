@@ -1,8 +1,7 @@
 import { Context, Logger, Service } from "koishi";
 
 import { encodeChannelId } from "../../../services/session/encoding.js";
-import type { ExtensionAPI } from "../../service.js";
-import { ChannelContext } from "../../service.js";
+import { ExtensionAPI } from "../../types.js";
 import { buildChatHistoryPrompt } from "./prompt.js";
 import { createReadConversationContextTool } from "./tools/read-conversation-context.js";
 import { createSearchConversationTool } from "./tools/search-conversation.js";
@@ -27,7 +26,8 @@ export class ChatHistoryPlugin extends Service<ChatHistoryConfig> {
     const config = this.config;
     this.ctx["yesimbot.extension"].registerExtension({
       id: "chat-history",
-      setup(api: ExtensionAPI, context: ChannelContext) {
+      setup(api: ExtensionAPI) {
+        const context = api.channel;
         const currentChannel = context
           ? {
               platform: context.platform,
@@ -36,14 +36,14 @@ export class ChatHistoryPlugin extends Service<ChatHistoryConfig> {
             }
           : null;
 
-        api.on("agent:before-start", (event) => ({
+        api.on("agent:before-start", ((event: { systemPrompt: string }) => ({
           systemPrompt:
             event.systemPrompt +
             buildChatHistoryPrompt({
               isolation: config.isolation,
               currentChannel,
             }),
-        }));
+        })) as (...args: unknown[]) => unknown);
 
         const searchConv = createSearchConversationTool(config, currentChannel);
         const searchUser = createSearchUserActivityTool(config, currentChannel);

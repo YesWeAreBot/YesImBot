@@ -2,13 +2,14 @@ import { join } from "node:path";
 
 import { Agent } from "@yesimbot/agent/agent";
 import { ChatModelRef } from "@yesimbot/agent/ai";
-import { AgentSession, convertToLlm, SessionManager } from "@yesimbot/agent/session";
+import { AgentSession, convertToLlm, HookRunner, SessionManager } from "@yesimbot/agent/session";
 import { Bot, Context, Logger, Service } from "koishi";
 
 import type { AthenaEvent } from "../adapter/types.js";
 import { serializeEvent } from "../adapter/types.js";
 import { createSystemPromptExtension } from "../extension/built-in/system-prompt.js";
-import type { ChannelContext } from "../extension/types.js";
+import type { BotInfo } from "../extension/built-in/system-prompt.js";
+import type { ChannelContext, ExtensionHost } from "../extension/types.js";
 import { Delivery } from "./delivery/delivery.js";
 import { buildAgentSessionConfig, persistDeliveryEvents } from "./helpers.js";
 import { RuntimeSettingsManager, type PartialRuntimeSettings } from "./settings/manager.js";
@@ -45,6 +46,7 @@ export class RuntimeService extends Service<RuntimeConfig> {
 
   private _channels = new Map<ChannelKey, SessionContext>();
   private _globalSettingsManager?: RuntimeSettingsManager;
+  private _channelBotInfo = new Map<ChannelKey, BotInfo>();
 
   constructor(
     public ctx: Context,
@@ -80,6 +82,17 @@ export class RuntimeService extends Service<RuntimeConfig> {
       seed: this.config.runtimeSettings,
     });
 
+    // Register system-prompt extension globally (resolves bot info per-channel at runtime)
+    const promptExtension = createSystemPromptExtension({
+      basePath: this.config.basePath,
+      resolveBotInfo: (ctx) => {
+        const key: ChannelKey = `${ctx.platform}:${ctx.channelId}`;
+        return this._channelBotInfo.get(key) ?? { selfId: "unknown", selfName: "(unknown)" };
+      },
+      getToolPromptContext: (ctx) => this.ctx["yesimbot.extension"].getPromptToolContext(ctx),
+    });
+    await this.ctx["yesimbot.extension"].registerExtension(promptExtension);
+
     const createSessionContext = async (
       context: ChannelContext,
       sessionManager: SessionManager,
@@ -91,28 +104,20 @@ export class RuntimeService extends Service<RuntimeConfig> {
         convertToLlm: (messages) => convertToLlm(messages),
       });
 
-      // 注册 system-prompt 扩展（per-channel，通过 built-in factory 创建）
-      const promptExtension = createSystemPromptExtension({
-        basePath: this.config.basePath,
-        resolveBotInfo: (_ctx) => ({
-          selfId: bot.selfId,
-          selfName: bot.user?.nick || bot.user?.name || "(unknown)",
-        }),
+      // Register bot info for this channel (used by the global system-prompt extension)
+      const channelKey: ChannelKey = `${platform}:${channelId}`;
+      this._channelBotInfo.set(channelKey, {
+        selfId: bot.selfId,
+        selfName: bot.user?.nick || bot.user?.name || "(unknown)",
       });
 
-      // Create channel runtime via ExtensionService
-      const channelRuntime = await this.ctx["yesimbot.extension"].createChannelRuntime(context, [
-        promptExtension,
-      ]);
-
-      // Create RuntimeSettingsManager for dual-scope settings
+      // Create RuntimeSettingsManager for dual-scope settings (before AgentSession)
       const channelDir = this.ctx["yesimbot.session"].getChannelDir(platform, channelId);
       const settingsManager = new RuntimeSettingsManager({
         globalPath: globalSettingsPath,
         localPath: join(channelDir, "settings.json"),
         seed: this.config.runtimeSettings,
       });
-
       const merged = settingsManager.settings;
 
       // Get adapter for this platform, falling back to generic
@@ -140,15 +145,66 @@ export class RuntimeService extends Service<RuntimeConfig> {
         logger: this.logger,
       });
 
-      const agentSession = new AgentSession({
+      // Create HookRunner with closure over agentSession (assigned below)
+      let agentSession!: AgentSession;
+      const hookRunner = new HookRunner(() => ({
+        sessionManager,
+        model: agent.state.model,
+        isIdle: () => !agent.state.isStreaming,
+        signal: agent.signal,
+        abort: () => agent.abort(),
+        hasPendingMessages: () => agent.hasQueuedMessages(),
+        getContextUsage: () => agentSession.getContextUsage(),
+        compact: (options) => {
+          void agentSession
+            .compact(options?.customInstructions)
+            .then(options?.onComplete)
+            .catch(options?.onError);
+        },
+        getSystemPrompt: () => agent.state.systemPrompt,
+      }));
+
+      // Create AgentSession (before ExtensionHost so host can delegate to it)
+      agentSession = new AgentSession({
         agent,
         sessionManager,
-        hookRunner: channelRuntime.hookRunner,
+        hookRunner,
         ...buildAgentSessionConfig(merged),
       });
 
-      // Apply extension tool snapshot atomically to AgentSession
-      agentSession.applyToolState(channelRuntime.toolSnapshot);
+      // Build ExtensionHost that delegates to AgentSession
+      const host: ExtensionHost = {
+        hostId: `runtime:${channelKey}`,
+        channel: context,
+        hookRunner,
+        sessionManager,
+        applyToolState: (snapshot) => agentSession.applyToolState(snapshot),
+        sendMessage: async (message, options) =>
+          agentSession.sendCustomMessage(message as never, options as never),
+        sendUserMessage: async (content, options) =>
+          agentSession.sendUserMessage(content as never, options as never),
+        appendEntry: (customType, data) => sessionManager.appendCustomEntry(customType, data),
+        setSessionName: (name) => sessionManager.appendSessionInfo(name),
+        getSessionName: () => sessionManager.getSessionName(),
+        getActiveTools: () => agentSession.getActiveToolNames(),
+        setActiveTools: (toolNames) => agentSession.setActiveToolsByName(toolNames),
+        getModel: () => agentSession.model,
+        isIdle: () => !agentSession.isStreaming,
+        getSignal: () => agent.signal,
+        abort: () => agentSession.abort(),
+        hasPendingMessages: () => agentSession.pendingMessageCount > 0,
+        getContextUsage: () => agentSession.getContextUsage(),
+        compact: (options) => {
+          void agentSession
+            .compact(options?.customInstructions)
+            .then(options?.onComplete)
+            .catch(options?.onError);
+        },
+        getSystemPrompt: () => agentSession.systemPrompt,
+      };
+
+      // Create channel runtime via ExtensionService (applies tool state via host)
+      await this.ctx["yesimbot.extension"].createChannelRuntime(context, host);
 
       const sessionContext: SessionContext = {
         agentSession,

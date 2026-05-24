@@ -12,34 +12,18 @@
  * - register/unregister 聚合所有 channel 结果，不回滚全局定义
  */
 
-import type {
-  ExtensionAPI,
-  HookRunner as HookRunnerType,
-  ToolDefinition,
-} from "@yesimbot/agent/session";
-import { createExtensionRuntime, HookRunner as HookRunnerClass } from "@yesimbot/agent/session";
-import { ExtensionRunner } from "@yesimbot/agent/session";
+import { HookRunner } from "@yesimbot/agent/session";
 import { Context, Logger, Service } from "koishi";
 
 import type {
-  AthenaExtensionDefinition,
-  ChannelContext,
-  ChannelReloadResult,
-  ChannelRuntime,
-  ChannelRuntimeError,
-  ExtensionToolSnapshot,
-  ReloadSummary,
-} from "./types.js";
-
-// Re-export types for consumers
-export type {
-  AthenaExtensionDefinition,
   ChannelContext,
   ChannelReloadResult,
   ChannelRuntime,
   ChannelRuntimeError,
   ExtensionAPI,
+  ExtensionBinding,
   ExtensionCleanup,
+  ExtensionDefinition,
   ExtensionHost,
   ExtensionToolSnapshot,
   ReloadSummary,
@@ -65,10 +49,9 @@ export interface ExtensionConfig {
 interface ChannelRuntimeState {
   channelKey: string;
   context: ChannelContext;
-  runner: ExtensionRunner;
-  hookRunner?: HookRunnerType;
-  /** 所有 extension setup 产生的 cleanup */
-  cleanups: Array<() => void | Promise<void>>;
+  host: ExtensionHost;
+  hookRunner: HookRunner;
+  bindings: ExtensionBinding[];
   errors: ChannelRuntimeError[];
 }
 
@@ -80,17 +63,6 @@ function channelKeyOf(context: ChannelContext): string {
   return `${context.platform}:${context.channelId}`;
 }
 
-function convertToAgentDefinition(
-  def: AthenaExtensionDefinition,
-  context: ChannelContext,
-): import("@yesimbot/agent/session").ExtensionDefinition {
-  return {
-    id: def.id,
-    order: def.order,
-    setup: (api: ExtensionAPI) => def.setup(api, context),
-  };
-}
-
 // ============================================================================
 // ExtensionService
 // ============================================================================
@@ -99,7 +71,7 @@ export class ExtensionService extends Service<ExtensionConfig> {
   readonly logger: Logger;
 
   /** 全局扩展定义 */
-  private definitions = new Map<string, AthenaExtensionDefinition>();
+  private definitions = new Map<string, ExtensionDefinition>();
 
   /** per-channel runtime 状态 */
   private channels = new Map<string, ChannelRuntimeState>();
@@ -126,7 +98,7 @@ export class ExtensionService extends Service<ExtensionConfig> {
    *
    * 全局定义始终保留，即使某个 channel reload 失败
    */
-  async registerExtension(extension: AthenaExtensionDefinition): Promise<ReloadSummary> {
+  async registerExtension(extension: ExtensionDefinition): Promise<ReloadSummary> {
     this.definitions.set(extension.id, extension);
     this.logger.info(`Registered extension: ${extension.id}`);
     return this._reloadAllChannels(`register:${extension.id}`);
@@ -148,14 +120,14 @@ export class ExtensionService extends Service<ExtensionConfig> {
   /**
    * 获取扩展定义
    */
-  getExtension(id: string): AthenaExtensionDefinition | undefined {
+  getExtension(id: string): ExtensionDefinition | undefined {
     return this.definitions.get(id);
   }
 
   /**
    * 获取所有扩展定义
    */
-  getAllDefinitions(): AthenaExtensionDefinition[] {
+  getAllDefinitions(): ExtensionDefinition[] {
     return Array.from(this.definitions.values());
   }
 
@@ -169,11 +141,11 @@ export class ExtensionService extends Service<ExtensionConfig> {
    * await 全部 extension setup 完成，setup 失败时 fail-open
    *
    * @param context - 频道上下文
-   * @param additionalExtensions - 额外的 per-channel 扩展（如 system-prompt）
+   * @param host - 扩展宿主，提供 HookRunner 和宿主能力
    */
   async createChannelRuntime(
     context: ChannelContext,
-    additionalExtensions?: import("@yesimbot/agent/session").ExtensionDefinition[],
+    host: ExtensionHost,
   ): Promise<ChannelRuntime> {
     const key = channelKeyOf(context);
 
@@ -183,62 +155,16 @@ export class ExtensionService extends Service<ExtensionConfig> {
       await this.disposeChannelRuntime(context);
     }
 
-    const errors: ChannelRuntimeError[] = [];
-    const runtime = createExtensionRuntime();
-
-    // Minimal EventBus stub for ExtensionRunner (not used at this level)
-    const eventBus = {
-      on: () => () => {},
-      emit: () => {},
-    } satisfies {
-      on: (channel: string, handler: (data: unknown) => void) => () => void;
-      emit: (channel: string, data: unknown) => void;
-    };
-
-    // 创建 HookRunner（给 AgentSession 用于 hook 分发）
-    // 注意：这里的 HookContext 是 stub，实际值由 AgentSession.bindCore() 填充
-    const hookRunner = new HookRunnerClass(() => ({
-      sessionManager: {} as never,
-      model: undefined,
-      isIdle: () => true,
-      signal: undefined,
-      abort: () => {},
-      hasPendingMessages: () => false,
-      getContextUsage: () => undefined,
-      compact: () => {},
-      getSystemPrompt: () => "",
-    }));
-
-    // 创建 runner（空 bindings，后续 reload 填充）
-    const runner = new ExtensionRunner([], runtime, this.config.basePath, {} as never, eventBus);
-
-    // 桥接：ExtensionRunner reload 时自动同步 handlers 到 HookRunner
-    runner.setHookRunner(hookRunner);
-
-    // 监听 per-extension 错误（setup 失败等），聚合到 state.errors
-    // Note: ExtensionError only carries event type + message, not extension ID.
-    // The runner emits "setup" events with the error message from createExtensionBinding.
-    runner.onError((extError) => {
-      errors.push({
-        extensionId: extError.event,
-        error: extError.error,
-        stack: extError.stack,
-      });
-    });
-
     const state: ChannelRuntimeState = {
       channelKey: key,
       context,
-      runner,
-      hookRunner,
-      cleanups: [],
-      errors,
+      host,
+      hookRunner: host.hookRunner,
+      bindings: [],
+      errors: [],
     };
     this.channels.set(key, state);
-
-    // 执行首次 reload（包含全局定义 + 额外的 per-channel 扩展）
-    await this._reloadChannel(state, additionalExtensions);
-
+    await this._reloadChannel(state);
     return this._buildChannelRuntime(state);
   }
 
@@ -252,26 +178,20 @@ export class ExtensionService extends Service<ExtensionConfig> {
     const state = this.channels.get(key);
     if (!state) return;
 
-    const cleanupErrors: Array<{ index: number; error: string }> = [];
-
     // 调用所有 cleanup，fail-open on per-cleanup errors
-    for (let i = 0; i < state.cleanups.length; i++) {
+    for (const binding of state.bindings) {
       try {
-        await state.cleanups[i]();
+        await binding.cleanup?.dispose?.();
       } catch (err) {
-        const error = err instanceof Error ? err.message : String(err);
-        cleanupErrors.push({ index: i, error });
-        this.logger.warn(`Cleanup error #${i} for channel ${key}: ${error}`);
+        this.logger.warn(
+          `Cleanup error for channel ${key}: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     }
 
-    // 失效 runner
-    state.runner.invalidate("Channel runtime disposed");
-
-    if (cleanupErrors.length > 0) {
-      this.logger.warn(`Channel ${key} disposed with ${cleanupErrors.length} cleanup error(s)`);
-    }
-
+    // 清理 hooks 和工具状态
+    state.hookRunner.clear();
+    state.host.applyToolState({ tools: new Map(), activeToolNames: [] });
     this.channels.delete(key);
     this.logger.info(`Disposed runtime for channel ${key}`);
   }
@@ -293,8 +213,8 @@ export class ExtensionService extends Service<ExtensionConfig> {
   /**
    * 构建指定 channel 的工具快照
    *
-   * 收集 per-channel extension runtime 中的所有工具，
-   * 返回 Map<string, ToolDefinition> 供 agent 原子消费
+   * 收集 per-channel extension bindings 中的所有工具，
+   * 返回 Map<string, AgentTool> 供 agent 原子消费
    */
   buildToolSnapshot(context: ChannelContext): ExtensionToolSnapshot {
     const key = channelKeyOf(context);
@@ -304,12 +224,156 @@ export class ExtensionService extends Service<ExtensionConfig> {
       return { tools: new Map(), activeToolNames: [] };
     }
 
+    return this._buildToolSnapshotFromBindings(state.bindings);
+  }
+
+  /**
+   * 获取指定 channel 的提示工具上下文
+   *
+   * 从当前 channel bindings 和 host active tools 中读取
+   * selectedTools、toolSnippets 和 promptGuidelines，
+   * 供系统提示扩展构建工具部分。
+   */
+  getPromptToolContext(context: ChannelContext): {
+    selectedTools: string[];
+    toolSnippets: Record<string, string>;
+    promptGuidelines: string[];
+  } {
+    const key = channelKeyOf(context);
+    const state = this.channels.get(key);
+
+    if (!state) {
+      return { selectedTools: [], toolSnippets: {}, promptGuidelines: [] };
+    }
+
+    const activeToolNames = state.host.getActiveTools();
+    const toolSnippets: Record<string, string> = {};
+    const promptGuidelinesSet = new Set<string>();
+
+    for (const binding of state.bindings) {
+      for (const [name, tool] of binding.tools) {
+        if (tool.promptSnippet) {
+          toolSnippets[name] = tool.promptSnippet;
+        }
+        if (tool.promptGuidelines) {
+          for (const g of tool.promptGuidelines) {
+            const trimmed = g.trim();
+            if (trimmed.length > 0) {
+              promptGuidelinesSet.add(trimmed);
+            }
+          }
+        }
+      }
+    }
+
+    const selectedTools = activeToolNames.filter((name) => !!toolSnippets[name]);
+    const promptGuidelines = Array.from(promptGuidelinesSet);
+
+    return { selectedTools, toolSnippets, promptGuidelines };
+  }
+
+  // =========================================================================
+  // Internal: Binding Helpers
+  // =========================================================================
+
+  /**
+   * 为单个扩展定义创建绑定
+   *
+   * 调用 def.setup(api) 收集 handlers 和 tools，
+   * 返回 ExtensionBinding 供后续安装到 HookRunner
+   */
+  private async _createBinding(
+    def: ExtensionDefinition,
+    host: ExtensionHost,
+  ): Promise<ExtensionBinding> {
+    const handlers = new Map<string, Array<(...args: unknown[]) => unknown>>();
     const tools = new Map<string, ToolDefinition>();
+    let active = true;
+    const assertActive = () => {
+      if (!active) {
+        throw new Error(`Extension API for ${def.id} is no longer active`);
+      }
+    };
+
+    const api: ExtensionAPI = {
+      get channel() {
+        return host.channel;
+      },
+      on(event, handler) {
+        assertActive();
+        const list = handlers.get(event) ?? [];
+        list.push(handler);
+        handlers.set(event, list);
+      },
+      registerTool(tool) {
+        assertActive();
+        tools.set(tool.name, tool as ToolDefinition);
+      },
+      unregisterTool(name) {
+        assertActive();
+        tools.delete(name);
+      },
+      sendMessage(message, options) {
+        void host.sendMessage(message, options);
+      },
+      sendUserMessage(content, options) {
+        void host.sendUserMessage(content, options);
+      },
+      appendEntry: (customType, data) => host.appendEntry(customType, data),
+      setSessionName: (name) => host.setSessionName(name),
+      getSessionName: () => host.getSessionName(),
+      getActiveTools: () => host.getActiveTools(),
+      setActiveTools: (toolNames) => host.setActiveTools(toolNames),
+    };
+
+    const cleanup = await def.setup(api);
+    active = false;
+
+    return {
+      id: def.id,
+      order: def.order ?? 0,
+      handlers,
+      tools,
+      cleanup: cleanup && typeof cleanup === "object" ? (cleanup as ExtensionCleanup) : undefined,
+    };
+  }
+
+  /**
+   * 将绑定的 handlers 安装到 HookRunner
+   *
+   * 先清空 HookRunner，再按绑定顺序注册所有 handlers
+   */
+  private _installBindings(hookRunner: HookRunner, bindings: ExtensionBinding[]): void {
+    hookRunner.clear();
+    for (const binding of bindings) {
+      for (const [event, handlers] of binding.handlers) {
+        for (const handler of handlers) {
+          hookRunner.on(event, handler);
+        }
+      }
+    }
+  }
+
+  /**
+   * 从绑定列表构建工具快照
+   *
+   * 收集所有绑定注册的工具，转换为 AgentTool 格式
+   */
+  private _buildToolSnapshotFromBindings(
+    bindings: readonly ExtensionBinding[],
+  ): ExtensionToolSnapshot {
+    const tools = new Map<string, import("@yesimbot/agent/agent").AgentTool>();
     const activeToolNames: string[] = [];
 
-    for (const binding of state.runner.getBindings()) {
+    for (const binding of bindings) {
       for (const [name, tool] of binding.tools) {
-        tools.set(name, tool as ToolDefinition);
+        const {
+          promptSnippet: _promptSnippet,
+          promptGuidelines: _promptGuidelines,
+          name: _name,
+          ...agentTool
+        } = tool;
+        tools.set(name, agentTool as import("@yesimbot/agent/agent").AgentTool);
         activeToolNames.push(name);
       }
     }
@@ -324,63 +388,57 @@ export class ExtensionService extends Service<ExtensionConfig> {
   /**
    * 重载单个 channel 的所有扩展
    *
-   * Errors from individual extension setup are captured via the runner's
-   * error listener (wired in createChannelRuntime). The top-level try/catch
-   * guards against unexpected failures in the reload orchestration itself.
+   * 清理旧绑定 → 创建新绑定 → 安装到 HookRunner → 应用工具快照
    */
-  private async _reloadChannel(
-    state: ChannelRuntimeState,
-    additionalExtensions?: import("@yesimbot/agent/session").ExtensionDefinition[],
-  ): Promise<ChannelReloadResult> {
-    const { channelKey, context, runner } = state;
-    const definitions = [
-      ...Array.from(this.definitions.values()).map((def) => convertToAgentDefinition(def, context)),
-      ...(additionalExtensions ?? []),
-    ];
+  private async _reloadChannel(state: ChannelRuntimeState): Promise<ChannelReloadResult> {
+    // 按 order 排序全局定义
+    const sorted = Array.from(this.definitions.values()).sort(
+      (a, b) => (a.order ?? 0) - (b.order ?? 0),
+    );
 
-    // Snapshot error count before reload to isolate new errors
-    const prevErrorCount = state.errors.length;
-
-    try {
-      await runner.reload(definitions);
-
-      // New errors are those appended by the runner.onError listener during reload
-      const newErrors = state.errors.slice(prevErrorCount);
-      const failedIds = newErrors.map((e) => e.extensionId);
-      const loadedCount = definitions.length - newErrors.length;
-
-      if (newErrors.length > 0) {
-        this.logger.warn(
-          `Channel ${channelKey}: ${newErrors.length}/${definitions.length} extension(s) failed during reload: ${failedIds.join(", ")}`,
-        );
+    // 清理旧绑定
+    for (const old of state.bindings) {
+      try {
+        await old.cleanup?.dispose?.();
+      } catch (err) {
+        state.errors.push({
+          extensionId: old.id,
+          error: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined,
+        });
       }
-
-      return {
-        channelKey,
-        success: newErrors.length === 0,
-        loadedCount,
-        failedExtensions: failedIds.length > 0 ? failedIds : undefined,
-        error:
-          newErrors.length > 0
-            ? newErrors.map((e) => `${e.extensionId}: ${e.error}`).join("; ")
-            : undefined,
-      };
-    } catch (err) {
-      // Unexpected failure in the reload orchestration itself
-      const error = err instanceof Error ? err.message : String(err);
-      state.errors.push({
-        extensionId: "*",
-        error,
-        stack: err instanceof Error ? err.stack : undefined,
-      });
-      this.logger.error(`Channel ${channelKey} reload failed: ${error}`);
-      return {
-        channelKey,
-        success: false,
-        loadedCount: 0,
-        error,
-      };
     }
+
+    // 创建新绑定
+    const nextBindings: ExtensionBinding[] = [];
+    const reloadErrors: ChannelRuntimeError[] = [];
+    for (const def of sorted) {
+      try {
+        nextBindings.push(await this._createBinding(def, state.host));
+      } catch (err) {
+        reloadErrors.push({
+          extensionId: def.id,
+          error: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined,
+        });
+      }
+    }
+
+    // 更新状态
+    state.bindings = nextBindings;
+    state.errors.push(...reloadErrors);
+    this._installBindings(state.hookRunner, nextBindings);
+    state.host.applyToolState(this._buildToolSnapshotFromBindings(nextBindings));
+
+    return {
+      channelKey: state.channelKey,
+      success: reloadErrors.length === 0,
+      loadedCount: nextBindings.length,
+      failedExtensions: reloadErrors.map((e) => e.extensionId),
+      error: reloadErrors.length
+        ? reloadErrors.map((e) => `${e.extensionId}: ${e.error}`).join("; ")
+        : undefined,
+    };
   }
 
   /**
@@ -432,18 +490,16 @@ export class ExtensionService extends Service<ExtensionConfig> {
   // Internal: Helpers
   // =========================================================================
 
+  /**
+   * 构建 ChannelRuntime 返回值
+   *
+   * 不包含 extensionRunner — 核心拥有绑定生命周期
+   */
   private _buildChannelRuntime(state: ChannelRuntimeState): ChannelRuntime {
-    const snapshot = this.buildToolSnapshot(state.context);
-    if (!state.hookRunner) {
-      throw new Error(
-        `Channel runtime ${state.channelKey} has no HookRunner. Use createChannelRuntime instead of registerRunner.`,
-      );
-    }
     return {
       channelKey: state.channelKey,
-      toolSnapshot: snapshot,
+      toolSnapshot: this._buildToolSnapshotFromBindings(state.bindings),
       hookRunner: state.hookRunner,
-      extensionRunner: state.runner,
       errors: [...state.errors],
       dispose: () => this.disposeChannelRuntime(state.context),
     };

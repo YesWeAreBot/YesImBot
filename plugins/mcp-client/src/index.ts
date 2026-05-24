@@ -6,6 +6,8 @@ import type { ExtensionAPI, ToolDefinition } from "koishi-plugin-yesimbot";
 import { connectMcpServer } from "./transports";
 import type { McpClientConfig, McpClientTransport } from "./types";
 
+type McpToolDefinition = ToolDefinition<unknown, unknown>;
+
 export default class McpClientPlugin extends Service<McpClientConfig> {
   static name = "mcp-client";
   static inject = ["yesimbot.extension"];
@@ -66,14 +68,14 @@ export default class McpClientPlugin extends Service<McpClientConfig> {
       }
     }
 
-    const registry = new Map<string, { client: Client; tools: ToolDefinition[] }>();
+    const registry = new Map<string, { client: Client; tools: McpToolDefinition[] }>();
 
     this.ctx.logger.info("注册 MCP 客户端工具...");
     for (const [name, client] of this.clients.entries()) {
       const resp = await client.listTools();
       const tools = resp.tools;
       this.ctx.logger.info(`MCP 服务器 ${name} 提供的工具: ${tools.map((t) => t.name).join(", ")}`);
-      const toolDefs: ToolDefinition[] = tools.map((tool) => ({
+      const toolDefs: McpToolDefinition[] = tools.map((tool) => ({
         name: `${name}_${tool.name}`,
         description: tool.description || "no description provided",
         inputSchema: jsonSchema(tool.inputSchema as unknown as JSONSchema7),

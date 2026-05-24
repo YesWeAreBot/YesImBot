@@ -57,14 +57,14 @@ export default class SkillPlugin extends Service<SkillConfig> {
     this.ctx["yesimbot.extension"].registerExtension({
       id: "skill",
       setup(api) {
-        api.on("agent:before-start", async (event) => {
+        api.on("agent:before-start", ((event: { systemPrompt: string }) => {
           logger.info(`正在准备技能，已加载 ${skills.length} 个技能`);
           const skillPrompt = formatSkillsForPrompt(skills);
 
           return {
             systemPrompt: event.systemPrompt + skillPrompt,
           };
-        });
+        }) as (...args: unknown[]) => unknown);
         api.registerTool<LoadSkillToolInput, LoadSkillToolOutput>({
           name: "load_skill",
           description: "加载技能",
