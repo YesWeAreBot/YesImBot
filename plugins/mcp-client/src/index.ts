@@ -96,7 +96,7 @@ export default class McpClientPlugin extends Service<McpClientConfig> {
     this.ctx["yesimbot.extension"].registerExtension({
       id: "mcp-client",
       setup: (api: ExtensionAPI) => {
-        for (const [name, { client, tools }] of registry.entries()) {
+        for (const [name, { client: _client, tools }] of registry.entries()) {
           for (const tool of tools) {
             this.ctx.logger.info(`注册工具 ${tool.name} from ${name}_${tool.name}`);
             api.registerTool(tool);

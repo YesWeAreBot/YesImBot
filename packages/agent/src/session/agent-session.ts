@@ -27,20 +27,11 @@ import { Compactor } from "./compactor.js";
 import {
   type BuildSystemPromptOptions,
   type ContextUsage,
-  type HookErrorListener,
   type HookRunner,
-  type MessageEndEvent,
-  type MessageStartEvent,
-  type MessageUpdateEvent,
-  type SessionStartEvent,
-  type ToolExecutionEndEvent,
-  type ToolExecutionStartEvent,
-  type TurnEndEvent,
-  type TurnStartEvent,
 } from "./hook-runner.js";
 import type { CustomMessage } from "./messages.js";
-import { DEFAULT_RETRY_SETTINGS, RetryHandler, type RetrySettings } from "./retry-handler.js";
-import type { CompactionEntry, SessionManager } from "./session-manager.js";
+import { RetryHandler, type RetrySettings } from "./retry-handler.js";
+import type { SessionManager } from "./session-manager.js";
 import { getLatestCompactionEntry, type SessionHeader } from "./session-manager.js";
 
 /** Session-specific events that extend the core AgentEvent */

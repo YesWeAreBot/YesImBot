@@ -84,7 +84,7 @@ export default class SkillPlugin extends Service<SkillConfig> {
             },
             required: ["skill"],
           }),
-          execute: async ({ skill: skillName, args }, options) => {
+          execute: async ({ skill: skillName, args: _args }, _options) => {
             const skill = skills.find((s) => s.name === skillName);
             if (!skill) {
               return {

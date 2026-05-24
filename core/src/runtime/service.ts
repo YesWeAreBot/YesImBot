@@ -94,7 +94,7 @@ export class RuntimeService extends Service<RuntimeConfig> {
       // 注册 system-prompt 扩展（per-channel，通过 built-in factory 创建）
       const promptExtension = createSystemPromptExtension({
         basePath: this.config.basePath,
-        resolveBotInfo: (ctx) => ({
+        resolveBotInfo: (_ctx) => ({
           selfId: bot.selfId,
           selfName: bot.user?.nick || bot.user?.name || "(unknown)",
         }),
