@@ -19,12 +19,17 @@ import { TextPart, UserContent } from "@ai-sdk/provider-utils";
 import { AgentMessage, Message } from "../agent/types";
 import { createCompactionSummaryMessage, createCustomMessage } from "./messages";
 
+/**
+ * Session header — only identity and tree relationship.
+ * `cwd` is kept for backward compatibility with old session files but is NOT written to new headers.
+ */
 export interface SessionHeader {
   type: "session";
   id: string;
   timestamp: string;
-  cwd: string;
   parentSession?: string;
+  /** @deprecated Only present in old session files. New headers omit this. */
+  cwd?: string;
 }
 
 export interface NewSessionOptions {
@@ -495,8 +500,7 @@ async function buildSessionInfo(filePath: string): Promise<SessionInfo | null> {
       }
     }
 
-    const cwd =
-      typeof (header as SessionHeader).cwd === "string" ? (header as SessionHeader).cwd : "";
+    const cwd = (header as SessionHeader).cwd ?? "";
     const parentSessionPath = (header as SessionHeader).parentSession;
 
     const modified = getSessionModifiedDate(entries, header as SessionHeader, stats.mtime);
@@ -639,7 +643,6 @@ export class SessionManager {
       type: "session",
       id: this.sessionId,
       timestamp,
-      cwd: this.cwd,
       parentSession: options?.parentSession,
     };
     this.fileEntries = [header];

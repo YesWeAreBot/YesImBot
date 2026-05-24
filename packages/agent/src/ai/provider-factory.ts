@@ -32,10 +32,7 @@ export interface ProviderContext {
   on(event: "dispose", callback: () => void): void;
 }
 
-export interface ProviderPluginOptions<
-  TConfig extends BaseProviderConfig,
-  TClient,
-> {
+export interface ProviderPluginOptions<TConfig extends BaseProviderConfig, TClient> {
   /** Koishi plugin name, e.g. "yesimbot-provider-openai" */
   name: string;
   /** Default provider id, e.g. "openai" */
@@ -49,11 +46,7 @@ export interface ProviderPluginOptions<
   /** Adapt SDK client + modelId → LanguageModel */
   chat: (client: TClient, modelId: string, config: TConfig) => LanguageModel;
   /** Adapt SDK client + modelId → EmbeddingModel (omit when capabilities.embedding is false) */
-  embedding?: (
-    client: TClient,
-    modelId: string,
-    config: TConfig,
-  ) => EmbeddingModel;
+  embedding?: (client: TClient, modelId: string, config: TConfig) => EmbeddingModel;
 }
 
 // ---------------------------------------------------------------------------
@@ -67,10 +60,7 @@ export interface ProviderPluginOptions<
  * construction, ModelProvider object, register/unregister lifecycle, and
  * the "no embedding" throw pattern.
  */
-export function createProviderPlugin<
-  TConfig extends BaseProviderConfig,
-  TClient,
->(
+export function createProviderPlugin<TConfig extends BaseProviderConfig, TClient>(
   options: ProviderPluginOptions<TConfig, TClient>,
 ): {
   name: string;
@@ -96,15 +86,12 @@ export function createProviderPlugin<
         id: config.id,
         capabilities,
         chatModels: () => config.chatModels,
-        embeddingModels: () =>
-          capabilities.embedding ? (config.embeddingModels ?? []) : [],
+        embeddingModels: () => (capabilities.embedding ? (config.embeddingModels ?? []) : []),
         chat: (modelId) => chat(client, modelId, config),
         embedding: capabilities.embedding
           ? (modelId) => embedding!(client, modelId, config)
           : () => {
-              throw new Error(
-                `Provider "${config.id}" does not support embedding`,
-              );
+              throw new Error(`Provider "${config.id}" does not support embedding`);
             },
       };
 

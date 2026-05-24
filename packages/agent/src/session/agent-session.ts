@@ -16,38 +16,30 @@ import {
 } from "../agent/types.js";
 import {
   calculateContextTokens,
-  compact,
   type CompactionPrompts,
   type CompactionResult,
   CompactionSettings,
   DEFAULT_COMPACTION_PROMPTS,
   estimateContextTokens,
-  prepareCompaction,
   shouldCompact,
 } from "./compaction/index.js";
-import { createEventBus } from "./event-bus.js";
-import { createExtensionRuntime } from "./extensions/loader.js";
+import { Compactor } from "./compactor.js";
 import {
-  emitSessionShutdownEvent,
-  ExtensionErrorListener,
-  ExtensionRunner,
-} from "./extensions/runner.js";
-import {
-  ContextUsage,
-  ExtensionDefinition,
-  MessageEndEvent,
-  MessageStartEvent,
-  MessageUpdateEvent,
-  SessionBeforeCompactResult,
-  SessionStartEvent,
-  ToolDefinition,
-  ToolExecutionEndEvent,
-  ToolExecutionStartEvent,
-  TurnEndEvent,
-  TurnStartEvent,
-} from "./extensions/types.js";
-import type { BuildSystemPromptOptions } from "./extensions/types.js";
+  type BuildSystemPromptOptions,
+  type ContextUsage,
+  type HookErrorListener,
+  type HookRunner,
+  type MessageEndEvent,
+  type MessageStartEvent,
+  type MessageUpdateEvent,
+  type SessionStartEvent,
+  type ToolExecutionEndEvent,
+  type ToolExecutionStartEvent,
+  type TurnEndEvent,
+  type TurnStartEvent,
+} from "./hook-runner.js";
 import type { CustomMessage } from "./messages.js";
+import { DEFAULT_RETRY_SETTINGS, RetryHandler, type RetrySettings } from "./retry-handler.js";
 import type { CompactionEntry, SessionManager } from "./session-manager.js";
 import { getLatestCompactionEntry, type SessionHeader } from "./session-manager.js";
 
@@ -85,23 +77,18 @@ export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
 // ============================================================================
 
 /**
- * Configuration for auto-retry behavior on transient errors.
+ * Extension Tool Snapshot — full set of extension tools for a channel.
+ * Applied atomically to AgentSession via applyToolState().
  */
-export interface RetrySettings {
-  /** Whether auto-retry is enabled. Default: true */
-  enabled: boolean;
-  /** Maximum number of retry attempts. Default: 3 */
-  maxRetries: number;
-  /** Base delay in ms for exponential backoff (doubled each attempt). Default: 2000 */
-  baseDelayMs: number;
-  /** Maximum delay in ms before giving up. Default: 60000 */
-  maxDelayMs: number;
+export interface ExtensionToolSnapshot {
+  tools: Map<string, AgentTool>;
+  activeToolNames?: string[];
 }
 
 export interface AgentSessionConfig {
   agent: Agent;
   sessionManager: SessionManager;
-  cwd: string;
+  hookRunner: HookRunner;
   /** Context window size in tokens */
   contextWindow?: number;
   /** Compaction behavior settings */
@@ -115,7 +102,7 @@ export interface AgentSessionConfig {
   /** Follow-up message queue mode */
   followUpMode?: "all" | "one-at-a-time";
   /** SDK custom tools registered outside extensions */
-  customTools?: Map<string, ToolDefinition>;
+  customTools?: Map<string, AgentTool>;
   /** Initial active built-in tool names. Default: [read, bash, edit, write] */
   initialActiveToolNames?: string[];
   /** Optional allowlist of tool names. When provided, only these tool names are exposed. */
@@ -127,16 +114,6 @@ export interface AgentSessionConfig {
    * a definition-first registry even when callers provide plain AgentTool instances.
    */
   baseToolsOverride?: Map<string, AgentTool>;
-  /** Mutable ref used by Agent to access the current ExtensionRunner */
-  extensionRunnerRef?: { current?: ExtensionRunner };
-  /** Session start event metadata emitted when extensions bind to this runtime. */
-  sessionStartEvent?: SessionStartEvent;
-  /** Extension definitions list, provided by core or ExtensionRegistry */
-  extensions?: ExtensionDefinition[];
-}
-
-export interface ExtensionBindings {
-  onError?: ExtensionErrorListener;
 }
 
 /** Options for AgentSession.prompt() */
@@ -177,39 +154,28 @@ export class AgentSession {
   // Branch summarization state
   private _branchSummaryAbortController: AbortController | undefined = undefined;
 
-  // Retry state
-  private _retryAbortController: AbortController | undefined = undefined;
-  private _retryAttempt = 0;
-  private _retryPromise: Promise<void> | undefined = undefined;
-  private _retryResolve: (() => void) | undefined = undefined;
+  // HookRunner (pure hook dispatcher, provided by core)
+  private _hookRunner: HookRunner;
 
-  // Bash execution state
-  private _bashAbortController: AbortController | undefined = undefined;
+  // Compactor (extracted compaction logic)
+  private _compactor: Compactor;
 
-  // Extension system
-  private _extensionRunner!: ExtensionRunner;
-  private _extensions: ExtensionDefinition[];
-  private _turnIndex = 0;
+  // RetryHandler (extracted retry logic)
+  private _retryHandler: RetryHandler;
 
-  private _customTools: Map<string, ToolDefinition>;
-  private _baseToolDefinitions: Map<string, ToolDefinition> = new Map();
-  private _cwd: string;
-  private _extensionRunnerRef?: { current?: ExtensionRunner };
+  // Tool state
+  private _customTools: Map<string, AgentTool>;
+  private _baseToolDefinitions: Map<string, AgentTool> = new Map();
+  private _extensionTools: Map<string, AgentTool> = new Map();
   private _initialActiveToolNames?: string[];
   private _allowedToolNames?: Set<string>;
   private _baseToolsOverride?: Map<string, AgentTool>;
-  private _sessionStartEvent: SessionStartEvent;
 
-  private _extensionErrorListener?: ExtensionErrorListener;
-  private _extensionErrorUnsubscriber?: () => void;
+  private _turnIndex = 0;
 
   // Tool registry for extension getTools/setTools
   private _toolRegistry: Map<string, AgentTool> = new Map();
-  private _toolDefinitions: Map<string, ToolDefinition> = new Map();
-  private _toolPromptSnippets: Map<string, string> = new Map();
-  private _toolPromptGuidelines: Map<string, string[]> = new Map();
 
-  private _retrySettings!: RetrySettings;
   private _compactionSettings: CompactionSettings;
   private _compactionPrompts: CompactionPrompts;
   private _contextWindow: number;
@@ -217,17 +183,11 @@ export class AgentSession {
   constructor(config: AgentSessionConfig) {
     this.agent = config.agent;
     this.sessionManager = config.sessionManager;
+    this._hookRunner = config.hookRunner;
     this._customTools = config.customTools ?? new Map();
-    this._cwd = config.cwd;
-    this._extensionRunnerRef = config.extensionRunnerRef;
     this._initialActiveToolNames = config.initialActiveToolNames;
     this._allowedToolNames = config.allowedToolNames ? new Set(config.allowedToolNames) : undefined;
     this._baseToolsOverride = config.baseToolsOverride;
-    this._extensions = config.extensions ?? [];
-    this._sessionStartEvent = config.sessionStartEvent ?? {
-      type: "session:start",
-      reason: "startup",
-    };
 
     // Read settings from plain config fields
     this._contextWindow = config.contextWindow ?? 128000;
@@ -241,37 +201,57 @@ export class AgentSession {
       ...DEFAULT_COMPACTION_PROMPTS,
       ...(config.compactionPrompts ?? {}),
     };
-    this._retrySettings = {
-      enabled: config.retrySettings?.enabled ?? true,
-      maxRetries: config.retrySettings?.maxRetries ?? 3,
-      baseDelayMs: config.retrySettings?.baseDelayMs ?? 2000,
-      maxDelayMs: config.retrySettings?.maxDelayMs ?? 60000,
-    };
+
+    // Create Compactor
+    this._compactor = new Compactor({
+      sessionManager: this.sessionManager,
+      hookRunner: this._hookRunner,
+      compactionSettings: this._compactionSettings,
+      compactionPrompts: this._compactionPrompts,
+    });
+
+    // Create RetryHandler
+    this._retryHandler = new RetryHandler(config.retrySettings, {
+      onStart: (attempt, maxAttempts, delayMs, errorMessage) => {
+        this._emit({
+          type: "auto_retry_start",
+          attempt,
+          maxAttempts,
+          delayMs,
+          errorMessage,
+        });
+      },
+      onEnd: (success, attempt, finalError) => {
+        this._emit({
+          type: "auto_retry_end",
+          success,
+          attempt,
+          finalError,
+        });
+      },
+    });
 
     this.agent.steeringMode = config.steeringMode ?? "all";
     this.agent.followUpMode = config.followUpMode ?? "all";
 
     // Restore persisted messages from SessionManager into Agent state.
-    // This ensures historical messages (before restart) are available in LLM context.
-    // buildSessionContext() handles: regular messages, custom messages, compaction summaries.
     const sessionContext = this.sessionManager.buildSessionContext();
     if (sessionContext.messages.length > 0) {
       this.agent.state.messages = sessionContext.messages;
     }
 
     // Always subscribe to agent events for internal handling
-    // (session persistence, extensions, auto-compaction, retry logic)
     this._unsubscribeAgent = this.agent.subscribe(this._handleAgentEvent);
     this._installAgentToolHooks();
 
-    this._buildRuntime({
+    this._refreshToolRegistry({
       activeToolNames: this._initialActiveToolNames,
       includeAllExtensionTools: true,
     });
 
     // Wire context:build hook: let extensions modify messages before each LLM call
     this.agent.transformContext = async (messages, _signal) => {
-      return this._extensionRunner.emitContextBuild(messages);
+      return this._hookRunner.transformContext(messages);
     };
 
     // Wire provider:before-request hook: wrap model with middleware
@@ -286,10 +266,10 @@ export class AgentSession {
     const middleware: LanguageModelMiddleware = {
       specificationVersion: "v3",
       wrapStream: async (options) => {
-        const runner = this._extensionRunner;
-        if (runner) {
+        const runner = this._hookRunner;
+        if (runner.hasHandlers("provider:before-request")) {
           try {
-            const modified = await runner.emitBeforeProviderRequest(options.params);
+            const modified = await runner.beforeProviderRequest(options.params);
             if (modified && typeof modified === "object") {
               options = { ...options, params: modified as typeof options.params };
             }
@@ -320,7 +300,7 @@ export class AgentSession {
    */
   private _installAgentToolHooks(): void {
     this.agent.beforeToolCall = async ({ toolCall, args }) => {
-      const runner = this._extensionRunner;
+      const runner = this._hookRunner;
       if (!runner.hasHandlers("tool:call")) {
         return undefined;
       }
@@ -328,8 +308,7 @@ export class AgentSession {
       await this._agentEventQueue;
 
       try {
-        return await runner.emitToolCall({
-          type: "tool:call",
+        return await runner.beforeToolCall({
           toolName: toolCall.toolName,
           toolCallId: toolCall.toolCallId,
           input: args as Record<string, unknown>,
@@ -343,13 +322,12 @@ export class AgentSession {
     };
 
     this.agent.afterToolCall = async ({ toolCall, args, result, isError }) => {
-      const runner = this._extensionRunner;
+      const runner = this._hookRunner;
       if (!runner.hasHandlers("tool:result")) {
         return undefined;
       }
 
-      const hookResult = await runner.emitToolResult({
-        type: "tool:result",
+      const hookResult = await runner.afterToolCall({
         toolName: toolCall.toolName,
         toolCallId: toolCall.toolCallId,
         input: args as Record<string, unknown>,
@@ -411,22 +389,12 @@ export class AgentSession {
   };
 
   private _createRetryPromiseForAgentEnd(event: AgentEvent): void {
-    if (event.type !== "agent_end" || this._retryPromise) {
-      return;
-    }
-
-    if (!this._retrySettings.enabled) {
-      return;
-    }
+    if (event.type !== "agent_end") return;
 
     const lastAssistant = this._findLastAssistantInMessages(event.messages);
-    if (!lastAssistant || !this._isRetryableError(lastAssistant)) {
-      return;
-    }
+    if (!lastAssistant) return;
 
-    this._retryPromise = new Promise((resolve) => {
-      this._retryResolve = resolve;
-    });
+    this._retryHandler.prepareRetryIfNeeded(lastAssistant);
   }
 
   private _findLastAssistantInMessages(messages: AgentMessage[]): AssistantMessage | undefined {
@@ -501,13 +469,8 @@ export class AgentSession {
 
         // Reset retry counter immediately on successful assistant response
         // This prevents accumulation across multiple LLM calls within a turn
-        if (assistantMsg.finishReason !== "error" && this._retryAttempt > 0) {
-          this._emit({
-            type: "auto_retry_end",
-            success: true,
-            attempt: this._retryAttempt,
-          });
-          this._retryAttempt = 0;
+        if (assistantMsg.finishReason !== "error" && this._retryHandler.attempt > 0) {
+          this._retryHandler.resetOnSuccess();
         }
       }
     }
@@ -519,23 +482,19 @@ export class AgentSession {
       this._lastAssistantMessage = undefined;
 
       // Check for retryable errors first (overloaded, rate limit, server errors)
-      if (this._isRetryableError(msg)) {
+      if (this._retryHandler.isRetryableError(msg)) {
         const didRetry = await this._handleRetryableError(msg);
         if (didRetry) return; // Retry was initiated, don't proceed to compaction
       }
 
-      this._resolveRetry();
+      this._retryHandler.waitForRetry().then(() => {});
       await this._checkCompaction(msg);
     }
   }
 
-  /** Resolve the pending retry promise */
+  /** Resolve the pending retry promise — delegated to RetryHandler */
   private _resolveRetry(): void {
-    if (this._retryResolve) {
-      this._retryResolve();
-      this._retryResolve = undefined;
-      this._retryPromise = undefined;
-    }
+    // RetryHandler handles this internally now
   }
 
   /** Extract text content from a message */
@@ -563,61 +522,54 @@ export class AgentSession {
   private async _emitExtensionEvent(event: AgentEvent): Promise<void> {
     if (event.type === "agent_start") {
       this._turnIndex = 0;
-      await this._extensionRunner.emit({ type: "agent:start" });
+      await this._hookRunner.emitLifecycle({ type: "agent:start" });
     } else if (event.type === "agent_end") {
-      await this._extensionRunner.emit({ type: "agent:end", messages: event.messages });
+      await this._hookRunner.emitLifecycle({ type: "agent:end", messages: event.messages });
     } else if (event.type === "turn_start") {
-      const extensionEvent: TurnStartEvent = {
+      await this._hookRunner.emitLifecycle({
         type: "turn:start",
         turnIndex: this._turnIndex,
         timestamp: Date.now(),
-      };
-      await this._extensionRunner.emit(extensionEvent);
+      });
     } else if (event.type === "turn_end") {
-      const extensionEvent: TurnEndEvent = {
+      await this._hookRunner.emitLifecycle({
         type: "turn:end",
         turnIndex: this._turnIndex,
         message: event.message,
         toolResults: event.toolResults,
-      };
-      await this._extensionRunner.emit(extensionEvent);
+      });
       this._turnIndex++;
     } else if (event.type === "message_start") {
-      const extensionEvent: MessageStartEvent = {
+      await this._hookRunner.emitLifecycle({
         type: "message:start",
         message: event.message,
-      };
-      await this._extensionRunner.emit(extensionEvent);
+      });
     } else if (event.type === "message_update") {
-      const extensionEvent: MessageUpdateEvent = {
+      await this._hookRunner.emitLifecycle({
         type: "message:update",
         message: event.message,
         assistantMessageEvent: event.assistantMessageEvent,
-      };
-      await this._extensionRunner.emit(extensionEvent);
+      });
     } else if (event.type === "message_end") {
-      const extensionEvent: MessageEndEvent = {
+      await this._hookRunner.emitLifecycle({
         type: "message:end",
         message: event.message,
-      };
-      await this._extensionRunner.emit(extensionEvent);
+      });
     } else if (event.type === "tool_execution_start") {
-      const extensionEvent: ToolExecutionStartEvent = {
+      await this._hookRunner.emitLifecycle({
         type: "tool:execution:start",
         toolCallId: event.toolCallId,
         toolName: event.toolName,
         args: event.args,
-      };
-      await this._extensionRunner.emit(extensionEvent);
+      });
     } else if (event.type === "tool_execution_end") {
-      const extensionEvent: ToolExecutionEndEvent = {
+      await this._hookRunner.emitLifecycle({
         type: "tool:execution:end",
         toolCallId: event.toolCallId,
         toolName: event.toolName,
         result: event.result,
         isError: event.isError,
-      };
-      await this._extensionRunner.emit(extensionEvent);
+      });
     }
   }
 
@@ -664,19 +616,7 @@ export class AgentSession {
    * Call this when completely done with the session.
    */
   dispose(): void {
-    for (const binding of this._extensionRunner.getBindings()) {
-      try {
-        const result = binding.cleanup?.dispose?.();
-        if (result && typeof result === "object" && "then" in result) {
-          (result as Promise<void>).catch(() => {});
-        }
-      } catch {
-        // ignore cleanup errors
-      }
-    }
-    this._extensionRunner.invalidate(
-      "This extension instance is stale after session replacement or reload. Use the provided replacement-session context instead.",
-    );
+    this._hookRunner.clear();
     this._disconnectFromAgent();
     this._eventListeners = [];
   }
@@ -707,7 +647,7 @@ export class AgentSession {
 
   /** Current retry attempt (0 if not retrying) */
   get retryAttempt(): number {
-    return this._retryAttempt;
+    return this._retryHandler.attempt;
   }
 
   /**
@@ -721,12 +661,12 @@ export class AgentSession {
   /**
    * Get all configured tools with name, description, parameter schema, and source metadata.
    */
-  getAllTools(): Map<string, ToolDefinition> {
-    return new Map(this._toolDefinitions);
+  getAllTools(): Map<string, AgentTool> {
+    return new Map(this._toolRegistry);
   }
 
-  getToolDefinition(name: string): ToolDefinition | undefined {
-    return this._toolDefinitions.get(name);
+  getToolDefinition(name: string): AgentTool | undefined {
+    return this._toolRegistry.get(name);
   }
 
   /**
@@ -797,26 +737,28 @@ export class AgentSession {
   /** Update the compaction reserve token threshold. */
   setCompactionReserveTokens(tokens: number): void {
     this._compactionSettings = { ...this._compactionSettings, reserveTokens: tokens };
+    this._compactor.updateSettings({ reserveTokens: tokens });
   }
 
   /** Update the compaction keep-recent token threshold. */
   setCompactionKeepRecentTokens(tokens: number): void {
     this._compactionSettings = { ...this._compactionSettings, keepRecentTokens: tokens };
+    this._compactor.updateSettings({ keepRecentTokens: tokens });
   }
 
   /** Update the retry attempt limit. */
   setRetryMaxRetries(maxRetries: number): void {
-    this._retrySettings = { ...this._retrySettings, maxRetries };
+    this._retryHandler.updateSettings({ maxRetries });
   }
 
   /** Update the retry base delay. */
   setRetryBaseDelayMs(delayMs: number): void {
-    this._retrySettings = { ...this._retrySettings, baseDelayMs: delayMs };
+    this._retryHandler.updateSettings({ baseDelayMs: delayMs });
   }
 
   /** Update the retry max delay. */
   setRetryMaxDelayMs(delayMs: number): void {
-    this._retrySettings = { ...this._retrySettings, maxDelayMs: delayMs };
+    this._retryHandler.updateSettings({ maxDelayMs: delayMs });
   }
 
   private _normalizePromptSnippet(text: string | undefined): string | undefined {
@@ -848,19 +790,11 @@ export class AgentSession {
     const toolSnippets: Record<string, string> = {};
     const promptGuidelines: string[] = [];
 
-    for (const name of activeToolNames) {
-      const snippet = this._toolPromptSnippets.get(name);
-      if (snippet) {
-        toolSnippets[name] = snippet;
-      }
-      const guidelines = this._toolPromptGuidelines.get(name);
-      if (guidelines) {
-        promptGuidelines.push(...guidelines);
-      }
-    }
+    // Snippets and guidelines are no longer tracked by agent — core handles prompt assembly.
+    // But we still pass the structure for backward-compatible hooks.
 
     return {
-      cwd: this._cwd,
+      cwd: this.sessionManager.getCwd(),
       baseSystemPrompt: this.agent.state.systemPrompt,
       selectedTools: activeToolNames,
       toolSnippets,
@@ -880,14 +814,12 @@ export class AgentSession {
     promptText: string,
     images?: ImagePart[],
   ): Promise<AgentMessage[]> {
-    const toolPromptContext = this._collectToolPromptContext();
-
-    const result = await this._extensionRunner.emitBeforeAgentStart(
-      promptText,
+    const result = await this._hookRunner.beforeAgentStart({
+      prompt: promptText,
       images,
-      this.agent.state.systemPrompt,
-      toolPromptContext,
-    );
+      systemPrompt: this.agent.state.systemPrompt,
+      systemPromptOptions: this._collectToolPromptContext(),
+    });
 
     const injected: AgentMessage[] =
       result?.messages?.map((msg) => ({
@@ -1211,12 +1143,14 @@ export class AgentSession {
         throw new Error("No model selected");
       }
 
-      const pathEntries = this.sessionManager.getBranch();
-      const settings = this._compactionSettings;
+      const result = await this._compactor.execute({
+        model: this.model,
+        signal: this._compactionAbortController.signal,
+        customInstructions,
+      });
 
-      const preparation = prepareCompaction(pathEntries, settings);
-      if (!preparation) {
-        // Check why we can't compact
+      if (!result) {
+        const pathEntries = this.sessionManager.getBranch();
         const lastEntry = pathEntries[pathEntries.length - 1];
         if (lastEntry?.type === "compaction") {
           throw new Error("Already compacted");
@@ -1224,88 +1158,15 @@ export class AgentSession {
         throw new Error("Nothing to compact (session too small)");
       }
 
-      let extensionCompaction: CompactionResult | undefined;
-      let fromExtension = false;
+      // Update agent messages and emit session:compact
+      const postResult = await this._compactor.postCompaction(result.summary, result.fromExtension);
+      this.agent.state.messages = postResult.agentMessages;
 
-      if (this._extensionRunner.hasHandlers("session:before-compact")) {
-        const result = (await this._extensionRunner.emit({
-          type: "session:before-compact",
-          preparation,
-          branchEntries: pathEntries,
-          customInstructions,
-          signal: this._compactionAbortController.signal,
-        })) as SessionBeforeCompactResult | undefined;
-
-        if (result?.cancel) {
-          throw new Error("Compaction cancelled");
-        }
-
-        if (result?.compaction) {
-          extensionCompaction = result.compaction;
-          fromExtension = true;
-        }
-      }
-
-      let summary: string;
-      let firstKeptEntryId: string;
-      let tokensBefore: number;
-      let details: unknown;
-
-      if (extensionCompaction) {
-        // Extension provided compaction content
-        summary = extensionCompaction.summary;
-        firstKeptEntryId = extensionCompaction.firstKeptEntryId;
-        tokensBefore = extensionCompaction.tokensBefore;
-        details = extensionCompaction.details;
-      } else {
-        // Generate compaction result
-        const result = await compact(
-          preparation,
-          this.model,
-          {},
-          customInstructions,
-          this._compactionAbortController.signal,
-          this._compactionPrompts,
-        );
-        summary = result.summary;
-        firstKeptEntryId = result.firstKeptEntryId;
-        tokensBefore = result.tokensBefore;
-        details = result.details;
-      }
-
-      if (this._compactionAbortController.signal.aborted) {
-        throw new Error("Compaction cancelled");
-      }
-
-      this.sessionManager.appendCompaction(
-        summary,
-        firstKeptEntryId,
-        tokensBefore,
-        details,
-        fromExtension,
-      );
-      const newEntries = this.sessionManager.getEntries();
-      const sessionContext = this.sessionManager.buildSessionContext();
-      this.agent.state.messages = sessionContext.messages;
-
-      // Get the saved compaction entry for the extension event
-      const savedCompactionEntry = newEntries.find(
-        (e) => e.type === "compaction" && e.summary === summary,
-      ) as CompactionEntry | undefined;
-
-      if (this._extensionRunner && savedCompactionEntry) {
-        await this._extensionRunner.emit({
-          type: "session:compact",
-          compactionEntry: savedCompactionEntry,
-          fromExtension,
-        });
-      }
-
-      const compactionResult = {
-        summary,
-        firstKeptEntryId,
-        tokensBefore,
-        details,
+      const compactionResult: CompactionResult = {
+        summary: result.summary,
+        firstKeptEntryId: result.firstKeptEntryId,
+        tokensBefore: result.tokensBefore,
+        details: result.details,
       };
       this._emit({
         type: "compaction_end",
@@ -1467,8 +1328,6 @@ export class AgentSession {
     reason: "overflow" | "threshold",
     willRetry: boolean,
   ): Promise<void> {
-    const settings = this._compactionSettings;
-
     this._emit({ type: "compaction_start", reason });
     this._autoCompactionAbortController = new AbortController();
 
@@ -1484,10 +1343,12 @@ export class AgentSession {
         return;
       }
 
-      const pathEntries = this.sessionManager.getBranch();
+      const result = await this._compactor.execute({
+        model: this.model,
+        signal: this._autoCompactionAbortController.signal,
+      });
 
-      const preparation = prepareCompaction(pathEntries, settings);
-      if (!preparation) {
+      if (!result) {
         this._emit({
           type: "compaction_end",
           reason,
@@ -1498,104 +1359,23 @@ export class AgentSession {
         return;
       }
 
-      let extensionCompaction: CompactionResult | undefined;
-      let fromExtension = false;
+      // Update agent messages and emit session:compact
+      const postResult = await this._compactor.postCompaction(result.summary, result.fromExtension);
+      this.agent.state.messages = postResult.agentMessages;
 
-      if (this._extensionRunner.hasHandlers("session:before-compact")) {
-        const extensionResult = (await this._extensionRunner.emit({
-          type: "session:before-compact",
-          preparation,
-          branchEntries: pathEntries,
-          customInstructions: undefined,
-          signal: this._autoCompactionAbortController.signal,
-        })) as SessionBeforeCompactResult | undefined;
-
-        if (extensionResult?.cancel) {
-          this._emit({
-            type: "compaction_end",
-            reason,
-            result: undefined,
-            aborted: true,
-            willRetry: false,
-          });
-          return;
-        }
-
-        if (extensionResult?.compaction) {
-          extensionCompaction = extensionResult.compaction;
-          fromExtension = true;
-        }
-      }
-
-      let summary: string;
-      let firstKeptEntryId: string;
-      let tokensBefore: number;
-      let details: unknown;
-
-      if (extensionCompaction) {
-        // Extension provided compaction content
-        summary = extensionCompaction.summary;
-        firstKeptEntryId = extensionCompaction.firstKeptEntryId;
-        tokensBefore = extensionCompaction.tokensBefore;
-        details = extensionCompaction.details;
-      } else {
-        // Generate compaction result
-        const compactResult = await compact(
-          preparation,
-          this.model,
-          {},
-          undefined,
-          this._autoCompactionAbortController.signal,
-          this._compactionPrompts,
-        );
-        summary = compactResult.summary;
-        firstKeptEntryId = compactResult.firstKeptEntryId;
-        tokensBefore = compactResult.tokensBefore;
-        details = compactResult.details;
-      }
-
-      if (this._autoCompactionAbortController.signal.aborted) {
-        this._emit({
-          type: "compaction_end",
-          reason,
-          result: undefined,
-          aborted: true,
-          willRetry: false,
-        });
-        return;
-      }
-
-      this.sessionManager.appendCompaction(
-        summary,
-        firstKeptEntryId,
-        tokensBefore,
-        details,
-        fromExtension,
-      );
-      const newEntries = this.sessionManager.getEntries();
-      const sessionContext = this.sessionManager.buildSessionContext();
-      this.agent.state.messages = sessionContext.messages;
-
-      // Get the saved compaction entry for the extension event
-      const savedCompactionEntry = newEntries.find(
-        (e) => e.type === "compaction" && e.summary === summary,
-      ) as CompactionEntry | undefined;
-
-      if (this._extensionRunner && savedCompactionEntry) {
-        await this._extensionRunner.emit({
-          type: "session:compact",
-          compactionEntry: savedCompactionEntry,
-          fromExtension,
-        });
-      }
-
-      const result: CompactionResult = {
-        summary,
-        firstKeptEntryId,
-        tokensBefore,
-        details,
+      const compactionResult: CompactionResult = {
+        summary: result.summary,
+        firstKeptEntryId: result.firstKeptEntryId,
+        tokensBefore: result.tokensBefore,
+        details: result.details,
       };
-      this._emit({ type: "compaction_end", reason, result, aborted: false, willRetry });
+      this._emit({
+        type: "compaction_end",
+        reason,
+        result: compactionResult,
+        aborted: false,
+        willRetry,
+      });
 
       if (willRetry) {
         const messages = this.agent.state.messages;
@@ -1611,8 +1391,6 @@ export class AgentSession {
           this.agent.continue().catch(() => {});
         }, 100);
       } else if (this.agent.hasQueuedMessages()) {
-        // Auto-compaction can complete while follow-up/steering/custom messages are waiting.
-        // Kick the loop so queued messages are actually delivered.
         setTimeout(() => {
           this.agent.continue().catch(() => {});
         }, 100);
@@ -1647,152 +1425,59 @@ export class AgentSession {
     return this._compactionSettings.enabled;
   }
 
-  async bindExtensions(bindings: ExtensionBindings): Promise<void> {
-    if (bindings.onError !== undefined) {
-      this._extensionErrorListener = bindings.onError;
-    }
-
-    this._applyExtensionBindings(this._extensionRunner);
-    await this._extensionRunner.emit(this._sessionStartEvent);
-  }
-
-  private _applyExtensionBindings(runner: ExtensionRunner): void {
-    this._extensionErrorUnsubscriber?.();
-    this._extensionErrorUnsubscriber = this._extensionErrorListener
-      ? runner.onError(this._extensionErrorListener)
-      : undefined;
-  }
-
-  private _bindExtensionCore(runner: ExtensionRunner): void {
-    runner.bindCore(
-      {
-        sendMessage: (message, options) => {
-          this.sendCustomMessage(message, options).catch((err) => {
-            runner.emitError({
-              event: "send_message",
-              error: err instanceof Error ? err.message : String(err),
-            });
-          });
-        },
-        sendUserMessage: (content, options) => {
-          this.sendUserMessage(content, options).catch((err) => {
-            runner.emitError({
-              event: "send_user_message",
-              error: err instanceof Error ? err.message : String(err),
-            });
-          });
-        },
-        appendEntry: (customType, data) => {
-          this.sessionManager.appendCustomEntry(customType, data);
-        },
-        setSessionName: (name) => {
-          this.sessionManager.appendSessionInfo(name);
-        },
-        getSessionName: () => {
-          return this.sessionManager.getSessionName();
-        },
-
-        getActiveTools: () => this.getActiveToolNames(),
-        setActiveTools: (toolNames) => this.setActiveToolsByName(toolNames),
-        refreshTools: () => this._refreshToolRegistry({ fromRegisterTool: true }),
-      },
-      {
-        getModel: () => this.model,
-        isIdle: () => !this.isStreaming,
-        getSignal: () => this.agent.signal,
-        abort: () => this.abort(),
-        hasPendingMessages: () => this.pendingMessageCount > 0,
-        shutdown: () => {},
-        getContextUsage: () => this.getContextUsage(),
-        compact: (options) => {
-          void (async () => {
-            try {
-              const result = await this.compact(options?.customInstructions);
-              options?.onComplete?.(result);
-            } catch (error) {
-              const err = error instanceof Error ? error : new Error(String(error));
-              options?.onError?.(err);
-            }
-          })();
-        },
-        getSystemPrompt: () => this.systemPrompt,
-      },
-    );
+  /**
+   * Apply an extension tool snapshot from core.
+   * Only updates the extension tools layer — base and custom tools are untouched.
+   */
+  applyToolState(snapshot: ExtensionToolSnapshot): void {
+    this._extensionTools = new Map(snapshot.tools);
+    this._refreshToolRegistry({
+      activeToolNames: snapshot.activeToolNames,
+    });
   }
 
   private _refreshToolRegistry(options?: {
     activeToolNames?: string[];
     includeAllExtensionTools?: boolean;
-    fromRegisterTool?: boolean;
   }): void {
     const previousActiveToolNames = this.getActiveToolNames();
     const allowedToolNames = this._allowedToolNames;
     const isAllowedTool = (name: string): boolean =>
       !allowedToolNames || allowedToolNames.has(name);
 
-    // 收集所有 extension tools
-    const extensionTools = new Map<string, ToolDefinition>();
-    for (const binding of this._extensionRunner.getBindings()) {
-      for (const [name, tool] of binding.tools) {
-        if (isAllowedTool(name) && !extensionTools.has(name)) {
-          extensionTools.set(name, tool);
-        }
-      }
-    }
-
-    // 合并 base tools + extension tools + custom tools
+    // Merge base tools + extension tools + custom tools
     const toolRegistry = new Map<string, AgentTool>();
-    const definitionRegistry = new Map<string, ToolDefinition>();
 
     // base tools
     for (const [name, tool] of this._baseToolDefinitions) {
       if (isAllowedTool(name)) {
         toolRegistry.set(name, tool);
-        definitionRegistry.set(name, tool);
       }
     }
 
-    // extension tools
-    for (const [name, tool] of extensionTools) {
-      toolRegistry.set(name, tool);
-      definitionRegistry.set(name, tool);
+    // extension tools (from snapshot)
+    for (const [name, tool] of this._extensionTools) {
+      if (isAllowedTool(name)) {
+        toolRegistry.set(name, tool);
+      }
     }
 
     // custom tools
     for (const [name, tool] of this._customTools) {
       if (isAllowedTool(name)) {
         toolRegistry.set(name, tool);
-        definitionRegistry.set(name, tool);
       }
     }
 
     this._toolRegistry = toolRegistry;
 
-    this._toolPromptSnippets = new Map(
-      Array.from(definitionRegistry.values())
-        .map((definition) => {
-          const snippet = this._normalizePromptSnippet(definition.promptSnippet);
-          return snippet ? ([definition.name, snippet] as const) : undefined;
-        })
-        .filter((entry): entry is readonly [string, string] => entry !== undefined),
-    );
-
-    this._toolPromptGuidelines = new Map(
-      Array.from(definitionRegistry.values())
-        .map((definition) => {
-          const guidelines = this._normalizePromptGuidelines(definition.promptGuidelines);
-          return guidelines.length > 0 ? ([definition.name, guidelines] as const) : undefined;
-        })
-        .filter((entry): entry is readonly [string, string[]] => entry !== undefined),
-    );
-
-    // 计算 active tools
+    // Compute active tools
     const nextActiveToolNames = (options?.activeToolNames ?? previousActiveToolNames).filter(
       (name) => isAllowedTool(name),
     );
 
-    if (options?.fromRegisterTool || options?.includeAllExtensionTools) {
-      for (const name of extensionTools.keys()) {
+    if (options?.includeAllExtensionTools) {
+      for (const name of this._extensionTools.keys()) {
         if (!nextActiveToolNames.includes(name)) {
           nextActiveToolNames.push(name);
         }
@@ -1802,174 +1487,36 @@ export class AgentSession {
     this.setActiveToolsByName([...new Set(nextActiveToolNames)]);
   }
 
-  private _buildRuntime(options: {
-    activeToolNames?: string[];
-    includeAllExtensionTools?: boolean;
-    extensions?: ExtensionDefinition[];
-  }): void {
-    const runtime = createExtensionRuntime();
-    const definitions = options.extensions ?? this._extensions ?? [];
-    const eventBus = createEventBus();
-
-    this._extensionRunner = new ExtensionRunner(
-      [],
-      runtime,
-      this._cwd,
-      this.sessionManager,
-      eventBus,
-    );
-    if (this._extensionRunnerRef) {
-      this._extensionRunnerRef.current = this._extensionRunner;
-    }
-    this._bindExtensionCore(this._extensionRunner);
-    this._applyExtensionBindings(this._extensionRunner);
-
-    // 同步创建初始 bindings（setup 可能返回 Promise，在后台执行）
-    this._extensionRunner.reloadSync(definitions);
-
-    const defaultActiveToolNames = this._baseToolsOverride
-      ? Object.keys(this._baseToolsOverride)
-      : ["read", "bash", "edit", "write"];
-    const baseActiveToolNames = options.activeToolNames ?? defaultActiveToolNames;
-    this._refreshToolRegistry({
-      activeToolNames: baseActiveToolNames,
-      includeAllExtensionTools: options.includeAllExtensionTools,
-    });
-  }
-
-  async reload(extensions?: ExtensionDefinition[]): Promise<void> {
-    await emitSessionShutdownEvent(this._extensionRunner, {
-      type: "session:shutdown",
-      reason: "reload",
-    });
-
-    // 异步 reload：await 旧 cleanup + 新 setup
-    await this._extensionRunner.reload(extensions ?? this._extensions ?? []);
-
-    this._refreshToolRegistry({
-      activeToolNames: this.getActiveToolNames(),
-      includeAllExtensionTools: true,
-    });
-
-    const hasBindings = this._extensionErrorListener;
-    if (hasBindings) {
-      await this._extensionRunner.emit({ type: "session:start", reason: "reload" });
-    }
-  }
-
   // =========================================================================
   // Auto-Retry
   // =========================================================================
-
-  /**
-   * Check if an error is retryable (overloaded, rate limit, server errors).
-   * Context overflow errors are NOT retryable (handled by compaction instead).
-   */
-  private _isRetryableError(message: AssistantMessage): boolean {
-    if (message.finishReason !== "error" || !message.errorMessage) return false;
-
-    const err = message.errorMessage;
-    // Match: overloaded_error, provider returned error, rate limit, 429, 500, 502, 503, 504, service unavailable, network/connection errors (including connection lost), fetch failed, request ended without sending chunks, terminated, retry delay exceeded
-    return /overloaded|provider.?returned.?error|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server.?error|internal.?error|network.?error|connection.?error|connection.?refused|connection.?lost|other side closed|fetch failed|upstream.?connect|reset before headers|socket hang up|ended without|timed? out|timeout|terminated|retry delay/i.test(
-      err,
-    );
-  }
 
   /**
    * Handle retryable errors with exponential backoff.
    * @returns true if retry was initiated, false if max retries exceeded or disabled
    */
   private async _handleRetryableError(message: AssistantMessage): Promise<boolean> {
-    const settings = this._retrySettings;
-    if (!settings.enabled) {
-      this._resolveRetry();
-      return false;
+    const result = await this._retryHandler.handleRetryableError(message);
+    if (result) {
+      // Remove error message from agent state
+      const messages = this.agent.state.messages;
+      if (messages.length > 0 && messages[messages.length - 1].role === "assistant") {
+        this.agent.state.messages = messages.slice(0, -1);
+      }
+
+      // Retry via continue()
+      setTimeout(() => {
+        this.agent.continue().catch(() => {});
+      }, 0);
     }
-
-    // Retry promise is created synchronously in _handleAgentEvent for agent_end.
-    // Keep a defensive fallback here in case a future refactor bypasses that path.
-    if (!this._retryPromise) {
-      this._retryPromise = new Promise((resolve) => {
-        this._retryResolve = resolve;
-      });
-    }
-
-    this._retryAttempt++;
-
-    if (this._retryAttempt > settings.maxRetries) {
-      // Max retries exceeded, emit final failure and reset
-      this._emit({
-        type: "auto_retry_end",
-        success: false,
-        attempt: this._retryAttempt - 1,
-        finalError: message.errorMessage,
-      });
-      this._retryAttempt = 0;
-      this._resolveRetry(); // Resolve so waitForRetry() completes
-      return false;
-    }
-
-    const delayMs = settings.baseDelayMs * 2 ** (this._retryAttempt - 1);
-
-    this._emit({
-      type: "auto_retry_start",
-      attempt: this._retryAttempt,
-      maxAttempts: settings.maxRetries,
-      delayMs,
-      errorMessage: message.errorMessage || "Unknown error",
-    });
-
-    // Remove error message from agent state (keep in session for history)
-    const messages = this.agent.state.messages;
-    if (messages.length > 0 && messages[messages.length - 1].role === "assistant") {
-      this.agent.state.messages = messages.slice(0, -1);
-    }
-
-    // Wait with exponential backoff (abortable)
-    this._retryAbortController = new AbortController();
-    try {
-      const sleep = (ms: number, signal: AbortSignal): Promise<void> =>
-        new Promise((resolve, reject) => {
-          const timeout = setTimeout(resolve, ms);
-          signal.addEventListener("abort", () => {
-            clearTimeout(timeout);
-            reject(new Error("Sleep aborted"));
-          });
-        });
-      await sleep(delayMs, this._retryAbortController.signal);
-    } catch {
-      // Aborted during sleep - emit end event so UI can clean up
-      const attempt = this._retryAttempt;
-      this._retryAttempt = 0;
-      this._retryAbortController = undefined;
-      this._emit({
-        type: "auto_retry_end",
-        success: false,
-        attempt,
-        finalError: "Retry cancelled",
-      });
-      this._resolveRetry();
-      return false;
-    }
-    this._retryAbortController = undefined;
-
-    // Retry via continue() - use setTimeout to break out of event handler chain
-    setTimeout(() => {
-      this.agent.continue().catch(() => {
-        // Retry failed - will be caught by next agent_end
-      });
-    }, 0);
-
-    return true;
+    return result;
   }
 
   /**
    * Cancel in-progress retry.
    */
   abortRetry(): void {
-    this._retryAbortController?.abort();
-    // Note: _retryAttempt is reset in the catch block of _autoRetry
-    this._resolveRetry();
+    this._retryHandler.abort();
   }
 
   /**
@@ -1977,29 +1524,25 @@ export class AgentSession {
    * Returns immediately if no retry is in progress.
    */
   private async waitForRetry(): Promise<void> {
-    if (!this._retryPromise) {
-      return;
-    }
-
-    await this._retryPromise;
+    await this._retryHandler.waitForRetry();
     await this.agent.waitForIdle();
   }
 
   /** Whether auto-retry is currently in progress */
   get isRetrying(): boolean {
-    return this._retryPromise !== undefined;
+    return this._retryHandler.isRetrying;
   }
 
   /** Whether auto-retry is enabled */
   get autoRetryEnabled(): boolean {
-    return this._retrySettings.enabled;
+    return this._retryHandler.enabled;
   }
 
   /**
    * Toggle auto-retry setting.
    */
   setAutoRetryEnabled(enabled: boolean): void {
-    this._retrySettings = { ...this._retrySettings, enabled };
+    this._retryHandler.enabled = enabled;
   }
 
   // =========================================================================
@@ -2071,7 +1614,6 @@ export class AgentSession {
       type: "session",
       id: this.sessionManager.getSessionId(),
       timestamp: new Date().toISOString(),
-      cwd: this.sessionManager.getCwd(),
     };
 
     const branchEntries = this.sessionManager.getBranch();
@@ -2090,20 +1632,20 @@ export class AgentSession {
   }
 
   // =========================================================================
-  // Extension System
+  // Hook System
   // =========================================================================
 
   /**
-   * Check if extensions have handlers for a specific event type.
+   * Check if hooks have handlers for a specific event type.
    */
-  hasExtensionHandlers(eventType: string): boolean {
-    return this._extensionRunner.hasHandlers(eventType);
+  hasHookHandlers(eventType: string): boolean {
+    return this._hookRunner.hasHandlers(eventType);
   }
 
   /**
-   * Get the extension runner (for setting UI context and error handlers).
+   * Get the hook runner (for core to register error handlers, etc.).
    */
-  get extensionRunner(): ExtensionRunner {
-    return this._extensionRunner;
+  get hookRunner(): HookRunner {
+    return this._hookRunner;
   }
 }

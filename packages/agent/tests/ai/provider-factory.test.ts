@@ -247,9 +247,9 @@ describe("createProviderPlugin", () => {
   });
 
   it("passes config extra fields through to chat adapter", () => {
-    const chatAdapter = vi.fn<(client: object, modelId: string, config: TestConfig) => LanguageModel>(
-      () => createMockLanguageModel(),
-    );
+    const chatAdapter = vi.fn<
+      (client: object, modelId: string, config: TestConfig) => LanguageModel
+    >(() => createMockLanguageModel());
     const configWithExtra: TestConfig = {
       ...testConfig,
       extra: "custom-value",

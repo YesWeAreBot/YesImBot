@@ -6,6 +6,7 @@ import { ImagePart, LanguageModel } from "ai";
 
 import { AgentMessage } from "../../agent/types.js";
 import { EventBus } from "../event-bus.js";
+import type { HookRunner } from "../hook-runner.js";
 import { SessionManager } from "../session-manager.js";
 import { createExtensionBinding, createExtensionBindingSync } from "./loader.js";
 import type {
@@ -94,6 +95,7 @@ export class ExtensionRunner {
   private cwd: string;
   private sessionManager: SessionManager;
   private _eventBus: EventBus;
+  private _hookRunner?: HookRunner;
   private errorListeners: Set<ExtensionErrorListener> = new Set();
   private getModel: () => LanguageModel | undefined = () => undefined;
   private isIdleFn: () => boolean = () => true;
@@ -527,6 +529,9 @@ export class ExtensionRunner {
     // 4. Replace bindings
     this.bindings = newBindings;
     this.runtime.refreshTools();
+
+    // 5. Sync to HookRunner if set
+    this._syncToHookRunner();
   }
 
   /**
@@ -567,10 +572,47 @@ export class ExtensionRunner {
 
     this.bindings = newBindings;
     this.runtime.refreshTools();
+
+    // Sync to HookRunner if set
+    this._syncToHookRunner();
   }
 
   /** Get current bindings (readonly). */
   getBindings(): readonly ExtensionBinding[] {
     return this.bindings;
+  }
+
+  /**
+   * Set a HookRunner to receive extension handler registrations.
+   *
+   * When set, reload() and reloadSync() automatically sync all binding handlers
+   * to the HookRunner after creating new bindings. This bridges the extension
+   * system with AgentSession's hook dispatch.
+   */
+  setHookRunner(hookRunner: HookRunner): void {
+    this._hookRunner = hookRunner;
+    // Sync existing bindings immediately
+    this._syncToHookRunner();
+  }
+
+  /**
+   * Sync all current binding handlers to the HookRunner.
+   * Clears existing HookRunner handlers and re-registers from bindings.
+   */
+  private _syncToHookRunner(): void {
+    const hookRunner = this._hookRunner;
+    if (!hookRunner) return;
+
+    // Clear existing handlers
+    hookRunner.clear();
+
+    // Register all binding handlers with HookRunner
+    for (const binding of this.bindings) {
+      for (const [event, handlers] of binding.handlers) {
+        for (const handler of handlers) {
+          hookRunner.on(event, handler);
+        }
+      }
+    }
   }
 }
