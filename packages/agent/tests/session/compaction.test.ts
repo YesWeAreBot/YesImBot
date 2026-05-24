@@ -1,13 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import type {
-  AgentMessage,
-  AssistantMessage,
-  ToolMessage,
-  UserMessage,
-} from "../../src/agent/types.js";
+import type { AssistantMessage, ToolMessage, UserMessage } from "../../src/agent/types.js";
 import {
-  estimateTokens,
   findCutPoint,
   findTurnStartIndex,
   prepareCompaction,

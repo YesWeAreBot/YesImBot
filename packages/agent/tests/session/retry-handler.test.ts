@@ -5,7 +5,6 @@ import {
   DEFAULT_RETRY_SETTINGS,
   RetryHandler,
   type RetryEvents,
-  type RetrySettings,
 } from "../../src/session/retry-handler.js";
 
 // ============================================================================
@@ -17,7 +16,7 @@ function makeErrorMessage(text: string, opts?: { finishReason?: string }): Assis
     role: "assistant",
     content: [{ type: "text", text: "error" }],
     usage: {},
-    finishReason: (opts?.finishReason ?? "error") as any,
+    finishReason: (opts?.finishReason ?? "error") as AssistantMessage["finishReason"],
     errorMessage: text,
     timestamp: Date.now(),
   };
@@ -33,14 +32,14 @@ function makeStopMessage(): AssistantMessage {
   };
 }
 
-function collectEvents(): RetryEvents & { starts: any[]; ends: any[] } {
-  const starts: any[] = [];
-  const ends: any[] = [];
+function collectEvents(): RetryEvents & { starts: unknown[][]; ends: unknown[][] } {
+  const starts: unknown[][] = [];
+  const ends: unknown[][] = [];
   return {
     starts,
     ends,
-    onStart: (...args: any[]) => starts.push(args),
-    onEnd: (...args: any[]) => ends.push(args),
+    onStart: (...args: unknown[]) => starts.push(args),
+    onEnd: (...args: unknown[]) => ends.push(args),
   };
 }
 
@@ -326,7 +325,7 @@ describe("RetryHandler", () => {
     it("is safe to call when not retrying", () => {
       const handler = new RetryHandler();
       // Should not throw
-      handler.abort();
+      expect(() => handler.abort()).not.toThrow();
     });
   });
 
@@ -341,7 +340,7 @@ describe("RetryHandler", () => {
 
     it("resolves immediately when not retrying", async () => {
       const handler = new RetryHandler();
-      await handler.waitForRetry(); // should not hang
+      await expect(handler.waitForRetry()).resolves.toBeUndefined();
     });
 
     it("resolves after abort during retry", async () => {

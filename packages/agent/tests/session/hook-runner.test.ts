@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
-import type { AgentMessage, AssistantMessage } from "../../src/agent/types.js";
+import type { AgentMessage } from "../../src/agent/types.js";
+import type { CompactionPreparation } from "../../src/session/compaction/index.js";
 import type { HookContext, HookError } from "../../src/session/hook-runner.js";
 import { HookRunner } from "../../src/session/hook-runner.js";
 
@@ -8,10 +9,22 @@ import { HookRunner } from "../../src/session/hook-runner.js";
 // Helpers
 // ============================================================================
 
+/** Create a minimal mock CompactionPreparation. */
+function mockPreparation(): CompactionPreparation {
+  return {
+    firstKeptEntryId: "kept-001",
+    messagesToSummarize: [],
+    turnPrefixMessages: [],
+    isSplitTurn: false,
+    tokensBefore: 0,
+    settings: { enabled: true, reserveTokens: 4096, keepRecentTokens: 2000 },
+  };
+}
+
 /** Create a minimal mock HookContext. */
 function mockContext(): HookContext {
   return {
-    sessionManager: {} as any,
+    sessionManager: {} as unknown as HookContext["sessionManager"],
     model: undefined,
     isIdle: () => false,
     signal: undefined,
@@ -29,7 +42,11 @@ function makeRunner(): HookRunner {
 
 function makeAgentMessage(text: string, role: "user" | "assistant" = "user"): AgentMessage {
   if (role === "user") {
-    return { role: "user", content: [{ type: "text", text }], timestamp: Date.now() } as any;
+    return {
+      role: "user",
+      content: [{ type: "text", text }],
+      timestamp: Date.now(),
+    } as AgentMessage;
   }
   return {
     role: "assistant",
@@ -37,7 +54,7 @@ function makeAgentMessage(text: string, role: "user" | "assistant" = "user"): Ag
     usage: {},
     finishReason: "stop",
     timestamp: Date.now(),
-  } as any;
+  } as AgentMessage;
 }
 
 // ============================================================================
@@ -108,8 +125,12 @@ describe("HookRunner", () => {
       const result = await runner.transformContext(input);
 
       expect(result).toHaveLength(3);
-      expect((result[1] as any).content[0].text).toBe("added-1");
-      expect((result[2] as any).content[0].text).toBe("added-2");
+      expect(
+        (result[1] as AgentMessage & { content: Array<{ text: string }> }).content[0].text,
+      ).toBe("added-1");
+      expect(
+        (result[2] as AgentMessage & { content: Array<{ text: string }> }).content[0].text,
+      ).toBe("added-2");
     });
 
     it("chains afterToolCall modifications through multiple handlers", async () => {
@@ -135,11 +156,11 @@ describe("HookRunner", () => {
     it("chains beforeProviderRequest through multiple handlers", async () => {
       const runner = makeRunner();
 
-      runner.on("provider:before-request", (payload: any) => ({
+      runner.on("provider:before-request", (payload: Record<string, unknown>) => ({
         ...payload,
         modified: "handler1",
       }));
-      runner.on("provider:before-request", (payload: any) => ({
+      runner.on("provider:before-request", (payload: Record<string, unknown>) => ({
         ...payload,
         extra: "handler2",
       }));
@@ -312,7 +333,7 @@ describe("HookRunner", () => {
       runner.on("session:before-compact", () => ({ cancel: true }));
 
       const result = await runner.beforeCompact({
-        preparation: {} as any,
+        preparation: mockPreparation(),
         branchEntries: [],
         signal: AbortSignal.abort(),
       });
@@ -328,17 +349,17 @@ describe("HookRunner", () => {
           summary: "pre-compacted",
           messagesToSummarize: [],
           tokensBefore: 100,
-        } as any,
+        },
       }));
 
       const result = await runner.beforeCompact({
-        preparation: {} as any,
+        preparation: mockPreparation(),
         branchEntries: [],
         signal: AbortSignal.abort(),
       });
 
       expect(result?.compaction).toBeDefined();
-      expect((result?.compaction as any).summary).toBe("pre-compacted");
+      expect(result!.compaction!.summary).toBe("pre-compacted");
     });
 
     it("beforeCompact stops at first cancel/compaction result", async () => {
@@ -354,7 +375,7 @@ describe("HookRunner", () => {
       });
 
       await runner.beforeCompact({
-        preparation: {} as any,
+        preparation: mockPreparation(),
         branchEntries: [],
         signal: AbortSignal.abort(),
       });
@@ -385,7 +406,7 @@ describe("HookRunner", () => {
 
     it("delivers the event object to each handler", async () => {
       const runner = makeRunner();
-      const received: any[] = [];
+      const received: unknown[] = [];
 
       runner.on("tool:execution:end", (event) => {
         received.push(event);
@@ -409,7 +430,9 @@ describe("HookRunner", () => {
       const runner = makeRunner();
 
       // Should not throw
-      await runner.emitLifecycle({ type: "session:shutdown", reason: "quit" });
+      await expect(
+        runner.emitLifecycle({ type: "session:shutdown", reason: "quit" }),
+      ).resolves.toBeUndefined();
     });
 
     it("supports all lifecycle event types", async () => {
@@ -439,7 +462,7 @@ describe("HookRunner", () => {
 
       // Emit each event type
       for (const type of eventTypes) {
-        const event: any = { type };
+        const event: Record<string, unknown> = { type };
         if (type === "agent:end") event.messages = [];
         if (type === "turn:start" || type === "turn:end") {
           event.turnIndex = 0;
@@ -602,7 +625,7 @@ describe("HookRunner", () => {
       await runner.emitLifecycle({
         type: "turn:end",
         turnIndex: 0,
-        message: {} as any,
+        message: makeAgentMessage("stub"),
         toolResults: [],
       });
 
@@ -622,7 +645,9 @@ describe("HookRunner", () => {
       expect(result).toHaveLength(2);
       // Should be a clone, not the same reference
       expect(result).not.toBe(input);
-      expect((result[0] as any).content[0].text).toBe("hello");
+      expect(
+        (result[0] as AgentMessage & { content: Array<{ text: string }> }).content[0].text,
+      ).toBe("hello");
     });
 
     it("afterToolCall returns undefined when no handler modifies anything", async () => {
@@ -770,7 +795,9 @@ describe("HookRunner", () => {
       const result = await runner.transformContext([makeAgentMessage("hello")]);
 
       expect(result).toHaveLength(2);
-      expect((result[1] as any).content[0].text).toBe("async-added");
+      expect(
+        (result[1] as AgentMessage & { content: Array<{ text: string }> }).content[0].text,
+      ).toBe("async-added");
     });
 
     it("supports async lifecycle handlers", async () => {

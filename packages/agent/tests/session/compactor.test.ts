@@ -8,11 +8,7 @@ import type {
 } from "../../src/session/compaction/index.js";
 import { compact, prepareCompaction } from "../../src/session/compaction/index.js";
 import { Compactor, type CompactorOptions } from "../../src/session/compactor.js";
-import type {
-  BeforeCompactEvent,
-  BeforeCompactResult,
-  HookRunner,
-} from "../../src/session/hook-runner.js";
+import type { BeforeCompactResult, HookRunner } from "../../src/session/hook-runner.js";
 import type {
   CompactionEntry,
   SessionContext,
@@ -25,8 +21,8 @@ import type {
 // ============================================================================
 
 vi.mock("../../src/session/compaction/index.js", () => ({
-  prepareCompaction: vi.fn(),
-  compact: vi.fn(),
+  prepareCompaction: vi.fn<() => CompactionPreparation | undefined>(),
+  compact: vi.fn<() => Promise<CompactionResult>>(),
   DEFAULT_COMPACTION_PROMPTS: {},
 }));
 
@@ -106,10 +102,10 @@ function createMockSessionManager(overrides?: {
   const sessionContext = overrides?.sessionContext ?? MOCK_SESSION_CONTEXT;
 
   return {
-    getBranch: vi.fn().mockReturnValue(branch),
-    appendCompaction: vi.fn(),
-    buildSessionContext: vi.fn().mockReturnValue(sessionContext),
-    getEntries: vi.fn().mockReturnValue(entries),
+    getBranch: vi.fn<() => SessionEntry[]>().mockReturnValue(branch),
+    appendCompaction: vi.fn<() => string>(),
+    buildSessionContext: vi.fn<() => SessionContext>().mockReturnValue(sessionContext),
+    getEntries: vi.fn<() => SessionEntry[]>().mockReturnValue(entries),
   } as unknown as SessionManager;
 }
 
@@ -121,12 +117,14 @@ function createMockHookRunner(overrides?: {
   const beforeCompactResult = overrides?.beforeCompactResult;
 
   return {
-    hasHandlers: vi.fn().mockImplementation((event: string) => {
+    hasHandlers: vi.fn<(event: string) => boolean>().mockImplementation((event: string) => {
       if (event === "session:before-compact") return hasHandlers;
       return false;
     }),
-    beforeCompact: vi.fn().mockResolvedValue(beforeCompactResult ?? undefined),
-    emitLifecycle: vi.fn().mockResolvedValue(undefined),
+    beforeCompact: vi
+      .fn<() => Promise<BeforeCompactResult | undefined>>()
+      .mockResolvedValue(beforeCompactResult ?? undefined),
+    emitLifecycle: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
   } as unknown as HookRunner;
 }
 

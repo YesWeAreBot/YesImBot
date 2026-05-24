@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock koishi to provide a minimal Service base class
 vi.mock("koishi", () => {
@@ -102,6 +102,10 @@ describe("ExtensionService", () => {
     });
   });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   // ==========================================================================
   // Registration
   // ==========================================================================
@@ -163,8 +167,8 @@ describe("ExtensionService", () => {
       await service.createChannelRuntime(makeContext());
       await service.unregisterExtension("ext-a");
 
-      // 1 from register + 1 from createChannelRuntime + 1 from unregister
-      expect(reloadSpy).toHaveBeenCalledTimes(3);
+      // 0 from register (no channels) + 1 from createChannelRuntime + 1 from unregister
+      expect(reloadSpy).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -358,11 +362,11 @@ describe("ExtensionService", () => {
       await service.createChannelRuntime(ctx1);
       await service.createChannelRuntime(ctx2);
 
-      // 4th call (register reload for channel 2) fails
+      // Fail on the 2nd reload call (channel 2 during registerExtension)
       let callCount = 0;
       reloadSpy.mockImplementation(async () => {
         callCount++;
-        if (callCount === 4) throw new Error("Channel 2 reload failed");
+        if (callCount === 2) throw new Error("Channel 2 reload failed");
       });
 
       const summary = await service.registerExtension(makeExtension("ext-y"));
@@ -383,11 +387,11 @@ describe("ExtensionService", () => {
       await service.createChannelRuntime(ctx1);
       await service.createChannelRuntime(ctx2);
 
-      // 3rd call (register reload for channel 1) fails
+      // Fail on the 1st reload call (channel 1 during registerExtension)
       let callCount = 0;
       reloadSpy.mockImplementation(async () => {
         callCount++;
-        if (callCount === 3) throw new Error("Channel 1 exploded");
+        if (callCount === 1) throw new Error("Channel 1 exploded");
       });
 
       const summary = await service.registerExtension(makeExtension("ext-z"));
