@@ -3,9 +3,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // Mock koishi to provide a minimal Service base class
 vi.mock("koishi", () => {
   class Service {
-    ctx: any;
-    [Symbol.for("koishi.tracker")]: any;
-    constructor(ctx: any, _name: string) {
+    ctx: unknown;
+    [Symbol.for("koishi.tracker")]: unknown;
+    constructor(ctx: unknown, _name: string) {
       this.ctx = ctx;
     }
     protected start() {}
@@ -22,9 +22,9 @@ import type { PlatformAdapter, AthenaEvent } from "../../src/adapter/types.js";
 
 // Minimal Koishi Context mock
 function createMockCtx() {
-  const listeners = new Map<string, ((...args: any[]) => void)[]>();
+  const listeners = new Map<string, ((...args: unknown[]) => void)[]>();
   return {
-    on(event: string, handler: (...args: any[]) => void) {
+    on(event: string, handler: (...args: unknown[]) => void) {
       if (!listeners.has(event)) listeners.set(event, []);
       listeners.get(event)!.push(handler);
       return () => {
@@ -32,7 +32,7 @@ function createMockCtx() {
         arr.splice(arr.indexOf(handler), 1);
       };
     },
-    emit(event: string, ...args: any[]) {
+    emit(event: string, ...args: unknown[]) {
       for (const h of listeners.get(event) ?? []) h(...args);
     },
     middleware: vi.fn(),
@@ -50,7 +50,7 @@ describe("AdapterService", () => {
 
   beforeEach(() => {
     ctx = createMockCtx();
-    service = new AdapterService(ctx as any, {});
+    service = new AdapterService(ctx as never, {});
   });
 
   it("should register an adapter and make it retrievable", () => {
@@ -89,18 +89,6 @@ describe("AdapterService", () => {
     };
     service.register(adapter);
     expect(handler).toHaveBeenCalledWith(expect.objectContaining({ id: "e1" }));
-  });
-
-  it("should register adapter formatters into the registry", () => {
-    const formatter = vi.fn().mockReturnValue("formatted");
-    const adapter: PlatformAdapter = {
-      platform: "test",
-      install: vi.fn(),
-      formatters: { chat_message: formatter },
-    };
-    service.register(adapter);
-    // Verify formatter is accessible via the registry
-    expect(service.formatters).toBeDefined();
   });
 
   it("should dispose adapter on dispose call", () => {

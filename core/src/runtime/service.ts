@@ -3,15 +3,19 @@ import { join } from "node:path";
 import { Agent } from "@yesimbot/agent/agent";
 import { ChatModelRef } from "@yesimbot/agent/ai";
 import { AgentSession, convertToLlm, HookRunner, SessionManager } from "@yesimbot/agent/session";
-import { Bot, Context, Logger, Service } from "koishi";
+import { Bot, Context, Logger, Service, type Session } from "koishi";
 
-import type { AthenaEvent } from "../adapter/types.js";
-import { serializeEvent } from "../adapter/types.js";
+import { AthenaBot } from "../bot/athena-bot.js";
+import { createDefaultChatMessagePresenter, createPresenterRegistry } from "../bot/presenter.js";
+import { createSpeakElementRegistry } from "../bot/speak-elements.js";
 import { createSystemPromptExtension } from "../extension/built-in/system-prompt.js";
 import type { BotInfo } from "../extension/built-in/system-prompt.js";
 import type { Channel } from "../extension/types.js";
-import { Delivery } from "./delivery/delivery.js";
-import { buildAgentSessionConfig, persistDeliveryEvents } from "./helpers.js";
+import {
+  createChannelRuntime,
+  type ChannelRuntime as EventIntakeRuntime,
+} from "./channel-runtime.js";
+import { buildAgentSessionConfig } from "./helpers.js";
 import { RuntimeSettingsManager, type PartialRuntimeSettings } from "./settings/manager.js";
 
 interface ChannelIdentifier {
@@ -28,8 +32,9 @@ interface SessionContext {
   platform: string;
   channelId: string;
   type: "private" | "group";
-  bot: Bot;
-  delivery: Delivery;
+  koishiBot: Bot;
+  bot: AthenaBot;
+  runtime: EventIntakeRuntime;
 }
 
 export interface RuntimeConfig {
@@ -41,12 +46,15 @@ export interface RuntimeConfig {
 }
 
 export class RuntimeService extends Service<RuntimeConfig> {
-  static inject = ["yesimbot.model", "yesimbot.extension", "yesimbot.session", "yesimbot.adapter"];
+  static inject = ["yesimbot.model", "yesimbot.extension", "yesimbot.session", "yesimbot.bot"];
   readonly logger: Logger;
 
   private _channels = new Map<ChannelKey, SessionContext>();
   private _globalSettingsManager?: RuntimeSettingsManager;
   private _channelBotInfo = new Map<ChannelKey, BotInfo>();
+  private _chatModel?: ChatModelRef;
+  private _globalSettingsPath?: string;
+  private _disposeSessionNewHandler?: () => void;
 
   constructor(
     public ctx: Context,
@@ -77,6 +85,8 @@ export class RuntimeService extends Service<RuntimeConfig> {
       return;
     }
 
+    this._chatModel = chatModel;
+    this._globalSettingsPath = globalSettingsPath;
     this._globalSettingsManager = new RuntimeSettingsManager({
       globalPath: globalSettingsPath,
       seed: this.config.runtimeSettings,
@@ -85,279 +95,226 @@ export class RuntimeService extends Service<RuntimeConfig> {
     // Register system-prompt extension globally (resolves bot info per-channel at runtime)
     const promptExtension = createSystemPromptExtension({
       basePath: this.config.basePath,
-      resolveBotInfo: (ctx) => {
-        const key: ChannelKey = `${ctx.platform}:${ctx.channelId}`;
+      resolveBotInfo: (channel) => {
+        const key: ChannelKey = `${channel.platform}:${channel.channelId}`;
         return this._channelBotInfo.get(key) ?? { selfId: "unknown", selfName: "(unknown)" };
       },
-      getToolPromptContext: (ctx) => this.ctx["yesimbot.extension"].getPromptToolContext(ctx),
+      getToolPromptContext: (channel) =>
+        this.ctx["yesimbot.extension"].getPromptToolContext(channel),
+      getSpeakElementPromptContext: (channel) => {
+        const key: ChannelKey = `${channel.platform}:${channel.channelId}`;
+        return {
+          elements:
+            this._channels.get(key)?.bot.getSpeakElementPrompts() ??
+            this.ctx["yesimbot.extension"].getPromptSpeakElementContext(channel).elements,
+        };
+      },
     });
     await this.ctx["yesimbot.extension"].registerExtension(promptExtension);
+    this.ctx["yesimbot.bot"].setSessionHandler(async (session) => {
+      await this._handleKoishiSession(session);
+    });
 
-    const createSessionContext = async (
-      channel: Channel,
-      sessionManager: SessionManager,
-      bot: Bot,
-    ): Promise<SessionContext> => {
-      const { platform, channelId, type } = channel;
-      const agent = new Agent({
-        model: chatModel.model,
-        convertToLlm: (messages) => convertToLlm(messages),
-      });
+    this._disposeSessionNewHandler = this.ctx.on(
+      "session:new",
+      async ({ platform, channelId, sessionManager }) => {
+        const key: ChannelKey = `${platform}:${channelId}`;
+        const existing = this._channels.get(key);
+        if (existing) {
+          await this._disposeSessionContext(existing);
+          const newCtx = await this._createSessionContext(
+            { platform, channelId, type: existing.type },
+            sessionManager,
+            existing.koishiBot,
+          );
+          this._channels.set(key, newCtx);
+          this.logger.info(`Session replaced for channel ${key}`);
+        }
+      },
+    );
+  }
 
-      // Register bot info for this channel (used by the global system-prompt extension)
-      const channelKey: ChannelKey = `${platform}:${channelId}`;
-      this._channelBotInfo.set(channelKey, {
-        selfId: bot.selfId,
-        selfName: bot.user?.nick || bot.user?.name || "(unknown)",
-      });
+  protected async stop() {
+    this._disposeSessionNewHandler?.();
+    this._disposeSessionNewHandler = undefined;
+    this.ctx["yesimbot.bot"].clearSessionHandler();
 
-      // Create RuntimeSettingsManager for dual-scope settings (before AgentSession)
-      const channelDir = this.ctx["yesimbot.session"].getChannelDir(platform, channelId);
-      const settingsManager = new RuntimeSettingsManager({
-        globalPath: globalSettingsPath,
-        localPath: join(channelDir, "settings.json"),
-        seed: this.config.runtimeSettings,
-      });
-      const merged = settingsManager.settings;
+    for (const sessionContext of this._channels.values()) {
+      await this._disposeSessionContext(sessionContext);
+    }
 
-      // Get adapter for this platform, falling back to generic
-      const adapter =
-        this.ctx["yesimbot.adapter"].get(platform) ?? this.ctx["yesimbot.adapter"].get("*");
+    this._channels.clear();
+    this._channelBotInfo.clear();
+  }
 
-      // Create Delivery using adapter's submitMessage
-      const delivery = new Delivery({
-        submitMessage: (text) => {
-          if (!adapter?.submitMessage) {
-            // Ultimate fallback: use bot.sendMessage directly
-            return bot
-              .sendMessage(channelId, text)
-              .then(() => ({ ok: true as const }))
-              .catch((error) => ({ ok: false as const, error }));
-          }
-          return adapter.submitMessage({
-            platform,
-            channelId,
-            text,
-            bot,
-          });
-        },
-        settings: merged.delivery,
-        logger: this.logger,
-      });
+  private async _createSessionContext(
+    channel: Channel,
+    sessionManager: SessionManager,
+    koishiBot: Bot,
+  ): Promise<SessionContext> {
+    const chatModel = this._chatModel;
+    const globalSettingsPath = this._globalSettingsPath;
+    if (!chatModel || !globalSettingsPath) {
+      throw new Error("RuntimeService is not initialized");
+    }
 
-      // Create HookRunner with closure over agentSession (assigned below)
-      let agentSession!: AgentSession;
-      const hookRunner = new HookRunner(() => ({
-        sessionManager,
-        model: agent.state.model,
-        isIdle: () => !agent.state.isStreaming,
-        signal: agent.signal,
-        abort: () => agent.abort(),
-        hasPendingMessages: () => agent.hasQueuedMessages(),
-        getContextUsage: () => agentSession.getContextUsage(),
-        compact: (options) => {
-          void agentSession
-            .compact(options?.customInstructions)
-            .then(options?.onComplete)
-            .catch(options?.onError);
-        },
-        getSystemPrompt: () => agent.state.systemPrompt,
-      }));
+    const { platform, channelId, type } = channel;
+    const agent = new Agent({
+      model: chatModel.model,
+      convertToLlm: (messages) => convertToLlm(messages),
+    });
 
-      // Create AgentSession before channel runtime wiring.
-      agentSession = new AgentSession({
-        agent,
-        sessionManager,
-        hookRunner,
-        ...buildAgentSessionConfig(merged),
-      });
+    const channelKey: ChannelKey = `${platform}:${channelId}`;
+    this._channelBotInfo.set(channelKey, {
+      selfId: koishiBot.selfId,
+      selfName: koishiBot.user?.nick || koishiBot.user?.name || "(unknown)",
+    });
 
-      await this.ctx["yesimbot.extension"].createChannelRuntime({
-        channel: { ...channel, bot },
-        hookRunner,
-        sessionManager,
-        applyToolState: (snapshot) => agentSession.applyToolState(snapshot),
-        sendMessage: async (message, options) =>
-          agentSession.sendCustomMessage(message as never, options as never),
-        sendUserMessage: async (content, options) =>
-          agentSession.sendUserMessage(content as never, options as never),
-        appendEntry: (customType, data) => sessionManager.appendCustomEntry(customType, data),
-        setSessionName: (name) => sessionManager.appendSessionInfo(name),
-        getSessionName: () => sessionManager.getSessionName(),
-        getActiveTools: () => agentSession.getActiveToolNames(),
-        setActiveTools: (toolNames) => agentSession.setActiveToolsByName(toolNames),
-      });
+    const channelDir = this.ctx["yesimbot.session"].getChannelDir(platform, channelId);
+    const settingsManager = new RuntimeSettingsManager({
+      globalPath: globalSettingsPath,
+      localPath: join(channelDir, "settings.json"),
+      seed: this.config.runtimeSettings,
+    });
+    const merged = settingsManager.settings;
 
-      const sessionContext: SessionContext = {
-        agentSession,
-        sessionManager,
+    let agentSession!: AgentSession;
+    const hookRunner = new HookRunner(() => ({
+      sessionManager,
+      model: agent.state.model,
+      isIdle: () => !agent.state.isStreaming,
+      signal: agent.signal,
+      abort: () => agent.abort(),
+      hasPendingMessages: () => agent.hasQueuedMessages(),
+      getContextUsage: () => agentSession.getContextUsage(),
+      compact: (options) => {
+        void agentSession
+          .compact(options?.customInstructions)
+          .then(options?.onComplete)
+          .catch(options?.onError);
+      },
+      getSystemPrompt: () => agent.state.systemPrompt,
+    }));
+
+    agentSession = new AgentSession({
+      agent,
+      sessionManager,
+      hookRunner,
+      ...buildAgentSessionConfig(merged),
+    });
+
+    const presenters = createPresenterRegistry();
+    presenters.registerBase("chat_message", createDefaultChatMessagePresenter());
+
+    const speakElements = createSpeakElementRegistry();
+
+    await this.ctx["yesimbot.extension"].createChannelRuntime({
+      channel: { ...channel, bot: koishiBot },
+      hookRunner,
+      sessionManager,
+      applyToolState: (snapshot) => agentSession.applyToolState(snapshot),
+      sendMessage: async (message, options) =>
+        agentSession.sendCustomMessage(message as never, options as never),
+      sendUserMessage: async (content, options) =>
+        agentSession.sendUserMessage(content as never, options as never),
+      appendEntry: (customType, data) => sessionManager.appendCustomEntry(customType, data),
+      setSessionName: (name) => sessionManager.appendSessionInfo(name),
+      getSessionName: () => sessionManager.getSessionName(),
+      getActiveTools: () => agentSession.getActiveToolNames(),
+      setActiveTools: (toolNames) => agentSession.setActiveToolsByName(toolNames),
+      registerSpeakElement: (definition) => speakElements.register(definition),
+    });
+
+    const athenaBot = new AthenaBot({
+      channel: { ...channel, bot: koishiBot },
+      presenters,
+      speakElements,
+      deliverySettings: merged.delivery,
+      appendEntry: (customType, data) => sessionManager.appendCustomEntry(customType, data),
+    });
+
+    const runtime = createChannelRuntime({
+      channel: { ...channel, bot: koishiBot },
+      bot: athenaBot,
+      agentSession,
+      sessionManager,
+      allowedChannels: this.config.allowedChannels,
+    });
+
+    return {
+      agentSession,
+      sessionManager,
+      platform,
+      channelId,
+      type,
+      koishiBot,
+      bot: athenaBot,
+      runtime,
+    };
+  }
+
+  private async _getOrCreateSessionContext(
+    key: ChannelKey,
+    session: Session,
+  ): Promise<SessionContext | undefined> {
+    const existing = this._channels.get(key);
+    if (existing) {
+      return existing;
+    }
+
+    const koishiBot = session.bot;
+    if (!koishiBot) {
+      this.logger.warn(`No bot reference available for channel ${key}, skipping`);
+      return undefined;
+    }
+
+    const platform = session.platform;
+    const channelId = session.channelId;
+    if (!platform || !channelId) {
+      return undefined;
+    }
+
+    const type = session.isDirect ? "private" : "group";
+    const sessionManager = await this.ctx["yesimbot.session"].getOrCreate(
+      platform,
+      channelId,
+      type,
+    );
+    const sessionContext = await this._createSessionContext(
+      {
         platform,
         channelId,
         type,
-        bot,
-        delivery,
-      };
+      },
+      sessionManager,
+      koishiBot,
+    );
+    this._channels.set(key, sessionContext);
+    this.logger.info(`Created new agent session for channel ${key}`);
+    return sessionContext;
+  }
 
-      let agentStartedAt = 0;
+  private async _handleKoishiSession(session: Session): Promise<void> {
+    if (!session.platform || !session.channelId) return;
 
-      agentSession.subscribe((event) => {
-        switch (event.type) {
-          case "agent_start":
-            agentStartedAt = Date.now();
-            break;
-          case "agent_end": {
-            break;
-          }
-          case "turn_start":
-            break;
-          case "turn_end":
-            break;
-          case "message_start":
-            break;
-          case "message_update":
-            break;
-          case "message_end": {
-            if (event.message.role === "assistant") {
-              const textContent = event.message.content
-                .filter((part) => part.type === "text")
-                .map((part) => part.text)
-                .join("");
-              const reasoningContent = event.message.content
-                .filter((part) => part.type === "reasoning")
-                .map((part) => part.text)
-                .join("");
+    const key: ChannelKey = `${session.platform}:${session.channelId}`;
+    const sessionContext = await this._getOrCreateSessionContext(key, session);
+    if (!sessionContext) return;
 
-              if (reasoningContent) {
-                this.logger.info(`Agent reasoning:\n${reasoningContent}`);
-              }
-              if (textContent) {
-                this.logger.info(`Agent response:\n${textContent}`);
-                const modelElapsedMs = agentStartedAt > 0 ? Date.now() - agentStartedAt : 0;
-                delivery
-                  .deliver({
-                    text: textContent,
-                    modelElapsedMs,
-                    channel: { platform, channelId, type },
-                  })
-                  .then((result) => {
-                    persistDeliveryEvents(sessionManager, result.events);
-                    for (const evt of result.events) {
-                      this.logger.warn(`Delivery event: ${evt.kind} — ${evt.reason}`);
-                    }
-                  })
-                  .catch((err) => {
-                    this.logger.error("Delivery failed", err);
-                  });
-              }
-            }
-            break;
-          }
-          case "tool_execution_start":
-            break;
-          case "tool_execution_end":
-            break;
-          case "queue_update":
-            break;
-          case "compaction_start":
-            break;
-          case "compaction_end":
-            break;
-          case "auto_retry_start":
-            break;
-          case "auto_retry_end":
-            break;
-        }
-      });
+    const event = sessionContext.bot.observe(session);
+    if (!event) return;
 
-      return sessionContext;
-    };
+    await sessionContext.runtime.handleEvent(event);
+  }
 
-    this.ctx.on("session:new", async ({ platform, channelId, sessionManager }) => {
-      const key: ChannelKey = `${platform}:${channelId}`;
-      const existing = this._channels.get(key);
-      if (existing) {
-        await this.ctx["yesimbot.extension"].disposeChannelRuntime({
-          platform,
-          channelId,
-          type: existing.type,
-        });
-        existing.agentSession.dispose();
-        const newCtx = await createSessionContext(
-          { platform, channelId, type: existing.type },
-          sessionManager,
-          existing.bot,
-        );
-        this._channels.set(key, newCtx);
-        this.logger.info(`Session replaced for channel ${key}`);
-      }
+  private async _disposeSessionContext(sessionContext: SessionContext): Promise<void> {
+    await this.ctx["yesimbot.extension"].disposeChannelRuntime({
+      platform: sessionContext.platform,
+      channelId: sessionContext.channelId,
+      type: sessionContext.type,
     });
-
-    this.ctx.on("athena/event", async (event: AthenaEvent) => {
-      const key: ChannelKey = `${event.source.platform}:${event.source.channelId}`;
-
-      if (!this._channels.has(key)) {
-        const sessionManager = await this.ctx["yesimbot.session"].getOrCreate(
-          event.source.platform,
-          event.source.channelId,
-          event.source.conversationType === "private" ? "private" : "group",
-        );
-
-        const bot = event.metadata.bot;
-        if (!bot) {
-          this.logger.warn(`No bot reference available for channel ${key}, skipping`);
-          return;
-        }
-
-        const sessionContext = await createSessionContext(
-          {
-            platform: event.source.platform,
-            channelId: event.source.channelId,
-            type: event.source.conversationType === "private" ? "private" : "group",
-          },
-          sessionManager,
-          bot,
-        );
-        this._channels.set(key, sessionContext);
-        this.logger.info(`Created new agent session for channel ${key}`);
-      }
-      const sessionContext = this._channels.get(key)!;
-
-      const channelAllowed = isChannelAllowed(
-        event.source.platform,
-        event.source.channelId,
-        event.source.conversationType === "private" ? "private" : "group",
-        this.config.allowedChannels,
-      );
-
-      const shouldTriggerTurn = channelAllowed && event.metadata.triggerCandidate;
-
-      // Format for LLM
-      const formatted = await this.ctx["yesimbot.adapter"].formatters.format(event, {
-        conversationType: event.source.conversationType,
-        selfId: sessionContext.bot.selfId,
-      });
-
-      // Decide persistence
-      if (formatted === null && !event.metadata.persist) return;
-      if (!event.metadata.persist && !shouldTriggerTurn) return;
-
-      const display = formatted !== null;
-      const content = formatted ?? [];
-
-      const options = shouldTriggerTurn
-        ? { triggerTurn: true, deliverAs: "followUp" as const }
-        : { triggerTurn: false };
-
-      await sessionContext.agentSession.sendCustomMessage(
-        {
-          customType: "athena:event",
-          content,
-          display,
-          details: serializeEvent(event),
-        },
-        options,
-      );
-    });
+    sessionContext.runtime.dispose();
+    this._channelBotInfo.delete(`${sessionContext.platform}:${sessionContext.channelId}`);
   }
 
   private _registerCommands() {
@@ -380,22 +337,4 @@ export class RuntimeService extends Service<RuntimeConfig> {
       }
     });
   }
-}
-
-function isChannelAllowed(
-  platform: string,
-  channelId: string,
-  type: "private" | "group",
-  allowedChannels: ChannelIdentifier[],
-) {
-  /**
-   * platform -> * matches all platforms
-   * channelId -> * matches all channels under the specified platform
-   */
-  return allowedChannels.some((c) => {
-    const platformMatch = c.platform === "*" || c.platform === platform;
-    const channelMatch = c.channelId === "*" || c.channelId === channelId;
-    const typeMatch = c.type === type;
-    return platformMatch && channelMatch && typeMatch;
-  });
 }
