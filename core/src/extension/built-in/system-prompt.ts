@@ -16,7 +16,7 @@
  */
 
 import { buildAthenaSystemPrompt, ensurePersonaFile } from "../../runtime/system-prompt.js";
-import type { Channel, ExtensionDefinition } from "../types.js";
+import type { Channel, ExtensionDefinition, SpeakElementPromptContext } from "../types.js";
 
 // ============================================================================
 // Types
@@ -51,6 +51,11 @@ export interface SystemPromptExtensionOptions {
     toolSnippets: Record<string, string>;
     promptGuidelines: string[];
   };
+  /**
+   * Resolve speak element prompt context for a given channel.
+   * When provided, the extension will use this to get model-visible message elements.
+   */
+  getSpeakElementPromptContext?: (channel: Channel) => SpeakElementPromptContext;
 }
 
 // ============================================================================
@@ -65,7 +70,7 @@ export interface SystemPromptExtensionOptions {
 export function createSystemPromptExtension(
   options: SystemPromptExtensionOptions,
 ): ExtensionDefinition {
-  const { basePath, resolveBotInfo, getToolPromptContext } = options;
+  const { basePath, resolveBotInfo, getToolPromptContext, getSpeakElementPromptContext } = options;
   const personaPath = `${basePath}/PERSONA.md`;
   const agentsPath = `${basePath}/AGENTS.md`;
 
@@ -101,6 +106,10 @@ export function createSystemPromptExtension(
               promptGuidelines: [] as string[],
             };
 
+        const speakElementContext = getSpeakElementPromptContext
+          ? getSpeakElementPromptContext(channel)
+          : { elements: [] };
+
         return {
           systemPrompt: buildAthenaSystemPrompt({
             persona,
@@ -109,6 +118,7 @@ export function createSystemPromptExtension(
             selectedTools: toolContext.selectedTools,
             toolSnippets: toolContext.toolSnippets,
             promptGuidelines: toolContext.promptGuidelines,
+            speakElements: speakElementContext.elements,
           }),
         };
       }) as (...args: unknown[]) => unknown);

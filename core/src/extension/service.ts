@@ -15,6 +15,7 @@
 import { HookRunner, type SessionManager } from "@yesimbot/agent/session";
 import { Context, Logger, Service } from "koishi";
 
+import type { SpeakElementDefinition, SpeakElementPromptInfo } from "../bot/types.js";
 import type {
   Channel,
   ChannelReloadResult,
@@ -26,6 +27,7 @@ import type {
   ExtensionDefinition,
   ExtensionToolSnapshot,
   ReloadSummary,
+  SpeakElementPromptContext,
   ToolDefinition,
 } from "./types.js";
 
@@ -62,6 +64,7 @@ interface CreateChannelRuntimeOptions {
   getSessionName(): string | undefined;
   getActiveTools(): string[];
   setActiveTools(toolNames: string[]): void;
+  registerSpeakElement?(definition: SpeakElementDefinition): () => void;
 }
 
 interface ChannelRuntimeState {
@@ -285,6 +288,29 @@ export class ExtensionService extends Service<ExtensionConfig> {
     return { selectedTools, toolSnippets, promptGuidelines };
   }
 
+  getPromptSpeakElementContext(channel: Channel): SpeakElementPromptContext {
+    const key = channelKeyOf(channel);
+    const state = this.channels.get(key);
+
+    if (!state) {
+      return { elements: [] };
+    }
+
+    const elements: SpeakElementPromptInfo[] = [];
+    for (const binding of state.bindings) {
+      for (const definition of binding.speakElements.values()) {
+        elements.push({
+          tag: definition.tag,
+          syntax: definition.syntax,
+          description: definition.description,
+          examples: definition.examples ?? [],
+        });
+      }
+    }
+
+    return { elements };
+  }
+
   // =========================================================================
   // Internal: Binding Helpers
   // =========================================================================
@@ -301,6 +327,8 @@ export class ExtensionService extends Service<ExtensionConfig> {
   ): Promise<ExtensionBinding> {
     const handlers = new Map<string, Array<(...args: unknown[]) => unknown>>();
     const tools = new Map<string, ToolDefinition>();
+    const speakElements = new Map<string, SpeakElementDefinition>();
+    const speakElementDisposers: Array<() => void> = [];
     let active = true;
     const assertActive = () => {
       if (!active) {
@@ -311,6 +339,19 @@ export class ExtensionService extends Service<ExtensionConfig> {
     const ctx: ExtensionContext = {
       get channel() {
         return options.channel;
+      },
+      bot: {
+        registerSpeakElement(definition) {
+          assertActive();
+          if (speakElements.has(definition.tag)) {
+            throw new Error(`Speak element "${definition.tag}" is already registered by ${def.id}`);
+          }
+          speakElements.set(definition.tag, definition);
+          if (options.registerSpeakElement) {
+            const dispose = options.registerSpeakElement(definition);
+            speakElementDisposers.push(dispose);
+          }
+        },
       },
       on(event, handler) {
         assertActive();
@@ -341,13 +382,27 @@ export class ExtensionService extends Service<ExtensionConfig> {
 
     const cleanup = await def.setup(ctx);
     active = false;
+    const cleanupObject =
+      cleanup && typeof cleanup === "object" ? (cleanup as ExtensionCleanup) : undefined;
+    const combinedCleanup =
+      cleanupObject || speakElementDisposers.length > 0
+        ? {
+            async dispose() {
+              for (const dispose of speakElementDisposers.splice(0)) {
+                dispose();
+              }
+              await cleanupObject?.dispose?.();
+            },
+          }
+        : undefined;
 
     return {
       id: def.id,
       order: def.order ?? 0,
       handlers,
       tools,
-      cleanup: cleanup && typeof cleanup === "object" ? (cleanup as ExtensionCleanup) : undefined,
+      speakElements,
+      cleanup: combinedCleanup,
     };
   }
 

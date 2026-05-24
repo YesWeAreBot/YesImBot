@@ -10,6 +10,8 @@ import type { AgentTool } from "@yesimbot/agent/agent";
 import type { HookRunner } from "@yesimbot/agent/session";
 import type { Bot } from "koishi";
 
+import type { SpeakElementDefinition, SpeakElementPromptInfo } from "../bot/types.js";
+
 // ============================================================================
 // Channel
 // ============================================================================
@@ -56,8 +58,17 @@ export type ToolDefinition<INPUT = unknown, OUTPUT = ToolResultOutput, DETAILS =
 // Core-Owned Extension Context
 // ============================================================================
 
+export interface ExtensionBotContext {
+  registerSpeakElement(definition: SpeakElementDefinition): void;
+}
+
+export interface SpeakElementPromptContext {
+  elements: SpeakElementPromptInfo[];
+}
+
 export interface ExtensionContext {
   readonly channel: Channel;
+  readonly bot: ExtensionBotContext;
   /** 注册 channel lifecycle hook；事件分发由 agent package 的 HookRunner 执行。 */
   on(event: string, handler: (...args: unknown[]) => unknown): void;
   registerTool<INPUT = unknown, OUTPUT = ToolResultOutput, DETAILS = never>(
@@ -82,6 +93,7 @@ export interface ExtensionBinding {
   readonly order: number;
   readonly handlers: Map<string, Array<(...args: unknown[]) => unknown>>;
   readonly tools: Map<string, ToolDefinition>;
+  readonly speakElements: Map<string, SpeakElementDefinition>;
   readonly cleanup?: ExtensionCleanup;
 }
 

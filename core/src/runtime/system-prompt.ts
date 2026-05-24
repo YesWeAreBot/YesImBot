@@ -2,6 +2,8 @@ import { existsSync } from "node:fs";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 
+import type { SpeakElementPromptInfo } from "../bot/types.js";
+
 export interface BuildAthenaSystemPromptOptions {
   persona: string;
   additionalInstructions?: string;
@@ -15,7 +17,17 @@ export interface BuildAthenaSystemPromptOptions {
   selectedTools: string[];
   toolSnippets: Record<string, string>;
   promptGuidelines?: string[];
+  speakElements?: SpeakElementPromptInfo[];
 }
+
+const DEFAULT_SPEAK_ELEMENTS: SpeakElementPromptInfo[] = [
+  {
+    tag: "sep",
+    syntax: "<sep/>",
+    description: "Split one assistant reply into multiple platform messages with natural delays.",
+    examples: ["这个啊<sep/>我想一下..."],
+  },
+];
 
 /**
  * Ensure a PERSONA.md file exists at the given path.
@@ -55,6 +67,7 @@ export function buildAthenaSystemPrompt(options: BuildAthenaSystemPromptOptions)
     selectedTools,
     toolSnippets,
     promptGuidelines,
+    speakElements,
   } = options;
 
   const sections: string[] = [];
@@ -127,20 +140,27 @@ ${sceneGuide}`);
 
   sections.push(principlesBlock);
 
-  // 6. Message Segmentation — output format protocol, not suggestion
-  sections.push(`## Message Segmentation
+  // 6. Message Elements — output format protocol, not suggestion
+  const elements =
+    speakElements && speakElements.length > 0 ? speakElements : DEFAULT_SPEAK_ELEMENTS;
+  const elementLines = elements.flatMap((element) => {
+    const lines = [`- \`${element.syntax}\`: ${element.description}`];
+    for (const example of element.examples ?? []) {
+      lines.push(`  Example: \`${example}\``);
+    }
+    return lines;
+  });
+
+  sections.push(`## Message Elements
 
 你的输出会被直接发送为聊天消息。遵守以下格式规则：
 
 1. 禁止使用换行符（\\n）。你的输出必须是单行文本。
-2. 需要分条发送时，用 <sep/> 标记断点。<sep/> 前后的内容会作为独立消息依次发出。
-3. 大多数时候一条消息就够了，不需要 <sep/>。只在语义上确实是"两句分开说更自然"时才用。
-4. You may embed the platform's XML-style formatting tags.
-- \`<at id="USER_ID"/>\` : Mention a user. E.g., \`<at id="12345"/> 在吗？\`
-- \`<sep/>\` : Split a long message into multiple parts (natural delays). E.g., \`这个啊<sep/>我看一下...\`
-Rules:
-  * These tags are part of the message formatting capabilities of this platform.
-  * Do not wrap them in Markdown.`);
+2. Only use tags listed here. Unknown tags will be sent as plain text.
+3. Do not wrap message elements in Markdown.
+4. Most replies should be one message. Use message elements only when they make the chat behavior more natural.
+
+${elementLines.join("\n")}`);
 
   // 7. Tools
   const visibleTools = selectedTools.filter((name) => !!toolSnippets[name]);

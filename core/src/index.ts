@@ -5,6 +5,7 @@ import { Context, Schema } from "koishi";
 
 import { AdapterService } from "./adapter/index.js";
 import { AdapterConfig } from "./adapter/service.js";
+import { AthenaBotService } from "./bot/service.js";
 import { ChatHistoryPlugin } from "./extension/built-in/chat-history/index.js";
 import { ExtensionConfig, ExtensionService } from "./extension/service.js";
 import { RuntimeConfig, RuntimeService } from "./runtime/service.js";
@@ -19,6 +20,7 @@ export type Config = ModelServiceConfig &
     basePath: string;
     chatModel: string;
     logLevel?: number;
+    consumeMessages?: boolean;
     enableChatTools?: boolean;
   };
 
@@ -38,6 +40,7 @@ export const Config = Schema.object({
     .default([]),
   basePath: Schema.path({ filters: ["directory"], allowCreate: true }).default("data/yesimbot"),
   logLevel: Schema.union([0, 1, 2, 3]).default(2),
+  consumeMessages: Schema.boolean().default(false).description("是否消费消息并阻止后续中间件"),
   runtimeSettings: Schema.object({
     contextWindow: Schema.number()
       .min(1000)
@@ -136,6 +139,10 @@ export async function apply(ctx: Context, config: Config) {
   ctx.plugin(ExtensionService, config as ExtensionConfig);
   ctx.plugin(SessionService, config as SessionConfig);
   ctx.plugin(AdapterService, config as AdapterConfig);
+  ctx.plugin(AthenaBotService, {
+    logLevel: config.logLevel,
+    consumeMessages: config.consumeMessages,
+  });
   ctx.plugin(RuntimeService, config as RuntimeConfig);
   if (config.enableChatTools) {
     ctx.plugin(ChatHistoryPlugin, {
@@ -150,6 +157,9 @@ export async function apply(ctx: Context, config: Config) {
 export type { ModelService } from "./services/model";
 export type { SessionService } from "./services/session";
 export type { AthenaEvent, PlatformAdapter } from "./adapter/index.js";
+export { AthenaBotService } from "./bot/service.js";
+export { AthenaBot } from "./bot/athena-bot.js";
+export { createAthenaEvent, isAthenaEvent, serializeAthenaEvent } from "./bot/events.js";
 export { encodeChannelId } from "./services/session/encoding.js";
 export type {
   Channel,
@@ -164,3 +174,22 @@ export type {
   ReloadSummary,
   ToolDefinition,
 } from "./extension/types.js";
+export type {
+  Actor,
+  AthenaEventKind,
+  AthenaEventMap,
+  BotPresentation,
+  ChatMessagePayload,
+  CreateAthenaEventInput,
+  EventMetadata,
+  EventSource,
+  MemberChangePayload,
+  MessageRecallPayload,
+  PokePayload,
+  ReactionPayload,
+  SerializedAthenaEvent,
+  SpeakAnomaly,
+  SpeakElementContext,
+  SpeakElementDefinition,
+  SpeakElementPromptInfo,
+} from "./bot/types.js";

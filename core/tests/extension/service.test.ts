@@ -98,6 +98,7 @@ function createRuntimeOptions(overrides?: Partial<Channel>) {
     getSessionName: vi.fn<() => string | undefined>().mockReturnValue(undefined),
     getActiveTools: vi.fn<() => string[]>().mockReturnValue([]),
     setActiveTools: vi.fn<(toolNames: string[]) => void>(),
+    registerSpeakElement: vi.fn<(definition: unknown) => () => void>().mockReturnValue(() => {}),
   };
 }
 
@@ -294,6 +295,92 @@ describe("ExtensionService", () => {
     it("returns empty array when nothing registered", () => {
       const service = createExtensionService();
       expect(service.getAllDefinitions()).toEqual([]);
+    });
+  });
+
+  describe("Athena Bot extension context", () => {
+    it("lets extensions register speak elements through ctx.bot", async () => {
+      const service = createExtensionService();
+      await service.registerExtension({
+        id: "sticker-ext",
+        setup(ctx) {
+          ctx.bot.registerSpeakElement({
+            tag: "sticker",
+            syntax: '<sticker name="NAME"/>',
+            description: "Send a known sticker by name.",
+            examples: ['<sticker name="吃瓜"/>'],
+          });
+        },
+      });
+
+      const options = createRuntimeOptions({
+        platform: "test",
+        channelId: "chan",
+        type: "group",
+      });
+      await service.createChannelRuntime(options);
+
+      expect(service.getPromptSpeakElementContext(options.channel)).toEqual({
+        elements: [
+          {
+            tag: "sticker",
+            syntax: '<sticker name="NAME"/>',
+            description: "Send a known sticker by name.",
+            examples: ['<sticker name="吃瓜"/>'],
+          },
+        ],
+      });
+    });
+
+    it("removes speak elements when extension is unregistered and channel reloads", async () => {
+      const service = createExtensionService();
+      await service.registerExtension({
+        id: "sticker-ext",
+        setup(ctx) {
+          ctx.bot.registerSpeakElement({
+            tag: "sticker",
+            syntax: '<sticker name="NAME"/>',
+            description: "Send a known sticker by name.",
+          });
+        },
+      });
+
+      const options = createRuntimeOptions();
+      await service.createChannelRuntime(options);
+      expect(service.getPromptSpeakElementContext(options.channel).elements).toHaveLength(1);
+
+      await service.unregisterExtension("sticker-ext");
+      expect(service.getPromptSpeakElementContext(options.channel).elements).toEqual([]);
+    });
+
+    it("disposes registered speak elements when channel runtime is cleaned up", async () => {
+      const service = createExtensionService();
+      const disposer = vi.fn();
+      await service.registerExtension({
+        id: "sticker-ext",
+        setup(ctx) {
+          ctx.bot.registerSpeakElement({
+            tag: "sticker",
+            syntax: '<sticker name="NAME"/>',
+            description: "Send a known sticker by name.",
+          });
+        },
+      });
+
+      const options = createRuntimeOptions();
+      options.registerSpeakElement = vi.fn().mockReturnValue(disposer);
+
+      const runtime = await service.createChannelRuntime(options);
+
+      expect(options.registerSpeakElement).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tag: "sticker",
+        }),
+      );
+
+      await runtime.dispose();
+
+      expect(disposer).toHaveBeenCalledTimes(1);
     });
   });
 });
