@@ -1007,19 +1007,20 @@ export class SessionManager {
 
   /**
    * Create a new session.
-   * @param cwd Working directory (stored in session header)
-   * @param sessionDir Optional session directory. If omitted, uses default (~/.pi/agent/sessions/<encoded-cwd>/).
+   * @param sessionDir Session directory for storing session files.
+   * @param cwd Working directory (optional, defaults to process.cwd()).
+   *             Kept for backward compatibility with old session files.
    */
-  static create(cwd: string, sessionDir: string): SessionManager {
+  static create(sessionDir: string, cwd?: string): SessionManager {
     const dir = sessionDir;
-    return new SessionManager(cwd, dir, undefined, true);
+    return new SessionManager(cwd ?? process.cwd(), dir, undefined, true);
   }
 
   /**
    * Open a specific session file.
    * @param path Path to session file
    * @param sessionDir Optional session directory for /new or /branch. If omitted, derives from file's parent.
-   * @param cwdOverride Optional cwd override instead of the session header cwd.
+   * @param cwdOverride Optional cwd override instead of reading from session header.
    */
   static open(path: string, sessionDir?: string, cwdOverride?: string): SessionManager {
     // Extract cwd from session header if possible, otherwise use process.cwd()
@@ -1033,16 +1034,16 @@ export class SessionManager {
 
   /**
    * Continue the most recent session, or create new if none.
-   * @param cwd Working directory
-   * @param sessionDir Optional session directory. If omitted, uses default (~/.pi/agent/sessions/<encoded-cwd>/).
+   * @param sessionDir Session directory.
+   * @param cwd Working directory (optional, defaults to process.cwd()).
    */
-  static continueRecent(cwd: string, sessionDir: string): SessionManager {
+  static continueRecent(sessionDir: string, cwd?: string): SessionManager {
     const dir = sessionDir;
     const mostRecent = findMostRecentSession(dir);
     if (mostRecent) {
-      return new SessionManager(cwd, dir, mostRecent, true);
+      return new SessionManager(cwd ?? process.cwd(), dir, mostRecent, true);
     }
-    return new SessionManager(cwd, dir, undefined, true);
+    return new SessionManager(cwd ?? process.cwd(), dir, undefined, true);
   }
 
   /** Create an in-memory session (no file persistence) */
@@ -1054,10 +1055,10 @@ export class SessionManager {
    * Fork a session from another project directory into the current project.
    * Creates a new session in the target cwd with the full history from the source session.
    * @param sourcePath Path to the source session file
-   * @param targetCwd Target working directory (where the new session will be stored)
-   * @param sessionDir Optional session directory. If omitted, uses default for targetCwd.
+   * @param sessionDir Session directory for the new forked session.
+   * @param targetCwd Target working directory (optional, defaults to process.cwd()).
    */
-  static forkFrom(sourcePath: string, targetCwd: string, sessionDir: string): SessionManager {
+  static forkFrom(sourcePath: string, sessionDir: string, targetCwd?: string): SessionManager {
     const sourceEntries = loadEntriesFromFile(sourcePath);
     if (sourceEntries.length === 0) {
       throw new Error(`Cannot fork: source session file is empty or invalid: ${sourcePath}`);
@@ -1070,6 +1071,7 @@ export class SessionManager {
       throw new Error(`Cannot fork: source session has no header: ${sourcePath}`);
     }
 
+    const cwd = targetCwd ?? process.cwd();
     const dir = sessionDir;
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true });
@@ -1086,7 +1088,7 @@ export class SessionManager {
       type: "session",
       id: newSessionId,
       timestamp,
-      cwd: targetCwd,
+      cwd,
       parentSession: sourcePath,
     };
     appendFileSync(newSessionFile, `${JSON.stringify(newHeader)}\n`);
@@ -1098,20 +1100,15 @@ export class SessionManager {
       }
     }
 
-    return new SessionManager(targetCwd, dir, newSessionFile, true);
+    return new SessionManager(cwd, dir, newSessionFile, true);
   }
 
   /**
    * List all sessions for a directory.
-   * @param cwd Working directory (used to compute default session directory)
-   * @param sessionDir Optional session directory. If omitted, uses default (~/.pi/agent/sessions/<encoded-cwd>/).
+   * @param sessionDir Session directory.
    * @param onProgress Optional callback for progress updates (loaded, total)
    */
-  static async list(
-    cwd: string,
-    sessionDir: string,
-    onProgress?: SessionListProgress,
-  ): Promise<SessionInfo[]> {
+  static async list(sessionDir: string, onProgress?: SessionListProgress): Promise<SessionInfo[]> {
     const dir = sessionDir;
     const sessions = await listSessionsFromDir(dir, onProgress);
     sessions.sort((a, b) => b.modified.getTime() - a.modified.getTime());

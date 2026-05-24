@@ -115,16 +115,16 @@ export class SessionService extends Service<SessionConfig> {
     if (meta?.current_session) {
       const sessionFile = join(channelDir, meta.current_session);
       if (existsSync(sessionFile)) {
-        sessionManager = SessionManager.open(sessionFile, channelDir, this.basePath);
+        sessionManager = SessionManager.open(sessionFile, channelDir);
       } else {
-        sessionManager = SessionManager.create(this.basePath, channelDir);
+        sessionManager = SessionManager.create(channelDir);
         writeMeta(
           channelDir,
           createMeta(platform, channel, type, sessionManager.getSessionFile()!, 1),
         );
       }
     } else {
-      sessionManager = SessionManager.create(this.basePath, channelDir);
+      sessionManager = SessionManager.create(channelDir);
       writeMeta(
         channelDir,
         createMeta(platform, channel, type, sessionManager.getSessionFile()!, 1),
@@ -151,7 +151,7 @@ export class SessionService extends Service<SessionConfig> {
     // 总是更新 channel-map.json，确保频道映射存在
     this.updateChannelMap(platform, channel);
 
-    const sessionManager = SessionManager.create(this.basePath, channelDir);
+    const sessionManager = SessionManager.create(channelDir);
     const meta = readMeta(channelDir);
     const sessionCount = (meta?.session_count ?? 0) + 1;
     writeMeta(

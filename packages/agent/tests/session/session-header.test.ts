@@ -53,10 +53,17 @@ describe("SessionHeader", () => {
       expect(header).not.toHaveProperty("cwd");
     });
 
+    it("new session headers omit cwd and consumers should not need getCwd", () => {
+      const sm = SessionManager.inMemory();
+      const header = sm.getHeader();
+      expect(header).toMatchObject({ type: "session" });
+      expect(header).not.toHaveProperty("cwd");
+    });
+
     it("create() header has no cwd field", () => {
       const sessionDir = join(tempDir, "sessions");
       mkdirSync(sessionDir, { recursive: true });
-      const sm = SessionManager.create("/tmp/test", sessionDir);
+      const sm = SessionManager.create(sessionDir, "/tmp/test");
       const header = sm.getHeader();
 
       expect(header).toBeDefined();
