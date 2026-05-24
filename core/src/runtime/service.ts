@@ -9,7 +9,7 @@ import type { AthenaEvent } from "../adapter/types.js";
 import { serializeEvent } from "../adapter/types.js";
 import { createSystemPromptExtension } from "../extension/built-in/system-prompt.js";
 import type { BotInfo } from "../extension/built-in/system-prompt.js";
-import type { ChannelContext, ExtensionHost } from "../extension/types.js";
+import type { Channel } from "../extension/types.js";
 import { Delivery } from "./delivery/delivery.js";
 import { buildAgentSessionConfig, persistDeliveryEvents } from "./helpers.js";
 import { RuntimeSettingsManager, type PartialRuntimeSettings } from "./settings/manager.js";
@@ -94,11 +94,11 @@ export class RuntimeService extends Service<RuntimeConfig> {
     await this.ctx["yesimbot.extension"].registerExtension(promptExtension);
 
     const createSessionContext = async (
-      context: ChannelContext,
+      channel: Channel,
       sessionManager: SessionManager,
       bot: Bot,
     ): Promise<SessionContext> => {
-      const { platform, channelId, type } = context;
+      const { platform, channelId, type } = channel;
       const agent = new Agent({
         model: chatModel.model,
         convertToLlm: (messages) => convertToLlm(messages),
@@ -164,7 +164,7 @@ export class RuntimeService extends Service<RuntimeConfig> {
         getSystemPrompt: () => agent.state.systemPrompt,
       }));
 
-      // Create AgentSession (before ExtensionHost so host can delegate to it)
+      // Create AgentSession before channel runtime wiring.
       agentSession = new AgentSession({
         agent,
         sessionManager,
@@ -172,10 +172,8 @@ export class RuntimeService extends Service<RuntimeConfig> {
         ...buildAgentSessionConfig(merged),
       });
 
-      // Build ExtensionHost that delegates to AgentSession
-      const host: ExtensionHost = {
-        hostId: `runtime:${channelKey}`,
-        channel: context,
+      await this.ctx["yesimbot.extension"].createChannelRuntime({
+        channel: { ...channel, bot },
         hookRunner,
         sessionManager,
         applyToolState: (snapshot) => agentSession.applyToolState(snapshot),
@@ -188,23 +186,7 @@ export class RuntimeService extends Service<RuntimeConfig> {
         getSessionName: () => sessionManager.getSessionName(),
         getActiveTools: () => agentSession.getActiveToolNames(),
         setActiveTools: (toolNames) => agentSession.setActiveToolsByName(toolNames),
-        getModel: () => agentSession.model,
-        isIdle: () => !agentSession.isStreaming,
-        getSignal: () => agent.signal,
-        abort: () => agentSession.abort(),
-        hasPendingMessages: () => agentSession.pendingMessageCount > 0,
-        getContextUsage: () => agentSession.getContextUsage(),
-        compact: (options) => {
-          void agentSession
-            .compact(options?.customInstructions)
-            .then(options?.onComplete)
-            .catch(options?.onError);
-        },
-        getSystemPrompt: () => agentSession.systemPrompt,
-      };
-
-      // Create channel runtime via ExtensionService (applies tool state via host)
-      await this.ctx["yesimbot.extension"].createChannelRuntime(context, host);
+      });
 
       const sessionContext: SessionContext = {
         agentSession,

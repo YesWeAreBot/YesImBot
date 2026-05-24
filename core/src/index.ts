@@ -152,15 +152,14 @@ export type { SessionService } from "./services/session";
 export type { AthenaEvent, PlatformAdapter } from "./adapter/index.js";
 export { encodeChannelId } from "./services/session/encoding.js";
 export type {
-  ChannelContext,
+  Channel,
   ChannelReloadResult,
   ChannelRuntime,
   ChannelRuntimeError,
-  ExtensionAPI,
   ExtensionBinding,
   ExtensionCleanup,
+  ExtensionContext,
   ExtensionDefinition,
-  ExtensionHost,
   ExtensionToolSnapshot,
   ReloadSummary,
   ToolDefinition,

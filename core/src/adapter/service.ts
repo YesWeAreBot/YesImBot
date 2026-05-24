@@ -2,7 +2,6 @@ import { Context, Service } from "koishi";
 
 import { createFormatterRegistry } from "./formatter.js";
 import { GenericAdapter } from "./generic.js";
-import { OneBotAdapter } from "./onebot/index.js";
 import type { AthenaEvent, EventFormatter, FormatterRegistry, PlatformAdapter } from "./types.js";
 
 declare module "koishi" {
@@ -37,7 +36,6 @@ export class AdapterService extends Service<AdapterConfig> {
   protected async start() {
     this._genericAdapter = new GenericAdapter(this.ctx, {});
     this.register(this._genericAdapter);
-    this.register(new OneBotAdapter(this.ctx, { logLevel: this.config.logLevel }));
   }
 
   register(adapter: PlatformAdapter): () => void {

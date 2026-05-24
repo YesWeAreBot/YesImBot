@@ -16,7 +16,7 @@
  */
 
 import { buildAthenaSystemPrompt, ensurePersonaFile } from "../../runtime/system-prompt.js";
-import type { ChannelContext, ExtensionDefinition } from "../types.js";
+import type { Channel, ExtensionDefinition } from "../types.js";
 
 // ============================================================================
 // Types
@@ -37,16 +37,16 @@ export interface SystemPromptExtensionOptions {
   /** Base data directory (contains PERSONA.md, AGENTS.md) */
   basePath: string;
   /**
-   * Resolve bot info for a given channel context.
+   * Resolve bot info for a given channel.
    * Called once per agent:before-start event.
    */
-  resolveBotInfo: (context: ChannelContext) => BotInfo;
+  resolveBotInfo: (channel: Channel) => BotInfo;
   /**
-   * Resolve tool prompt context for a given channel context.
+   * Resolve tool prompt context for a given channel.
    * When provided, the extension will use this to get selectedTools,
    * toolSnippets, and promptGuidelines from core-owned bindings.
    */
-  getToolPromptContext?: (context: ChannelContext) => {
+  getToolPromptContext?: (channel: Channel) => {
     selectedTools: string[];
     toolSnippets: Record<string, string>;
     promptGuidelines: string[];
@@ -72,8 +72,8 @@ export function createSystemPromptExtension(
   return {
     id: "yesimbot:system-prompt",
     order: -1000,
-    setup(api) {
-      api.on("agent:before-start", (async (event: { systemPrompt: string }) => {
+    setup(ctx) {
+      ctx.on("agent:before-start", (async (_event: { systemPrompt: string }) => {
         const persona = await ensurePersonaFile(personaPath);
 
         let additionalInstructions: string | undefined;
@@ -84,31 +84,22 @@ export function createSystemPromptExtension(
           // AGENTS.md is optional
         }
 
-        const context = api.channel;
-        const env = context
-          ? {
-              platform: context.platform,
-              channelId: context.channelId,
-              type: context.type,
-              ...resolveBotInfo(context),
-            }
-          : {
-              platform: "unknown",
-              channelId: "unknown",
-              type: "group" as const,
-              selfId: "unknown",
-              selfName: "(unknown)",
-            };
+        const channel = ctx.channel;
+        const env = {
+          platform: channel.platform,
+          channelId: channel.channelId,
+          type: channel.type,
+          ...resolveBotInfo(channel),
+        };
 
         // Resolve tool prompt context from core helper
-        const toolContext =
-          context && getToolPromptContext
-            ? getToolPromptContext(context)
-            : {
-                selectedTools: [] as string[],
-                toolSnippets: {} as Record<string, string>,
-                promptGuidelines: [] as string[],
-              };
+        const toolContext = getToolPromptContext
+          ? getToolPromptContext(channel)
+          : {
+              selectedTools: [] as string[],
+              toolSnippets: {} as Record<string, string>,
+              promptGuidelines: [] as string[],
+            };
 
         return {
           systemPrompt: buildAthenaSystemPrompt({

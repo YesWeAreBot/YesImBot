@@ -5,26 +5,25 @@
  * - 管理 extension definitions（全局注册/卸载）
  * - 管理 per-channel runtime（创建/销毁/重载）
  * - 收集 tool snapshot（原子下发给 agent）
- * - 提供内部 typed registration API 给 HookRunner
+ * - 构建 `ExtensionContext`，并把 hook 处理器注册到 `HookRunner`
  *
  * 错误策略：
  * - 单个 channel setup 失败 → fail-open，记录错误并继续
  * - register/unregister 聚合所有 channel 结果，不回滚全局定义
  */
 
-import { HookRunner } from "@yesimbot/agent/session";
+import { HookRunner, type SessionManager } from "@yesimbot/agent/session";
 import { Context, Logger, Service } from "koishi";
 
 import type {
-  ChannelContext,
+  Channel,
   ChannelReloadResult,
   ChannelRuntime,
   ChannelRuntimeError,
-  ExtensionAPI,
   ExtensionBinding,
   ExtensionCleanup,
+  ExtensionContext,
   ExtensionDefinition,
-  ExtensionHost,
   ExtensionToolSnapshot,
   ReloadSummary,
   ToolDefinition,
@@ -46,10 +45,29 @@ export interface ExtensionConfig {
   logLevel?: number;
 }
 
+/**
+ * 内部 channel runtime 选项。
+ *
+ * 这是 `ExtensionService` 的私有 wiring contract，不暴露旧的 public host abstraction。
+ */
+interface CreateChannelRuntimeOptions {
+  channel: Channel;
+  hookRunner: HookRunner;
+  sessionManager: SessionManager;
+  applyToolState(snapshot: ExtensionToolSnapshot): void;
+  sendMessage(message: unknown, options?: unknown): Promise<void>;
+  sendUserMessage(content: unknown, options?: unknown): Promise<void>;
+  appendEntry(customType: string, data?: unknown): void;
+  setSessionName(name: string): void;
+  getSessionName(): string | undefined;
+  getActiveTools(): string[];
+  setActiveTools(toolNames: string[]): void;
+}
+
 interface ChannelRuntimeState {
   channelKey: string;
-  context: ChannelContext;
-  host: ExtensionHost;
+  channel: Channel;
+  options: CreateChannelRuntimeOptions;
   hookRunner: HookRunner;
   bindings: ExtensionBinding[];
   errors: ChannelRuntimeError[];
@@ -59,8 +77,8 @@ interface ChannelRuntimeState {
 // Helpers
 // ============================================================================
 
-function channelKeyOf(context: ChannelContext): string {
-  return `${context.platform}:${context.channelId}`;
+function channelKeyOf(channel: Pick<Channel, "platform" | "channelId">): string {
+  return `${channel.platform}:${channel.channelId}`;
 }
 
 // ============================================================================
@@ -140,26 +158,21 @@ export class ExtensionService extends Service<ExtensionConfig> {
    *
    * await 全部 extension setup 完成，setup 失败时 fail-open
    *
-   * @param context - 频道上下文
-   * @param host - 扩展宿主，提供 HookRunner 和宿主能力
    */
-  async createChannelRuntime(
-    context: ChannelContext,
-    host: ExtensionHost,
-  ): Promise<ChannelRuntime> {
-    const key = channelKeyOf(context);
+  async createChannelRuntime(options: CreateChannelRuntimeOptions): Promise<ChannelRuntime> {
+    const key = channelKeyOf(options.channel);
 
     // 如果已存在，先销毁
     if (this.channels.has(key)) {
       this.logger.info(`Disposing existing runtime for channel ${key}`);
-      await this.disposeChannelRuntime(context);
+      await this.disposeChannelRuntime(options.channel);
     }
 
     const state: ChannelRuntimeState = {
       channelKey: key,
-      context,
-      host,
-      hookRunner: host.hookRunner,
+      channel: options.channel,
+      options,
+      hookRunner: options.hookRunner,
       bindings: [],
       errors: [],
     };
@@ -173,8 +186,8 @@ export class ExtensionService extends Service<ExtensionConfig> {
    *
    * 调用所有 extension cleanup，单个 cleanup 失败不阻断其他 cleanup
    */
-  async disposeChannelRuntime(context: ChannelContext): Promise<void> {
-    const key = channelKeyOf(context);
+  async disposeChannelRuntime(channel: Channel): Promise<void> {
+    const key = channelKeyOf(channel);
     const state = this.channels.get(key);
     if (!state) return;
 
@@ -191,7 +204,7 @@ export class ExtensionService extends Service<ExtensionConfig> {
 
     // 清理 hooks 和工具状态
     state.hookRunner.clear();
-    state.host.applyToolState({ tools: new Map(), activeToolNames: [] });
+    state.options.applyToolState({ tools: new Map(), activeToolNames: [] });
     this.channels.delete(key);
     this.logger.info(`Disposed runtime for channel ${key}`);
   }
@@ -199,8 +212,8 @@ export class ExtensionService extends Service<ExtensionConfig> {
   /**
    * 获取指定 channel 的 runtime（如果存在）
    */
-  getChannelRuntime(context: ChannelContext): ChannelRuntime | undefined {
-    const key = channelKeyOf(context);
+  getChannelRuntime(channel: Channel): ChannelRuntime | undefined {
+    const key = channelKeyOf(channel);
     const state = this.channels.get(key);
     if (!state) return undefined;
     return this._buildChannelRuntime(state);
@@ -216,8 +229,8 @@ export class ExtensionService extends Service<ExtensionConfig> {
    * 收集 per-channel extension bindings 中的所有工具，
    * 返回 Map<string, AgentTool> 供 agent 原子消费
    */
-  buildToolSnapshot(context: ChannelContext): ExtensionToolSnapshot {
-    const key = channelKeyOf(context);
+  buildToolSnapshot(channel: Channel): ExtensionToolSnapshot {
+    const key = channelKeyOf(channel);
     const state = this.channels.get(key);
 
     if (!state) {
@@ -234,19 +247,19 @@ export class ExtensionService extends Service<ExtensionConfig> {
    * selectedTools、toolSnippets 和 promptGuidelines，
    * 供系统提示扩展构建工具部分。
    */
-  getPromptToolContext(context: ChannelContext): {
+  getPromptToolContext(channel: Channel): {
     selectedTools: string[];
     toolSnippets: Record<string, string>;
     promptGuidelines: string[];
   } {
-    const key = channelKeyOf(context);
+    const key = channelKeyOf(channel);
     const state = this.channels.get(key);
 
     if (!state) {
       return { selectedTools: [], toolSnippets: {}, promptGuidelines: [] };
     }
 
-    const activeToolNames = state.host.getActiveTools();
+    const activeToolNames = state.options.getActiveTools();
     const toolSnippets: Record<string, string> = {};
     const promptGuidelinesSet = new Set<string>();
 
@@ -279,25 +292,25 @@ export class ExtensionService extends Service<ExtensionConfig> {
   /**
    * 为单个扩展定义创建绑定
    *
-   * 调用 def.setup(api) 收集 handlers 和 tools，
+   * 调用 def.setup(ctx) 收集 handlers 和 tools，
    * 返回 ExtensionBinding 供后续安装到 HookRunner
    */
   private async _createBinding(
     def: ExtensionDefinition,
-    host: ExtensionHost,
+    options: CreateChannelRuntimeOptions,
   ): Promise<ExtensionBinding> {
     const handlers = new Map<string, Array<(...args: unknown[]) => unknown>>();
     const tools = new Map<string, ToolDefinition>();
     let active = true;
     const assertActive = () => {
       if (!active) {
-        throw new Error(`Extension API for ${def.id} is no longer active`);
+        throw new Error(`Extension context for ${def.id} is no longer active`);
       }
     };
 
-    const api: ExtensionAPI = {
+    const ctx: ExtensionContext = {
       get channel() {
-        return host.channel;
+        return options.channel;
       },
       on(event, handler) {
         assertActive();
@@ -313,20 +326,20 @@ export class ExtensionService extends Service<ExtensionConfig> {
         assertActive();
         tools.delete(name);
       },
-      sendMessage(message, options) {
-        void host.sendMessage(message, options);
+      sendMessage(message, sendOptions) {
+        void options.sendMessage(message, sendOptions);
       },
-      sendUserMessage(content, options) {
-        void host.sendUserMessage(content, options);
+      sendUserMessage(content, sendOptions) {
+        void options.sendUserMessage(content, sendOptions);
       },
-      appendEntry: (customType, data) => host.appendEntry(customType, data),
-      setSessionName: (name) => host.setSessionName(name),
-      getSessionName: () => host.getSessionName(),
-      getActiveTools: () => host.getActiveTools(),
-      setActiveTools: (toolNames) => host.setActiveTools(toolNames),
+      appendEntry: (customType, data) => options.appendEntry(customType, data),
+      setSessionName: (name) => options.setSessionName(name),
+      getSessionName: () => options.getSessionName(),
+      getActiveTools: () => options.getActiveTools(),
+      setActiveTools: (toolNames) => options.setActiveTools(toolNames),
     };
 
-    const cleanup = await def.setup(api);
+    const cleanup = await def.setup(ctx);
     active = false;
 
     return {
@@ -414,7 +427,7 @@ export class ExtensionService extends Service<ExtensionConfig> {
     const reloadErrors: ChannelRuntimeError[] = [];
     for (const def of sorted) {
       try {
-        nextBindings.push(await this._createBinding(def, state.host));
+        nextBindings.push(await this._createBinding(def, state.options));
       } catch (err) {
         reloadErrors.push({
           extensionId: def.id,
@@ -428,7 +441,7 @@ export class ExtensionService extends Service<ExtensionConfig> {
     state.bindings = nextBindings;
     state.errors.push(...reloadErrors);
     this._installBindings(state.hookRunner, nextBindings);
-    state.host.applyToolState(this._buildToolSnapshotFromBindings(nextBindings));
+    state.options.applyToolState(this._buildToolSnapshotFromBindings(nextBindings));
 
     return {
       channelKey: state.channelKey,
@@ -501,7 +514,7 @@ export class ExtensionService extends Service<ExtensionConfig> {
       toolSnapshot: this._buildToolSnapshotFromBindings(state.bindings),
       hookRunner: state.hookRunner,
       errors: [...state.errors],
-      dispose: () => this.disposeChannelRuntime(state.context),
+      dispose: () => this.disposeChannelRuntime(state.channel),
     };
   }
 

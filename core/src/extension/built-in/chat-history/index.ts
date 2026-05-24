@@ -1,7 +1,7 @@
 import { Context, Logger, Service } from "koishi";
 
 import { encodeChannelId } from "../../../services/session/encoding.js";
-import { ExtensionAPI } from "../../types.js";
+import type { ExtensionContext, ReloadSummary } from "../../types.js";
 import { buildChatHistoryPrompt } from "./prompt.js";
 import { createReadConversationContextTool } from "./tools/read-conversation-context.js";
 import { createSearchConversationTool } from "./tools/search-conversation.js";
@@ -9,6 +9,16 @@ import { createSearchUserActivityTool } from "./tools/search-user-activity.js";
 import type { ChatHistoryConfig } from "./types.js";
 
 export type { ChatHistoryConfig };
+
+function logReloadFailures(logger: Logger, action: string, summary: ReloadSummary): void {
+  if (summary.allSucceeded) return;
+  logger.warn(
+    `${action} completed with ${summary.failureCount} failed channel reload(s): ${summary.results
+      .filter((result) => !result.success)
+      .map((result) => `${result.channelKey}: ${result.error ?? "unknown error"}`)
+      .join("; ")}`,
+  );
+}
 
 export class ChatHistoryPlugin extends Service<ChatHistoryConfig> {
   static name = "yesimbot.chat-history";
@@ -24,19 +34,17 @@ export class ChatHistoryPlugin extends Service<ChatHistoryConfig> {
 
   async start(): Promise<void> {
     const config = this.config;
-    this.ctx["yesimbot.extension"].registerExtension({
+    const summary = await this.ctx["yesimbot.extension"].registerExtension({
       id: "chat-history",
-      setup(api: ExtensionAPI) {
-        const context = api.channel;
-        const currentChannel = context
-          ? {
-              platform: context.platform,
-              channelId: context.channelId,
-              channelKey: encodeChannelId(context.platform, context.channelId),
-            }
-          : null;
+      setup(ctx: ExtensionContext) {
+        const channel = ctx.channel;
+        const currentChannel = {
+          platform: channel.platform,
+          channelId: channel.channelId,
+          channelKey: encodeChannelId(channel.platform, channel.channelId),
+        };
 
-        api.on("agent:before-start", ((event: { systemPrompt: string }) => ({
+        ctx.on("agent:before-start", ((event: { systemPrompt: string }) => ({
           systemPrompt:
             event.systemPrompt +
             buildChatHistoryPrompt({
@@ -49,19 +57,21 @@ export class ChatHistoryPlugin extends Service<ChatHistoryConfig> {
         const searchUser = createSearchUserActivityTool(config, currentChannel);
         const readCtx = createReadConversationContextTool(config, currentChannel);
 
-        api.registerTool(searchConv);
-        api.registerTool(searchUser);
-        api.registerTool(readCtx);
+        ctx.registerTool(searchConv);
+        ctx.registerTool(searchUser);
+        ctx.registerTool(readCtx);
 
         return {
           dispose() {},
         };
       },
     });
+    logReloadFailures(this.logger, "Chat-history extension registration", summary);
   }
 
   async stop(): Promise<void> {
-    this.ctx["yesimbot.extension"].unregisterExtension("chat-history");
+    const summary = await this.ctx["yesimbot.extension"].unregisterExtension("chat-history");
+    logReloadFailures(this.logger, "Chat-history extension unregistration", summary);
     this.logger.info("Chat-history plugin stopped");
   }
 }

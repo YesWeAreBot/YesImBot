@@ -2,33 +2,30 @@
  * Extension system types for core.
  *
  * Core owns extension definitions and lifecycle.
- * Agent package provides ExtensionRunner for per-channel execution.
+ * Agent package provides per-channel hook execution.
  */
 
 import type { ToolResultOutput } from "@ai-sdk/provider-utils";
 import type { AgentTool } from "@yesimbot/agent/agent";
-import type {
-  CompactOptions,
-  ContextUsage,
-  HookRunner,
-  SessionManager,
-} from "@yesimbot/agent/session";
-import type { LanguageModel } from "ai";
+import type { HookRunner } from "@yesimbot/agent/session";
+import type { Bot } from "koishi";
 
 // ============================================================================
-// Channel Context
+// Channel
 // ============================================================================
 
 /**
- * 频道上下文信息（通用类型，用于 runtime、extension、session 等模块）
+ * 频道信息（用于 runtime、extension、session 等模块共享的 Koishi/platform 上下文）
  */
-export interface ChannelContext {
+export interface Channel {
   /** 平台标识，如 "onebot"、"sandbox:6nxstem9j43" */
   platform: string;
   /** 频道标识 */
   channelId: string;
   /** 频道类型 */
   type: "private" | "group";
+  /** Koishi Bot 实例（如果可用） */
+  bot?: Bot;
 }
 
 // ============================================================================
@@ -38,7 +35,7 @@ export interface ChannelContext {
 export interface ExtensionDefinition {
   id: string;
   order?: number;
-  setup(api: ExtensionAPI): void | Promise<void> | ExtensionCleanup | Promise<ExtensionCleanup>;
+  setup(ctx: ExtensionContext): void | Promise<void> | ExtensionCleanup | Promise<ExtensionCleanup>;
 }
 
 export interface ExtensionCleanup {
@@ -56,11 +53,12 @@ export type ToolDefinition<INPUT = unknown, OUTPUT = ToolResultOutput, DETAILS =
 };
 
 // ============================================================================
-// Core-Owned Extension API
+// Core-Owned Extension Context
 // ============================================================================
 
-export interface ExtensionAPI {
-  readonly channel?: ChannelContext;
+export interface ExtensionContext {
+  readonly channel: Channel;
+  /** 注册 channel lifecycle hook；事件分发由 agent package 的 HookRunner 执行。 */
   on(event: string, handler: (...args: unknown[]) => unknown): void;
   registerTool<INPUT = unknown, OUTPUT = ToolResultOutput, DETAILS = never>(
     tool: ToolDefinition<INPUT, OUTPUT, DETAILS>,
@@ -85,40 +83,6 @@ export interface ExtensionBinding {
   readonly handlers: Map<string, Array<(...args: unknown[]) => unknown>>;
   readonly tools: Map<string, ToolDefinition>;
   readonly cleanup?: ExtensionCleanup;
-}
-
-// ============================================================================
-// Extension Host Interface
-// ============================================================================
-
-/**
- * ExtensionHost — 由 RuntimeService 或 AgentSession 实现
- *
- * 提供 ExtensionRunner 生命周期管理所需的宿主能力
- */
-export interface ExtensionHost {
-  /** 宿主标识，用于日志和诊断 */
-  readonly hostId: string;
-  /** 频道上下文 */
-  readonly channel: ChannelContext;
-  readonly hookRunner: HookRunner;
-  readonly sessionManager: SessionManager;
-  applyToolState(snapshot: ExtensionToolSnapshot): void;
-  sendMessage(message: unknown, options?: unknown): Promise<void>;
-  sendUserMessage(content: unknown, options?: unknown): Promise<void>;
-  appendEntry(customType: string, data?: unknown): void;
-  setSessionName(name: string): void;
-  getSessionName(): string | undefined;
-  getActiveTools(): string[];
-  setActiveTools(toolNames: string[]): void;
-  getModel(): LanguageModel | undefined;
-  isIdle(): boolean;
-  getSignal(): AbortSignal | undefined;
-  abort(): void;
-  hasPendingMessages(): boolean;
-  getContextUsage(): ContextUsage | undefined;
-  compact(options?: CompactOptions): void;
-  getSystemPrompt(): string;
 }
 
 // ============================================================================

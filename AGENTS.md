@@ -5,8 +5,8 @@
 Athena is a Yarn 4 monorepo for Koishi-based LLM chat agents. Long-term goal: evolve from group chat agent into a persistent, perceptive, autonomous digital entity.
 
 - `core/` is the main `koishi-plugin-yesimbot` runtime — business logic, Koishi integration, message conversion.
-- `packages/agent/` owns the agent loop, session management, compaction, and extension system (`@yesimbot/agent`).
-- `packages/shared-model/` defines cross-package model/provider contracts.
+- `packages/agent/` owns the generic agent loop, session management, compaction, and hook dispatch (`@yesimbot/agent`).
+- `plugins/*` provide optional Koishi integrations built on the core extension contract.
 - `providers/*` register model backends into `ctx["yesimbot.model"]`.
 
 ## Working Rules
@@ -39,7 +39,9 @@ yarn turbo run check-types --filter=koishi-plugin-yesimbot
 yarn turbo run test --filter=koishi-plugin-yesimbot
 yarn turbo run check-types --filter=@yesimbot/agent
 yarn turbo run test --filter=@yesimbot/agent
-yarn turbo run check-types --filter=@yesimbot/plugin-sdk
+yarn turbo run check-types --filter=koishi-plugin-yesimbot-skill
+yarn turbo run check-types --filter=koishi-plugin-yesimbot-workspace
+yarn turbo run check-types --filter=koishi-plugin-yesimbot-mcp-client
 
 # single test file
 yarn workspace @yesimbot/agent exec vitest run tests/agent/agent-loop.test.ts
@@ -48,37 +50,37 @@ yarn workspace @yesimbot/agent exec vitest run tests/agent/agent-loop.test.ts
 yarn workspace @yesimbot/agent exec vitest run tests/session/compaction.test.ts -t "compaction"
 ```
 
-- Root `yarn test` runs all workspaces with a `test` script; currently `core` and `packages/agent`.
-- `core` has no `tests/` directory yet; its vitest config exists but is empty. Tests live in `packages/agent/tests/`.
+- Root `yarn test` runs all workspaces with a `test` script; currently `core`, `packages/agent`, and `plugins/workspace`.
+- Core tests live in `core/tests/`; agent tests live in `packages/agent/tests/`.
 - Turbo task `test` depends on `build` (see `turbo.json`). Run build first if type-checking or test resolution fails on workspace references.
 
 ## Architecture
 
 - `core/src/index.ts` wires `ModelService` and `Runtime`. Runtime creates one `AgentSession` per `platform:channelId` on first message.
 - `@yesimbot/agent` (`packages/agent/`) owns `Agent`, `AgentSession`, `SessionManager`, and the agent loop (`packages/agent/src/agent/`).
-- Extension system: `ExtensionRegistry` (global, in core) manages definitions; `ExtensionRunner` (per-session, in agent) manages bindings. Extensions register/unregister tools, subscribe to lifecycle events, inject context, and modify system prompts.
+- Extension system: `ExtensionService` (in core) owns extension definitions, setup/cleanup, per-channel reload, and extension tool snapshots. Plugins register `ExtensionDefinition` objects with `setup(ctx: ExtensionContext)`. The agent package only provides `HookRunner` for hook dispatch and does not own extension lifecycle.
 - `AgentSession.subscribe()` emits events (`agent_start`, `agent_end`, `turn_start`, `tool_execution_*`, etc.).
 - Provider packages expose Koishi plugins from `providers/*/src/index.ts`; optional integrations do the same from `plugins/*/src/index.ts`.
-- Shared contracts belong in `packages/shared-model` before wiring them into `core`.
+- Cross-package contracts should stay in the owning package exports until a dedicated shared package exists.
 
 ## Workspace Package Names
 
-| Directory                | npm name                       |
-| ------------------------ | ------------------------------ |
-| `core/`                  | `koishi-plugin-yesimbot`       |
-| `packages/agent/`        | `@yesimbot/agent`              |
-| `packages/shared-model/` | `@yesimbot/shared-model`       |
-| `plugins/skill/`         | `koishi-plugin-yesimbot-skill` |
+| Directory             | npm name                            |
+| --------------------- | ----------------------------------- |
+| `core/`               | `koishi-plugin-yesimbot`            |
+| `packages/agent/`     | `@yesimbot/agent`                   |
+| `plugins/skill/`      | `koishi-plugin-yesimbot-skill`      |
+| `plugins/workspace/`  | `koishi-plugin-yesimbot-workspace`  |
+| `plugins/mcp-client/` | `koishi-plugin-yesimbot-mcp-client` |
 
 ## Context Files
 
 Load on demand when deeper context is needed:
 
 - `@core/src/index.ts` — Koishi plugin entrypoint and runtime wiring.
+- `@core/src/extension/` — core-owned extension service, public extension types, and built-ins.
 - `@packages/agent/src/agent/` — agent loop implementation.
 - `@packages/agent/src/session/` — session management and compaction.
-- `@packages/agent/src/session/extensions/` — extension system (types, runner, loader, registry).
-- `@packages/shared-model/` — cross-package model/provider type contracts.
 
 ## Reference Projects
 
