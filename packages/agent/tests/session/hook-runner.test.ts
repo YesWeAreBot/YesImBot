@@ -75,14 +75,8 @@ describe("HookRunner", () => {
 
       const result = await runner.beforeAgentStart({
         prompt: "hello",
+        images: undefined,
         systemPrompt: "base",
-        systemPromptOptions: {
-          cwd: "/tmp",
-          baseSystemPrompt: "base",
-          selectedTools: [],
-          toolSnippets: {},
-          promptGuidelines: [],
-        },
       });
 
       expect(result?.systemPrompt).toBe("base|handler1|handler2");
@@ -100,14 +94,8 @@ describe("HookRunner", () => {
 
       const result = await runner.beforeAgentStart({
         prompt: "hello",
+        images: undefined,
         systemPrompt: "base",
-        systemPromptOptions: {
-          cwd: "/tmp",
-          baseSystemPrompt: "base",
-          selectedTools: [],
-          toolSnippets: {},
-          promptGuidelines: [],
-        },
       });
 
       expect(result?.messages).toHaveLength(2);
@@ -186,14 +174,8 @@ describe("HookRunner", () => {
 
       const result = await runner.beforeAgentStart({
         prompt: "hello",
+        images: undefined,
         systemPrompt: "base",
-        systemPromptOptions: {
-          cwd: "/tmp",
-          baseSystemPrompt: "base",
-          selectedTools: [],
-          toolSnippets: {},
-          promptGuidelines: [],
-        },
       });
 
       expect(result?.systemPrompt).toBe("base|ok");

@@ -24,11 +24,7 @@ import {
   shouldCompact,
 } from "./compaction/index.js";
 import { Compactor } from "./compactor.js";
-import {
-  type BuildSystemPromptOptions,
-  type ContextUsage,
-  type HookRunner,
-} from "./hook-runner.js";
+import { type ContextUsage, type HookRunner } from "./hook-runner.js";
 import type { CustomMessage } from "./messages.js";
 import { RetryHandler, type RetrySettings } from "./retry-handler.js";
 import type { SessionManager } from "./session-manager.js";
@@ -752,47 +748,6 @@ export class AgentSession {
     this._retryHandler.updateSettings({ maxDelayMs: delayMs });
   }
 
-  private _normalizePromptSnippet(text: string | undefined): string | undefined {
-    if (!text) return undefined;
-    const oneLine = text
-      .replace(/[\r\n]+/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-    return oneLine.length > 0 ? oneLine : undefined;
-  }
-
-  private _normalizePromptGuidelines(guidelines: string[] | undefined): string[] {
-    if (!guidelines || guidelines.length === 0) {
-      return [];
-    }
-
-    const unique = new Set<string>();
-    for (const guideline of guidelines) {
-      const normalized = guideline.trim();
-      if (normalized.length > 0) {
-        unique.add(normalized);
-      }
-    }
-    return Array.from(unique);
-  }
-
-  private _collectToolPromptContext(): BuildSystemPromptOptions {
-    const activeToolNames = Object.keys(this.agent.state.tools);
-    const toolSnippets: Record<string, string> = {};
-    const promptGuidelines: string[] = [];
-
-    // Snippets and guidelines are no longer tracked by agent — core handles prompt assembly.
-    // But we still pass the structure for backward-compatible hooks.
-
-    return {
-      cwd: this.sessionManager.getCwd(),
-      baseSystemPrompt: this.agent.state.systemPrompt,
-      selectedTools: activeToolNames,
-      toolSnippets,
-      promptGuidelines,
-    };
-  }
-
   // =========================================================================
   // Prompting
   // =========================================================================
@@ -809,7 +764,6 @@ export class AgentSession {
       prompt: promptText,
       images,
       systemPrompt: this.agent.state.systemPrompt,
-      systemPromptOptions: this._collectToolPromptContext(),
     });
 
     const injected: AgentMessage[] =

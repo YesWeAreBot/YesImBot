@@ -63,15 +63,6 @@ export interface BeforeAgentStartInput {
   prompt: string;
   images?: ImagePart[];
   systemPrompt: string;
-  systemPromptOptions: BuildSystemPromptOptions;
-}
-
-export interface BuildSystemPromptOptions {
-  cwd: string;
-  baseSystemPrompt: string;
-  selectedTools: string[];
-  toolSnippets: Record<string, string>;
-  promptGuidelines: string[];
 }
 
 export interface BeforeAgentStartResult {
