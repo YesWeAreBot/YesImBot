@@ -80,84 +80,6 @@ Load on demand when deeper context is needed:
 - `@packages/agent/src/session/extensions/` — extension system (types, runner, loader, registry).
 - `@packages/shared-model/` — cross-package model/provider type contracts.
 
-## Superpowers Task Workflow
-
-新任务使用任务目录结构，所有相关文档聚合在同一目录：
-
-```text
-docs/superpowers/tasks/YYYY-MM-DD_NN-task-slug/
-├── CONTEXT.md          # 灰区问题和用户决策（绝对权威）
-├── SPEC.md             # 设计规范
-├── PLAN.md             # 实现计划
-├── SUMMARY.md          # 任务结束总结
-├── RETROSPECTIVE.md    # 可选，反思与经验
-└── HANDOFF.md          # 可选，跨会话移交
-```
-
-### 任务生命周期
-
-1. `/before-superpowers` — 创建目录、加载上下文、进入 brainstorming
-2. `superpowers:brainstorming` — 讨论 → CONTEXT.md + SPEC.md
-3. `superpowers:writing-plans` — PLAN.md（写入任务目录）
-4. 执行（`superpowers:subagent-driven-development` 或 `superpowers:executing-plans`）
-5. `/after-superpowers` — SUMMARY + RETROSPECTIVE + CHANGELOG/ROADMAP 更新
-
-### 目录编号规则
-
-命名格式：`YYYY-MM-DD_NN-task-slug/`，其中 `NN` 为当天两位序号（`01`、`02`...）。
-
-确定 NN 时必须：
-
-1. 用 `ls -d docs/superpowers/tasks/$(date +%Y-%m-%d)_*/` 扫描当天已有目录
-2. 找到当天已存在的**最大 NN**，新任务使用 `max(NN) + 1`
-3. 若当天没有任务，从 `01` 开始
-4. **不得凭记忆推断**，必须实际执行 `ls` 确认
-5. 如果发现当天已有重复编号，提醒用户并跳过已用编号
-
-### 文档引用和约束传递规则
-
-CONTEXT → SPEC → PLAN 构成降级约束链，优先级递减：
-
-| 文档       | 必须引用                                              | 权威性                          |
-| ---------- | ----------------------------------------------------- | ------------------------------- |
-| CONTEXT.md | —                                                     | 用户决策的最高优先级来源        |
-| SPEC.md    | `[CONTEXT.md](./CONTEXT.md)`                          | 设计规范，不得违背 CONTEXT      |
-| PLAN.md    | `[CONTEXT.md](./CONTEXT.md)` + `[SPEC.md](./SPEC.md)` | 执行清单，不得违背 CONTEXT/SPEC |
-
-- SPEC.md 开头必须包含 `基于：[CONTEXT.md](./CONTEXT.md)`，并声明 CONTEXT 中的用户决策具有最高优先级
-- PLAN.md 开头必须包含任务目录路径和 CONTEXT/SPEC 引用
-- 若 SPEC 与 CONTEXT 冲突，以 CONTEXT 为准，先向用户确认后再修改
-- 若 PLAN 与 SPEC/CONTEXT 不一致，必须停止执行并请求澄清
-
-### 执行阶段的文档读取要求
-
-无论使用 `superpowers:subagent-driven-development` 还是 `superpowers:executing-plans`：
-
-1. 执行者必须**明确读取**任务目录中的 `CONTEXT.md`、`SPEC.md`、`PLAN.md`
-2. 派发子代理时必须提供**原始 PLAN.md 的完整路径**，不能仅通过自然语言复述任务
-3. 子代理必须在派发提示中被要求读取上述文件
-
-### PLAN.md checkbox 策略
-
-- **建议**每完成一个 Task 后更新 checkbox，但**不强制实时回填**
-- `after-superpowers` 收尾时**必须**全面核对 checkbox 与实际情况，补齐未更新的标记
-- 已完成的标 `[x]`，有意跳过的标 `[-]`，并在 SUMMARY.md 中说明
-
-### grill-with-docs（可选）
-
-- 在 brainstorming 阶段，初步 CONTEXT.md 和 SPEC.md 草稿形成后可调用 `grill-with-docs` 进行质询
-- **不强制**，推荐在复杂领域建模、多系统交互或存在灰色地带时使用
-- 发现的问题回填 CONTEXT.md，不得覆盖用户已确认的决策
-
-### 其他规则
-
-- CONTEXT.md 中的用户决策具有约束力，后续文档不得违背
-- SPEC.md 和 PLAN.md 写入任务目录，不再写入 `docs/superpowers/specs/` 或 `plans/`
-- `docs/superpowers/specs/` 和 `plans/` 中的历史文件保留不动
-- HANDOFF.md 仅在跨会话移交时创建（产出 PLAN 后因上下文不足需新会话）
-- ROADMAP.md 更新：Agent 可在阶段内做事实性更新，不动阶段划分和方向性描述
-- CHANGELOG.md 更新：在 `[Unreleased]` 节追加条目，遵循 Keep a Changelog 格式
-
 ## Reference Projects
 
 `references/` 目录存放设计参考与文档，按需用绝对路径读取：
@@ -180,3 +102,41 @@ CONTEXT → SPEC → PLAN 构成降级约束链，优先级递减：
 - 优先使用 augment-context-engine_codebase-retrieval 索引本地代码
 - 使用 augment-context-engine_codebase-retrieval 索引 references 中被 .gitignore 排除的仓库，并将 directory_path 设置为对应仓库的绝对路径
 - 使用 deepwiki 研究第三方仓库，常用仓库列表 `badlogic/pi-mono`, `vercel/ai`
+
+## Agent skills
+
+### Issue tracker
+
+Local markdown under `.scratch/<feature>/`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five-label vocabulary (needs-triage, needs-info, ready-for-agent, ready-for-human, wontfix). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context — `CONTEXT.md` + `docs/adr/` at repo root. See `docs/agents/domain.md`.
+
+<!-- TRELLIS:START -->
+
+# Trellis Instructions
+
+These instructions are for AI assistants working in this project.
+
+This project is managed by Trellis. The working knowledge you need lives under `.trellis/`:
+
+- `.trellis/workflow.md` — development phases, when to create tasks, skill routing
+- `.trellis/spec/` — package- and layer-scoped coding guidelines (read before writing code in a given layer)
+- `.trellis/workspace/` — per-developer journals and session traces
+- `.trellis/tasks/` — active and archived tasks (PRDs, research, jsonl context)
+
+If a Trellis command is available on your platform (e.g. `/trellis:finish-work`, `/trellis:continue`), prefer it over manual steps. Not every platform exposes every command.
+
+If you're using Codex or another agent-capable tool, additional project-scoped helpers may live in:
+
+- `.agents/skills/` — reusable Trellis skills
+- `.codex/agents/` — optional custom subagents
+
+Managed by Trellis. Edits outside this block are preserved; edits inside may be overwritten by a future `trellis update`.
+
+<!-- TRELLIS:END -->
