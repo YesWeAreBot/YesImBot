@@ -50,7 +50,7 @@ export class AthenaBot {
     const sessionType = getSessionType(session);
     if (!sessionType) return null;
 
-    if (sessionType === "message") {
+    if (sessionType === "message-created") {
       return this.observeChatMessage(session);
     }
 
