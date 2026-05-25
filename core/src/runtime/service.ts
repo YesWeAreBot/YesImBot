@@ -3,10 +3,11 @@ import { join } from "node:path";
 import { Agent } from "@yesimbot/agent/agent";
 import { ChatModelRef } from "@yesimbot/agent/ai";
 import { AgentSession, convertToLlm, HookRunner, SessionManager } from "@yesimbot/agent/session";
-import { Bot, Context, Logger, Service, type Session } from "koishi";
+import { Bot, Context, Logger, Service } from "koishi";
 
 import { AthenaBot } from "../bot/athena-bot.js";
-import { createDefaultChatMessagePresenter, createPresenterRegistry } from "../bot/presenter.js";
+import type { ObservedEvent } from "../bot/observer-types.js";
+import { createPresenterRegistry } from "../bot/presenter.js";
 import { createSpeakElementRegistry } from "../bot/speak-elements.js";
 import { createSystemPromptExtension } from "../extension/built-in/system-prompt.js";
 import type { BotInfo } from "../extension/built-in/system-prompt.js";
@@ -47,6 +48,7 @@ export class RuntimeService extends Service<RuntimeConfig> {
   private _chatModel?: ChatModelRef;
   private _globalSettingsPath?: string;
   private _disposeSessionNewHandler?: () => void;
+  private _disposeObservedEventSubscription?: () => void;
 
   constructor(
     public ctx: Context,
@@ -104,9 +106,11 @@ export class RuntimeService extends Service<RuntimeConfig> {
       },
     });
     await this.ctx["yesimbot.extension"].registerExtension(promptExtension);
-    this.ctx["yesimbot.bot"].setSessionHandler(async (session) => {
-      await this._handleKoishiSession(session);
-    });
+    this._disposeObservedEventSubscription = this.ctx["yesimbot.bot"].subscribeObservedEvents(
+      async (observed) => {
+        await this._handleObservedEvent(observed);
+      },
+    );
 
     this._disposeSessionNewHandler = this.ctx.on(
       "session:new",
@@ -130,7 +134,8 @@ export class RuntimeService extends Service<RuntimeConfig> {
   protected async stop() {
     this._disposeSessionNewHandler?.();
     this._disposeSessionNewHandler = undefined;
-    this.ctx["yesimbot.bot"].clearSessionHandler();
+    this._disposeObservedEventSubscription?.();
+    this._disposeObservedEventSubscription = undefined;
 
     for (const sessionContext of this._channels.values()) {
       await this._disposeSessionContext(sessionContext);
@@ -197,7 +202,7 @@ export class RuntimeService extends Service<RuntimeConfig> {
     });
 
     const presenters = createPresenterRegistry();
-    presenters.registerBase("chat_message", createDefaultChatMessagePresenter());
+    this.ctx["yesimbot.bot"].applyPresentersTo(presenters);
 
     const speakElements = createSpeakElementRegistry();
 
@@ -249,56 +254,40 @@ export class RuntimeService extends Service<RuntimeConfig> {
 
   private async _getOrCreateSessionContext(
     key: ChannelKey,
-    session: Session,
-  ): Promise<SessionContext | undefined> {
+    channel: { platform: string; channelId: string; type: "private" | "group" },
+    koishiBot: Bot,
+  ): Promise<SessionContext> {
     const existing = this._channels.get(key);
     if (existing) {
       return existing;
     }
 
-    const koishiBot = session.bot;
-    if (!koishiBot) {
-      this.logger.warn(`No bot reference available for channel ${key}, skipping`);
-      return undefined;
-    }
-
-    const platform = session.platform;
-    const channelId = session.channelId;
-    if (!platform || !channelId) {
-      return undefined;
-    }
-
-    const type = session.isDirect ? "private" : "group";
     const sessionManager = await this.ctx["yesimbot.session"].getOrCreate(
-      platform,
-      channelId,
-      type,
+      channel.platform,
+      channel.channelId,
+      channel.type,
+      koishiBot.selfId,
     );
-    const sessionContext = await this._createSessionContext(
-      {
-        platform,
-        channelId,
-        type,
-      },
-      sessionManager,
-      koishiBot,
-    );
+    const sessionContext = await this._createSessionContext(channel, sessionManager, koishiBot);
     this._channels.set(key, sessionContext);
     this.logger.info(`Created new agent session for channel ${key}`);
     return sessionContext;
   }
 
-  private async _handleKoishiSession(session: Session): Promise<void> {
-    if (!session.platform || !session.channelId) return;
+  private async _handleObservedEvent(observed: ObservedEvent): Promise<void> {
+    const { event, bot, originSession } = observed;
+    const { platform, channelId, conversationType } = event.source;
+    if (!platform || !channelId) return;
 
-    const key: ChannelKey = `${session.platform}:${session.channelId}`;
-    const sessionContext = await this._getOrCreateSessionContext(key, session);
-    if (!sessionContext) return;
+    const type = conversationType === "private" ? "private" : "group";
+    const key: ChannelKey = `${platform}:${channelId}`;
+    const sessionContext = await this._getOrCreateSessionContext(
+      key,
+      { platform, channelId, type },
+      bot,
+    );
 
-    const event = sessionContext.bot.observe(session);
-    if (!event) return;
-
-    await sessionContext.runtime.handleEvent(event);
+    await sessionContext.runtime.handleEvent(event, { originSession });
   }
 
   private async _disposeSessionContext(sessionContext: SessionContext): Promise<void> {

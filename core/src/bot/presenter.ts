@@ -47,9 +47,7 @@ export function createDefaultChatMessagePresenter(): BasePresenter<"chat_message
     if (!text) return null;
 
     const actorName = event.actor.name?.trim() || "未知用户";
-    const actorLabel = event.actor.name?.trim()
-      ? `${actorName} (${event.actor.id})`
-      : event.actor.id;
+    const actorLabel = formatActorLabel(event.actor);
 
     return {
       visible: true,
@@ -60,9 +58,81 @@ export function createDefaultChatMessagePresenter(): BasePresenter<"chat_message
   };
 }
 
+export function createDefaultMessageRecallPresenter(): BasePresenter<"message_recall"> {
+  return (event) => {
+    const actorName = formatActorName(event.actor);
+    const original = event.payload.originalSender
+      ? ` originally sent by ${formatActorName(event.payload.originalSender)}`
+      : "";
+    const text = `${actorName} recalled message ${event.payload.messageId}${original}`;
+
+    return {
+      visible: true,
+      content: `[${formatTime(event.timestamp)}] ${text}`,
+      text,
+      details: serializeAthenaEvent(event),
+    };
+  };
+}
+
+export function createDefaultReactionPresenter(): BasePresenter<"reaction"> {
+  return (event) => {
+    const actorName = formatActorName(event.actor);
+    const action = event.payload.action === "add" ? "reacted" : "removed reaction";
+    const text = `${actorName} ${action} ${event.payload.emoji} to message ${event.payload.messageId}`;
+
+    return {
+      visible: true,
+      content: `[${formatTime(event.timestamp)}] ${text}`,
+      text,
+      details: serializeAthenaEvent(event),
+    };
+  };
+}
+
+export function createDefaultMemberChangePresenter(): BasePresenter<"member_change"> {
+  return (event) => {
+    const targetName = event.target ? formatActorName(event.target) : "Unknown member";
+    const text = `${targetName} ${formatMemberAction(event.payload.action)} group ${event.payload.groupId}`;
+
+    return {
+      visible: true,
+      content: `[${formatTime(event.timestamp)}] ${text}`,
+      text,
+      details: serializeAthenaEvent(event),
+    };
+  };
+}
+
 function renderMessageText(content: string): string {
   const normalized = content.trim();
   return normalized.length > 0 ? normalized : "";
+}
+
+function formatActorName(actor: { id: string; name?: string }): string {
+  return actor.name?.trim() || actor.id;
+}
+
+function formatActorLabel(actor: { id: string; name?: string }): string {
+  const actorName = actor.name?.trim();
+  return actorName ? `${actorName} (${actor.id})` : actor.id;
+}
+
+function formatMemberAction(action: string): string {
+  switch (action) {
+    case "join":
+      return "joined";
+    case "leave":
+      return "left";
+    case "kick":
+      return "was kicked from";
+    case "ban":
+      return "was banned from";
+    case "unban":
+      return "was unbanned from";
+    default:
+      return "changed membership in";
+  }
 }
 
 function formatTime(timestamp: number): string {

@@ -192,3 +192,11 @@ export type {
   SpeakElementDefinition,
   SpeakElementPromptInfo,
 } from "./bot/types.js";
+export type {
+  ChannelEventContext,
+  EventObserver,
+  HandleResult,
+  ObservedEvent,
+  ObserverInput,
+  ObserverSource,
+} from "./bot/observer-types.js";

@@ -6,6 +6,11 @@ import { describe, expect, it } from "vitest";
 import type {
   AthenaEventMap,
   BotPresentation,
+  EventObserver,
+  HandleResult,
+  ObservedEvent,
+  ObserverInput,
+  ObserverSource,
   SpeakAnomaly,
   SpeakElementDefinition,
   SpeakElementPromptInfo,
@@ -22,6 +27,11 @@ describe("Athena Bot public API boundary", () => {
     );
     expect(entrypoint).toContain("AthenaEventMap");
     expect(entrypoint).toContain("BotPresentation");
+    expect(entrypoint).toContain("EventObserver");
+    expect(entrypoint).toContain("HandleResult");
+    expect(entrypoint).toContain("ObservedEvent");
+    expect(entrypoint).toContain("ObserverInput");
+    expect(entrypoint).toContain("ObserverSource");
     expect(entrypoint).toContain("SpeakElementDefinition");
     expect(entrypoint).toContain("SpeakElementPromptInfo");
   });
@@ -42,5 +52,24 @@ describe("Athena Bot public API boundary", () => {
     } = null as never;
 
     void _types;
+  });
+
+  it("exports observer registry type surface", () => {
+    const _types: {
+      observer: EventObserver;
+      result: HandleResult;
+      observed: ObservedEvent;
+      input: ObserverInput;
+      source: ObserverSource;
+    } = null as never;
+
+    void _types;
+  });
+
+  it("does not keep AthenaBot.observe in the source implementation", () => {
+    const source = readFileSync(join(process.cwd(), "src", "bot", "athena-bot.ts"), "utf-8");
+
+    expect(source).not.toContain("observe(session");
+    expect(source).not.toContain("observeChatMessage");
   });
 });

@@ -18,6 +18,7 @@ export interface ChannelMeta {
   last_message: string;
   updated_at: string;
   session_count: number;
+  assignee?: string;
 }
 
 export interface SessionNewEvent {
@@ -96,6 +97,7 @@ export class SessionService extends Service<SessionConfig> {
     platform: string,
     channel: string,
     type: "private" | "group",
+    assignee?: string,
   ): Promise<SessionManager> {
     const key: ChannelKey = `${platform}:${channel}`;
     const cached = this.managers.get(key);
@@ -116,18 +118,21 @@ export class SessionService extends Service<SessionConfig> {
       const sessionFile = join(channelDir, meta.current_session);
       if (existsSync(sessionFile)) {
         sessionManager = SessionManager.open(sessionFile, channelDir);
+        if (assignee && !meta.assignee) {
+          writeMeta(channelDir, { ...meta, assignee, updated_at: new Date().toISOString() });
+        }
       } else {
         sessionManager = SessionManager.create(channelDir);
         writeMeta(
           channelDir,
-          createMeta(platform, channel, type, sessionManager.getSessionFile()!, 1),
+          createMeta(platform, channel, type, sessionManager.getSessionFile()!, 1, assignee),
         );
       }
     } else {
       sessionManager = SessionManager.create(channelDir);
       writeMeta(
         channelDir,
-        createMeta(platform, channel, type, sessionManager.getSessionFile()!, 1),
+        createMeta(platform, channel, type, sessionManager.getSessionFile()!, 1, assignee),
       );
     }
 
@@ -156,7 +161,14 @@ export class SessionService extends Service<SessionConfig> {
     const sessionCount = (meta?.session_count ?? 0) + 1;
     writeMeta(
       channelDir,
-      createMeta(platform, channel, type, sessionManager.getSessionFile()!, sessionCount),
+      createMeta(
+        platform,
+        channel,
+        type,
+        sessionManager.getSessionFile()!,
+        sessionCount,
+        meta?.assignee,
+      ),
     );
 
     this.managers.set(key, sessionManager);
@@ -222,6 +234,7 @@ function createMeta(
   type: "private" | "group",
   sessionFile: string,
   sessionCount: number,
+  assignee?: string,
 ): ChannelMeta {
   return {
     platform,
@@ -231,5 +244,6 @@ function createMeta(
     last_message: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     session_count: sessionCount,
+    ...(assignee ? { assignee } : {}),
   };
 }

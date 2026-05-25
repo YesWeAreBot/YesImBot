@@ -59,8 +59,16 @@ vi.mock("../../src/runtime/helpers.js", () => ({
   buildAgentSessionConfig: vi.fn(),
 }));
 
-vi.mock("../../src/runtime/settings/manager.js", () => ({
+vi.mock("../../src/runtime/settings-manager.js", () => ({
   RuntimeSettingsManager: class {},
+}));
+
+vi.mock("../../src/runtime/willing.js", () => ({
+  WillingnessManager: class {
+    shouldReply() {
+      return { decision: false, probability: 0 };
+    }
+  },
 }));
 
 import { RuntimeService } from "../../src/runtime/service.js";
@@ -72,13 +80,14 @@ interface RuntimeServiceTestAccess {
   >;
   _channelBotInfo: Map<string, { selfId: string; selfName: string }>;
   _disposeSessionNewHandler?: () => void;
+  _disposeObservedEventSubscription?: () => void;
   stop(): Promise<void>;
 }
 
 function createMockCtx() {
   return {
     "yesimbot.bot": {
-      clearSessionHandler: vi.fn(),
+      subscribeObservedEvents: vi.fn().mockReturnValue(vi.fn()),
     },
     "yesimbot.extension": {
       disposeChannelRuntime: vi.fn().mockResolvedValue(undefined),
@@ -94,7 +103,7 @@ function createMockCtx() {
 }
 
 describe("RuntimeService lifecycle", () => {
-  it("stops by clearing session handler and disposing all channel contexts", async () => {
+  it("stops by disposing observed-event subscription and all channel contexts", async () => {
     const ctx = createMockCtx();
     const service = new RuntimeService(ctx as never, {
       basePath: "/tmp/athena-test",
@@ -107,6 +116,7 @@ describe("RuntimeService lifecycle", () => {
     const runtimeA = { dispose: vi.fn() };
     const runtimeB = { dispose: vi.fn() };
     const disposeSessionNewHandler = vi.fn();
+    const disposeObservedEventSubscription = vi.fn();
     const channelA = {
       platform: "onebot",
       channelId: "group-1",
@@ -129,12 +139,14 @@ describe("RuntimeService lifecycle", () => {
       ["discord:dm-2", { selfId: "bot-2", selfName: "Athena" }],
     ]);
     serviceAccess._disposeSessionNewHandler = disposeSessionNewHandler;
+    serviceAccess._disposeObservedEventSubscription = disposeObservedEventSubscription;
 
     await serviceAccess.stop();
 
     expect(disposeSessionNewHandler).toHaveBeenCalledTimes(1);
+    expect(disposeObservedEventSubscription).toHaveBeenCalledTimes(1);
     expect(serviceAccess._disposeSessionNewHandler).toBeUndefined();
-    expect(ctx["yesimbot.bot"].clearSessionHandler).toHaveBeenCalledTimes(1);
+    expect(serviceAccess._disposeObservedEventSubscription).toBeUndefined();
     expect(ctx["yesimbot.extension"].disposeChannelRuntime).toHaveBeenNthCalledWith(1, {
       platform: "onebot",
       channelId: "group-1",

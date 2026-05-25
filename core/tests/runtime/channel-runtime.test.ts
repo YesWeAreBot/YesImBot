@@ -37,14 +37,22 @@ function createBot() {
   };
 }
 
+function createWillingManager() {
+  return {
+    shouldReply: vi.fn().mockReturnValue({ decision: false, probability: 0 }),
+  };
+}
+
 describe("Channel Runtime event intake", () => {
   it("persists a presented event and triggers a turn when allowed and trigger candidate", async () => {
     const agentSession = createAgentSession();
     const bot = createBot();
+    const willingManager = createWillingManager();
     const runtime = createChannelRuntime({
       channel: { platform: "onebot", channelId: "group-1", type: "group" },
       bot: bot as never,
       agentSession: agentSession.session as never,
+      willingManager: willingManager as never,
       allowedChannels: [{ platform: "onebot", channelId: "group-1", type: "group" }],
       sessionManager: { appendCustomEntry: vi.fn() } as never,
     });
@@ -71,10 +79,12 @@ describe("Channel Runtime event intake", () => {
   it("does not persist a hidden event when it neither persists nor triggers a turn", async () => {
     const agentSession = createAgentSession();
     const bot = createBot();
+    const willingManager = createWillingManager();
     const runtime = createChannelRuntime({
       channel: { platform: "onebot", channelId: "group-1", type: "group" },
       bot: bot as never,
       agentSession: agentSession.session as never,
+      willingManager: willingManager as never,
       allowedChannels: [],
       sessionManager: { appendCustomEntry: vi.fn() } as never,
     });
@@ -96,10 +106,12 @@ describe("Channel Runtime event intake", () => {
       present: vi.fn().mockResolvedValue(null),
       speak: vi.fn().mockResolvedValue({ ok: true, anomalies: [] }),
     };
+    const willingManager = createWillingManager();
     const runtime = createChannelRuntime({
       channel: { platform: "onebot", channelId: "group-1", type: "group" },
       bot: bot as never,
       agentSession: agentSession.session as never,
+      willingManager: willingManager as never,
       allowedChannels: [],
       sessionManager: { appendCustomEntry: vi.fn() } as never,
     });
@@ -126,10 +138,12 @@ describe("Channel Runtime event intake", () => {
   it("does not trigger a turn when channel is not allowed", async () => {
     const agentSession = createAgentSession();
     const bot = createBot();
+    const willingManager = createWillingManager();
     const runtime = createChannelRuntime({
       channel: { platform: "onebot", channelId: "group-1", type: "group" },
       bot: bot as never,
       agentSession: agentSession.session as never,
+      willingManager: willingManager as never,
       allowedChannels: [],
       sessionManager: { appendCustomEntry: vi.fn() } as never,
     });
@@ -150,10 +164,12 @@ describe("Channel Runtime event intake", () => {
   it("subscribes assistant message_end output to AthenaBot.speak using origin session", async () => {
     const agentSession = createAgentSession();
     const bot = createBot();
+    const willingManager = createWillingManager();
     const runtime = createChannelRuntime({
       channel: { platform: "onebot", channelId: "group-1", type: "group" },
       bot: bot as never,
       agentSession: agentSession.session as never,
+      willingManager: willingManager as never,
       allowedChannels: [{ platform: "onebot", channelId: "group-1", type: "group" }],
       sessionManager: { appendCustomEntry: vi.fn() } as never,
     });
@@ -162,10 +178,10 @@ describe("Channel Runtime event intake", () => {
       source: { platform: "onebot", channelId: "group-1", conversationType: "group" },
       actor: { id: "user-1" },
       payload: { messageId: "m-1", content: "hello" },
-      metadata: { persist: true, triggerCandidate: true, originSession: originSession as never },
+      metadata: { persist: true, triggerCandidate: true },
     });
 
-    await runtime.handleEvent(event);
+    await runtime.handleEvent(event, { originSession: originSession as never });
 
     agentSession.emit({
       type: "message_end",
@@ -188,10 +204,12 @@ describe("Channel Runtime event intake", () => {
   it("keeps the triggering origin session when a later non-triggering event arrives before assistant output", async () => {
     const agentSession = createAgentSession();
     const bot = createBot();
+    const willingManager = createWillingManager();
     const runtime = createChannelRuntime({
       channel: { platform: "onebot", channelId: "group-1", type: "group" },
       bot: bot as never,
       agentSession: agentSession.session as never,
+      willingManager: willingManager as never,
       allowedChannels: [{ platform: "onebot", channelId: "group-1", type: "group" }],
       sessionManager: { appendCustomEntry: vi.fn() } as never,
     });
@@ -201,17 +219,17 @@ describe("Channel Runtime event intake", () => {
       source: { platform: "onebot", channelId: "group-1", conversationType: "group" },
       actor: { id: "user-1" },
       payload: { messageId: "m-1", content: "hello" },
-      metadata: { persist: true, triggerCandidate: true, originSession: originSessionA as never },
+      metadata: { persist: true, triggerCandidate: true },
     });
     const laterNonTriggeringEvent = createAthenaEvent("reaction", {
       source: { platform: "onebot", channelId: "group-2", conversationType: "group" },
       actor: { id: "user-2" },
       payload: { messageId: "m-2", emoji: "👍", action: "add" },
-      metadata: { persist: true, triggerCandidate: false, originSession: originSessionB as never },
+      metadata: { persist: true, triggerCandidate: false },
     });
 
-    await runtime.handleEvent(triggeringEvent);
-    await runtime.handleEvent(laterNonTriggeringEvent);
+    await runtime.handleEvent(triggeringEvent, { originSession: originSessionA as never });
+    await runtime.handleEvent(laterNonTriggeringEvent, { originSession: originSessionB as never });
 
     agentSession.emit({
       type: "message_end",
@@ -230,10 +248,12 @@ describe("Channel Runtime event intake", () => {
   it("does not consume pending origin session for assistant messages without text", async () => {
     const agentSession = createAgentSession();
     const bot = createBot();
+    const willingManager = createWillingManager();
     const runtime = createChannelRuntime({
       channel: { platform: "onebot", channelId: "group-1", type: "group" },
       bot: bot as never,
       agentSession: agentSession.session as never,
+      willingManager: willingManager as never,
       allowedChannels: [{ platform: "onebot", channelId: "group-1", type: "group" }],
       sessionManager: { appendCustomEntry: vi.fn() } as never,
     });
@@ -242,10 +262,10 @@ describe("Channel Runtime event intake", () => {
       source: { platform: "onebot", channelId: "group-1", conversationType: "group" },
       actor: { id: "user-1" },
       payload: { messageId: "m-1", content: "hello" },
-      metadata: { persist: true, triggerCandidate: true, originSession: originSession as never },
+      metadata: { persist: true, triggerCandidate: true },
     });
 
-    await runtime.handleEvent(event);
+    await runtime.handleEvent(event, { originSession: originSession as never });
 
     agentSession.emit({
       type: "message_end",
@@ -272,10 +292,12 @@ describe("Channel Runtime event intake", () => {
   it("does not retain an origin session when triggering message persistence fails", async () => {
     const agentSession = createAgentSession();
     const bot = createBot();
+    const willingManager = createWillingManager();
     const runtime = createChannelRuntime({
       channel: { platform: "onebot", channelId: "group-1", type: "group" },
       bot: bot as never,
       agentSession: agentSession.session as never,
+      willingManager: willingManager as never,
       allowedChannels: [{ platform: "onebot", channelId: "group-1", type: "group" }],
       sessionManager: { appendCustomEntry: vi.fn() } as never,
     });
@@ -288,7 +310,6 @@ describe("Channel Runtime event intake", () => {
       metadata: {
         persist: true,
         triggerCandidate: true,
-        originSession: failedOriginSession as never,
       },
     });
     const successfulEvent = createAthenaEvent("chat_message", {
@@ -298,7 +319,6 @@ describe("Channel Runtime event intake", () => {
       metadata: {
         persist: true,
         triggerCandidate: true,
-        originSession: successfulOriginSession as never,
       },
     });
 
@@ -306,8 +326,10 @@ describe("Channel Runtime event intake", () => {
       .mockRejectedValueOnce(new Error("persist failed"))
       .mockResolvedValueOnce(undefined);
 
-    await expect(runtime.handleEvent(failedEvent)).rejects.toThrow("persist failed");
-    await runtime.handleEvent(successfulEvent);
+    await expect(
+      runtime.handleEvent(failedEvent, { originSession: failedOriginSession as never }),
+    ).rejects.toThrow("persist failed");
+    await runtime.handleEvent(successfulEvent, { originSession: successfulOriginSession as never });
 
     agentSession.emit({
       type: "message_end",
@@ -339,10 +361,12 @@ describe("Channel Runtime event intake", () => {
   it("disposes the subscription and underlying agent session", () => {
     const agentSession = createAgentSession();
     const bot = createBot();
+    const willingManager = createWillingManager();
     const runtime = createChannelRuntime({
       channel: { platform: "onebot", channelId: "group-1", type: "group" },
       bot: bot as never,
       agentSession: agentSession.session as never,
+      willingManager: willingManager as never,
       allowedChannels: [],
       sessionManager: { appendCustomEntry: vi.fn() } as never,
     });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createAthenaEvent, isAthenaEvent, serializeAthenaEvent } from "../../src/bot/events.js";
-import type { AthenaEvent, AthenaEventMap } from "../../src/bot/types.js";
+import type { AthenaEvent } from "../../src/bot/types.js";
 
 declare module "../../src/bot/types.js" {
   interface AthenaEventMap {
@@ -65,5 +65,40 @@ describe("AthenaEvent typed map", () => {
       actor: event.actor,
       payload: event.payload,
     });
+  });
+
+  it("keeps source selfId in serialized event details", () => {
+    const event = createAthenaEvent("chat_message", {
+      source: {
+        platform: "onebot",
+        channelId: "group-1",
+        conversationType: "group",
+        selfId: "bot-1",
+      },
+      actor: { id: "user-1" },
+      payload: { messageId: "m-1", content: "hello" },
+      metadata: { persist: true, triggerCandidate: true },
+    });
+
+    expect(serializeAthenaEvent(event)).toMatchObject({
+      version: 1,
+      source: {
+        platform: "onebot",
+        channelId: "group-1",
+        conversationType: "group",
+        selfId: "bot-1",
+      },
+    });
+  });
+
+  it("does not serialize raw runtime context from event metadata", () => {
+    const event = createAthenaEvent("chat_message", {
+      source: { platform: "onebot", channelId: "group-1", conversationType: "group" },
+      actor: { id: "user-1" },
+      payload: { messageId: "m-1", content: "hello" },
+      metadata: { persist: true, triggerCandidate: true },
+    });
+
+    expect(serializeAthenaEvent(event)).not.toHaveProperty("metadata");
   });
 });

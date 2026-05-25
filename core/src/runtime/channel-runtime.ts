@@ -3,6 +3,7 @@ import type { Session } from "koishi";
 
 import type { AthenaBot } from "../bot/athena-bot.js";
 import { serializeAthenaEvent } from "../bot/events.js";
+import type { ChannelEventContext } from "../bot/observer-types.js";
 import type { AthenaEvent } from "../bot/types.js";
 import type { Channel } from "../extension/types.js";
 import { ChannelIdentifier } from "../shared/types.js";
@@ -18,7 +19,7 @@ export interface ChannelRuntimeOptions {
 }
 
 export interface ChannelRuntime {
-  handleEvent(event: AthenaEvent): Promise<void>;
+  handleEvent(event: AthenaEvent, context?: ChannelEventContext): Promise<void>;
   dispose(): void;
 }
 
@@ -48,7 +49,7 @@ export function createChannelRuntime(options: ChannelRuntimeOptions): ChannelRun
   });
 
   return {
-    async handleEvent(event) {
+    async handleEvent(event, context) {
       const channelAllowed = isChannelAllowed(
         event.source.platform,
         event.source.channelId,
@@ -56,7 +57,7 @@ export function createChannelRuntime(options: ChannelRuntimeOptions): ChannelRun
         allowedChannels,
       );
 
-      const { decision, probability } = options.willingManager.shouldReply(
+      const { decision } = options.willingManager.shouldReply(
         event,
         event.metadata.triggerCandidate,
       );
@@ -85,7 +86,7 @@ export function createChannelRuntime(options: ChannelRuntimeOptions): ChannelRun
       );
 
       if (shouldTriggerTurn) {
-        pendingOriginSessions.push(event.metadata.originSession);
+        pendingOriginSessions.push(context?.originSession);
       }
     },
 

@@ -7,6 +7,7 @@ export interface EventSource {
   guildId?: string;
   threadId?: string;
   conversationType: "private" | "group" | "guild" | "thread";
+  selfId?: string;
 }
 
 export interface Actor {
@@ -56,7 +57,6 @@ export type AthenaEventKind = keyof AthenaEventMap;
 export interface EventMetadata {
   persist: boolean;
   triggerCandidate: boolean;
-  originSession?: Session;
 }
 
 export interface AthenaEvent<K extends AthenaEventKind = AthenaEventKind> {
