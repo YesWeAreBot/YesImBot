@@ -12,10 +12,9 @@
 import type { ImagePart, LanguageModel } from "ai";
 
 import type {
+  AfterToolCallResult,
   AgentMessage,
   AgentToolResult,
-  AfterToolCallResult,
-  AssistantMessage,
   BeforeToolCallResult,
 } from "../agent/types.js";
 import type { CompactionPreparation, CompactionResult } from "./compaction/index.js";

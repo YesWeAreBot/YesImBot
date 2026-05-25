@@ -3,8 +3,6 @@ import { resolve } from "node:path";
 
 import { Context, Schema } from "koishi";
 
-import { AdapterService } from "./adapter/index.js";
-import { AdapterConfig } from "./adapter/service.js";
 import { AthenaBotService } from "./bot/service.js";
 import { ChatHistoryPlugin } from "./extension/built-in/chat-history/index.js";
 import { ExtensionConfig, ExtensionService } from "./extension/service.js";
@@ -15,8 +13,7 @@ import { SessionConfig, SessionService } from "./services/session/index.js";
 export type Config = ModelServiceConfig &
   SessionConfig &
   RuntimeConfig &
-  ExtensionConfig &
-  AdapterConfig & {
+  ExtensionConfig & {
     basePath: string;
     chatModel: string;
     logLevel?: number;
@@ -138,7 +135,7 @@ export async function apply(ctx: Context, config: Config) {
   ctx.plugin(ModelService, config as ModelServiceConfig);
   ctx.plugin(ExtensionService, config as ExtensionConfig);
   ctx.plugin(SessionService, config as SessionConfig);
-  ctx.plugin(AdapterService, config as AdapterConfig);
+
   ctx.plugin(AthenaBotService, {
     logLevel: config.logLevel,
     consumeMessages: config.consumeMessages,
@@ -156,7 +153,7 @@ export async function apply(ctx: Context, config: Config) {
 
 export type { ModelService } from "./services/model";
 export type { SessionService } from "./services/session";
-export type { AthenaEvent, PlatformAdapter } from "./adapter/index.js";
+
 export { AthenaBotService } from "./bot/service.js";
 export { AthenaBot } from "./bot/athena-bot.js";
 export { createAthenaEvent, isAthenaEvent, serializeAthenaEvent } from "./bot/events.js";

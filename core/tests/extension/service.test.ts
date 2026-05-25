@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("koishi", () => {
   class Service {
     ctx: unknown;
+    // @ts-ignore
     [Symbol.for("koishi.tracker")]: unknown;
     constructor(ctx: unknown, _name: string) {
       this.ctx = ctx;
@@ -18,8 +19,9 @@ vi.mock("koishi", () => {
   };
 });
 
+import { AgentTool } from "@yesimbot/agent";
 import type { SessionManager } from "@yesimbot/agent/session";
-import { HookRunner, type AgentTool } from "@yesimbot/agent/session";
+import { HookRunner } from "@yesimbot/agent/session";
 
 import { ExtensionService } from "../../src/extension/service.js";
 import type {
@@ -172,7 +174,7 @@ describe("ExtensionService", () => {
       const execute = vi.fn<() => void>();
       const tool: AgentTool = {
         description: "Tool from extension",
-        inputSchema: undefined,
+        inputSchema: undefined as never,
         execute,
       };
       await service.registerExtension({

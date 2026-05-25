@@ -6,12 +6,7 @@ import type { DeliverySettings } from "../runtime/delivery/types.js";
 import { createAthenaEvent } from "./events.js";
 import type { PresenterRegistry } from "./presenter.js";
 import type { SpeakElementRegistry } from "./speak-elements.js";
-import type {
-  AthenaEvent,
-  BotPresentation,
-  ChatMessagePayload,
-  SpeakAnomaly,
-} from "./types.js";
+import type { AthenaEvent, BotPresentation, ChatMessagePayload, SpeakAnomaly } from "./types.js";
 
 export interface AthenaBotOptions {
   channel: Channel;
