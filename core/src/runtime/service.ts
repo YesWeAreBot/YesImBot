@@ -11,20 +11,11 @@ import { createSpeakElementRegistry } from "../bot/speak-elements.js";
 import { createSystemPromptExtension } from "../extension/built-in/system-prompt.js";
 import type { BotInfo } from "../extension/built-in/system-prompt.js";
 import type { Channel } from "../extension/types.js";
-import {
-  createChannelRuntime,
-  type ChannelRuntime as EventIntakeRuntime,
-} from "./channel-runtime.js";
+import { ChannelIdentifier, ChannelKey } from "../shared/types.js";
+import { createChannelRuntime, type ChannelRuntime } from "./channel-runtime.js";
 import { buildAgentSessionConfig } from "./helpers.js";
-import { RuntimeSettingsManager, type PartialRuntimeSettings } from "./settings/manager.js";
-
-interface ChannelIdentifier {
-  platform: string;
-  channelId: string;
-  type: "private" | "group";
-}
-
-type ChannelKey = `${string}:${string}`;
+import { RuntimeSettingsManager, type PartialRuntimeSettings } from "./settings-manager.js";
+import { WillingnessConfig, WillingnessManager } from "./willing.js";
 
 interface SessionContext {
   agentSession: AgentSession;
@@ -34,16 +25,16 @@ interface SessionContext {
   type: "private" | "group";
   koishiBot: Bot;
   bot: AthenaBot;
-  runtime: EventIntakeRuntime;
+  runtime: ChannelRuntime;
 }
 
-export interface RuntimeConfig {
+export type RuntimeConfig = {
   basePath: string;
   chatModel: string;
   allowedChannels: ChannelIdentifier[];
   logLevel?: number;
   runtimeSettings?: PartialRuntimeSettings;
-}
+} & WillingnessConfig;
 
 export class RuntimeService extends Service<RuntimeConfig> {
   static inject = ["yesimbot.model", "yesimbot.extension", "yesimbot.session", "yesimbot.bot"];
@@ -51,6 +42,7 @@ export class RuntimeService extends Service<RuntimeConfig> {
 
   private _channels = new Map<ChannelKey, SessionContext>();
   private _globalSettingsManager?: RuntimeSettingsManager;
+  private _willingManager: WillingnessManager;
   private _channelBotInfo = new Map<ChannelKey, BotInfo>();
   private _chatModel?: ChatModelRef;
   private _globalSettingsPath?: string;
@@ -58,11 +50,12 @@ export class RuntimeService extends Service<RuntimeConfig> {
 
   constructor(
     public ctx: Context,
-    public config: RuntimeConfig,
+    public config: RuntimeConfig & WillingnessConfig,
   ) {
     super(ctx, "yesimbot.runtime");
     this.logger = ctx.logger("yesimbot.runtime");
     this.logger.level = config.logLevel ?? 2;
+    this._willingManager = new WillingnessManager(ctx, config, this.logger);
   }
 
   protected async start() {
@@ -238,6 +231,7 @@ export class RuntimeService extends Service<RuntimeConfig> {
       bot: athenaBot,
       agentSession,
       sessionManager,
+      willingManager: this._willingManager,
       allowedChannels: this.config.allowedChannels,
     });
 

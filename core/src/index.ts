@@ -7,6 +7,7 @@ import { AthenaBotService } from "./bot/service.js";
 import { ChatHistoryPlugin } from "./extension/built-in/chat-history/index.js";
 import { ExtensionConfig, ExtensionService } from "./extension/service.js";
 import { RuntimeConfig, RuntimeService } from "./runtime/service.js";
+import { WillingnessConfig, WillingnessConfigSchema } from "./runtime/willing.js";
 import { ModelService, ModelServiceConfig } from "./services/model/index.js";
 import { SessionConfig, SessionService } from "./services/session/index.js";
 
@@ -123,6 +124,7 @@ export const Config = Schema.object({
     }).description("消息分段发送配置"),
   }).description("运行时设置"),
   enableChatTools: Schema.boolean().default(true).description("启用聊天工具"),
+  ...WillingnessConfigSchema.dict,
 });
 
 export async function apply(ctx: Context, config: Config) {
@@ -140,7 +142,7 @@ export async function apply(ctx: Context, config: Config) {
     logLevel: config.logLevel,
     consumeMessages: config.consumeMessages,
   });
-  ctx.plugin(RuntimeService, config as RuntimeConfig);
+  ctx.plugin(RuntimeService, config as RuntimeConfig & WillingnessConfig);
   if (config.enableChatTools) {
     ctx.plugin(ChatHistoryPlugin, {
       sessionsDir: resolve(ctx.baseDir, config.basePath, "sessions"),
