@@ -27,10 +27,20 @@ _Avoid_: ExtensionAPI, ExtensionHost, runner host
 _Avoid_: ChannelContext, agent runtime access, session access, model access
 
 **Athena Bot**:
-Athena 自己的 agent-to-platform interaction seam，位于 Koishi `Session`/`Bot` 之上、agent/session 行为之下。它负责观察 Koishi session、呈现 AthenaEvent、发送 agent 输出、处理 speak element 能力与发送异常；它不等同于 Koishi `Bot`，也不负责群聊行为决策。
+Athena 自己的 agent-to-platform interaction seam，位于 Koishi `Session`/`Bot` 之上、agent/session 行为之下。它负责 Koishi 事件观察接入、呈现 AthenaEvent、发送 agent 输出、处理 speak element 能力与发送异常；它不等同于 Koishi `Bot`，也不负责群聊行为决策。
 _Avoid_: Koishi Bot, raw platform adapter, delivery-only sender
 
-Athena Bot 采用 global service + per-channel runtime 形态。per-channel Athena Bot 是 Channel Runtime 的一部分，与 AgentSession 并列；它不包含 AgentSession。
+Athena Bot 采用 global service + per-channel runtime 形态。global service 是 Koishi 事件观察注册表的 owner；per-channel Athena Bot 是 Channel Runtime 的一部分，与 AgentSession 并列；它不包含 AgentSession，也不把事件观察方法作为外部扩展点。
+
+**Event Observer**:
+把 Koishi 事件输入归一化为 AthenaEvent 的观察规则。Event Observer 可以来自 core 默认逻辑或平台插件；平台特化 observer 优先于 core 默认 observer，默认逻辑只作为降级路径。
+_Avoid_: hardcoded session.type switch, behavior decision, response policy
+
+Event Observer 只表达事件接入和归一化。它可以放弃处理或丢弃无法归一化的输入，但不负责决定 Athena 是否回应、沉默、延迟或升级判断。
+
+**Channel Assignee**:
+Koishi 语义中的频道「受理人」，表示同一 Koishi 应用多 bot 场景下负责该频道响应与主动发送的 bot 账号。Athena 的 channel metadata 可以沿用 Koishi 的 `assignee` 字段记录该 bot 的 `selfId`。
+_Avoid_: human assignee, task assignee, maintainer owner
 
 **BotPresentation**:
 AthenaEvent 进入 AgentSession 之前的呈现结果。它区分给 LLM 看的 `content`、是否显示的 `visible/display`、可选纯文本摘要，以及不默认进入 LLM 上下文的结构化 `details`。
@@ -48,7 +58,7 @@ _Avoid_: tool call, generic platform capability
 
 **Event Intake**:
 Channel Runtime 内部的事件进入会话规则。它负责把 AthenaEvent + BotPresentation 写入 AgentSession、决定是否持久化和是否触发 turn；第一版不需要独立 Router 模块。
-_Avoid_: RuntimeService handler blob, Athena Bot behavior policy
+_Avoid_: RuntimeService handler blob, Athena Bot behavior policy, platform event normalization
 
 **BehaviorPolicy**:
 未来 core 应用层的群聊行为决策 owner，负责是否回应、沉默、延迟、跟进或升级到 LLM 判断。它不属于 Athena Bot、AgentSession、RuntimeService 或 Koishi adapter。
@@ -69,7 +79,7 @@ Domain Expert: 是 Extension Context。它携带当前 Channel，并提供扩展
 Dev: Channel 里可以放 session manager 或 model 吗？  
 Domain Expert: 不要。Channel 只表达 Koishi/platform 频道上下文；agent/session/model 属于 agent runtime 层。  
 Dev: Athena Bot 和 Koishi Bot 是一回事吗？  
-Domain Expert: 不是。Koishi Bot 是平台 SDK 对象；Athena Bot 是 Athena 内部交互 seam，用来统一观察 Koishi session、事件呈现、输出投递、Speak Markup 和失败一致性。  
+Domain Expert: 不是。Koishi Bot 是平台 SDK 对象；Athena Bot 是 Athena 内部交互 seam，用来统一 Koishi 事件观察接入、事件呈现、输出投递、Speak Markup 和失败一致性。  
 Dev: Athena Bot 负责决定群聊里该不该回复吗？  
 Domain Expert: 不负责。是否回应、沉默、延迟或升级判断属于未来 BehaviorPolicy；Athena Bot 只负责平台交互。  
 Dev: ctx.sendMessage 是向平台发消息吗？  
