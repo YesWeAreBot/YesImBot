@@ -2,7 +2,7 @@ import type { AgentSessionConfig } from "@yesimbot/agent";
 import { SessionManager } from "@yesimbot/agent/session";
 
 import type { DeliveryEventDetails } from "./delivery/index.js";
-import type { RuntimeSettings } from "./settings/defaults.js";
+import { RuntimeSettings } from "./settings-manager.js";
 
 export function buildAgentSessionConfig(
   settings: RuntimeSettings,
