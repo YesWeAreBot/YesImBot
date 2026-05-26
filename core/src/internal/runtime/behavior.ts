@@ -82,7 +82,7 @@ export const WillingnessConfigSchema: Schema<WillingnessConfig> = Schema.object(
   //     .description("回复后的“不应期”（毫秒），防止AI连续发言"),
 });
 
-export interface MessageContext {
+interface MessageContext {
   chatId: string;
   content: string;
   //isImage: boolean;
@@ -90,15 +90,6 @@ export interface MessageContext {
   isMentioned: boolean;
   // isQuote: boolean;
   isDirect: boolean;
-}
-
-/**
- * 决策结果
- */
-export interface ReplyDecision {
-  decision: boolean;
-  probability: number;
-  reason: "probability_roll" | "refractory_period" | "forced_reply_by_mention" | "below_threshold";
 }
 
 export class WillingnessManager {
@@ -120,11 +111,6 @@ export class WillingnessManager {
     ctx.on("dispose", () => {
       this.stopDecayCycle();
     });
-  }
-
-  public startDecayCycle(): void {
-    if (this.decayInterval) return;
-    this.decayInterval = setInterval(() => this._decay(), 1000);
   }
 
   public stopDecayCycle(): void {
@@ -206,7 +192,7 @@ export class WillingnessManager {
    * @param context 消息上下文
    * @returns 回复概率 (0-1)
    */
-  public calculateReplyProbability(context: MessageContext): number {
+  private calculateReplyProbability(context: MessageContext): number {
     const { chatId } = context;
 
     const resolvedMaxWillingness = this.baseConfig.maxWillingness;
@@ -237,49 +223,10 @@ export class WillingnessManager {
   }
 
   /**
-   * 回复前处理：扣除发言成本
-   * @param chatId 聊天ID
-   */
-  public handlePreReply(chatId: string): void {
-    // const { lifecycle } = this.config;
-    // const currentWillingness = this.willingnessScores.get(chatId) || 0;
-    // const newWillingness = Math.max(0, currentWillingness - lifecycle.replyCost);
-    // this.willingnessScores.set(chatId, newWillingness);
-  }
-
-  /**
-   * 在成功回复后执行。重置或降低意愿，进入"冷却期"。
-   * @param chatId 聊天ID
-   * @param replyContent 回复内容的长度，可以用来决定惩罚力度
-   */
-  public handlePostReply(chatId: string, replyContentLength: number = 0): void {
-    const { replyCost, maxWillingness } = this.baseConfig;
-
-    const resolvedReplyCost = replyCost;
-
-    // 策略1：直接大幅降低意愿值
-    // 这种做法模拟了"我说完这个话题了"
-    let currentWillingness = this.willingnessScores.get(chatId) || 0;
-    currentWillingness -= resolvedReplyCost; // 基础成本
-    this.willingnessScores.set(chatId, Math.max(0, currentWillingness));
-
-    // 策略2：更狠一点，直接清零或设置为一个很低的基础值
-    // 这种做法可以有效防止AI在一次回复后，因为意愿值依然很高而立即对下一条消息做出反应，从而避免"连麦"
-    //this.willingnessScores.set(chatId, 0); // 直接清零，等待新刺激
-    //this.logger.debug(`[${chatId}] 回复成功，意愿值已重置。`);
-
-    // 策略3：动态成本（高级）
-    // 回复得越长，消耗的"精力"越多
-    // const dynamicCost = replyCost + (replyContentLength / 50); // 每50个字额外增加1点成本
-    // let currentWillingness = this.willingnessScores.get(chatId) || 0;
-    // this.willingnessScores.set(chatId, Math.max(0, currentWillingness - dynamicCost));
-  }
-
-  /**
    * 获取指定聊天的当前意愿值（用于调试和监控）。
    * @param chatId 聊天ID
    */
-  public getCurrentWillingness(chatId: string): number {
+  private getCurrentWillingness(chatId: string): number {
     return this.willingnessScores.get(chatId) || 0;
   }
 
@@ -321,26 +268,6 @@ export class WillingnessManager {
     );
 
     return { decision, probability };
-  }
-
-  /**
-   * 引导模型关注被跳过的话题（用于策略3）
-   */
-  public boostSkippedTopic(chatId: string): void {
-    const { maxWillingness } = this.baseConfig;
-    const resolvedMaxWillingness = maxWillingness;
-
-    // 提高意愿值，引导模型关注被跳过的话题
-    const current = this.willingnessScores.get(chatId) || 0;
-    const newValue = Math.min(
-      current + resolvedMaxWillingness * 0.7, // 提升70%的意愿值
-      resolvedMaxWillingness,
-    );
-
-    this.willingnessScores.set(chatId, newValue);
-    this.logger.debug(
-      `[${chatId}] 引导关注被跳过话题，意愿值: ${current.toFixed(2)} -> ${newValue.toFixed(2)}`,
-    );
   }
 }
 

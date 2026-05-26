@@ -7,7 +7,6 @@ export type { ChannelSessionDeps } from "./session.js";
 export {
   DEFAULT_RUNTIME_SETTINGS,
   FileSettingsStorage,
-  InMemorySettingsStorage,
   RuntimeSettingsManager,
 } from "./settings.js";
 export type { PartialRuntimeSettings, RuntimeSettings, SettingsStorage } from "./settings.js";

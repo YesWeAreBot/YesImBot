@@ -22,7 +22,8 @@
     "build": "npx pkgroll --sourcemap=inline",
     "check-types": "tsc --noEmit",
     "clean": "rimraf .turbo && rimraf dist && rimraf tsconfig.tsbuildinfo",
-    "pub": "yarn npm publish --access public"
+    "pub": "yarn npm publish --access public",
+    "test": "vitest run"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0"
@@ -30,7 +31,8 @@
   "devDependencies": {
     "@yesimbot/agent": "workspace:^",
     "koishi": "^4.18.10",
-    "koishi-plugin-yesimbot": "workspace:^"
+    "koishi-plugin-yesimbot": "workspace:^",
+    "vitest": "^4.0.18"
   },
   "peerDependencies": {
     "@yesimbot/agent": "workspace:^",

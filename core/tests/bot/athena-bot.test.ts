@@ -15,9 +15,7 @@ import { createSpeakElementRegistry } from "../../src/internal/bot/speak.js";
 import type { SpeakAnomaly } from "../../src/internal/bot/types.js";
 import { DEFAULT_RUNTIME_SETTINGS } from "../../src/internal/runtime/settings.js";
 
-function createAthenaBot(
-  overrides: Partial<AthenaBotOptions> = {},
-) {
+function createAthenaBot(overrides: Partial<AthenaBotOptions> = {}) {
   const koishiBot = {
     selfId: "bot-1",
     platform: "onebot",

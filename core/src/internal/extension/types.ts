@@ -140,24 +140,6 @@ export interface ChannelReloadResult {
   readonly failedExtensions?: string[];
 }
 
-/**
- * reload 操作的聚合结果
- *
- * 单个 channel 失败不阻断其他 channel
- */
-export interface ReloadSummary {
-  /** 总 channel 数 */
-  readonly totalChannels: number;
-  /** 成功的 channel 数 */
-  readonly successCount: number;
-  /** 失败的 channel 数 */
-  readonly failureCount: number;
-  /** 各 channel 的详细结果 */
-  readonly results: ChannelReloadResult[];
-  /** 是否全部成功 */
-  readonly allSucceeded: boolean;
-}
-
 export interface ExtensionDefinitionChange {
   readonly type: "registered" | "unregistered";
   readonly extensionId: string;
@@ -173,17 +155,4 @@ export interface ExtensionRegistry {
   getExtension(id: string): ExtensionDefinition | undefined;
   getAllDefinitions(): ExtensionDefinition[];
   subscribeDefinitions(listener: ExtensionDefinitionListener): () => void;
-}
-
-// ============================================================================
-// Extension Load Error (was ChannelRuntimeError)
-// ============================================================================
-
-export interface ExtensionLoadError {
-  /** 扩展 ID */
-  readonly extensionId: string;
-  /** 错误信息 */
-  readonly error: string;
-  /** 错误堆栈 */
-  readonly stack?: string;
 }

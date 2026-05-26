@@ -182,8 +182,6 @@ export class RuntimeSettingsManager {
 
   private _global: PartialRuntimeSettings = {};
   private _local: PartialRuntimeSettings = {};
-  private _dirtyGlobal = new Set<string>();
-  private _dirtyLocal = new Set<string>();
   private _writeQueue: Promise<void> = Promise.resolve();
 
   constructor(options: {
@@ -247,57 +245,6 @@ export class RuntimeSettingsManager {
   }
 
   // =========================================================================
-  // Setters (auto-persist to specified scope)
-  // =========================================================================
-
-  setContextWindow(value: number, scope: "global" | "local" = "local"): void {
-    this._set("contextWindow", value, scope);
-  }
-
-  setCompactionEnabled(enabled: boolean, scope: "global" | "local" = "local"): void {
-    const current = scope === "global" ? this._global : this._local;
-    this._set("compaction", { ...(current.compaction ?? {}), enabled }, scope);
-  }
-
-  setCompactionReserveTokens(tokens: number, scope: "global" | "local" = "local"): void {
-    const current = scope === "global" ? this._global : this._local;
-    this._set("compaction", { ...(current.compaction ?? {}), reserveTokens: tokens }, scope);
-  }
-
-  setCompactionKeepRecentTokens(tokens: number, scope: "global" | "local" = "local"): void {
-    const current = scope === "global" ? this._global : this._local;
-    this._set("compaction", { ...(current.compaction ?? {}), keepRecentTokens: tokens }, scope);
-  }
-
-  setRetryEnabled(enabled: boolean, scope: "global" | "local" = "local"): void {
-    const current = scope === "global" ? this._global : this._local;
-    this._set("retry", { ...(current.retry ?? {}), enabled }, scope);
-  }
-
-  setRetryMaxRetries(maxRetries: number, scope: "global" | "local" = "local"): void {
-    const current = scope === "global" ? this._global : this._local;
-    this._set("retry", { ...(current.retry ?? {}), maxRetries }, scope);
-  }
-
-  setRetryBaseDelayMs(delayMs: number, scope: "global" | "local" = "local"): void {
-    const current = scope === "global" ? this._global : this._local;
-    this._set("retry", { ...(current.retry ?? {}), baseDelayMs: delayMs }, scope);
-  }
-
-  setRetryMaxDelayMs(delayMs: number, scope: "global" | "local" = "local"): void {
-    const current = scope === "global" ? this._global : this._local;
-    this._set("retry", { ...(current.retry ?? {}), maxDelayMs: delayMs }, scope);
-  }
-
-  setSteeringMode(mode: "all" | "one-at-a-time", scope: "global" | "local" = "local"): void {
-    this._set("steeringMode", mode, scope);
-  }
-
-  setFollowUpMode(mode: "all" | "one-at-a-time", scope: "global" | "local" = "local"): void {
-    this._set("followUpMode", mode, scope);
-  }
-
-  // =========================================================================
   // Reload
   // =========================================================================
 
@@ -306,46 +253,6 @@ export class RuntimeSettingsManager {
     if (this._localPath) {
       this._local = this._storage.load(this._localPath);
     }
-  }
-
-  // =========================================================================
-  // Internal: set + persist
-  // =========================================================================
-
-  private _set(key: keyof RuntimeSettings, value: unknown, scope: "global" | "local"): void {
-    const target = scope === "global" ? this._global : this._local;
-    const dirty = scope === "global" ? this._dirtyGlobal : this._dirtyLocal;
-
-    (target as Record<string, unknown>)[key] = value;
-    dirty.add(key);
-    this._enqueueSave(scope);
-  }
-
-  private _enqueueSave(scope: "global" | "local"): void {
-    this._writeQueue = this._writeQueue.then(() => this._saveScope(scope).catch(() => {}));
-  }
-
-  private async _saveScope(scope: "global" | "local"): Promise<void> {
-    const dirty = scope === "global" ? this._dirtyGlobal : this._dirtyLocal;
-    if (dirty.size === 0) return;
-
-    const filePath = scope === "global" ? this._globalPath : this._localPath;
-    if (!filePath) return;
-
-    const source = scope === "global" ? this._global : this._local;
-
-    // Build partial object with only dirty fields
-    const partial: PartialRuntimeSettings = {};
-    for (const key of dirty) {
-      (partial as Record<string, unknown>)[key] = (source as Record<string, unknown>)[key];
-    }
-
-    // Load existing, merge partial, save
-    const existing = this._storage.load(filePath);
-    const merged = deepMerge(existing, partial);
-    this._storage.save(filePath, merged);
-
-    dirty.clear();
   }
 
   /** Wait for all pending writes to complete */

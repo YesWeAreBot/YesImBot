@@ -2,26 +2,11 @@ import { existsSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { Context, Logger, Schema, Service } from "koishi";
-import type {
-  ExtensionContext,
-  ExtensionDefinition,
-  ReloadSummary,
-  ToolDefinition,
-} from "koishi-plugin-yesimbot";
+import type { ExtensionContext, ExtensionDefinition, ToolDefinition } from "koishi-plugin-yesimbot";
 
 import { createWorkspaceTools } from "./tools";
 import type { WorkspaceConfig } from "./types";
 import { Workspace } from "./workspace";
-
-function logReloadFailures(logger: Logger, action: string, summary: ReloadSummary): void {
-  if (summary.allSucceeded) return;
-  logger.warn(
-    `${action} completed with ${summary.failureCount} failed channel reload(s): ${summary.results
-      .filter((result) => !result.success)
-      .map((result) => `${result.channelKey}: ${result.error ?? "unknown error"}`)
-      .join("; ")}`,
-  );
-}
 
 export interface WorkspacePluginConfig {
   root: string;
@@ -141,14 +126,12 @@ Use this environment to execute commands safely. Always be mindful of the limita
         };
       },
     } satisfies ExtensionDefinition);
-    logReloadFailures(this.logger, "Workspace extension registration", summary);
 
     this.logger.success("Workspace plugin started");
   }
 
   async stop(): Promise<void> {
-    const summary = await this.ctx["yesimbot.extension"].unregisterExtension("workspace");
-    logReloadFailures(this.logger, "Workspace extension unregistration", summary);
+    await this.ctx["yesimbot.extension"].unregisterExtension("workspace");
     this.logger.info("Workspace plugin stopped");
   }
 }

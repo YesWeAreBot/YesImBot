@@ -1,8 +1,8 @@
+import type { Bot } from "koishi";
 import { describe, expect, it, vi } from "vitest";
 
 import { BotModule } from "../../../src/internal/bot/module.js";
 import type { ObserverInput } from "../../../src/internal/bot/observer-types.js";
-import type { Bot } from "koishi";
 
 function createMockBot(platform: string, selfId: string): Bot {
   return {

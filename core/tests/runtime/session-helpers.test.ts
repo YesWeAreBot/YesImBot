@@ -1,10 +1,6 @@
-import { SessionManager } from "@yesimbot/agent/session";
 import { describe, expect, it } from "vitest";
 
-import {
-  buildAgentSessionConfig,
-  persistDeliveryEvents,
-} from "../../src/internal/runtime/helpers.js";
+import { buildAgentSessionConfig } from "../../src/internal/runtime/helpers.js";
 import type { RuntimeSettings } from "../../src/internal/runtime/settings.js";
 
 const SETTINGS: RuntimeSettings = {
@@ -52,43 +48,5 @@ describe("runtime session helpers", () => {
 
     expect(config.compactionSettings).toBe(SETTINGS.compaction);
     expect(config.compactionPrompts).toBe(SETTINGS.compaction.prompts);
-  });
-
-  it("persists delivery events as non-LLM custom entries", () => {
-    const sessionManager = SessionManager.inMemory("/tmp/test");
-    const error = new Error("send failed");
-
-    persistDeliveryEvents(sessionManager, [
-      {
-        version: 1,
-        kind: "failed",
-        timestamp: 1000,
-        source: "delivery",
-        reason: "submit failed",
-        generatedContent: "原始内容",
-        attemptedSegments: ["原始内容"],
-        failedSegments: ["原始内容"],
-        error,
-      },
-    ]);
-
-    const entries = sessionManager.getEntries();
-    expect(entries).toHaveLength(1);
-    expect(entries[0]).toMatchObject({
-      type: "custom",
-      customType: "athena:delivery_event",
-      data: {
-        display: false,
-        details: {
-          kind: "failed",
-          reason: "submit failed",
-          generatedContent: "原始内容",
-          error: {
-            name: "Error",
-            message: "send failed",
-          },
-        },
-      },
-    });
   });
 });

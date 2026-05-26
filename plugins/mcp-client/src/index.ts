@@ -1,22 +1,12 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { jsonSchema, JSONSchema7 } from "@yesimbot/agent/ai";
 import { Context, Schema, Service } from "koishi";
-import type { ExtensionContext, ReloadSummary, ToolDefinition } from "koishi-plugin-yesimbot";
+import type { ExtensionContext, ToolDefinition } from "koishi-plugin-yesimbot";
 
 import { connectMcpServer } from "./transports";
 import type { McpClientConfig, McpClientTransport } from "./types";
 
 type McpToolDefinition = ToolDefinition<unknown, unknown>;
-
-function logReloadFailures(ctx: Context, action: string, summary: ReloadSummary): void {
-  if (summary.allSucceeded) return;
-  ctx.logger.warn(
-    `${action} completed with ${summary.failureCount} failed channel reload(s): ${summary.results
-      .filter((result) => !result.success)
-      .map((result) => `${result.channelKey}: ${result.error ?? "unknown error"}`)
-      .join("; ")}`,
-  );
-}
 
 export default class McpClientPlugin extends Service<McpClientConfig> {
   static name = "mcp-client";
@@ -122,15 +112,13 @@ export default class McpClientPlugin extends Service<McpClientConfig> {
         };
       },
     });
-    logReloadFailures(this.ctx, "MCP client extension registration", summary);
 
     this.ctx.logger.success("MCP 客户端初始化完成");
   }
 
   override async stop(): Promise<void> {
     this.ctx.logger.info("清理 MCP 客户端...");
-    const summary = await this.ctx["yesimbot.extension"].unregisterExtension("mcp-client");
-    logReloadFailures(this.ctx, "MCP client extension unregistration", summary);
+    await this.ctx["yesimbot.extension"].unregisterExtension("mcp-client");
     for (const [name, client] of this.clients.entries()) {
       try {
         await client.close();

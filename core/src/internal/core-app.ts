@@ -37,9 +37,7 @@ export class CoreApp {
       await sessionStore.start();
       await runtimeController.start();
       disposeDefinitionSubscription = extensionService.subscribeDefinitions((change) => {
-        void runtimeController.reloadAllChannels(
-          `${change.type}:${change.extensionId}`,
-        );
+        void runtimeController.reloadAllChannels(`${change.type}:${change.extensionId}`);
       });
     });
     ctx.on("dispose", async () => {

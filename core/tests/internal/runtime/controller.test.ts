@@ -1,9 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-const {
-  mockCreateSystemPromptExtension,
-  mockApplyPresenterCatalogTo,
-} = vi.hoisted(() => ({
+const { mockCreateSystemPromptExtension, mockApplyPresenterCatalogTo } = vi.hoisted(() => ({
   mockCreateSystemPromptExtension: vi.fn(),
   mockApplyPresenterCatalogTo: vi.fn(),
 }));
@@ -44,7 +41,13 @@ vi.mock("@yesimbot/agent/session", () => ({
 vi.mock("../../../src/internal/bot/bot.js", () => ({
   AthenaBot: class {
     present = vi.fn().mockResolvedValue(null);
-    speak = vi.fn().mockResolvedValue({ ok: true, attemptedSegments: [], deliveredSegments: [], failedSegments: [], anomalies: [] });
+    speak = vi.fn().mockResolvedValue({
+      ok: true,
+      attemptedSegments: [],
+      deliveredSegments: [],
+      failedSegments: [],
+      anomalies: [],
+    });
     getSpeakElementPrompts = vi.fn().mockReturnValue([]);
   },
 }));

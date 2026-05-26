@@ -8,7 +8,7 @@ import {
 } from "@yesimbot/agent/session";
 import type { Bot, Logger, Session } from "koishi";
 
-import { createSystemPromptExtension, type BotInfo } from "../../services/extension/built-in/system-prompt.js";
+import { type BotInfo } from "../../services/extension/built-in/system-prompt.js";
 import type { ChannelIdentifier, ChannelKey } from "../../shared/types.js";
 import { AthenaBot } from "../bot/bot.js";
 import { serializeAthenaEvent } from "../bot/events.js";
@@ -16,6 +16,9 @@ import type { ChannelEventContext } from "../bot/observer-types.js";
 import type { PresenterCatalog } from "../bot/presentation.js";
 import { createSpeakElementRegistry, type SpeakElementRegistry } from "../bot/speak.js";
 import type { AthenaEvent } from "../bot/types.js";
+import type { ExtensionBindingHost } from "../extension/context.js";
+import { createExtensionBinding } from "../extension/context.js";
+import { buildToolSnapshotFromBindings } from "../extension/tools.js";
 import type {
   Channel,
   ChannelReloadResult,
@@ -23,9 +26,6 @@ import type {
   ExtensionDefinition,
   SpeakElementPromptContext,
 } from "../extension/types.js";
-import type { ExtensionBindingHost } from "../extension/context.js";
-import { createExtensionBinding } from "../extension/context.js";
-import { buildToolSnapshotFromBindings } from "../extension/tools.js";
 import { buildAgentSessionConfig } from "./helpers.js";
 import { RuntimeSettingsManager, type PartialRuntimeSettings } from "./settings.js";
 
@@ -42,10 +42,7 @@ export interface ChannelSessionDeps {
   behavior: {
     allowedChannels: ChannelIdentifier[];
     willingnessManager: {
-      shouldReply(
-        event: AthenaEvent,
-        triggerCandidate: boolean,
-      ): { decision: boolean };
+      shouldReply(event: AthenaEvent, triggerCandidate: boolean): { decision: boolean };
     };
   };
   extensions: {
@@ -134,8 +131,7 @@ export class ChannelSession {
 
     this.botInfo = {
       selfId: deps.koishiBot.selfId,
-      selfName:
-        deps.koishiBot.user?.nick || deps.koishiBot.user?.name || "(unknown)",
+      selfName: deps.koishiBot.user?.nick || deps.koishiBot.user?.name || "(unknown)",
     };
 
     // Assistant output bridge
@@ -152,16 +148,11 @@ export class ChannelSession {
 
       const originSession = this.pendingOriginSessions.shift();
 
-      void this.bot
-        .speak(text, { originSession, modelElapsedMs: 0 })
-        .catch(() => undefined);
+      void this.bot.speak(text, { originSession, modelElapsedMs: 0 }).catch(() => undefined);
     });
   }
 
-  async handleEvent(
-    event: AthenaEvent,
-    context?: ChannelEventContext,
-  ): Promise<void> {
+  async handleEvent(event: AthenaEvent, context?: ChannelEventContext): Promise<void> {
     if (this.disposed) return;
 
     const channelAllowed = isChannelAllowed(
@@ -175,8 +166,7 @@ export class ChannelSession {
       event,
       event.metadata.triggerCandidate,
     );
-    const shouldTriggerTurn =
-      channelAllowed && (event.metadata.triggerCandidate || decision);
+    const shouldTriggerTurn = channelAllowed && (event.metadata.triggerCandidate || decision);
 
     if (!event.metadata.persist && !shouldTriggerTurn) {
       return;
@@ -195,13 +185,9 @@ export class ChannelSession {
         display: presentation?.visible ?? false,
         details:
           presentation?.details ??
-          (event.metadata.persist
-            ? serializeAthenaEvent(event)
-            : undefined),
+          (event.metadata.persist ? serializeAthenaEvent(event) : undefined),
       },
-      shouldTriggerTurn
-        ? { triggerTurn: true, deliverAs: "followUp" }
-        : { triggerTurn: false },
+      shouldTriggerTurn ? { triggerTurn: true, deliverAs: "followUp" } : { triggerTurn: false },
     );
 
     if (shouldTriggerTurn) {
@@ -260,9 +246,7 @@ export class ChannelSession {
     this.pendingOriginSessions.length = 0;
   }
 
-  async reloadExtensions(
-    definitions: ExtensionDefinition[],
-  ): Promise<ChannelReloadResult> {
+  async reloadExtensions(definitions: ExtensionDefinition[]): Promise<ChannelReloadResult> {
     if (this.disposed) {
       return {
         channelKey: this.channelKey,
@@ -281,8 +265,7 @@ export class ChannelSession {
       session: {
         getName: () => this.sessionManager.getSessionName(),
         setName: (name) => this.sessionManager.appendSessionInfo(name),
-        appendEntry: (customType, data) =>
-          this.sessionManager.appendCustomEntry(customType, data),
+        appendEntry: (customType, data) => this.sessionManager.appendCustomEntry(customType, data),
         sendMessage: async (message, options) =>
           this.agentSession.sendCustomMessage(message as never, options as never),
         sendUserMessage: async (content, options) =>
@@ -293,9 +276,7 @@ export class ChannelSession {
       },
     };
 
-    const sorted = [...definitions].sort(
-      (a, b) => (a.order ?? 0) - (b.order ?? 0),
-    );
+    const sorted = [...definitions].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
     // Dispose old bindings
     for (const old of this.bindings) {
@@ -339,10 +320,7 @@ export class ChannelSession {
       success: errors.length === 0,
       loadedCount: nextBindings.length,
       failedExtensions: errors.length > 0 ? errors : undefined,
-      error:
-        errors.length > 0
-          ? `Failed extensions: ${errors.join(", ")}`
-          : undefined,
+      error: errors.length > 0 ? `Failed extensions: ${errors.join(", ")}` : undefined,
     };
   }
 }
@@ -354,10 +332,8 @@ export function isChannelAllowed(
   allowedChannels: ChannelIdentifier[],
 ): boolean {
   return allowedChannels.some((channel) => {
-    const platformMatch =
-      channel.platform === "*" || channel.platform === platform;
-    const channelMatch =
-      channel.channelId === "*" || channel.channelId === channelId;
+    const platformMatch = channel.platform === "*" || channel.platform === platform;
+    const channelMatch = channel.channelId === "*" || channel.channelId === channelId;
     return platformMatch && channelMatch && channel.type === type;
   });
 }

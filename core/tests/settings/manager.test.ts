@@ -92,25 +92,6 @@ describe("RuntimeSettingsManager", () => {
     expect(s.followUpMode).toBe("all");
   });
 
-  it("setters persist to the specified scope", async () => {
-    const storage = new InMemorySettingsStorage();
-    const manager = new RuntimeSettingsManager({
-      globalPath: "/tmp/athena/settings.json",
-      localPath: "/tmp/athena/sessions/onebot/123/settings.json",
-      storage,
-    });
-
-    manager.setContextWindow(64000, "global");
-    manager.setSteeringMode("one-at-a-time", "local");
-    await manager.flush();
-
-    const globalData = storage.load("/tmp/athena/settings.json");
-    expect(globalData.contextWindow).toBe(64000);
-
-    const localData = storage.load("/tmp/athena/sessions/onebot/123/settings.json");
-    expect(localData.steeringMode).toBe("one-at-a-time");
-  });
-
   it("seed does not overwrite existing global fields", () => {
     const storage = new InMemorySettingsStorage();
     storage.save("/tmp/athena/settings.json", {

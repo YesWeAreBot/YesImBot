@@ -113,9 +113,7 @@ export class RuntimeController {
         getSpeakElementPromptContext: (channel) => {
           const key: ChannelKey = `${channel.platform}:${channel.channelId}`;
           const session = this.channels.get(key);
-          return (
-            session?.getPromptSpeakElementContext() ?? { elements: [] }
-          );
+          return session?.getPromptSpeakElementContext() ?? { elements: [] };
         },
       }),
     );
@@ -252,11 +250,7 @@ export class RuntimeController {
 
     const type = conversationType === "private" ? "private" : "group";
     const key: ChannelKey = `${platform}:${channelId}`;
-    const session = await this.getOrCreateChannelSession(
-      key,
-      { platform, channelId, type },
-      bot,
-    );
+    const session = await this.getOrCreateChannelSession(key, { platform, channelId, type }, bot);
     await session.handleEvent(event, { originSession });
   }
 

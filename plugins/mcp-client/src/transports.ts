@@ -29,7 +29,7 @@ export async function connectMcpServer(
   }
 }
 
-function parseKeyValueString(input: string): Record<string, string> {
+export function parseKeyValueString(input: string): Record<string, string> {
   const result: Record<string, string> = {};
   const lines = input.split("\n");
   for (const line of lines) {

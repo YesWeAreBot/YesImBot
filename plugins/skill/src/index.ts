@@ -3,19 +3,9 @@ import { resolve } from "path";
 
 import { jsonSchema } from "@yesimbot/agent/ai";
 import { Context, Logger, Schema, Service } from "koishi";
-import type { ExtensionContext, ReloadSummary } from "koishi-plugin-yesimbot";
+import type { ExtensionContext } from "koishi-plugin-yesimbot";
 
 import { formatSkillsForPrompt, loadSkills, Skill } from "./skills";
-
-function logReloadFailures(logger: Logger, action: string, summary: ReloadSummary): void {
-  if (summary.allSucceeded) return;
-  logger.warn(
-    `${action} completed with ${summary.failureCount} failed channel reload(s): ${summary.results
-      .filter((result) => !result.success)
-      .map((result) => `${result.channelKey}: ${result.error ?? "unknown error"}`)
-      .join("; ")}`,
-  );
-}
 
 export interface SkillConfig {
   skillPaths: string[];
@@ -110,12 +100,10 @@ export default class SkillPlugin extends Service<SkillConfig> {
         });
       },
     });
-    logReloadFailures(this.logger, "Skill extension registration", summary);
   }
 
   override async stop(): Promise<void> {
-    const summary = await this.ctx["yesimbot.extension"].unregisterExtension("skill");
-    logReloadFailures(this.logger, "Skill extension unregistration", summary);
+    await this.ctx["yesimbot.extension"].unregisterExtension("skill");
   }
 }
 
