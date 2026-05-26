@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import { z } from "zod";
 
-import { ToolDefinition } from "../../../types.js";
+import { ToolDefinition } from "../../../../../internal/extension/types.js";
 import { ChannelResolver } from "../engine/channel-resolver.js";
 import { FileScanner, type ScanResult } from "../engine/file-scanner.js";
 import { formatTimestamp } from "../engine/result-formatter.js";

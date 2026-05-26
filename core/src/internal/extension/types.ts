@@ -7,10 +7,9 @@
 
 import type { ToolResultOutput } from "@ai-sdk/provider-utils";
 import type { AgentTool } from "@yesimbot/agent/agent";
-import type { HookRunner } from "@yesimbot/agent/session";
 import type { Bot } from "koishi";
 
-import type { SpeakElementDefinition, SpeakElementPromptInfo } from "../../internal/bot/types.js";
+import type { SpeakElementDefinition, SpeakElementPromptInfo } from "../bot/types.js";
 
 // ============================================================================
 // Channel
@@ -58,6 +57,23 @@ export type ToolDefinition<INPUT = unknown, OUTPUT = ToolResultOutput, DETAILS =
 // Core-Owned Extension Context
 // ============================================================================
 
+export interface ExtensionToolContext {
+  register<INPUT = unknown, OUTPUT = ToolResultOutput, DETAILS = never>(
+    tool: ToolDefinition<INPUT, OUTPUT, DETAILS>,
+  ): void;
+  unregister(name: string): void;
+  getActive(): string[];
+  setActive(toolNames: string[]): void;
+}
+
+export interface ExtensionSessionContext {
+  getName(): string | undefined;
+  setName(name: string): void;
+  appendEntry(customType: string, data?: unknown): void;
+  sendMessage(message: unknown, options?: unknown): void;
+  sendUserMessage(content: unknown, options?: unknown): void;
+}
+
 export interface ExtensionBotContext {
   registerSpeakElement(definition: SpeakElementDefinition): void;
 }
@@ -68,20 +84,10 @@ export interface SpeakElementPromptContext {
 
 export interface ExtensionContext {
   readonly channel: Channel;
+  readonly tool: ExtensionToolContext;
+  readonly session: ExtensionSessionContext;
   readonly bot: ExtensionBotContext;
-  /** 注册 channel lifecycle hook；事件分发由 agent package 的 HookRunner 执行。 */
   on(event: string, handler: (...args: unknown[]) => unknown): void;
-  registerTool<INPUT = unknown, OUTPUT = ToolResultOutput, DETAILS = never>(
-    tool: ToolDefinition<INPUT, OUTPUT, DETAILS>,
-  ): void;
-  unregisterTool(name: string): void;
-  sendMessage(message: unknown, options?: unknown): void;
-  sendUserMessage(content: unknown, options?: unknown): void;
-  appendEntry(customType: string, data?: unknown): void;
-  setSessionName(name: string): void;
-  getSessionName(): string | undefined;
-  getActiveTools(): string[];
-  setActiveTools(toolNames: string[]): void;
 }
 
 // ============================================================================
@@ -159,42 +165,21 @@ export interface ExtensionDefinitionChange {
 
 export type ExtensionDefinitionListener = (
   change: ExtensionDefinitionChange,
-) => void | Promise<void | ReloadSummary>;
+) => void | Promise<void>;
 
 export interface ExtensionRegistry {
-  registerExtension(definition: ExtensionDefinition): Promise<ReloadSummary>;
-  unregisterExtension(id: string): Promise<ReloadSummary>;
+  registerExtension(definition: ExtensionDefinition): Promise<void>;
+  unregisterExtension(id: string): Promise<void>;
   getExtension(id: string): ExtensionDefinition | undefined;
   getAllDefinitions(): ExtensionDefinition[];
   subscribeDefinitions(listener: ExtensionDefinitionListener): () => void;
 }
 
 // ============================================================================
-// Channel Runtime
+// Extension Load Error (was ChannelRuntimeError)
 // ============================================================================
 
-/**
- * Channel runtime — 每个 channel 的扩展运行时实例
- *
- * 由 ExtensionService.createChannelRuntime 创建
- */
-export interface ChannelRuntime {
-  /** 频道标识 */
-  readonly channelKey: string;
-  /** 加载的扩展工具快照 */
-  readonly toolSnapshot: ExtensionToolSnapshot;
-  /** HookRunner — 传给 AgentSession 用于 hook 分发 */
-  readonly hookRunner: HookRunner;
-  /** setup 过程中的错误（fail-open） */
-  readonly errors: ChannelRuntimeError[];
-  /** 销毁运行时，调用所有 cleanup */
-  dispose(): Promise<void>;
-}
-
-/**
- * Channel runtime 中单个扩展的错误
- */
-export interface ChannelRuntimeError {
+export interface ExtensionLoadError {
   /** 扩展 ID */
   readonly extensionId: string;
   /** 错误信息 */

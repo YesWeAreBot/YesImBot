@@ -15,8 +15,12 @@
  *   extensionService.registerExtension(ext);
  */
 
+import type {
+  Channel,
+  ExtensionDefinition,
+  SpeakElementPromptContext,
+} from "../../../internal/extension/types.js";
 import { buildAthenaSystemPrompt, ensurePersonaFile } from "../../../internal/runtime/prompt.js";
-import type { Channel, ExtensionDefinition, SpeakElementPromptContext } from "../types.js";
 
 // ============================================================================
 // Types

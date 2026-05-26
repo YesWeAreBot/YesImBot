@@ -1,6 +1,5 @@
-import { type Context, type Logger, type Session } from "koishi";
+import { Bot, type Context, type Logger, type Session } from "koishi";
 
-import type { SessionStore } from "../session/store.js";
 import { createCoreFallbackObservers } from "./events.js";
 import type {
   EventObserver,
@@ -15,7 +14,6 @@ import {
   createDefaultReactionPresenter,
   createPresenterCatalog,
   type PresenterCatalog,
-  type PresenterRegistry,
 } from "./presentation.js";
 import type { AthenaEvent } from "./types.js";
 
@@ -26,14 +24,12 @@ export interface BotModuleConfig {
 
 export interface BotModuleDeps {
   ctx: Context;
-  sessionStore: Pick<SessionStore, "getMetadata">;
   config: BotModuleConfig;
 }
 
 export class BotModule {
   readonly logger: Logger;
   private readonly ctx: Context;
-  private readonly sessionStore: Pick<SessionStore, "getMetadata">;
   private readonly config: BotModuleConfig;
   private readonly observers = new Map<string, EventObserver>();
   private readonly observersBySource = new Map<string, EventObserver[]>();
@@ -47,9 +43,8 @@ export class BotModule {
 
   constructor(deps: BotModuleDeps) {
     this.ctx = deps.ctx;
-    this.sessionStore = deps.sessionStore;
     this.config = deps.config;
-    this.logger = deps.ctx.logger("yesimbot-core.bot-module");
+    this.logger = deps.ctx.logger("yesimbot.bot");
     this.logger.level = deps.config.logLevel ?? 2;
     this.presenterCatalog.registerBase("chat_message", createDefaultChatMessagePresenter());
     this.presenterCatalog.registerBase("message_recall", createDefaultMessageRecallPresenter());
@@ -157,8 +152,8 @@ export class BotModule {
     };
   }
 
-  applyPresentersTo(registry: PresenterRegistry): void {
-    this.presenterCatalog.applyTo(registry);
+  getPresenterCatalog(): PresenterCatalog {
+    return this.presenterCatalog;
   }
 
   private registerCoreFallbackObservers(): void {
@@ -225,15 +220,6 @@ export class BotModule {
   private async handleSourceInput(input: ObserverInput): Promise<void> {
     const sourceKey = getSourceKey(input.source);
     const observers = this.observersBySource.get(sourceKey) ?? [];
-    if (input.session?.platform && input.session.channelId && input.selfId) {
-      const assignee = await this.resolveAssignee(input.session.platform, input.session.channelId);
-      if (assignee && input.selfId !== assignee) {
-        this.logger.debug(
-          `Dropped source input for non-assignee bot "${input.selfId}" in ${input.session.platform}:${input.session.channelId}`,
-        );
-        return;
-      }
-    }
 
     for (const observer of observers) {
       let result;
@@ -263,7 +249,6 @@ export class BotModule {
     if (!this.observedEventSubscriber) return;
 
     const { platform, channelId } = event.source;
-    const assignee = await this.resolveAssignee(platform, channelId);
     const sessionBot = input.session?.bot;
     const sessionSelfId = sessionBot?.selfId;
 
@@ -274,22 +259,13 @@ export class BotModule {
     }
 
     const observedSelfId = sessionSelfId ?? event.source.selfId ?? input.selfId;
-
-    if (observedSelfId && assignee && observedSelfId !== assignee) {
-      this.logger.debug(
-        `Dropped observed event for non-assignee bot "${observedSelfId}" in ${platform}:${channelId}`,
-      );
-      return;
-    }
-
-    const selfId = observedSelfId ?? assignee;
-    const bot = this.resolveBot(platform, selfId, sessionBot);
+    const bot = this.resolveBot(platform, observedSelfId, sessionBot);
     if (!bot) {
       this.logger.warn(`No Koishi bot available for observed event ${platform}:${channelId}`);
       return;
     }
 
-    const resolvedSelfId = selfId ?? bot.selfId;
+    const resolvedSelfId = observedSelfId ?? bot.selfId;
     if (event.source.selfId !== resolvedSelfId) {
       event.source.selfId = resolvedSelfId;
     }
@@ -308,46 +284,7 @@ export class BotModule {
     }
   }
 
-  private async resolveAssignee(platform: string, channelId: string): Promise<string | undefined> {
-    const koishiAssignee = await this.resolveKoishiChannelAssignee(platform, channelId);
-    if (koishiAssignee) return koishiAssignee;
-
-    try {
-      const meta = await this.sessionStore.getMetadata(platform, channelId);
-      return meta?.assignee;
-    } catch {
-      return undefined;
-    }
-  }
-
-  private async resolveKoishiChannelAssignee(
-    platform: string,
-    channelId: string,
-  ): Promise<string | undefined> {
-    const database = this.ctx.database as
-      | {
-          get?: (
-            table: string,
-            query: unknown,
-            fields: string[],
-          ) => Promise<Array<{ assignee?: string }>>;
-        }
-      | undefined;
-    if (!database?.get) return undefined;
-
-    try {
-      const rows = await database.get("channel", { platform, id: channelId }, ["assignee"]);
-      return rows[0]?.assignee;
-    } catch {
-      return undefined;
-    }
-  }
-
-  private resolveBot(
-    platform: string,
-    selfId?: string,
-    sessionBot?: Session["bot"],
-  ): Session["bot"] | undefined {
+  private resolveBot(platform: string, selfId?: string, sessionBot?: Bot): Bot | undefined {
     if (sessionBot) {
       return sessionBot;
     }
@@ -394,18 +331,14 @@ function sortObservers(observers: EventObserver[]): EventObserver[] {
   return [...observers].sort((a, b) => b.priority - a.priority || a.name.localeCompare(b.name));
 }
 
-type BotCollection = Iterable<Session["bot"]> & Record<string, Session["bot"] | undefined>;
+type BotCollection = Iterable<Bot> & Record<string, Bot | undefined>;
 
-function findBotCandidate(
-  bots: BotCollection,
-  platform: string,
-  selfId: string,
-): Session["bot"] | undefined {
+function findBotCandidate(bots: BotCollection, platform: string, selfId: string): Bot | undefined {
   return findBotCandidates(bots, platform).find((bot) => bot.selfId === selfId);
 }
 
-function findBotCandidates(bots: BotCollection, platform: string): Array<Session["bot"]> {
-  const candidates = new Map<string, Session["bot"]>();
+function findBotCandidates(bots: BotCollection, platform: string): Array<Bot> {
+  const candidates = new Map<string, Bot>();
 
   if (typeof bots[Symbol.iterator] === "function") {
     for (const bot of bots) {
@@ -423,9 +356,9 @@ function findBotCandidates(bots: BotCollection, platform: string): Array<Session
 }
 
 function addBotCandidate(
-  candidates: Map<string, Session["bot"]>,
+  candidates: Map<string, Bot>,
   platform: string,
-  bot: Session["bot"] | undefined,
+  bot: Bot | undefined,
 ): void {
   if (!bot || bot.platform !== platform) return;
   candidates.set(`${bot.platform}:${bot.selfId}`, bot);

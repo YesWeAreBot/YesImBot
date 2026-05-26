@@ -1,7 +1,7 @@
 import { Context, Logger, Service } from "koishi";
 
+import type { ExtensionContext } from "../../../../internal/extension/types.js";
 import { encodeChannelId } from "../../../../internal/session/encoding.js";
-import type { ExtensionContext, ReloadSummary } from "../../types.js";
 import { buildChatHistoryPrompt } from "./prompt.js";
 import { createReadConversationContextTool } from "./tools/read-conversation-context.js";
 import { createSearchConversationTool } from "./tools/search-conversation.js";
@@ -9,16 +9,6 @@ import { createSearchUserActivityTool } from "./tools/search-user-activity.js";
 import type { ChatHistoryConfig } from "./types.js";
 
 export type { ChatHistoryConfig };
-
-function logReloadFailures(logger: Logger, action: string, summary: ReloadSummary): void {
-  if (summary.allSucceeded) return;
-  logger.warn(
-    `${action} completed with ${summary.failureCount} failed channel reload(s): ${summary.results
-      .filter((result) => !result.success)
-      .map((result) => `${result.channelKey}: ${result.error ?? "unknown error"}`)
-      .join("; ")}`,
-  );
-}
 
 export class ChatHistoryPlugin extends Service<ChatHistoryConfig> {
   static name = "yesimbot.chat-history";
@@ -34,7 +24,7 @@ export class ChatHistoryPlugin extends Service<ChatHistoryConfig> {
 
   async start(): Promise<void> {
     const config = this.config;
-    const summary = await this.ctx["yesimbot.extension"].registerExtension({
+    await this.ctx["yesimbot.extension"].registerExtension({
       id: "chat-history",
       setup(ctx: ExtensionContext) {
         const channel = ctx.channel;
@@ -57,21 +47,20 @@ export class ChatHistoryPlugin extends Service<ChatHistoryConfig> {
         const searchUser = createSearchUserActivityTool(config, currentChannel);
         const readCtx = createReadConversationContextTool(config, currentChannel);
 
-        ctx.registerTool(searchConv);
-        ctx.registerTool(searchUser);
-        ctx.registerTool(readCtx);
+        ctx.tool.register(searchConv);
+        ctx.tool.register(searchUser);
+        ctx.tool.register(readCtx);
 
         return {
           dispose() {},
         };
       },
     });
-    logReloadFailures(this.logger, "Chat-history extension registration", summary);
+    this.logger.info("Chat-history plugin started");
   }
 
   async stop(): Promise<void> {
-    const summary = await this.ctx["yesimbot.extension"].unregisterExtension("chat-history");
-    logReloadFailures(this.logger, "Chat-history extension unregistration", summary);
+    await this.ctx["yesimbot.extension"].unregisterExtension("chat-history");
     this.logger.info("Chat-history plugin stopped");
   }
 }

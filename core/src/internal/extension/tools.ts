@@ -1,6 +1,6 @@
 import type { AgentTool } from "@yesimbot/agent/agent";
 
-import type { ExtensionBinding, ExtensionToolSnapshot } from "../../services/extension/types.js";
+import type { ExtensionBinding, ExtensionToolSnapshot } from "./types.js";
 
 export function buildToolSnapshotFromBindings(
   bindings: readonly ExtensionBinding[],

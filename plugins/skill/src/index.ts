@@ -75,7 +75,7 @@ export default class SkillPlugin extends Service<SkillConfig> {
             systemPrompt: event.systemPrompt + skillPrompt,
           };
         }) as (...args: unknown[]) => unknown);
-        ctx.registerTool<LoadSkillToolInput, LoadSkillToolOutput>({
+        ctx.tool.register<LoadSkillToolInput, LoadSkillToolOutput>({
           name: "load_skill",
           description: "加载技能",
           promptSnippet: "技能名称：{skillName}",

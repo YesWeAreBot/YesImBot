@@ -27,7 +27,7 @@ export class SessionStore {
     private readonly ctx: Context,
     private readonly config: SessionStoreConfig,
   ) {
-    this.logger = ctx.logger("yesimbot-core.session-store");
+    this.logger = ctx.logger("yesimbot.session");
     this.logger.level = config.logLevel ?? 2;
     this.basePath = config.basePath;
   }
@@ -80,13 +80,6 @@ export class SessionStore {
 
     if (meta?.current_session && existsSync(join(channelDir, meta.current_session))) {
       sessionManager = SessionManager.open(join(channelDir, meta.current_session), channelDir);
-      if (input.assignee && !meta.assignee) {
-        writeMeta(channelDir, {
-          ...meta,
-          assignee: input.assignee,
-          updated_at: new Date().toISOString(),
-        });
-      }
     } else {
       sessionManager = SessionManager.create(channelDir);
       writeMeta(
@@ -97,7 +90,6 @@ export class SessionStore {
           input.type,
           sessionManager.getSessionFile()!,
           1,
-          input.assignee,
         ),
       );
     }
@@ -123,7 +115,6 @@ export class SessionStore {
         input.type,
         sessionManager.getSessionFile()!,
         (meta?.session_count ?? 0) + 1,
-        meta?.assignee,
       ),
     );
 

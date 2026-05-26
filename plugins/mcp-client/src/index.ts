@@ -111,7 +111,7 @@ export default class McpClientPlugin extends Service<McpClientConfig> {
         for (const [name, { client: _client, tools }] of registry.entries()) {
           for (const tool of tools) {
             this.ctx.logger.info(`注册工具 ${tool.name} from ${name}_${tool.name}`);
-            ctx.registerTool(tool);
+            ctx.tool.register(tool);
           }
         }
 

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { ToolDefinition } from "../../../types.js";
+import { ToolDefinition } from "../../../../../internal/extension/types.js";
 import { listChannelSummaries, listSessionFiles } from "../channel-store.js";
 import { formatCompactLine } from "../engine/result-formatter.js";
 import { scanJsonlFile } from "../jsonl-parser.js";

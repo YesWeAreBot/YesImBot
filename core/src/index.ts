@@ -1,127 +1,17 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { Context, Schema } from "koishi";
+import { Context } from "koishi";
 
-import * as CoreApp from "./internal/core-app.js";
-import { WillingnessConfigSchema } from "./internal/runtime/behavior.js";
-import type { RuntimeControllerConfig } from "./internal/runtime/controller.js";
-import type { SessionStoreConfig } from "./internal/session/types.js";
+import type { Config } from "./config.js";
+import { CoreApp } from "./internal/core-app.js";
 import { ChatHistoryPlugin } from "./services/extension/built-in/chat-history/index.js";
-import { ExtensionConfig, ExtensionService } from "./services/extension/index.js";
-import { ModelService, ModelServiceConfig } from "./services/model/index.js";
-
-export type Config = ModelServiceConfig &
-  ExtensionConfig &
-  SessionStoreConfig &
-  RuntimeControllerConfig & {
-    enableChatTools?: boolean;
-  };
+import { ExtensionService } from "./services/extension/index.js";
+import { ModelService } from "./services/model/index.js";
 
 export const name = "yesimbot";
 export const inject = [];
-
-export const Config = Schema.object({
-  chatModel: Schema.dynamic("registry.chatModels"),
-  allowedChannels: Schema.array(
-    Schema.object({
-      platform: Schema.string().required(),
-      channelId: Schema.string().required(),
-      type: Schema.union(["private", "group"] as const).required(),
-    }),
-  )
-    .role("table")
-    .default([]),
-  basePath: Schema.path({ filters: ["directory"], allowCreate: true }).default("data/yesimbot"),
-  logLevel: Schema.union([0, 1, 2, 3]).default(2),
-  consumeMessages: Schema.boolean().default(false).description("是否消费消息并阻止后续中间件"),
-  runtimeSettings: Schema.object({
-    contextWindow: Schema.number()
-      .min(1000)
-      .max(1000000)
-      .default(128000)
-      .description("上下文窗口大小（token 数）"),
-    compaction: Schema.object({
-      enabled: Schema.boolean().default(true).description("启用上下文压缩"),
-      reserveTokens: Schema.number()
-        .min(1000)
-        .max(100000)
-        .default(16384)
-        .description("压缩保留的 token 数"),
-      keepRecentTokens: Schema.number()
-        .min(1000)
-        .max(100000)
-        .default(20000)
-        .description("保留最近消息的 token 数"),
-    }).description("上下文压缩配置"),
-    retry: Schema.object({
-      enabled: Schema.boolean().default(true).description("启用自动重试"),
-      maxRetries: Schema.number().min(0).max(10).default(3).description("最大重试次数"),
-      baseDelayMs: Schema.number()
-        .min(100)
-        .max(30000)
-        .default(2000)
-        .description("基础重试延迟（毫秒）"),
-      maxDelayMs: Schema.number()
-        .min(1000)
-        .max(300000)
-        .default(60000)
-        .description("最大重试延迟（毫秒）"),
-    }).description("重试配置"),
-    steeringMode: Schema.union(["all", "one-at-a-time"] as const)
-      .default("all")
-      .description("引导模式"),
-    followUpMode: Schema.union(["all", "one-at-a-time"] as const)
-      .default("all")
-      .description("跟进模式"),
-    delivery: Schema.object({
-      enabled: Schema.boolean().default(true).description("启用消息分段发送"),
-      segmentation: Schema.object({
-        shortSegmentChars: Schema.number()
-          .min(1)
-          .max(100)
-          .default(6)
-          .description("短段落字符数阈值"),
-        shortTextChars: Schema.number().min(1).max(500).default(25).description("短文本字符数阈值"),
-      }).description("分段配置"),
-      timing: Schema.object({
-        initialDelayMinMs: Schema.number()
-          .min(0)
-          .max(10000)
-          .default(300)
-          .description("初始延迟最小值（毫秒）"),
-        initialDelayMaxMs: Schema.number()
-          .min(0)
-          .max(10000)
-          .default(1200)
-          .description("初始延迟最大值（毫秒）"),
-        followupDelayMinMs: Schema.number()
-          .min(0)
-          .max(30000)
-          .default(1200)
-          .description("后续延迟最小值（毫秒）"),
-        followupDelayMaxMs: Schema.number()
-          .min(0)
-          .max(30000)
-          .default(4500)
-          .description("后续延迟最大值（毫秒）"),
-        maxDelayMs: Schema.number().min(0).max(60000).default(6500).description("最大延迟（毫秒）"),
-        minimumBufferMinMs: Schema.number()
-          .min(0)
-          .max(5000)
-          .default(150)
-          .description("最小缓冲区最小值（毫秒）"),
-        minimumBufferMaxMs: Schema.number()
-          .min(0)
-          .max(5000)
-          .default(400)
-          .description("最小缓冲区最大值（毫秒）"),
-      }).description("延迟配置"),
-    }).description("消息分段发送配置"),
-  }).description("运行时设置"),
-  enableChatTools: Schema.boolean().default(true).description("启用聊天工具"),
-  ...WillingnessConfigSchema.dict,
-});
+export { Config } from "./config.js";
 
 export async function apply(ctx: Context, config: Config) {
   if (config.basePath) {
@@ -130,8 +20,8 @@ export async function apply(ctx: Context, config: Config) {
       mkdirSync(config.basePath, { recursive: true });
     }
   }
-  ctx.plugin(ModelService, config as ModelServiceConfig);
-  ctx.plugin(ExtensionService, config as ExtensionConfig);
+  ctx.plugin(ModelService, config);
+  ctx.plugin(ExtensionService, config);
   if (config.enableChatTools) {
     ctx.plugin(ChatHistoryPlugin, {
       sessionsDir: resolve(ctx.baseDir, config.basePath, "sessions"),
@@ -143,50 +33,4 @@ export async function apply(ctx: Context, config: Config) {
   ctx.plugin(CoreApp, config);
 }
 
-export type { ModelService } from "./services/model";
-export { AthenaBot } from "./internal/bot/bot.js";
-export { createAthenaEvent, isAthenaEvent, serializeAthenaEvent } from "./internal/bot/events.js";
-export { encodeChannelId } from "./internal/session/encoding.js";
-export type {
-  Channel,
-  ChannelReloadResult,
-  ChannelRuntime,
-  ChannelRuntimeError,
-  ExtensionBinding,
-  ExtensionCleanup,
-  ExtensionContext,
-  ExtensionDefinition,
-  ExtensionDefinitionChange,
-  ExtensionDefinitionListener,
-  ExtensionRegistry,
-  ExtensionToolSnapshot,
-  ReloadSummary,
-  ToolDefinition,
-} from "./services/extension/types.js";
-export type {
-  Actor,
-  AthenaEventKind,
-  AthenaEventMap,
-  BotPresentation,
-  ChatMessagePayload,
-  CreateAthenaEventInput,
-  EventMetadata,
-  EventSource,
-  MemberChangePayload,
-  MessageRecallPayload,
-  PokePayload,
-  ReactionPayload,
-  SerializedAthenaEvent,
-  SpeakAnomaly,
-  SpeakElementContext,
-  SpeakElementDefinition,
-  SpeakElementPromptInfo,
-} from "./internal/bot/types.js";
-export type {
-  ChannelEventContext,
-  EventObserver,
-  HandleResult,
-  ObservedEvent,
-  ObserverInput,
-  ObserverSource,
-} from "./internal/bot/observer-types.js";
+export * from "./internal/index.js";

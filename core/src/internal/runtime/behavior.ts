@@ -1,104 +1,85 @@
-import { Context, Eval, Logger, Schema, Session } from "koishi";
+import { Context, Logger, Schema } from "koishi";
 
 import type { AthenaEvent } from "../bot/types.js";
 
 export interface WillingnessConfig {
-  base: {
-    /** 收到普通文本消息的基础分。这是对话的基石 */
-    text: number;
-  };
+  /** 收到普通文本消息的基础分。这是对话的基石 */
+  text: number;
 
-  // 如果消息满足以下属性，在基础分之上额外增加的分数。可以叠加。
-  attribute: {
-    /** 被 @ 提及时的额外加成。这是最高优先级的信号 */
-    atMention: number;
-    /** 作为"回复/引用"出现时的额外加成。表示对话正在延续 */
-    isQuote: number;
-    /** 在私聊场景下的额外加成。私聊通常期望更高的响应度 */
-    isDirectMessage: number;
-  };
+  /** 被 @ 提及时的额外加成。这是最高优先级的信号 */
+  atMention: number;
+  /** 作为"回复/引用"出现时的额外加成。表示对话正在延续 */
+  isQuote: number;
+  /** 在私聊场景下的额外加成。私聊通常期望更高的响应度 */
+  isDirectMessage: number;
 
-  // 基于内容计算一个乘数，影响最终得分。
-  interest: {
-    /** 触发"高兴趣"的关键词列表 */
-    keywords: string[];
-    /** 消息包含关键词时，应用此乘数。>1 表示增强，<1 表示削弱 */
-    keywordMultiplier: number;
-    /** 默认乘数（当没有关键词匹配时）。设为1表示不影响 */
-    defaultMultiplier: number;
-  };
+  /** 触发"高兴趣"的关键词列表 */
+  keywords: string[];
+  /** 消息包含关键词时，应用此乘数。>1 表示增强，<1 表示削弱 */
+  keywordMultiplier: number;
+  /** 默认乘数（当没有关键词匹配时）。设为1表示不影响 */
+  defaultMultiplier: number;
 
-  lifecycle: {
-    /** 意愿值的最大上限 */
-    maxWillingness: number;
-    /** 意愿值衰减到一半所需的时间（秒）。这是一个基础值，会受对话热度影响 */
-    decayHalfLifeSeconds: number;
-    /** 将意愿值转换为回复概率的"激活门槛" */
-    probabilityThreshold: number;
-    /** 超过门槛后，转换为概率时的放大系数 */
-    probabilityAmplifier: number;
-    /** 决定回复后，扣除的"发言精力惩罚"基础值 */
-    replyCost: number;
-  };
+  /** 意愿值的最大上限 */
+  maxWillingness: number;
+  /** 意愿值衰减到一半所需的时间（秒）。这是一个基础值，会受对话热度影响 */
+  decayHalfLifeSeconds: number;
+  /** 将意愿值转换为回复概率的"激活门槛" */
+  probabilityThreshold: number;
+  /** 超过门槛后，转换为概率时的放大系数 */
+  probabilityAmplifier: number;
+  /** 决定回复后，扣除的"发言精力惩罚"基础值 */
+  replyCost: number;
 
   //   readonly system?: SystemConfig;
 }
 
 export const WillingnessConfigSchema: Schema<WillingnessConfig> = Schema.object({
-  base: Schema.object({
-    text: Schema.number()
-      .default(12)
-      .default(12)
-      .description(
-        "收到普通文本消息的基础分<br/>这部分参数都可以通过 `添加分支` 进行更加精细化的配置",
-      ),
-  }),
-  attribute: Schema.object({
-    atMention: Schema.number().default(100).default(100).description("被@时的额外加成"),
-    isQuote: Schema.number().default(15).default(15).description("作为回复/引用时的额外加成"),
-    isDirectMessage: Schema.number().default(40).default(40).description("在私聊场景下的额外加成"),
-  }),
-  interest: Schema.object({
-    keywords: Schema.array(Schema.string())
-      .default([])
-      .role("table")
-      .default([])
-      .description("触发高兴趣的关键词"),
-    keywordMultiplier: Schema.number().default(1.2).default(1.2).description("包含关键词时的乘数"),
-    defaultMultiplier: Schema.number().default(1).default(1).description("默认乘数"),
-  }),
-  lifecycle: Schema.object({
-    maxWillingness: Schema.number()
-      .default(100)
-      .min(10)
-      .default(100)
-      .description("意愿值的最大上限"),
-    decayHalfLifeSeconds: Schema.number()
-      .default(600)
-      .min(5)
-      .default(600)
-      .description("意愿值衰减到一半所需的时间（秒）"),
-    probabilityThreshold: Schema.number()
-      .default(55)
-      .min(0)
-      .default(55)
-      .description("将意愿值转换为回复概率的激活门槛"),
-    probabilityAmplifier: Schema.number()
-      .default(0.04)
-      .min(0.01)
-      .max(1)
-      .default(0.04)
-      .description("概率放大系数"),
-    replyCost: Schema.number()
-      .default(35)
-      .min(0)
-      .default(35)
-      .description('决定回复后，扣除的"发言精力惩罚"'),
-    // refractoryPeriodMs: Schema.computed<Schema<number>>(Schema.number())
-    //     .min(0)
-    //     .default(3000)
-    //     .description("回复后的“不应期”（毫秒），防止AI连续发言"),
-  }),
+  text: Schema.number()
+    .default(12)
+    .default(12)
+    .description(
+      "收到普通文本消息的基础分<br/>这部分参数都可以通过 `添加分支` 进行更加精细化的配置",
+    ),
+
+  atMention: Schema.number().default(100).default(100).description("被@时的额外加成"),
+  isQuote: Schema.number().default(15).default(15).description("作为回复/引用时的额外加成"),
+  isDirectMessage: Schema.number().default(40).default(40).description("在私聊场景下的额外加成"),
+
+  keywords: Schema.array(Schema.string())
+    .default([])
+    .role("table")
+    .default([])
+    .description("触发高兴趣的关键词"),
+  keywordMultiplier: Schema.number().default(1.2).default(1.2).description("包含关键词时的乘数"),
+  defaultMultiplier: Schema.number().default(1).default(1).description("默认乘数"),
+
+  maxWillingness: Schema.number().default(100).min(10).default(100).description("意愿值的最大上限"),
+  decayHalfLifeSeconds: Schema.number()
+    .default(600)
+    .min(5)
+    .default(600)
+    .description("意愿值衰减到一半所需的时间（秒）"),
+  probabilityThreshold: Schema.number()
+    .default(55)
+    .min(0)
+    .default(55)
+    .description("将意愿值转换为回复概率的激活门槛"),
+  probabilityAmplifier: Schema.number()
+    .default(0.04)
+    .min(0.01)
+    .max(1)
+    .default(0.04)
+    .description("概率放大系数"),
+  replyCost: Schema.number()
+    .default(35)
+    .min(0)
+    .default(35)
+    .description('决定回复后，扣除的"发言精力惩罚"'),
+  // refractoryPeriodMs: Schema.computed<Schema<number>>(Schema.number())
+  //     .min(0)
+  //     .default(3000)
+  //     .description("回复后的“不应期”（毫秒），防止AI连续发言"),
 });
 
 export interface MessageContext {
@@ -110,22 +91,6 @@ export interface MessageContext {
   // isQuote: boolean;
   isDirect: boolean;
 }
-
-type ResolveComputed<T> =
-  // 如果是函数
-  T extends (session: Session) => infer R
-    ? ResolveComputed<R>
-    : // 如果是 Eval.Expr
-      T extends Eval.Expr<infer U, boolean>
-      ? ResolveComputed<U>
-      : // 如果是数组
-        T extends Array<infer V>
-        ? ResolveComputed<V>[]
-        : // 如果是对象（排除 null）
-          T extends object
-          ? { [K in keyof T]: ResolveComputed<T[K]> }
-          : // 基本类型
-            T;
 
 /**
  * 决策结果
@@ -172,7 +137,7 @@ export class WillingnessManager {
   private _decay(): void {
     const now = Date.now();
     for (const chatId of this.willingnessScores.keys()) {
-      const { decayHalfLifeSeconds, probabilityThreshold } = this.baseConfig.lifecycle;
+      const { decayHalfLifeSeconds, probabilityThreshold } = this.baseConfig;
 
       const currentScore = this.willingnessScores.get(chatId) || 0;
       if (currentScore === 0) continue;
@@ -211,25 +176,25 @@ export class WillingnessManager {
    * @returns 本次消息产生的意愿增益值
    */
   private calculateGain(context: MessageContext): number {
-    const { base, attribute, interest } = this.baseConfig;
-
     // 1. 确定基础分
-    let score = base.text;
+    let score = this.baseConfig.text;
 
     // 2. 叠加属性加成
-    if (context.isMentioned) score += attribute.atMention;
+    if (context.isMentioned) score += this.baseConfig.atMention;
     // if (context.isQuote) score += attribute.isQuote;
-    if (context.isDirect) score += attribute.isDirectMessage;
+    if (context.isDirect) score += this.baseConfig.isDirectMessage;
 
     // 3. 应用兴趣度乘数
-    const hasKeyword = interest.keywords.some((kw) => context.content.includes(kw));
-    const multiplier = hasKeyword ? interest.keywordMultiplier : interest.defaultMultiplier;
+    const hasKeyword = this.baseConfig.keywords.some((kw) => context.content.includes(kw));
+    const multiplier = hasKeyword
+      ? this.baseConfig.keywordMultiplier
+      : this.baseConfig.defaultMultiplier;
 
     const rawGain = score * multiplier;
 
     // 4. 应用增益的边际递减效应
     const currentWillingness = this.willingnessScores.get(context.chatId) || 0;
-    const maxWillingness = this.baseConfig.lifecycle.maxWillingness;
+    const maxWillingness = this.baseConfig.maxWillingness;
     // 当意愿值越高时，新的增益效果越差，防止无限累积
     const gainMultiplier = 1 - Math.pow(currentWillingness / maxWillingness, 2);
 
@@ -243,11 +208,10 @@ export class WillingnessManager {
    */
   public calculateReplyProbability(context: MessageContext): number {
     const { chatId } = context;
-    const { lifecycle } = this.baseConfig;
 
-    const resolvedMaxWillingness = lifecycle.maxWillingness;
-    const resolvedProbabilityThreshold = lifecycle.probabilityThreshold;
-    const resolvedProbabilityAmplifier = lifecycle.probabilityAmplifier;
+    const resolvedMaxWillingness = this.baseConfig.maxWillingness;
+    const resolvedProbabilityThreshold = this.baseConfig.probabilityThreshold;
+    const resolvedProbabilityAmplifier = this.baseConfig.probabilityAmplifier;
 
     const gain = this.calculateGain(context);
     let currentWillingness = this.willingnessScores.get(chatId) || 0;
@@ -289,7 +253,7 @@ export class WillingnessManager {
    * @param replyContent 回复内容的长度，可以用来决定惩罚力度
    */
   public handlePostReply(chatId: string, replyContentLength: number = 0): void {
-    const { replyCost, maxWillingness } = this.baseConfig.lifecycle;
+    const { replyCost, maxWillingness } = this.baseConfig;
 
     const resolvedReplyCost = replyCost;
 
@@ -363,7 +327,7 @@ export class WillingnessManager {
    * 引导模型关注被跳过的话题（用于策略3）
    */
   public boostSkippedTopic(chatId: string): void {
-    const { maxWillingness } = this.baseConfig.lifecycle;
+    const { maxWillingness } = this.baseConfig;
     const resolvedMaxWillingness = maxWillingness;
 
     // 提高意愿值，引导模型关注被跳过的话题

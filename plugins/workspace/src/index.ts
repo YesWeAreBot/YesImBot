@@ -130,7 +130,7 @@ Use this environment to execute commands safely. Always be mindful of the limita
 
         const tools = createWorkspaceTools(workspace);
         for (const tool of tools) {
-          ctx.registerTool(tool as ToolDefinition);
+          ctx.tool.register(tool as ToolDefinition);
           logger.info(`Registered tool: ${tool.name}`);
         }
 

@@ -1,16 +1,34 @@
+import type { SpeakElementDefinition } from "../bot/types.js";
+import type { Channel } from "./types.js";
 import type {
   ExtensionBinding,
   ExtensionCleanup,
   ExtensionContext,
   ExtensionDefinition,
   ToolDefinition,
-} from "../../services/extension/types.js";
-import type { SpeakElementDefinition } from "../bot/types.js";
-import type { CreateExtensionChannelRuntimeOptions } from "./runtime.js";
+} from "./types.js";
+
+export interface ExtensionBindingHost {
+  channel: Channel;
+  tool: {
+    getActive(): string[];
+    setActive(toolNames: string[]): void;
+  };
+  session: {
+    getName(): string | undefined;
+    setName(name: string): void;
+    appendEntry(customType: string, data?: unknown): void;
+    sendMessage(message: unknown, options?: unknown): Promise<void>;
+    sendUserMessage(content: unknown, options?: unknown): Promise<void>;
+  };
+  bot: {
+    registerSpeakElement(definition: SpeakElementDefinition): () => void;
+  };
+}
 
 export async function createExtensionBinding(
   def: ExtensionDefinition,
-  options: CreateExtensionChannelRuntimeOptions,
+  host: ExtensionBindingHost,
 ): Promise<ExtensionBinding> {
   const handlers = new Map<string, Array<(...args: unknown[]) => unknown>>();
   const tools = new Map<string, ToolDefinition>();
@@ -23,7 +41,30 @@ export async function createExtensionBinding(
 
   const ctx: ExtensionContext = {
     get channel() {
-      return options.channel;
+      return host.channel;
+    },
+    tool: {
+      register(tool) {
+        assertActive();
+        tools.set(tool.name, tool as ToolDefinition);
+      },
+      unregister(name) {
+        assertActive();
+        tools.delete(name);
+      },
+      getActive: () => host.tool.getActive(),
+      setActive: (toolNames) => host.tool.setActive(toolNames),
+    },
+    session: {
+      getName: () => host.session.getName(),
+      setName: (name) => host.session.setName(name),
+      appendEntry: (customType, data) => host.session.appendEntry(customType, data),
+      sendMessage(message, sendOptions) {
+        void host.session.sendMessage(message, sendOptions);
+      },
+      sendUserMessage(content, sendOptions) {
+        void host.session.sendUserMessage(content, sendOptions);
+      },
     },
     bot: {
       registerSpeakElement(definition) {
@@ -32,9 +73,7 @@ export async function createExtensionBinding(
           throw new Error(`Speak element "${definition.tag}" is already registered by ${def.id}`);
         }
         speakElements.set(definition.tag, definition);
-        if (options.registerSpeakElement) {
-          speakElementDisposers.push(options.registerSpeakElement(definition));
-        }
+        speakElementDisposers.push(host.bot.registerSpeakElement(definition));
       },
     },
     on(event, handler) {
@@ -43,25 +82,6 @@ export async function createExtensionBinding(
       list.push(handler);
       handlers.set(event, list);
     },
-    registerTool(tool) {
-      assertActive();
-      tools.set(tool.name, tool as ToolDefinition);
-    },
-    unregisterTool(name) {
-      assertActive();
-      tools.delete(name);
-    },
-    sendMessage(message, sendOptions) {
-      void options.sendMessage(message, sendOptions);
-    },
-    sendUserMessage(content, sendOptions) {
-      void options.sendUserMessage(content, sendOptions);
-    },
-    appendEntry: (customType, data) => options.appendEntry(customType, data),
-    setSessionName: (name) => options.setSessionName(name),
-    getSessionName: () => options.getSessionName(),
-    getActiveTools: () => options.getActiveTools(),
-    setActiveTools: (toolNames) => options.setActiveTools(toolNames),
   };
 
   const cleanup = await def.setup(ctx);

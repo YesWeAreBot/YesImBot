@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { ToolDefinition } from "../../../types.js";
+import { ToolDefinition } from "../../../../../internal/extension/types.js";
 import { ChannelResolver } from "../engine/channel-resolver.js";
 import { FileScanner } from "../engine/file-scanner.js";
 import { validateQuery } from "../engine/query-guard.js";

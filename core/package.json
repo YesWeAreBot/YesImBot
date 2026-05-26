@@ -29,6 +29,11 @@
       "require": "./dist/index.cjs",
       "default": "./dist/index.js"
     },
+    "./internal": {
+      "types": "./dist/internal/index.d.ts",
+      "require": "./dist/internal/index.cjs",
+      "default": "./dist/internal/index.js"
+    },
     "./package.json": "./package.json"
   },
   "publishConfig": {

@@ -22,20 +22,18 @@ export function createMeta(
   platform: string,
   channel: string,
   type: "private" | "group",
-  sessionFile: string,
+  currentSession: string,
   sessionCount: number,
-  assignee?: string,
 ): ChannelMeta {
   const now = new Date().toISOString();
   return {
     platform,
     channel,
     type,
-    current_session: basename(sessionFile),
+    current_session: currentSession,
     last_message: now,
     updated_at: now,
     session_count: sessionCount,
-    ...(assignee ? { assignee } : {}),
   };
 }
 

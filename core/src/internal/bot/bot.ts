@@ -1,14 +1,18 @@
 import { h, type Bot, type Fragment, type Session } from "koishi";
 
-import type { Channel } from "../../services/extension/types.js";
 import { planDeliveryTiming, type DeliverySettings } from "../delivery.js";
-import type { PresenterRegistry } from "./presentation.js";
+import type { Channel } from "../extension/types.js";
+import {
+  createPresenterRegistry,
+  type PresenterCatalog,
+  type PresenterRegistry,
+} from "./presentation.js";
 import type { SpeakElementRegistry } from "./speak.js";
 import type { AthenaEvent, BotPresentation, SpeakAnomaly } from "./types.js";
 
 export interface AthenaBotOptions {
   channel: Channel;
-  presenters: PresenterRegistry;
+  presenterCatalog: PresenterCatalog;
   speakElements: SpeakElementRegistry;
   deliverySettings: DeliverySettings;
   appendEntry(customType: string, data?: unknown): void;
@@ -38,7 +42,8 @@ export class AthenaBot {
 
   constructor(options: AthenaBotOptions) {
     this.channel = options.channel;
-    this.presenters = options.presenters;
+    this.presenters = createPresenterRegistry();
+    options.presenterCatalog.applyTo(this.presenters);
     this.speakElements = options.speakElements;
     this.deliverySettings = options.deliverySettings;
     this.appendEntry = options.appendEntry;

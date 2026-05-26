@@ -10,7 +10,6 @@ export interface ChannelMeta {
   last_message: string;
   updated_at: string;
   session_count: number;
-  assignee?: string;
 }
 
 export interface ChannelMapEntry {
@@ -27,7 +26,6 @@ export interface GetOrCreateSessionInput {
   platform: string;
   channelId: string;
   type: "private" | "group";
-  assignee?: string;
 }
 
 export interface NewSessionInput {

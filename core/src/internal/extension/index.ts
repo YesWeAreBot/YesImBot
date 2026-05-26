@@ -1,7 +1,3 @@
-export { createExtensionBinding } from "./context.js";
-export { ExtensionRuntimeManager } from "./runtime.js";
-export type {
-  CreateExtensionChannelRuntimeOptions,
-  ExtensionRuntimeManagerDeps,
-} from "./runtime.js";
+export { createExtensionBinding, type ExtensionBindingHost } from "./context.js";
 export { buildToolSnapshotFromBindings } from "./tools.js";
+export * from "./types.js";
