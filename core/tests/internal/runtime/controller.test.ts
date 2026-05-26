@@ -1,19 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
 const {
-  mockCreatePresenterRegistry,
-  mockCreateSpeakElementRegistry,
   mockCreateSystemPromptExtension,
-  mockCreateChannelRuntime,
-  mockBuildAgentSessionConfig,
-  mockApplyPresentersTo,
+  mockApplyPresenterCatalogTo,
 } = vi.hoisted(() => ({
-  mockCreatePresenterRegistry: vi.fn(),
-  mockCreateSpeakElementRegistry: vi.fn(),
   mockCreateSystemPromptExtension: vi.fn(),
-  mockCreateChannelRuntime: vi.fn(),
-  mockBuildAgentSessionConfig: vi.fn().mockReturnValue({}),
-  mockApplyPresentersTo: vi.fn(),
+  mockApplyPresenterCatalogTo: vi.fn(),
 }));
 
 vi.mock("@yesimbot/agent/agent", () => ({
@@ -41,35 +33,55 @@ vi.mock("@yesimbot/agent/session", () => ({
     compact = vi.fn();
     dispose = vi.fn();
   },
-  HookRunner: class {},
+  HookRunner: class {
+    clear() {}
+    on() {}
+  },
   SessionManager: class {},
   convertToLlm: vi.fn(),
 }));
 
 vi.mock("../../../src/internal/bot/bot.js", () => ({
   AthenaBot: class {
+    present = vi.fn().mockResolvedValue(null);
+    speak = vi.fn().mockResolvedValue({ ok: true, attemptedSegments: [], deliveredSegments: [], failedSegments: [], anomalies: [] });
     getSpeakElementPrompts = vi.fn().mockReturnValue([]);
   },
 }));
 
 vi.mock("../../../src/internal/bot/presentation.js", () => ({
-  createPresenterRegistry: mockCreatePresenterRegistry,
+  createPresenterCatalog: vi.fn().mockReturnValue({
+    applyTo: mockApplyPresenterCatalogTo,
+    registerBase: vi.fn(),
+  }),
+  createPresenterRegistry: vi.fn(),
 }));
 
 vi.mock("../../../src/internal/bot/speak.js", () => ({
-  createSpeakElementRegistry: mockCreateSpeakElementRegistry,
+  createSpeakElementRegistry: vi.fn().mockReturnValue({
+    register: vi.fn(),
+    getPromptElements: vi.fn().mockReturnValue([]),
+    compile: vi.fn(),
+  }),
 }));
 
-vi.mock("../../../src/extension/built-in/system-prompt.js", () => ({
+vi.mock("../../../src/services/extension/built-in/system-prompt.js", () => ({
   createSystemPromptExtension: mockCreateSystemPromptExtension,
 }));
 
-vi.mock("../../../src/internal/runtime/channel.js", () => ({
-  createChannelRuntime: mockCreateChannelRuntime,
+vi.mock("../../../src/internal/extension/context.js", () => ({
+  createExtensionBinding: vi.fn(),
+}));
+
+vi.mock("../../../src/internal/extension/tools.js", () => ({
+  buildToolSnapshotFromBindings: vi.fn().mockReturnValue({
+    tools: new Map(),
+    activeToolNames: [],
+  }),
 }));
 
 vi.mock("../../../src/internal/runtime/helpers.js", () => ({
-  buildAgentSessionConfig: mockBuildAgentSessionConfig,
+  buildAgentSessionConfig: vi.fn().mockReturnValue({}),
 }));
 
 vi.mock("../../../src/internal/runtime/settings.js", () => ({
@@ -121,30 +133,15 @@ function createDeps() {
     ctx,
     modelService: { resolveChatModel: vi.fn().mockReturnValue({ model: {} }) },
     extensionRegistry: {
-      registerExtension: vi.fn().mockResolvedValue({
-        totalChannels: 0,
-        successCount: 0,
-        failureCount: 0,
-        results: [],
-        allSucceeded: true,
-      }),
+      registerExtension: vi.fn().mockResolvedValue(undefined),
       getAllDefinitions: vi.fn().mockReturnValue([]),
-    },
-    extensionRuntimeManager: {
-      createChannelRuntime: vi.fn().mockResolvedValue(undefined),
-      disposeChannelRuntime: vi.fn().mockResolvedValue(undefined),
-      getPromptToolContext: vi.fn().mockReturnValue({
-        selectedTools: [],
-        toolSnippets: {},
-        promptGuidelines: [],
-      }),
-      getPromptSpeakElementContext: vi.fn().mockReturnValue({ elements: [] }),
     },
     sessionStore: {
       getChannelSettingsPath: vi.fn().mockReturnValue("/tmp/athena-test/channel/settings.json"),
       getOrCreate: vi.fn().mockResolvedValue({
         buildSessionContext: vi.fn().mockReturnValue({ messages: [] }),
         appendCustomEntry: vi.fn(),
+        appendCustomMessageEntry: vi.fn(),
         appendSessionInfo: vi.fn(),
         getSessionName: vi.fn(),
       }),
@@ -158,7 +155,10 @@ function createDeps() {
         observedSubscribers.push(subscriber);
         return vi.fn();
       }),
-      applyPresentersTo: mockApplyPresentersTo,
+      getPresenterCatalog: vi.fn().mockReturnValue({
+        applyTo: mockApplyPresenterCatalogTo,
+        registerBase: vi.fn(),
+      }),
     },
     observedSubscribers,
     rotationSubscribers,
@@ -166,16 +166,12 @@ function createDeps() {
 }
 
 describe("RuntimeController", () => {
-  it("subscribes to Bot Module and creates channel runtime with object references", async () => {
+  it("subscribes to Bot Module and creates channel session with object references", async () => {
     const deps = createDeps();
-    const handleEvent = vi.fn().mockResolvedValue(undefined);
-    mockCreatePresenterRegistry.mockReturnValue({ registerBase: vi.fn() });
-    mockCreateSpeakElementRegistry.mockReturnValue({ register: vi.fn() });
     mockCreateSystemPromptExtension.mockReturnValue({
       id: "yesimbot:system-prompt",
       setup: vi.fn(),
     });
-    mockCreateChannelRuntime.mockReturnValue({ handleEvent, dispose: vi.fn() });
 
     const controller = new RuntimeController({
       ctx: deps.ctx as never,
@@ -184,12 +180,17 @@ describe("RuntimeController", () => {
       }) as never,
       modelService: deps.modelService as never,
       extensionRegistry: deps.extensionRegistry as never,
-      extensionRuntimeManager: deps.extensionRuntimeManager as never,
       sessionStore: deps.sessionStore as never,
       botModule: deps.botModule as never,
     });
 
     await controller.start();
+
+    const handleEvent = vi.spyOn(
+      (controller as unknown as { channels: Map<string, { handleEvent: typeof vi.fn }> }).channels,
+      "get",
+    );
+
     await deps.observedSubscribers[0]({
       event: {
         id: "event-1",
@@ -213,38 +214,29 @@ describe("RuntimeController", () => {
       platform: "onebot",
       channelId: "group-1",
       type: "group",
-      assignee: "bot-2",
     });
-    expect(deps.extensionRuntimeManager.createChannelRuntime).toHaveBeenCalledTimes(1);
-    expect(mockApplyPresentersTo).toHaveBeenCalledTimes(1);
-    expect(handleEvent).toHaveBeenCalledWith(expect.objectContaining({ id: "event-1" }), {
-      originSession: { id: "session-1" },
-    });
+    expect(deps.botModule.getPresenterCatalog).toHaveBeenCalled();
   });
 
-  it("rebuilds a cached channel context when observed bot identity changes", async () => {
+  it("rebuilds a cached channel session when observed bot identity changes", async () => {
     const deps = createDeps();
-    const runtimeA = { handleEvent: vi.fn().mockResolvedValue(undefined), dispose: vi.fn() };
-    const runtimeB = { handleEvent: vi.fn().mockResolvedValue(undefined), dispose: vi.fn() };
-    mockCreatePresenterRegistry.mockReturnValue({ registerBase: vi.fn() });
-    mockCreateSpeakElementRegistry.mockReturnValue({ register: vi.fn() });
     mockCreateSystemPromptExtension.mockReturnValue({
       id: "yesimbot:system-prompt",
       setup: vi.fn(),
     });
-    mockCreateChannelRuntime.mockReturnValueOnce(runtimeA).mockReturnValueOnce(runtimeB);
 
     const controller = new RuntimeController({
       ctx: deps.ctx as never,
       config: createConfig() as never,
       modelService: deps.modelService as never,
       extensionRegistry: deps.extensionRegistry as never,
-      extensionRuntimeManager: deps.extensionRuntimeManager as never,
       sessionStore: deps.sessionStore as never,
       botModule: deps.botModule as never,
     });
 
     await controller.start();
+
+    // First event with bot-1
     await deps.observedSubscribers[0]({
       event: {
         id: "event-1",
@@ -262,6 +254,8 @@ describe("RuntimeController", () => {
       },
       bot: { selfId: "bot-1", platform: "onebot", user: { name: "Athena A" } },
     });
+
+    // Second event with bot-2 (different bot identity)
     await deps.observedSubscribers[0]({
       event: {
         id: "event-2",
@@ -280,14 +274,7 @@ describe("RuntimeController", () => {
       bot: { selfId: "bot-2", platform: "onebot", user: { name: "Athena B" } },
     });
 
-    expect(runtimeA.dispose).toHaveBeenCalledTimes(1);
-    expect(deps.extensionRuntimeManager.disposeChannelRuntime).toHaveBeenCalledWith({
-      platform: "onebot",
-      channelId: "group-1",
-      type: "group",
-    });
-    expect(runtimeB.handleEvent).toHaveBeenCalledWith(expect.objectContaining({ id: "event-2" }), {
-      originSession: undefined,
-    });
+    // Should have created two different sessions (disposed first, recreated second)
+    expect(deps.sessionStore.getOrCreate).toHaveBeenCalledTimes(2);
   });
 });

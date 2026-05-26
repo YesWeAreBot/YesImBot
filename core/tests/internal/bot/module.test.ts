@@ -1,6 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { BotModule } from "../../../src/internal/bot/module.js";
+import type { ObserverInput } from "../../../src/internal/bot/observer-types.js";
+import type { Bot } from "koishi";
+
+function createMockBot(platform: string, selfId: string): Bot {
+  return {
+    platform,
+    selfId,
+    sendMessage: vi.fn().mockResolvedValue(["message-id"]),
+    user: { name: "Athena" },
+  } as never;
+}
 
 function createBotList(
   ...bots: Array<{ selfId: string; platform: string; user: { name: string } }>
@@ -44,9 +55,6 @@ function createMockCtx(
 
   return {
     bots,
-    database: {
-      get: vi.fn().mockResolvedValue([]),
-    },
     middleware(handler: (session: unknown, next: () => unknown) => unknown) {
       middlewareHandler = handler;
       return () => {
@@ -114,14 +122,84 @@ function createEvent() {
   };
 }
 
+function createMessageObserver() {
+  return {
+    name: "test.message",
+    source: { kind: "middleware" as const },
+    priority: 100,
+    eventKinds: ["chat_message" as const],
+    handle: vi.fn(async (input: ObserverInput) => ({
+      type: "accept" as const,
+      event: {
+        ...createEvent(),
+        source: {
+          platform: input.session?.platform ?? "onebot",
+          channelId: input.session?.channelId ?? "group-1",
+          conversationType: "group" as const,
+          selfId: input.selfId,
+        },
+      },
+    })),
+  };
+}
+
+async function emitMessage(
+  ctx: ReturnType<typeof createMockCtx>,
+  input: { platform: string; channelId: string; selfId: string; bot: Bot },
+): Promise<void> {
+  const middleware = ctx.middlewareHandler;
+  if (!middleware) throw new Error("No middleware handler registered");
+  await middleware(
+    {
+      platform: input.platform,
+      channelId: input.channelId,
+      isDirect: false,
+      bot: input.bot,
+    },
+    vi.fn(),
+  );
+}
+
+async function publishNonSessionEvent(
+  module: BotModule,
+  input: { platform: string; channelId: string; selfId?: string },
+): Promise<void> {
+  const ctx = createMockCtx();
+  // Use the module's internal event routing via a koishi-event observer
+  module.registerObserver({
+    name: "test.non-session",
+    source: { kind: "koishi-event", eventName: "platform-custom" },
+    priority: 100,
+    eventKinds: ["chat_message"],
+    handle: vi.fn().mockResolvedValue({
+      type: "accept",
+      event: {
+        ...createEvent(),
+        source: {
+          platform: input.platform,
+          channelId: input.channelId,
+          conversationType: "group" as const,
+          selfId: input.selfId,
+        },
+      },
+    }),
+  });
+}
+
 describe("BotModule", () => {
-  it("rejects duplicate observer names", () => {
+  it("does not require SessionStore in constructor", () => {
     const ctx = createMockCtx();
     const module = new BotModule({
       ctx: ctx as never,
-      sessionStore: { getMetadata: vi.fn().mockResolvedValue(null) },
       config: { logLevel: 2 },
     });
+
+    expect(module).toBeInstanceOf(BotModule);
+  });
+
+  it("rejects duplicate observer names", () => {
+    const ctx = createMockCtx();
+    const module = new BotModule({ ctx: ctx as never, config: { logLevel: 2 } });
     const observer = {
       name: "test.message",
       source: { kind: "middleware" as const },
@@ -139,11 +217,7 @@ describe("BotModule", () => {
 
   it("installs middleware source when first middleware observer is registered", async () => {
     const ctx = createMockCtx();
-    const module = new BotModule({
-      ctx: ctx as never,
-      sessionStore: { getMetadata: vi.fn().mockResolvedValue(null) },
-      config: { logLevel: 2 },
-    });
+    const module = new BotModule({ ctx: ctx as never, config: { logLevel: 2 } });
 
     module.registerObserver({
       name: "test.message",
@@ -160,11 +234,7 @@ describe("BotModule", () => {
 
   it("installs and disposes koishi event listeners by source reference", async () => {
     const ctx = createMockCtx();
-    const module = new BotModule({
-      ctx: ctx as never,
-      sessionStore: { getMetadata: vi.fn().mockResolvedValue(null) },
-      config: { logLevel: 2 },
-    });
+    const module = new BotModule({ ctx: ctx as never, config: { logLevel: 2 } });
 
     module.registerObserver({
       name: "test.custom.high",
@@ -197,7 +267,6 @@ describe("BotModule", () => {
   it("allows only one observed-event subscriber", () => {
     const module = new BotModule({
       ctx: createMockCtx() as never,
-      sessionStore: { getMetadata: vi.fn().mockResolvedValue(null) },
       config: { logLevel: 2 },
     });
 
@@ -210,11 +279,7 @@ describe("BotModule", () => {
 
   it("runs matching observers by priority and publishes the first event", async () => {
     const ctx = createMockCtx();
-    const module = new BotModule({
-      ctx: ctx as never,
-      sessionStore: { getMetadata: vi.fn().mockResolvedValue(null) },
-      config: { logLevel: 2 },
-    });
+    const module = new BotModule({ ctx: ctx as never, config: { logLevel: 2 } });
     const subscriber = vi.fn().mockResolvedValue(undefined);
     const order: string[] = [];
     const low = vi.fn().mockImplementation(async () => {
@@ -256,11 +321,7 @@ describe("BotModule", () => {
 
   it("drop stops fallback and does not publish", async () => {
     const ctx = createMockCtx();
-    const module = new BotModule({
-      ctx: ctx as never,
-      sessionStore: { getMetadata: vi.fn().mockResolvedValue(null) },
-      config: { logLevel: 2 },
-    });
+    const module = new BotModule({ ctx: ctx as never, config: { logLevel: 2 } });
     const subscriber = vi.fn().mockResolvedValue(undefined);
     const low = vi.fn().mockResolvedValue({ type: "event", event: createEvent() });
     const high = vi.fn().mockResolvedValue({ type: "drop" });
@@ -290,11 +351,7 @@ describe("BotModule", () => {
 
   it("observer exception stops fallback and logs an error", async () => {
     const ctx = createMockCtx();
-    const module = new BotModule({
-      ctx: ctx as never,
-      sessionStore: { getMetadata: vi.fn().mockResolvedValue(null) },
-      config: { logLevel: 2 },
-    });
+    const module = new BotModule({ ctx: ctx as never, config: { logLevel: 2 } });
     const low = vi.fn().mockResolvedValue({ type: "event", event: createEvent() });
     const high = vi.fn().mockRejectedValue(new Error("boom"));
 
@@ -322,40 +379,67 @@ describe("BotModule", () => {
     );
   });
 
-  it("uses Session Store metadata for assignee fallback", async () => {
+  it("publishes session-backed observations with the receiving session bot", async () => {
     const ctx = createMockCtx();
-    const sessionStore = { getMetadata: vi.fn().mockResolvedValue({ assignee: "bot-2" }) };
-    const module = new BotModule({ ctx: ctx as never, sessionStore, config: { logLevel: 2 } });
+    const module = new BotModule({ ctx: ctx as never, config: { logLevel: 2 } });
     const subscriber = vi.fn().mockResolvedValue(undefined);
-
     module.subscribeObservedEvents(subscriber);
-    module.registerObserver({
-      name: "message",
-      source: { kind: "middleware" },
-      priority: 1,
-      eventKinds: ["chat_message"],
-      handle: vi.fn(async () => ({
-        type: "event",
-        event: createEvent(),
-      })),
+    module.registerObserver(createMessageObserver());
+    await module.start();
+
+    await emitMessage(ctx, {
+      platform: "onebot",
+      channelId: "group-1",
+      selfId: "bot-1",
+      bot: ctx.bots["onebot:bot-1"],
     });
 
-    await module.start();
-    await ctx.middlewareHandler?.(
-      createSession({ bot: { selfId: "bot-1", platform: "onebot" } }),
-      vi.fn(),
+    expect(subscriber).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bot: ctx.bots["onebot:bot-1"],
+        originSession: expect.any(Object),
+      }),
     );
+  });
+
+  it("drops ambiguous non-session events without assignee lookup", async () => {
+    const ctx = createMockCtx();
+    ctx.bots["onebot:bot-2"] = createMockBot("onebot", "bot-2");
+    const module = new BotModule({ ctx: ctx as never, config: { logLevel: 2 } });
+    const subscriber = vi.fn().mockResolvedValue(undefined);
+    module.subscribeObservedEvents(subscriber);
+
+    // Register a koishi-event observer and fire it without selfId
+    module.registerObserver({
+      name: "test.non-session",
+      source: { kind: "koishi-event", eventName: "platform-custom" },
+      priority: 100,
+      eventKinds: ["chat_message"],
+      handle: vi.fn().mockResolvedValue({
+        type: "accept",
+        event: {
+          ...createEvent(),
+          source: {
+            platform: "onebot",
+            channelId: "group-1",
+            conversationType: "group" as const,
+          },
+        },
+      }),
+    });
+    await module.start();
+
+    await ctx.events.get("platform-custom")?.({});
 
     expect(subscriber).not.toHaveBeenCalled();
+    expect(ctx.testLogger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('Ambiguous Koishi bot for platform "onebot"'),
+    );
   });
 
   it("rejects observer registration when event kind has no presenter coverage", () => {
     const ctx = createMockCtx();
-    const module = new BotModule({
-      ctx: ctx as never,
-      sessionStore: { getMetadata: vi.fn().mockResolvedValue(null) },
-      config: { logLevel: 2 },
-    });
+    const module = new BotModule({ ctx: ctx as never, config: { logLevel: 2 } });
 
     expect(() =>
       module.registerObserver({
@@ -372,11 +456,7 @@ describe("BotModule", () => {
 
   it("accepts observer registration when it provides presenter coverage", () => {
     const ctx = createMockCtx();
-    const module = new BotModule({
-      ctx: ctx as never,
-      sessionStore: { getMetadata: vi.fn().mockResolvedValue(null) },
-      config: { logLevel: 2 },
-    });
+    const module = new BotModule({ ctx: ctx as never, config: { logLevel: 2 } });
 
     expect(() =>
       module.registerObserver({
@@ -399,11 +479,7 @@ describe("BotModule", () => {
 
   it("cleans up observer presenters when registration fails", () => {
     const ctx = createMockCtx();
-    const module = new BotModule({
-      ctx: ctx as never,
-      sessionStore: { getMetadata: vi.fn().mockResolvedValue(null) },
-      config: { logLevel: 2 },
-    });
+    const module = new BotModule({ ctx: ctx as never, config: { logLevel: 2 } });
 
     expect(() =>
       module.registerObserver({
@@ -444,11 +520,7 @@ describe("BotModule", () => {
 
   it("rejects invalid observer sources", () => {
     const ctx = createMockCtx();
-    const module = new BotModule({
-      ctx: ctx as never,
-      sessionStore: { getMetadata: vi.fn().mockResolvedValue(null) },
-      config: { logLevel: 2 },
-    });
+    const module = new BotModule({ ctx: ctx as never, config: { logLevel: 2 } });
 
     expect(() =>
       module.registerObserver({
@@ -463,11 +535,7 @@ describe("BotModule", () => {
 
   it("registers core fallback observers when started", async () => {
     const ctx = createMockCtx();
-    const module = new BotModule({
-      ctx: ctx as never,
-      sessionStore: { getMetadata: vi.fn().mockResolvedValue(null) },
-      config: { logLevel: 2 },
-    });
+    const module = new BotModule({ ctx: ctx as never, config: { logLevel: 2 } });
 
     await module.start();
 
@@ -483,47 +551,9 @@ describe("BotModule", () => {
     }
   });
 
-  it("post-gates non-assignee observations before publishing", async () => {
-    const ctx = createMockCtx();
-    ctx.database.get.mockResolvedValue([{ assignee: "bot-2" }]);
-    const module = new BotModule({
-      ctx: ctx as never,
-      sessionStore: { getMetadata: vi.fn().mockResolvedValue(null) },
-      config: { logLevel: 2 },
-    });
-    const subscriber = vi.fn().mockResolvedValue(undefined);
-
-    module.subscribeObservedEvents(subscriber);
-    module.registerObserver({
-      name: "platform.custom",
-      source: { kind: "koishi-event", eventName: "platform-custom" },
-      priority: 100,
-      eventKinds: ["chat_message"],
-      handle: vi.fn().mockResolvedValue({
-        type: "event",
-        event: {
-          ...createEvent(),
-          source: { ...createEvent().source, selfId: "bot-1" },
-        },
-      }),
-    });
-    await module.start();
-
-    await ctx.events.get("platform-custom")?.({ platform: "onebot", channelId: "group-1" });
-
-    expect(subscriber).not.toHaveBeenCalled();
-    expect(ctx.testLogger.debug).toHaveBeenCalledWith(
-      expect.stringContaining("Dropped observed event for non-assignee bot"),
-    );
-  });
-
   it("keeps Session-backed observations on the receiving bot", async () => {
     const ctx = createMockCtx();
-    const module = new BotModule({
-      ctx: ctx as never,
-      sessionStore: { getMetadata: vi.fn().mockResolvedValue(null) },
-      config: { logLevel: 2 },
-    });
+    const module = new BotModule({ ctx: ctx as never, config: { logLevel: 2 } });
     const subscriber = vi.fn().mockResolvedValue(undefined);
 
     module.subscribeObservedEvents(subscriber);
@@ -557,50 +587,12 @@ describe("BotModule", () => {
     );
   });
 
-  it("resolves non-session event bot from Koishi assignee", async () => {
-    const ctx = createMockCtx();
-    ctx.database.get.mockResolvedValue([{ assignee: "bot-2" }]);
-    const module = new BotModule({
-      ctx: ctx as never,
-      sessionStore: { getMetadata: vi.fn().mockResolvedValue(null) },
-      config: { logLevel: 2 },
-    });
-    const subscriber = vi.fn().mockResolvedValue(undefined);
-
-    module.subscribeObservedEvents(subscriber);
-    module.registerObserver({
-      name: "platform.custom",
-      source: { kind: "koishi-event", eventName: "platform-custom" },
-      priority: 100,
-      eventKinds: ["chat_message"],
-      handle: vi.fn().mockResolvedValue({
-        type: "event",
-        event: createEvent(),
-      }),
-    });
-    await module.start();
-
-    await ctx.events.get("platform-custom")?.({ platform: "onebot", channelId: "group-1" });
-
-    expect(subscriber).toHaveBeenCalledWith({
-      event: expect.objectContaining({
-        source: expect.objectContaining({ selfId: "bot-2" }),
-      }),
-      bot: ctx.bots["onebot:bot-2"],
-      originSession: undefined,
-    });
-  });
-
   it("resolves unambiguous non-session bot from iterable Koishi bot list", async () => {
     const bot = { selfId: "bot-1", platform: "onebot", user: { name: "Athena" } };
     const ctx = createMockCtx({
       bots: createIterableOnlyBotList(bot),
     });
-    const module = new BotModule({
-      ctx: ctx as never,
-      sessionStore: { getMetadata: vi.fn().mockResolvedValue(null) },
-      config: { logLevel: 2 },
-    });
+    const module = new BotModule({ ctx: ctx as never, config: { logLevel: 2 } });
     const subscriber = vi.fn().mockResolvedValue(undefined);
 
     module.subscribeObservedEvents(subscriber);
@@ -629,11 +621,7 @@ describe("BotModule", () => {
 
   it("drops ambiguous non-session event when multiple platform bots exist", async () => {
     const ctx = createMockCtx();
-    const module = new BotModule({
-      ctx: ctx as never,
-      sessionStore: { getMetadata: vi.fn().mockResolvedValue(null) },
-      config: { logLevel: 2 },
-    });
+    const module = new BotModule({ ctx: ctx as never, config: { logLevel: 2 } });
     const subscriber = vi.fn().mockResolvedValue(undefined);
 
     module.subscribeObservedEvents(subscriber);

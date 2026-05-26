@@ -94,85 +94,56 @@ function createMockDeps() {
       resolveChatModel: vi.fn().mockReturnValue({ model: {} }),
     },
     extensionRegistry: {
-      registerExtension: vi.fn().mockResolvedValue({
-        totalChannels: 0,
-        successCount: 0,
-        failureCount: 0,
-        results: [],
-        allSucceeded: true,
-      }),
-    },
-    extensionRuntimeManager: {
-      disposeChannelRuntime: vi.fn().mockResolvedValue(undefined),
-      getPromptToolContext: vi.fn().mockReturnValue({
-        selectedTools: [],
-        toolSnippets: {},
-        promptGuidelines: [],
-      }),
-      getPromptSpeakElementContext: vi.fn().mockReturnValue({ elements: [] }),
+      registerExtension: vi.fn().mockResolvedValue(undefined),
+      getAllDefinitions: vi.fn().mockReturnValue([]),
     },
     sessionStore: {
       subscribeSessionRotated: vi.fn().mockReturnValue(vi.fn()),
     },
     botModule: {
       subscribeObservedEvents: vi.fn().mockReturnValue(vi.fn()),
-      applyPresentersTo: vi.fn(),
+      getPresenterCatalog: vi.fn().mockReturnValue({
+        applyTo: vi.fn(),
+        registerBase: vi.fn(),
+      }),
     },
   };
 }
 
 describe("RuntimeController lifecycle", () => {
-  it("stops by disposing observed-event subscription and all channel contexts", async () => {
+  it("stops by disposing observed-event subscription and all channel sessions", async () => {
     const deps = createMockDeps();
     const controller = new RuntimeController({
       ctx: deps.ctx as never,
       config: createConfig() as never,
       modelService: deps.modelService as never,
       extensionRegistry: deps.extensionRegistry as never,
-      extensionRuntimeManager: deps.extensionRuntimeManager as never,
       sessionStore: deps.sessionStore as never,
       botModule: deps.botModule as never,
     });
     const controllerAccess = controller as unknown as {
-      channels: Map<
-        string,
-        {
-          platform: string;
-          channelId: string;
-          type: "private" | "group";
-          runtime: { dispose(): void };
-        }
-      >;
-      channelBotInfo: Map<string, { selfId: string; selfName: string }>;
+      channels: Map<string, { dispose(): void; koishiBot: { selfId: string } }>;
       disposeSessionRotated?: () => void;
       disposeObservedEventSubscription?: () => void;
       started: boolean;
     };
 
-    const runtimeA = { dispose: vi.fn() };
-    const runtimeB = { dispose: vi.fn() };
+    const disposeA = vi.fn();
+    const disposeB = vi.fn();
     const disposeSessionRotated = vi.fn();
     const disposeObservedEventSubscription = vi.fn();
     const channelA = {
-      platform: "onebot",
-      channelId: "group-1",
-      type: "group" as const,
-      runtime: runtimeA,
+      koishiBot: { selfId: "bot-1" },
+      dispose: disposeA,
     };
     const channelB = {
-      platform: "discord",
-      channelId: "dm-2",
-      type: "private" as const,
-      runtime: runtimeB,
+      koishiBot: { selfId: "bot-2" },
+      dispose: disposeB,
     };
 
     controllerAccess.channels = new Map([
       ["onebot:group-1", channelA],
       ["discord:dm-2", channelB],
-    ]);
-    controllerAccess.channelBotInfo = new Map([
-      ["onebot:group-1", { selfId: "bot-1", selfName: "Athena" }],
-      ["discord:dm-2", { selfId: "bot-2", selfName: "Athena" }],
     ]);
     controllerAccess.disposeSessionRotated = disposeSessionRotated;
     controllerAccess.disposeObservedEventSubscription = disposeObservedEventSubscription;
@@ -184,19 +155,8 @@ describe("RuntimeController lifecycle", () => {
     expect(disposeObservedEventSubscription).toHaveBeenCalledTimes(1);
     expect(controllerAccess.disposeSessionRotated).toBeUndefined();
     expect(controllerAccess.disposeObservedEventSubscription).toBeUndefined();
-    expect(deps.extensionRuntimeManager.disposeChannelRuntime).toHaveBeenNthCalledWith(1, {
-      platform: "onebot",
-      channelId: "group-1",
-      type: "group",
-    });
-    expect(deps.extensionRuntimeManager.disposeChannelRuntime).toHaveBeenNthCalledWith(2, {
-      platform: "discord",
-      channelId: "dm-2",
-      type: "private",
-    });
-    expect(runtimeA.dispose).toHaveBeenCalledTimes(1);
-    expect(runtimeB.dispose).toHaveBeenCalledTimes(1);
+    expect(disposeA).toHaveBeenCalledTimes(1);
+    expect(disposeB).toHaveBeenCalledTimes(1);
     expect(controllerAccess.channels.size).toBe(0);
-    expect(controllerAccess.channelBotInfo.size).toBe(0);
   });
 });

@@ -5,18 +5,43 @@ vi.mock("koishi", async () => {
   return { h: element.default };
 });
 
-import { AthenaBot } from "../../src/internal/bot/bot.js";
+import { AthenaBot, type AthenaBotOptions } from "../../src/internal/bot/bot.js";
 import { createAthenaEvent } from "../../src/internal/bot/events.js";
 import {
   createDefaultChatMessagePresenter,
-  createPresenterRegistry,
+  createPresenterCatalog,
 } from "../../src/internal/bot/presentation.js";
 import { createSpeakElementRegistry } from "../../src/internal/bot/speak.js";
 import type { SpeakAnomaly } from "../../src/internal/bot/types.js";
+import { DEFAULT_RUNTIME_SETTINGS } from "../../src/internal/runtime/settings.js";
+
+function createAthenaBot(
+  overrides: Partial<AthenaBotOptions> = {},
+) {
+  const koishiBot = {
+    selfId: "bot-1",
+    platform: "onebot",
+    user: { name: "Athena" },
+    sendMessage: vi.fn().mockResolvedValue(["fallback-message-id"]),
+  };
+  return new AthenaBot({
+    channel: {
+      platform: "onebot",
+      channelId: "group-1",
+      type: "group",
+      bot: koishiBot as never,
+    },
+    presenterCatalog: createPresenterCatalog(),
+    speakElements: createSpeakElementRegistry(),
+    deliverySettings: DEFAULT_RUNTIME_SETTINGS.delivery,
+    appendEntry: vi.fn(),
+    ...overrides,
+  } as AthenaBotOptions);
+}
 
 function createBot() {
-  const presenters = createPresenterRegistry();
-  presenters.registerBase("chat_message", createDefaultChatMessagePresenter());
+  const catalog = createPresenterCatalog();
+  catalog.registerBase("chat_message", createDefaultChatMessagePresenter());
   const speakElements = createSpeakElementRegistry();
   const appendEntry = vi.fn<(customType: string, data?: unknown) => void>();
   const koishiBot = {
@@ -32,7 +57,7 @@ function createBot() {
       type: "group",
       bot: koishiBot as never,
     },
-    presenters,
+    presenterCatalog: catalog,
     speakElements,
     appendEntry,
     deliverySettings: {
@@ -146,6 +171,32 @@ describe("AthenaBot", () => {
     expect(appendEntry).toHaveBeenCalledWith("athena:speak_anomaly", {
       display: false,
       details: anomaly,
+    });
+  });
+
+  it("materializes presenters inside AthenaBot from the presenter catalog", async () => {
+    const catalog = createPresenterCatalog();
+    catalog.registerBase("chat_message", createDefaultChatMessagePresenter());
+    const appendEntry = vi.fn();
+    const bot = createAthenaBot({
+      presenterCatalog: catalog,
+      appendEntry,
+    });
+    const event = createAthenaEvent("chat_message", {
+      source: {
+        platform: "onebot",
+        channelId: "group-1",
+        conversationType: "group",
+        selfId: "bot-1",
+      },
+      actor: { id: "user-1", name: "Alice" },
+      payload: { messageId: "m-1", content: "hello" },
+      metadata: { persist: true, triggerCandidate: false },
+    });
+
+    await expect(bot.present(event)).resolves.toMatchObject({
+      visible: true,
+      text: "Alice: hello",
     });
   });
 });

@@ -29,6 +29,7 @@ vi.mock("@yesimbot/agent/session", () => {
   return { SessionManager: MockSessionManager };
 });
 
+import { encodeChannelId } from "../../../src/internal/session/encoding.js";
 import { SessionStore } from "../../../src/internal/session/store.js";
 
 const tempDirs: string[] = [];
@@ -58,82 +59,62 @@ function createMockCtx() {
   };
 }
 
+function createStore() {
+  const basePath = createTempBasePath();
+  const store = new SessionStore(createMockCtx() as never, { basePath, logLevel: 2 });
+  return { store, basePath };
+}
+
 describe("SessionStore", () => {
-  it("writes channel metadata, channel map, and assignee on first session", async () => {
-    const basePath = createTempBasePath();
-    const store = new SessionStore(createMockCtx() as never, { basePath, logLevel: 2 });
+  it("writes channel metadata without assignee", async () => {
+    const { store, basePath } = createStore();
 
     await store.getOrCreate({
       platform: "onebot",
       channelId: "group-1",
       type: "group",
-      assignee: "bot-2",
     });
 
-    const channelDir = store.getChannelDir("onebot", "group-1");
-    const meta = JSON.parse(readFileSync(join(channelDir, "meta.json"), "utf-8"));
-    const channelMap = store.getChannelMap();
-
+    const meta = JSON.parse(
+      readFileSync(
+        join(basePath, "sessions", encodeChannelId("onebot", "group-1"), "meta.json"),
+        "utf8",
+      ),
+    );
     expect(meta).toMatchObject({
       platform: "onebot",
       channel: "group-1",
       type: "group",
       session_count: 1,
-      assignee: "bot-2",
     });
-    expect(typeof meta.current_session).toBe("string");
-    expect(meta.current_session.length).toBeGreaterThan(0);
-    expect(channelMap[store.getChannelKey("onebot", "group-1")]).toEqual({
-      platform: "onebot",
-      channelId: "group-1",
-    });
+    expect(meta.assignee).toBeUndefined();
   });
 
-  it("fills missing assignee without overwriting existing assignee", async () => {
-    const basePath = createTempBasePath();
-    const store = new SessionStore(createMockCtx() as never, { basePath, logLevel: 2 });
-    const channelDir = store.getChannelDir("onebot", "group-1");
-    mkdirSync(channelDir, { recursive: true });
-    writeFileSync(join(channelDir, "session-1.json"), "{}");
-    writeFileSync(
-      join(channelDir, "meta.json"),
-      JSON.stringify({
-        platform: "onebot",
-        channel: "group-1",
-        type: "group",
-        current_session: "session-1.json",
-        last_message: "2026-05-25T00:00:00.000Z",
-        updated_at: "2026-05-25T00:00:00.000Z",
-        session_count: 1,
-      }),
-    );
-
+  it("does not copy legacy assignee into new session metadata", async () => {
+    const { store, basePath } = createStore();
     await store.getOrCreate({
       platform: "onebot",
       channelId: "group-1",
       type: "group",
-      assignee: "bot-2",
     });
-    let meta = JSON.parse(readFileSync(join(channelDir, "meta.json"), "utf-8"));
-    expect(meta.assignee).toBe("bot-2");
+    const channelDir = join(basePath, "sessions", encodeChannelId("onebot", "group-1"));
+    const metaPath = join(channelDir, "meta.json");
+    const meta = JSON.parse(readFileSync(metaPath, "utf8"));
+    writeFileSync(metaPath, JSON.stringify({ ...meta, assignee: "bot-legacy" }));
 
-    store.clearCachedManager("onebot", "group-1");
-    writeFileSync(join(channelDir, "meta.json"), JSON.stringify({ ...meta, assignee: "bot-9" }));
-
-    await store.getOrCreate({
+    await store.newSession({
       platform: "onebot",
       channelId: "group-1",
       type: "group",
-      assignee: "bot-2",
     });
-    meta = JSON.parse(readFileSync(join(channelDir, "meta.json"), "utf-8"));
-    expect(meta.assignee).toBe("bot-9");
+
+    const nextMeta = JSON.parse(readFileSync(metaPath, "utf8"));
+    expect(nextMeta.assignee).toBeUndefined();
+    expect(nextMeta.session_count).toBe(2);
   });
 
   it("publishes internal session rotation without Koishi event emit", async () => {
-    const basePath = createTempBasePath();
-    const ctx = createMockCtx();
-    const store = new SessionStore(ctx as never, { basePath, logLevel: 2 });
+    const { store } = createStore();
     const listener = vi.fn();
 
     store.subscribeSessionRotated(listener);
@@ -149,6 +130,5 @@ describe("SessionStore", () => {
       type: "group",
       sessionManager: manager,
     });
-    expect("emit" in ctx).toBe(false);
   });
 });

@@ -129,6 +129,16 @@ describe("PresenterRegistry", () => {
     });
   });
 
+  it("keeps presenter catalog materialization independent from BotModule callbacks", () => {
+    const catalog = createPresenterCatalog();
+    catalog.registerBase("chat_message", createDefaultChatMessagePresenter());
+    const registry = createPresenterRegistry();
+
+    catalog.applyTo(registry);
+
+    expect(catalog.has("chat_message")).toBe(true);
+  });
+
   it("presents member_change as event text with structured details", async () => {
     const registry = createPresenterRegistry();
     registry.registerBase("member_change", createDefaultMemberChangePresenter());

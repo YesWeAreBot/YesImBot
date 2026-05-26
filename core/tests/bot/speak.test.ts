@@ -8,13 +8,13 @@ vi.mock("koishi", async () => {
 import { AthenaBot } from "../../src/internal/bot/bot.js";
 import {
   createDefaultChatMessagePresenter,
-  createPresenterRegistry,
+  createPresenterCatalog,
 } from "../../src/internal/bot/presentation.js";
 import { createSpeakElementRegistry } from "../../src/internal/bot/speak.js";
 
 function createBot() {
-  const presenters = createPresenterRegistry();
-  presenters.registerBase("chat_message", createDefaultChatMessagePresenter());
+  const catalog = createPresenterCatalog();
+  catalog.registerBase("chat_message", createDefaultChatMessagePresenter());
   const speakElements = createSpeakElementRegistry();
   const appendEntry = vi.fn<(customType: string, data?: unknown) => void>();
   const koishiBot = {
@@ -30,7 +30,7 @@ function createBot() {
       type: "group",
       bot: koishiBot as never,
     },
-    presenters,
+    presenterCatalog: catalog,
     speakElements,
     appendEntry,
     deliverySettings: {

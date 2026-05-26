@@ -17,8 +17,8 @@ vi.mock("koishi", () => {
   };
 });
 
+import type { ExtensionDefinition } from "../../src/internal/extension/types.js";
 import { ExtensionService } from "../../src/services/extension/service.js";
-import type { ExtensionDefinition } from "../../src/services/extension/types.js";
 
 function createExtensionService() {
   const logger = { level: 2, info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
@@ -34,50 +34,43 @@ function makeExtension(id: string): ExtensionDefinition {
 }
 
 describe("ExtensionService public registry", () => {
-  it("stores definitions and notifies definition subscribers on registration", async () => {
+  it("registers definitions and notifies subscribers without returning reload summaries", async () => {
     const service = createExtensionService();
-    const listener = vi.fn().mockResolvedValue({
-      totalChannels: 1,
-      successCount: 1,
-      failureCount: 0,
-      results: [{ channelKey: "onebot:group-1", success: true, loadedCount: 1 }],
-      allSucceeded: true,
-    });
-
+    const listener = vi.fn();
     service.subscribeDefinitions(listener);
-    const extension = makeExtension("ext-a");
-    const summary = await service.registerExtension(extension);
 
-    expect(service.getExtension("ext-a")).toBe(extension);
-    expect(service.getAllDefinitions()).toEqual([extension]);
-    expect(listener).toHaveBeenCalledWith({ type: "registered", extensionId: "ext-a" });
-    expect(summary).toMatchObject({ totalChannels: 1, allSucceeded: true });
+    await expect(
+      service.registerExtension({
+        id: "sample",
+        setup: () => undefined,
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(service.getExtension("sample")?.id).toBe("sample");
+    expect(listener).toHaveBeenCalledWith({ type: "registered", extensionId: "sample" });
   });
 
-  it("removes definitions and notifies definition subscribers on unregistration", async () => {
+  it("unregisters definitions and notifies subscribers without runtime manager attachment", async () => {
     const service = createExtensionService();
-    const listener = vi.fn().mockResolvedValue({
-      totalChannels: 0,
-      successCount: 0,
-      failureCount: 0,
-      results: [],
-      allSucceeded: true,
-    });
-
+    const listener = vi.fn();
     service.subscribeDefinitions(listener);
-    await service.registerExtension(makeExtension("ext-a"));
-    listener.mockClear();
+    await service.registerExtension({ id: "sample", setup: () => undefined });
 
-    const summary = await service.unregisterExtension("ext-a");
+    await expect(service.unregisterExtension("sample")).resolves.toBeUndefined();
 
-    expect(service.getExtension("ext-a")).toBeUndefined();
-    expect(listener).toHaveBeenCalledWith({ type: "unregistered", extensionId: "ext-a" });
-    expect(summary.allSucceeded).toBe(true);
+    expect(service.getExtension("sample")).toBeUndefined();
+    expect(listener).toHaveBeenLastCalledWith({ type: "unregistered", extensionId: "sample" });
   });
 
-  it("does not own per-channel runtime state", () => {
-    const service = createExtensionService() as unknown as { channels?: unknown };
+  it("does not expose per-channel runtime forwarding methods", () => {
+    const service = createExtensionService() as Record<string, unknown>;
 
-    expect(service.channels).toBeUndefined();
+    expect(service.attachRuntimeManager).toBeUndefined();
+    expect(service.createChannelRuntime).toBeUndefined();
+    expect(service.disposeChannelRuntime).toBeUndefined();
+    expect(service.getChannelRuntime).toBeUndefined();
+    expect(service.buildToolSnapshot).toBeUndefined();
+    expect(service.getPromptToolContext).toBeUndefined();
+    expect(service.getPromptSpeakElementContext).toBeUndefined();
   });
 });
