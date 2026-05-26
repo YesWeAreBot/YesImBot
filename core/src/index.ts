@@ -3,22 +3,18 @@ import { resolve } from "node:path";
 
 import { Context, Schema } from "koishi";
 
-import { AthenaBotService } from "./bot/service.js";
-import { ChatHistoryPlugin } from "./extension/built-in/chat-history/index.js";
-import { ExtensionConfig, ExtensionService } from "./extension/service.js";
-import { RuntimeConfig, RuntimeService } from "./runtime/service.js";
-import { WillingnessConfig, WillingnessConfigSchema } from "./runtime/willing.js";
+import * as CoreApp from "./internal/core-app.js";
+import { WillingnessConfigSchema } from "./internal/runtime/behavior.js";
+import type { RuntimeControllerConfig } from "./internal/runtime/controller.js";
+import type { SessionStoreConfig } from "./internal/session/types.js";
+import { ChatHistoryPlugin } from "./services/extension/built-in/chat-history/index.js";
+import { ExtensionConfig, ExtensionService } from "./services/extension/index.js";
 import { ModelService, ModelServiceConfig } from "./services/model/index.js";
-import { SessionConfig, SessionService } from "./services/session/index.js";
 
 export type Config = ModelServiceConfig &
-  SessionConfig &
-  RuntimeConfig &
-  ExtensionConfig & {
-    basePath: string;
-    chatModel: string;
-    logLevel?: number;
-    consumeMessages?: boolean;
+  ExtensionConfig &
+  SessionStoreConfig &
+  RuntimeControllerConfig & {
     enableChatTools?: boolean;
   };
 
@@ -136,13 +132,6 @@ export async function apply(ctx: Context, config: Config) {
   }
   ctx.plugin(ModelService, config as ModelServiceConfig);
   ctx.plugin(ExtensionService, config as ExtensionConfig);
-  ctx.plugin(SessionService, config as SessionConfig);
-
-  ctx.plugin(AthenaBotService, {
-    logLevel: config.logLevel,
-    consumeMessages: config.consumeMessages,
-  });
-  ctx.plugin(RuntimeService, config as RuntimeConfig & WillingnessConfig);
   if (config.enableChatTools) {
     ctx.plugin(ChatHistoryPlugin, {
       sessionsDir: resolve(ctx.baseDir, config.basePath, "sessions"),
@@ -151,15 +140,13 @@ export async function apply(ctx: Context, config: Config) {
       maxLimit: 50,
     });
   }
+  ctx.plugin(CoreApp, config);
 }
 
 export type { ModelService } from "./services/model";
-export type { SessionService } from "./services/session";
-
-export { AthenaBotService } from "./bot/service.js";
-export { AthenaBot } from "./bot/athena-bot.js";
-export { createAthenaEvent, isAthenaEvent, serializeAthenaEvent } from "./bot/events.js";
-export { encodeChannelId } from "./services/session/encoding.js";
+export { AthenaBot } from "./internal/bot/bot.js";
+export { createAthenaEvent, isAthenaEvent, serializeAthenaEvent } from "./internal/bot/events.js";
+export { encodeChannelId } from "./internal/session/encoding.js";
 export type {
   Channel,
   ChannelReloadResult,
@@ -169,10 +156,13 @@ export type {
   ExtensionCleanup,
   ExtensionContext,
   ExtensionDefinition,
+  ExtensionDefinitionChange,
+  ExtensionDefinitionListener,
+  ExtensionRegistry,
   ExtensionToolSnapshot,
   ReloadSummary,
   ToolDefinition,
-} from "./extension/types.js";
+} from "./services/extension/types.js";
 export type {
   Actor,
   AthenaEventKind,
@@ -191,7 +181,7 @@ export type {
   SpeakElementContext,
   SpeakElementDefinition,
   SpeakElementPromptInfo,
-} from "./bot/types.js";
+} from "./internal/bot/types.js";
 export type {
   ChannelEventContext,
   EventObserver,
@@ -199,4 +189,4 @@ export type {
   ObservedEvent,
   ObserverInput,
   ObserverSource,
-} from "./bot/observer-types.js";
+} from "./internal/bot/observer-types.js";

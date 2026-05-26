@@ -15,25 +15,36 @@ import type {
   SpeakElementDefinition,
   SpeakElementPromptInfo,
 } from "../../src/index.js";
+import {
+  createDeliveryEvent,
+  createSeededRandom,
+  planDeliveryTiming,
+  splitDeliverySegments,
+} from "../../src/internal/delivery.js";
 
 describe("Athena Bot public API boundary", () => {
   it("exports the Athena Bot interaction surface from the core entrypoint", () => {
     const entrypoint = readFileSync(join(process.cwd(), "src", "index.ts"), "utf-8");
 
-    expect(entrypoint).toContain('export { AthenaBotService } from "./bot/service.js";');
-    expect(entrypoint).toContain('export { AthenaBot } from "./bot/athena-bot.js";');
+    expect(entrypoint).toContain('export { AthenaBot } from "./internal/bot/bot.js";');
     expect(entrypoint).toContain(
-      'export { createAthenaEvent, isAthenaEvent, serializeAthenaEvent } from "./bot/events.js";',
+      'export { createAthenaEvent, isAthenaEvent, serializeAthenaEvent } from "./internal/bot/events.js";',
     );
-    expect(entrypoint).toContain("AthenaEventMap");
-    expect(entrypoint).toContain("BotPresentation");
-    expect(entrypoint).toContain("EventObserver");
-    expect(entrypoint).toContain("HandleResult");
-    expect(entrypoint).toContain("ObservedEvent");
-    expect(entrypoint).toContain("ObserverInput");
-    expect(entrypoint).toContain("ObserverSource");
+    expect(entrypoint).toContain("ExtensionContext");
+    expect(entrypoint).toContain("ExtensionDefinition");
     expect(entrypoint).toContain("SpeakElementDefinition");
-    expect(entrypoint).toContain("SpeakElementPromptInfo");
+    expect(entrypoint).toContain("ObservedEvent");
+  });
+
+  it("does not export internal module names as stable root API", () => {
+    const entrypoint = readFileSync(join(process.cwd(), "src", "index.ts"), "utf-8");
+    const legacyBotServiceName = ["Athena", "Bot", "Service"].join("");
+
+    expect(entrypoint).not.toContain("export { SessionStore");
+    expect(entrypoint).not.toContain("export { RuntimeController");
+    expect(entrypoint).not.toContain("export { ExtensionRuntimeManager");
+    expect(entrypoint).not.toContain("export { BotModule }");
+    expect(entrypoint).not.toContain(legacyBotServiceName);
   });
 
   it("does not export Delivery", () => {
@@ -67,9 +78,18 @@ describe("Athena Bot public API boundary", () => {
   });
 
   it("does not keep AthenaBot.observe in the source implementation", () => {
-    const source = readFileSync(join(process.cwd(), "src", "bot", "athena-bot.ts"), "utf-8");
+    const source = readFileSync(join(process.cwd(), "src", "internal", "bot", "bot.ts"), "utf-8");
 
     expect(source).not.toContain("observe(session");
     expect(source).not.toContain("observeChatMessage");
+  });
+});
+
+describe("delivery utility boundaries", () => {
+  it("exports delivery helpers from internal delivery", () => {
+    expect(typeof createDeliveryEvent).toBe("function");
+    expect(typeof createSeededRandom).toBe("function");
+    expect(typeof planDeliveryTiming).toBe("function");
+    expect(typeof splitDeliverySegments).toBe("function");
   });
 });

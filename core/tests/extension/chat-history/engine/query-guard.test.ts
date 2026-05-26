@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-import { validateQuery } from "../../../../src/extension/built-in/chat-history/engine/query-guard.js";
+import { validateQuery } from "../../../../src/services/extension/built-in/chat-history/engine/query-guard.js";
 
 describe("validateQuery", () => {
   it("rejects empty query", () => {

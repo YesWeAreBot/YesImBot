@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import * as delivery from "../../src/runtime/delivery";
+import * as delivery from "../../src/internal/delivery.js";
 
 describe("runtime delivery boundary", () => {
   it("does not export the retired Delivery class", () => {

@@ -4,11 +4,11 @@ import { join } from "node:path";
 // core/tests/extension/chat-history/tools/read-conversation-context.test.ts
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 
-import { createReadConversationContextTool } from "../../../../src/extension/built-in/chat-history/tools/read-conversation-context.js";
+import { createReadConversationContextTool } from "../../../../src/services/extension/built-in/chat-history/tools/read-conversation-context.js";
 import type {
   ChannelLocator,
   ChatHistoryConfig,
-} from "../../../../src/extension/built-in/chat-history/types.js";
+} from "../../../../src/services/extension/built-in/chat-history/types.js";
 import { createTempSessionsDir, setupTestChannel, FIXTURE_DIR } from "../fixtures/helpers.js";
 
 describe("read_conversation_context tool", () => {

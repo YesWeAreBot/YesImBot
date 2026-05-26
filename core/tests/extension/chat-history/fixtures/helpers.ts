@@ -7,7 +7,7 @@ import { join } from "node:path";
 import type {
   ChannelLocator,
   SearchContext,
-} from "../../../../src/extension/built-in/chat-history/types.js";
+} from "../../../../src/services/extension/built-in/chat-history/types.js";
 
 export const FIXTURE_DIR = join(import.meta.dirname, ".");
 

@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { createAthenaEvent, isAthenaEvent, serializeAthenaEvent } from "../../src/bot/events.js";
-import type { AthenaEvent } from "../../src/bot/types.js";
+import {
+  createAthenaEvent,
+  isAthenaEvent,
+  serializeAthenaEvent,
+} from "../../src/internal/bot/events.js";
+import type { AthenaEvent } from "../../src/internal/bot/types.js";
 
-declare module "../../src/bot/types.js" {
+declare module "../../src/internal/bot/types.js" {
   interface AthenaEventMap {
     "test:custom": { value: number };
   }

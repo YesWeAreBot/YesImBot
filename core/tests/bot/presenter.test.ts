@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { createAthenaEvent, serializeAthenaEvent } from "../../src/bot/events.js";
-import { createPresenterCatalog } from "../../src/bot/presenter-catalog.js";
+import { createAthenaEvent, serializeAthenaEvent } from "../../src/internal/bot/events.js";
 import {
   createDefaultChatMessagePresenter,
   createDefaultMemberChangePresenter,
   createDefaultMessageRecallPresenter,
   createDefaultReactionPresenter,
+  createPresenterCatalog,
   createPresenterRegistry,
-} from "../../src/bot/presenter.js";
+} from "../../src/internal/bot/presentation.js";
 
 describe("PresenterRegistry", () => {
   it("presents chat_message as LLM-visible content with structured details", async () => {

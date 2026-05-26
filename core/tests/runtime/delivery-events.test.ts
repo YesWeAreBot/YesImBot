@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createDeliveryEvent } from "../../src/runtime/delivery";
+import { createDeliveryEvent } from "../../src/internal/delivery.js";
 
 describe("runtime delivery event timing", () => {
   it("stores agent_start time and uses message_end time to compute elapsed ms", () => {

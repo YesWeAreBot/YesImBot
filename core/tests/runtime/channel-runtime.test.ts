@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createAthenaEvent } from "../../src/bot/events.js";
-import { serializeAthenaEvent } from "../../src/bot/events.js";
-import { createChannelRuntime, isChannelAllowed } from "../../src/runtime/channel-runtime.js";
+import { createAthenaEvent } from "../../src/internal/bot/events.js";
+import { serializeAthenaEvent } from "../../src/internal/bot/events.js";
+import { createChannelRuntime, isChannelAllowed } from "../../src/internal/runtime/channel.js";
 
 function createAgentSession() {
   const listeners: Array<(event: unknown) => void> = [];

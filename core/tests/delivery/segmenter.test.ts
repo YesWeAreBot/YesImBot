@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { splitDeliverySegments } from "../../src/runtime/delivery";
+import { splitDeliverySegments } from "../../src/internal/delivery.js";
 
 describe("splitDeliverySegments", () => {
   it("splits on <sep/> and returns raw segments", () => {

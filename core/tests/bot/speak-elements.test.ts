@@ -7,7 +7,7 @@ vi.mock("koishi", async () => {
 
 import { h } from "koishi";
 
-import { createSpeakElementRegistry } from "../../src/bot/speak-elements.js";
+import { createSpeakElementRegistry } from "../../src/internal/bot/speak.js";
 
 const context = {
   channel: { platform: "onebot", channelId: "group-1", type: "group" as const },
