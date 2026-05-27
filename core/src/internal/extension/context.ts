@@ -76,7 +76,7 @@ export async function createExtensionBinding(
         speakElementDisposers.push(host.bot.registerSpeakElement(definition));
       },
     },
-    on(event, handler) {
+    on(event: string, handler: (...args: unknown[]) => unknown) {
       assertActive();
       const list = handlers.get(event) ?? [];
       list.push(handler);

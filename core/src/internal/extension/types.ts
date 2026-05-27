@@ -7,6 +7,7 @@
 
 import type { ToolResultOutput } from "@ai-sdk/provider-utils";
 import type { AgentTool } from "@yesimbot/agent/agent";
+import type { HookEventName, HookHandlerFor } from "@yesimbot/agent/session";
 import type { Bot } from "koishi";
 
 import type { SpeakElementDefinition, SpeakElementPromptInfo } from "../bot/types.js";
@@ -87,6 +88,7 @@ export interface ExtensionContext {
   readonly tool: ExtensionToolContext;
   readonly session: ExtensionSessionContext;
   readonly bot: ExtensionBotContext;
+  on<K extends HookEventName>(event: K, handler: HookHandlerFor<K>): void;
   on(event: string, handler: (...args: unknown[]) => unknown): void;
 }
 

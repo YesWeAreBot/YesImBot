@@ -238,8 +238,11 @@ export type HookErrorListener = (error: HookError) => void;
 // HookRunner
 // ============================================================================
 
-// Reducer hook names → handler type mapping
-interface ReducerHookMap {
+// ============================================================================
+// Hook event map types
+// ============================================================================
+
+export interface ReducerHookMap {
   "agent:before-start": BeforeAgentStartHandler;
   "context:build": TransformContextHandler;
   "tool:call": BeforeToolCallHandler;
@@ -247,6 +250,14 @@ interface ReducerHookMap {
   "provider:before-request": BeforeProviderRequestHandler;
   "session:before-compact": BeforeCompactHandler;
 }
+
+export type LifecycleHookMap = {
+  [E in AgentLifecycleEvent as E["type"]]: (event: E, ctx: HookContext) => Promise<void> | void;
+};
+
+export type HookEventMap = ReducerHookMap & LifecycleHookMap;
+export type HookEventName = keyof HookEventMap;
+export type HookHandlerFor<K extends HookEventName> = HookEventMap[K];
 
 export class HookRunner {
   private _handlers = new Map<string, Array<(...args: unknown[]) => unknown>>();
@@ -266,7 +277,7 @@ export class HookRunner {
   // =========================================================================
 
   /** Register a handler for a named event. */
-  on<K extends keyof ReducerHookMap>(event: K, handler: ReducerHookMap[K]): void;
+  on<K extends HookEventName>(event: K, handler: HookHandlerFor<K>): void;
   on(event: string, handler: (...args: unknown[]) => unknown): void;
   on(event: string, handler: (...args: unknown[]) => unknown): void {
     const list = this._handlers.get(event) ?? [];

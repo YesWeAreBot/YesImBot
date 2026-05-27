@@ -3,6 +3,22 @@ import { describe, expect, it, vi } from "vitest";
 import type { ExtensionDefinition } from "../../../src/internal/extension/types.js";
 
 describe("ChannelSession extension context", () => {
+  it("types extension hook handlers from event names", () => {
+    const extension: ExtensionDefinition = {
+      id: "typed-hooks",
+      setup(ctx) {
+        ctx.on("agent:before-start", (event) => ({
+          systemPrompt: `${event.systemPrompt}|typed`,
+        }));
+        ctx.on("tool:execution:end", (event) => {
+          event.toolName.toUpperCase();
+        });
+      },
+    };
+
+    expect(extension.id).toBe("typed-hooks");
+  });
+
   it("exposes grouped extension context facets", async () => {
     const seen: string[] = [];
     const extension: ExtensionDefinition = {

@@ -417,6 +417,25 @@ describe("HookRunner", () => {
       ).resolves.toBeUndefined();
     });
 
+    it("types lifecycle handlers by event name", async () => {
+      const runner = makeRunner();
+      const seen: string[] = [];
+
+      runner.on("tool:execution:end", (event) => {
+        seen.push(`${event.toolName}:${event.isError ? "error" : "ok"}`);
+      });
+
+      await runner.emitLifecycle({
+        type: "tool:execution:end",
+        toolCallId: "tc-1",
+        toolName: "typed-tool",
+        result: { value: 1 },
+        isError: false,
+      });
+
+      expect(seen).toEqual(["typed-tool:ok"]);
+    });
+
     it("supports all lifecycle event types", async () => {
       const runner = makeRunner();
       const received: string[] = [];

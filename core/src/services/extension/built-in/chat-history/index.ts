@@ -34,14 +34,14 @@ export class ChatHistoryPlugin extends Service<ChatHistoryConfig> {
           channelKey: encodeChannelId(channel.platform, channel.channelId),
         };
 
-        ctx.on("agent:before-start", ((event: { systemPrompt: string }) => ({
+        ctx.on("agent:before-start", (event) => ({
           systemPrompt:
             event.systemPrompt +
             buildChatHistoryPrompt({
               isolation: config.isolation,
               currentChannel,
             }),
-        })) as (...args: unknown[]) => unknown);
+        }));
 
         const searchConv = createSearchConversationTool(config, currentChannel);
         const searchUser = createSearchUserActivityTool(config, currentChannel);
