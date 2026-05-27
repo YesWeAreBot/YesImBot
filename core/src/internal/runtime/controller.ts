@@ -4,10 +4,7 @@ import type { ChatModelRef } from "@yesimbot/agent/ai";
 import type { SessionManager } from "@yesimbot/agent/session";
 import type { Bot, Context, Logger } from "koishi";
 
-import {
-  createSystemPromptExtension,
-  type BotInfo,
-} from "../../services/extension/built-in/system-prompt.js";
+import { createSystemPromptExtension } from "../../services/extension/built-in/system-prompt.js";
 import type { ModelService } from "../../services/model/index.js";
 import type { ChannelIdentifier, ChannelKey } from "../../shared/types.js";
 import type { BotModule } from "../bot/module.js";
@@ -218,6 +215,19 @@ export class RuntimeController {
     return new ChannelSession(deps);
   }
 
+  private async reloadChannelSessionExtensions(session: ChannelSession): Promise<void> {
+    const definitions = this.extensionRegistry.getAllDefinitions();
+
+    const result = await session.reloadExtensions(definitions);
+    if (result.success) {
+      return;
+    }
+
+    this.logger.warn(
+      `Initial extension reload failed for ${session.channelKey}: ${result.error ?? "unknown"}`,
+    );
+  }
+
   private async getOrCreateChannelSession(
     key: ChannelKey,
     channel: { platform: string; channelId: string; type: "private" | "group" },
@@ -240,6 +250,7 @@ export class RuntimeController {
 
     const session = this.createChannelSession(channel, sessionManager, koishiBot);
     this.channels.set(key, session);
+    await this.reloadChannelSessionExtensions(session);
     return session;
   }
 
@@ -272,6 +283,7 @@ export class RuntimeController {
       existing.koishiBot,
     );
     this.channels.set(key, replacement);
+    await this.reloadChannelSessionExtensions(replacement);
   }
 
   private registerCommands(): void {

@@ -294,8 +294,7 @@ export class ChannelSession {
     for (const definition of sorted) {
       try {
         nextBindings.push(await createExtensionBinding(definition, host));
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+      } catch {
         errors.push(definition.id);
       }
     }

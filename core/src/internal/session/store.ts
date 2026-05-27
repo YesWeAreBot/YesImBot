@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { basename, isAbsolute, join } from "node:path";
 
 import { SessionManager } from "@yesimbot/agent/session";
 import type { Context, Logger } from "koishi";
@@ -78,8 +78,12 @@ export class SessionStore {
     const meta = readMeta(channelDir);
     let sessionManager: SessionManager;
 
-    if (meta?.current_session && existsSync(join(channelDir, meta.current_session))) {
-      sessionManager = SessionManager.open(join(channelDir, meta.current_session), channelDir);
+    const currentSessionPath = meta?.current_session
+      ? resolveCurrentSessionPath(channelDir, meta.current_session)
+      : undefined;
+
+    if (currentSessionPath && existsSync(currentSessionPath)) {
+      sessionManager = SessionManager.open(currentSessionPath, channelDir);
     } else {
       sessionManager = SessionManager.create(channelDir);
       writeMeta(
@@ -88,7 +92,7 @@ export class SessionStore {
           input.platform,
           input.channelId,
           input.type,
-          sessionManager.getSessionFile()!,
+          basename(sessionManager.getSessionFile()!),
           1,
         ),
       );
@@ -113,7 +117,7 @@ export class SessionStore {
         input.platform,
         input.channelId,
         input.type,
-        sessionManager.getSessionFile()!,
+        basename(sessionManager.getSessionFile()!),
         (meta?.session_count ?? 0) + 1,
       ),
     );
@@ -169,4 +173,8 @@ export class SessionStore {
       await listener(event);
     }
   }
+}
+
+function resolveCurrentSessionPath(channelDir: string, currentSession: string): string {
+  return isAbsolute(currentSession) ? currentSession : join(channelDir, currentSession);
 }

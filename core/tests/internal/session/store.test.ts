@@ -131,4 +131,34 @@ describe("SessionStore", () => {
       sessionManager: manager,
     });
   });
+
+  it("reopens existing session when metadata stores an absolute session path", async () => {
+    const { store, basePath } = createStore();
+    await store.getOrCreate({
+      platform: "onebot",
+      channelId: "group-1",
+      type: "group",
+    });
+
+    const channelDir = join(basePath, "sessions", encodeChannelId("onebot", "group-1"));
+    const metaPath = join(channelDir, "meta.json");
+    const meta = JSON.parse(readFileSync(metaPath, "utf8"));
+    const sessionFile = join(channelDir, meta.current_session);
+    writeFileSync(
+      sessionFile,
+      `${JSON.stringify({ type: "session", id: "restored-session", timestamp: new Date().toISOString() })}\n`,
+    );
+    writeFileSync(metaPath, JSON.stringify({ ...meta, current_session: sessionFile }));
+
+    const restartedStore = new SessionStore(createMockCtx() as never, { basePath, logLevel: 2 });
+
+    const restored = await restartedStore.getOrCreate({
+      platform: "onebot",
+      channelId: "group-1",
+      type: "group",
+    });
+
+    expect(restored.getSessionFile()).toBe(sessionFile);
+    expect(JSON.parse(readFileSync(metaPath, "utf8")).current_session).toBe(sessionFile);
+  });
 });

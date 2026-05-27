@@ -127,7 +127,11 @@ vi.mock("../../../src/services/extension/built-in/system-prompt.js", () => ({
 }));
 
 vi.mock("../../../src/internal/extension/context.js", () => ({
-  createExtensionBinding: vi.fn(),
+  createExtensionBinding: vi.fn().mockResolvedValue({
+    handlers: new Map(),
+    tools: new Map(),
+    speakElements: new Map(),
+  }),
 }));
 
 vi.mock("../../../src/internal/extension/tools.js", () => ({

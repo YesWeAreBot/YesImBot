@@ -1377,7 +1377,11 @@ export class AgentSession {
   applyToolState(snapshot: ExtensionToolSnapshot): void {
     this._extensionTools = new Map(snapshot.tools);
     this._refreshToolRegistry({
-      activeToolNames: snapshot.activeToolNames,
+      activeToolNames: [
+        ...this.getActiveToolNames(),
+        ...(snapshot.activeToolNames ?? [...snapshot.tools.keys()]),
+      ],
+      includeAllExtensionTools: true,
     });
   }
 

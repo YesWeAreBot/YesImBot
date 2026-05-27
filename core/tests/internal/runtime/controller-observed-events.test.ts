@@ -126,7 +126,11 @@ vi.mock("../../../src/services/extension/built-in/system-prompt.js", () => ({
 }));
 
 vi.mock("../../../src/internal/extension/context.js", () => ({
-  createExtensionBinding: vi.fn(),
+  createExtensionBinding: vi.fn().mockResolvedValue({
+    handlers: new Map(),
+    tools: new Map(),
+    speakElements: new Map(),
+  }),
 }));
 
 vi.mock("../../../src/internal/extension/tools.js", () => ({
@@ -224,11 +228,17 @@ function createDeps() {
 describe("RuntimeController observed-event dispatch", () => {
   it("subscribes to observed events and creates channel session with presenter catalog", async () => {
     const { RuntimeController } = await import("../../../src/internal/runtime/controller.js");
+    const { createExtensionBinding } = await import("../../../src/internal/extension/context.js");
     const deps = createDeps();
+    const extension = {
+      id: "test-extension",
+      setup: vi.fn(),
+    };
     mockCreateSystemPromptExtension.mockReturnValue({
       id: "yesimbot:system-prompt",
       setup: vi.fn(),
     });
+    deps.extensionRegistry.getAllDefinitions.mockReturnValue([extension]);
 
     const controller = new RuntimeController({
       ctx: deps.ctx as never,
@@ -272,5 +282,15 @@ describe("RuntimeController observed-event dispatch", () => {
       type: "group",
     });
     expect(deps.botModule.getPresenterCatalog).toHaveBeenCalled();
+    expect(createExtensionBinding).toHaveBeenCalledWith(
+      extension,
+      expect.objectContaining({
+        channel: expect.objectContaining({
+          platform: "onebot",
+          channelId: "group-1",
+          type: "group",
+        }),
+      }),
+    );
   });
 });
