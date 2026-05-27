@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildAthenaSystemPrompt } from "../../src/internal/runtime/prompt.js";
+import { buildAthenaSystemPrompt } from "../../../src/internal/runtime/prompt.js";
 
 const base = {
   persona: "Athena persona",

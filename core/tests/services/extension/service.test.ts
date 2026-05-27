@@ -17,8 +17,8 @@ vi.mock("koishi", () => {
   };
 });
 
-import type { ExtensionDefinition } from "../../src/internal/extension/types.js";
-import { ExtensionService } from "../../src/services/extension/service.js";
+import type { ExtensionDefinition } from "../../../src/internal/extension/types.js";
+import { ExtensionService } from "../../../src/services/extension/service.js";
 
 function createExtensionService() {
   const logger = { level: 2, info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };

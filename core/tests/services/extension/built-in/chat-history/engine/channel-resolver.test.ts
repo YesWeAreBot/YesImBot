@@ -2,7 +2,7 @@ import { rmSync } from "node:fs";
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 
-import { ChannelResolver } from "../../../../src/services/extension/built-in/chat-history/engine/channel-resolver.js";
+import { ChannelResolver } from "../../../../../../src/services/extension/built-in/chat-history/engine/channel-resolver.js";
 import { createTempSessionsDir, setupTestChannel, makeSearchContext } from "../fixtures/helpers.js";
 
 describe("ChannelResolver", () => {

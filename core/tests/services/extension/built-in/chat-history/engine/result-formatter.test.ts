@@ -5,7 +5,7 @@ import {
   deduplicateResults,
   formatCompactLine,
   formatSearchResults,
-} from "../../../../src/services/extension/built-in/chat-history/engine/result-formatter.js";
+} from "../../../../../../src/services/extension/built-in/chat-history/engine/result-formatter.js";
 
 describe("extractSnippet", () => {
   it("returns full content for short messages", () => {

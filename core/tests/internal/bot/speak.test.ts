@@ -5,12 +5,12 @@ vi.mock("koishi", async () => {
   return { h: element.default };
 });
 
-import { AthenaBot } from "../../src/internal/bot/bot.js";
+import { AthenaBot } from "../../../src/internal/bot/bot.js";
 import {
   createDefaultChatMessagePresenter,
   createPresenterCatalog,
-} from "../../src/internal/bot/presentation.js";
-import { createSpeakElementRegistry } from "../../src/internal/bot/speak.js";
+} from "../../../src/internal/bot/presentation.js";
+import { createSpeakElementRegistry } from "../../../src/internal/bot/speak.js";
 
 function createBot() {
   const catalog = createPresenterCatalog();

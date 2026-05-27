@@ -4,7 +4,7 @@ import {
   DEFAULT_RUNTIME_SETTINGS,
   InMemorySettingsStorage,
   RuntimeSettingsManager,
-} from "../../src/internal/runtime/settings.js";
+} from "../../../src/internal/runtime/settings.js";
 
 describe("RuntimeSettingsManager", () => {
   it("returns defaults when no seed, global, or local exist", () => {

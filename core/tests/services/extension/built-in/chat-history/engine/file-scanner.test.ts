@@ -4,7 +4,7 @@ import { join } from "node:path";
 // core/tests/extension/chat-history/engine/file-scanner.test.ts
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 
-import { FileScanner } from "../../../../src/services/extension/built-in/chat-history/engine/file-scanner.js";
+import { FileScanner } from "../../../../../../src/services/extension/built-in/chat-history/engine/file-scanner.js";
 import {
   createTempSessionsDir,
   setupTestChannel,

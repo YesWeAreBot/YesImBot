@@ -1,13 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-// core/tests/extension/chat-history/fixtures/helpers.ts
 import { join } from "node:path";
 
-import type {
-  ChannelLocator,
-  SearchContext,
-} from "../../../../src/services/extension/built-in/chat-history/types.js";
+import type { SearchContext } from "../../../../../../src/services/extension/built-in/chat-history/types.js";
 
 export const FIXTURE_DIR = join(import.meta.dirname, ".");
 

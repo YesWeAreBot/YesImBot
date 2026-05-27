@@ -6,7 +6,7 @@ import { describe, it, expect } from "vitest";
 import {
   parseJsonlLine,
   scanJsonlFile,
-} from "../../../src/services/extension/built-in/chat-history/jsonl-parser.js";
+} from "../../../../../src/services/extension/built-in/chat-history/jsonl-parser.js";
 import { FIXTURE_DIR } from "./fixtures/helpers.js";
 
 describe("parseJsonlLine", () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { buildAgentSessionConfig } from "../../src/internal/runtime/helpers.js";
-import type { RuntimeSettings } from "../../src/internal/runtime/settings.js";
+import { buildAgentSessionConfig } from "../../../src/internal/runtime/helpers.js";
+import type { RuntimeSettings } from "../../../src/internal/runtime/settings.js";
 
 const SETTINGS: RuntimeSettings = {
   contextWindow: 128000,

@@ -5,15 +5,15 @@ vi.mock("koishi", async () => {
   return { h: element.default };
 });
 
-import { AthenaBot, type AthenaBotOptions } from "../../src/internal/bot/bot.js";
-import { createAthenaEvent } from "../../src/internal/bot/events.js";
+import { AthenaBot, type AthenaBotOptions } from "../../../src/internal/bot/bot.js";
+import { createAthenaEvent } from "../../../src/internal/bot/events.js";
 import {
   createDefaultChatMessagePresenter,
   createPresenterCatalog,
-} from "../../src/internal/bot/presentation.js";
-import { createSpeakElementRegistry } from "../../src/internal/bot/speak.js";
-import type { SpeakAnomaly } from "../../src/internal/bot/types.js";
-import { DEFAULT_RUNTIME_SETTINGS } from "../../src/internal/runtime/settings.js";
+} from "../../../src/internal/bot/presentation.js";
+import { createSpeakElementRegistry } from "../../../src/internal/bot/speak.js";
+import type { SpeakAnomaly } from "../../../src/internal/bot/types.js";
+import { DEFAULT_RUNTIME_SETTINGS } from "../../../src/internal/runtime/settings.js";
 
 function createAthenaBot(overrides: Partial<AthenaBotOptions> = {}) {
   const koishiBot = {

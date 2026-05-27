@@ -5,7 +5,7 @@ vi.mock("koishi", async () => {
   return { h: element.default };
 });
 
-import { createCoreFallbackObservers } from "../../src/internal/bot/events.js";
+import { createCoreFallbackObservers } from "../../../src/internal/bot/events.js";
 
 function createSession(overrides: Record<string, unknown> = {}) {
   return {

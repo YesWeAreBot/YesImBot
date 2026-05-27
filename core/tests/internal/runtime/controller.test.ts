@@ -1,5 +1,59 @@
 import { describe, expect, it, vi } from "vitest";
 
+vi.mock("koishi", () => ({
+  Bot: class {},
+  Context: class {},
+  Eval: class {},
+  Logger: class {},
+  Schema: {
+    object: (value: unknown) => ({ dict: value }),
+    number: () => ({
+      default() {
+        return this;
+      },
+      min() {
+        return this;
+      },
+      max() {
+        return this;
+      },
+      description() {
+        return this;
+      },
+    }),
+    array: () => ({
+      default() {
+        return this;
+      },
+      role() {
+        return this;
+      },
+      description() {
+        return this;
+      },
+    }),
+    string: () => ({
+      default() {
+        return this;
+      },
+      description() {
+        return this;
+      },
+    }),
+  },
+  Session: class {},
+  h: Object.assign(
+    () => ({
+      toString() {
+        return "";
+      },
+    }),
+    {
+      parse: () => [],
+    },
+  ),
+}));
+
 const { mockCreateSystemPromptExtension, mockApplyPresenterCatalogTo } = vi.hoisted(() => ({
   mockCreateSystemPromptExtension: vi.fn(),
   mockApplyPresenterCatalogTo: vi.fn(),
