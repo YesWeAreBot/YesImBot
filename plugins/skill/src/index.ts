@@ -2,16 +2,30 @@ import { readFileSync } from "fs";
 import { resolve } from "path";
 
 import { jsonSchema } from "@yesimbot/agent/ai";
-import { Context, Logger, Schema, Service } from "koishi";
+import { Context, Logger, Schema } from "koishi";
 import type { ExtensionContext } from "koishi-plugin-yesimbot";
 
 import { formatSkillsForPrompt, loadSkills, Skill } from "./skills";
+
+type LoadSkillToolInput = {
+  skill: string;
+  args?: Record<string, unknown>;
+};
+
+type LoadSkillToolOutput =
+  | {
+      path: string;
+      content: string;
+    }
+  | {
+      error: string;
+    };
 
 export interface SkillConfig {
   skillPaths: string[];
 }
 
-export default class SkillPlugin extends Service<SkillConfig> {
+export default class SkillPlugin {
   static name = "yesimbot-skill";
   static inject = ["yesimbot.extension"];
   static Config: Schema<SkillConfig> = Schema.object({
@@ -20,11 +34,13 @@ export default class SkillPlugin extends Service<SkillConfig> {
       .description("技能文件路径列表"),
   });
 
-  readonly logger: Logger;
+  public readonly ctx: Context;
+  public readonly config: SkillConfig;
+  public readonly logger: Logger;
 
   private skills: Skill[] = [];
   constructor(ctx: Context, config: SkillConfig) {
-    super(ctx, config);
+    this.ctx = ctx;
     this.config = config;
     this.logger = ctx.logger("yesimbot.skill");
     const skillPaths = config.skillPaths.map((path) => resolve(ctx.baseDir, path));
@@ -49,22 +65,25 @@ export default class SkillPlugin extends Service<SkillConfig> {
       this.skills.push(skill);
       this.logger.info(`成功加载技能: ${skill.name} (${skill.filePath})`);
     }
+
+    ctx.on("ready", this.start.bind(this));
+    ctx.on("dispose", this.stop.bind(this));
   }
 
-  override async start(): Promise<void> {
+  async start(): Promise<void> {
     const skills = this.skills;
     const logger = this.logger;
-    const summary = await this.ctx["yesimbot.extension"].registerExtension({
+    await this.ctx["yesimbot.extension"].registerExtension({
       id: "skill",
       setup(ctx: ExtensionContext) {
-        ctx.on("agent:before-start", ((event: { systemPrompt: string }) => {
+        ctx.on("agent:before-start", (event) => {
           logger.info(`正在准备技能，已加载 ${skills.length} 个技能`);
           const skillPrompt = formatSkillsForPrompt(skills);
 
           return {
             systemPrompt: event.systemPrompt + skillPrompt,
           };
-        }) as (...args: unknown[]) => unknown);
+        });
         ctx.tool.register<LoadSkillToolInput, LoadSkillToolOutput>({
           name: "load_skill",
           description: "加载技能",
@@ -102,21 +121,7 @@ export default class SkillPlugin extends Service<SkillConfig> {
     });
   }
 
-  override async stop(): Promise<void> {
+  async stop(): Promise<void> {
     await this.ctx["yesimbot.extension"].unregisterExtension("skill");
   }
 }
-
-type LoadSkillToolInput = {
-  skill: string;
-  args?: Record<string, unknown>;
-};
-
-type LoadSkillToolOutput =
-  | {
-      path: string;
-      content: string;
-    }
-  | {
-      error: string;
-    };

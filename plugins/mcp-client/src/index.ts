@@ -1,6 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { jsonSchema, JSONSchema7 } from "@yesimbot/agent/ai";
-import { Context, Schema, Service } from "koishi";
+import { Context, Logger, Schema } from "koishi";
 import type { ExtensionContext, ToolDefinition } from "koishi-plugin-yesimbot";
 
 import { connectMcpServer } from "./transports";
@@ -8,7 +8,7 @@ import type { McpClientConfig, McpClientTransport } from "./types";
 
 type McpToolDefinition = ToolDefinition<unknown, unknown>;
 
-export default class McpClientPlugin extends Service<McpClientConfig> {
+export default class McpClientPlugin {
   static name = "mcp-client";
   static inject = ["yesimbot.extension"];
   static Config: Schema<McpClientConfig> = Schema.object({
@@ -48,14 +48,21 @@ export default class McpClientPlugin extends Service<McpClientConfig> {
     ),
   });
 
+  public readonly ctx: Context;
+  public readonly config: McpClientConfig;
+  public readonly logger: Logger;
+
   private transports: Map<string, McpClientTransport> = new Map();
   private clients: Map<string, Client> = new Map();
   constructor(ctx: Context, config: McpClientConfig) {
-    super(ctx, config);
+    this.ctx = ctx;
     this.config = config;
+    this.logger = ctx.logger("mcp-client");
+    ctx.on("ready", this.start.bind(this));
+    ctx.on("dispose", this.stop.bind(this));
   }
 
-  override async start(): Promise<void> {
+  async start(): Promise<void> {
     this.ctx.logger.info("初始化 MCP 客户端...");
     for (const [name, server] of Object.entries(this.config.mcpServers)) {
       try {
@@ -95,7 +102,7 @@ export default class McpClientPlugin extends Service<McpClientConfig> {
       registry.set(name, { client, tools: toolDefs });
     }
 
-    const summary = await this.ctx["yesimbot.extension"].registerExtension({
+    await this.ctx["yesimbot.extension"].registerExtension({
       id: "mcp-client",
       setup: (ctx: ExtensionContext) => {
         for (const [name, { client: _client, tools }] of registry.entries()) {
@@ -104,19 +111,13 @@ export default class McpClientPlugin extends Service<McpClientConfig> {
             ctx.tool.register(tool);
           }
         }
-
-        return {
-          dispose: () => {
-            this.ctx.logger.info("MCP client extension disposed, tools auto-cleaned");
-          },
-        };
       },
     });
 
     this.ctx.logger.success("MCP 客户端初始化完成");
   }
 
-  override async stop(): Promise<void> {
+  async stop(): Promise<void> {
     this.ctx.logger.info("清理 MCP 客户端...");
     await this.ctx["yesimbot.extension"].unregisterExtension("mcp-client");
     for (const [name, client] of this.clients.entries()) {

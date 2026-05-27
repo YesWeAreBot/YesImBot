@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { Context, Logger, Schema, Service } from "koishi";
+import { Context, Logger, Schema } from "koishi";
 import type { ExtensionContext, ExtensionDefinition, ToolDefinition } from "koishi-plugin-yesimbot";
 
 import { createWorkspaceTools } from "./tools";
@@ -18,7 +18,7 @@ export interface WorkspacePluginConfig {
   enableJavascript?: boolean;
 }
 
-export default class WorkspacePlugin extends Service<WorkspacePluginConfig> {
+export default class WorkspacePlugin {
   static name = "yesimbot.workspace";
   static inject = ["yesimbot.extension"];
 
@@ -40,16 +40,21 @@ export default class WorkspacePlugin extends Service<WorkspacePluginConfig> {
     // enableJavascript: Schema.boolean().default(false).description("启用 JavaScript 执行"),
   });
 
+  public readonly ctx: Context;
+  public readonly config: WorkspacePluginConfig;
+  public readonly logger: Logger;
+
   private ws?: Workspace;
-  readonly logger: Logger;
 
   constructor(ctx: Context, config: WorkspacePluginConfig) {
-    super(ctx, "yesimbot.workspace");
-    this.logger = ctx.logger("workspace");
+    this.ctx = ctx;
     this.config = config;
+    this.logger = ctx.logger("workspace");
+    ctx.on("ready", this.start.bind(this));
+    ctx.on("dispose", this.stop.bind(this));
   }
 
-  async start(): Promise<void> {
+  public async start(): Promise<void> {
     this.logger.info("Starting workspace plugin...");
 
     const root = resolve(this.ctx.baseDir, this.config.root);
@@ -92,10 +97,10 @@ export default class WorkspacePlugin extends Service<WorkspacePluginConfig> {
     const workspace = this.ws;
     const logger = this.logger;
 
-    const summary = await this.ctx["yesimbot.extension"].registerExtension({
+    await this.ctx["yesimbot.extension"].registerExtension({
       id: "workspace",
       setup(ctx: ExtensionContext) {
-        ctx.on("agent:before-start", ((event: { systemPrompt: string }) => {
+        ctx.on("agent:before-start", (event) => {
           const sandboxInstruction = `## Bash Sandbox Environment
 You are operating in a sandboxed bash environment with the following configuration:
 - Current working directory: ${workspaceConfig.bash.cwd}
@@ -109,7 +114,7 @@ Use this environment to execute commands safely. Always be mindful of the limita
           return {
             systemPrompt: event.systemPrompt + `\n\n${sandboxInstruction}`,
           };
-        }) as (...args: unknown[]) => unknown);
+        });
 
         logger.info("Registering workspace tools...");
 
@@ -130,7 +135,7 @@ Use this environment to execute commands safely. Always be mindful of the limita
     this.logger.success("Workspace plugin started");
   }
 
-  async stop(): Promise<void> {
+  public async stop(): Promise<void> {
     await this.ctx["yesimbot.extension"].unregisterExtension("workspace");
     this.logger.info("Workspace plugin stopped");
   }
