@@ -24,9 +24,7 @@
     "clean": "rimraf dist && rimraf tsconfig.tsbuildinfo",
     "fmt": "oxfmt",
     "lint": "oxlint",
-    "pub": "yarn npm publish --access public",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "pub": "yarn npm publish --access public"
   },
   "dependencies": {
     "zod": "^3.25.76"
