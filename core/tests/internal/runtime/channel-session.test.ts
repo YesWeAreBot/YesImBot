@@ -45,7 +45,7 @@ import {
   type ChannelSessionDeps,
   isChannelAllowed,
 } from "../../../src/internal/runtime/session.js";
-import type { PlatformEvent } from "../../../src/shared/platform-event.js";
+import type { PlatformEvent, PlatformEventOf } from "../../../src/shared/platform-event.js";
 
 function createMockGateway(): PlatformGateway {
   return {
@@ -111,7 +111,7 @@ function createMockDeps(overrides?: Partial<ChannelSessionDeps>): ChannelSession
   };
 }
 
-function createEvent(overrides?: Partial<PlatformEvent>): PlatformEvent {
+function createEvent(overrides?: Partial<PlatformEventOf<"message">>): PlatformEvent {
   return {
     id: "evt-1",
     type: "message",
@@ -119,13 +119,12 @@ function createEvent(overrides?: Partial<PlatformEvent>): PlatformEvent {
     source: {
       platform: "test",
       channelId: "ch1",
-      conversationType: "group",
+      sourceType: "group",
       selfId: "test-bot-001",
     },
     actor: { id: "u1", name: "Alice" },
-    content: [{ type: "text", text: "Hello" }],
     visible: true,
-    details: null,
+    payload: { messageId: "m-1", content: "Hello" },
     metadata: { persist: true, triggerCandidate: true },
     ...overrides,
   };
@@ -164,7 +163,7 @@ describe("ChannelSession (de-physicalized)", () => {
     const event = createEvent();
     const bot = createMockBot();
 
-    await session.handleEvent(event, bot);
+    await session.handleEvent(event, [{ type: "text", text: "Hello" }], bot);
     // Verifies type-level compilation + no present() call
     expect(true).toBe(true);
   });
@@ -177,7 +176,7 @@ describe("ChannelSession (de-physicalized)", () => {
     });
     const bot = createMockBot();
 
-    await session.handleEvent(event, bot);
+    await session.handleEvent(event, [{ type: "text", text: "Hello" }], bot);
     // Should return early without calling sendCustomMessage
     expect(deps.sessionManager.appendCustomEntry).not.toHaveBeenCalled();
   });
@@ -202,7 +201,7 @@ describe("ChannelSession (de-physicalized)", () => {
     const event = createEvent();
     const bot = createMockBot();
 
-    await session.handleEvent(event, bot);
+    await session.handleEvent(event, [{ type: "text", text: "Hello" }], bot);
     expect(deps.sessionManager.appendCustomEntry).toBeDefined();
   });
 
@@ -222,7 +221,7 @@ describe("ChannelSession (de-physicalized)", () => {
     const event = createEvent();
     const bot = createMockBot();
 
-    await session.handleEvent(event, bot);
+    await session.handleEvent(event, [{ type: "text", text: "Hello" }], bot);
     expect(deps.behavior.willingnessManager.shouldReply).not.toHaveBeenCalled();
   });
 

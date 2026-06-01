@@ -151,7 +151,7 @@ export class PlatformGateway {
         });
         if (consumed) return;
         return next();
-      }, true);
+      });
       this.sourceDisposers.set(sourceKey, dispose);
     } else {
       const eventName = sourceKey.replace("koishi-event:", "");
@@ -187,8 +187,10 @@ export class PlatformGateway {
             this.logger.warn(`No bot available for event ${result.event.type}`);
             return true;
           }
+          const content = listener.renderContent(result.event.payload);
           await this.eventSubscriber({
             event: result.event,
+            content,
             bot,
             originSession: input.session,
           });

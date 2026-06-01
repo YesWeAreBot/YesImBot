@@ -1,6 +1,6 @@
 import { Context, Logger, Schema } from "koishi";
 
-import type { PlatformEvent } from "../../shared/platform-event.js";
+import { isPlatformEventOf, type PlatformEvent } from "../../shared/platform-event.js";
 
 export interface WillingnessConfig {
   /** 收到普通文本消息的基础分。这是对话的基石 */
@@ -239,9 +239,9 @@ export class WillingnessManager {
   public shouldReply(event: PlatformEvent, triggerCandidate: boolean): { decision: boolean } {
     const { source } = event;
     const chatId = `${source.platform}:${source.channelId}`;
-    if (event.type !== "message") return { decision: false };
+    if (!isPlatformEventOf(event, "message")) return { decision: false };
 
-    const content = typeof event.content === "string" ? event.content : "";
+    const content = event.payload.content;
 
     const context: MessageContext = {
       chatId,

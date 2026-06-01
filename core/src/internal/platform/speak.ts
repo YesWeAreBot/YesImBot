@@ -42,7 +42,7 @@ export interface SpeakAnomaly {
 // ============================================================================
 
 export interface CompileSpeakResult {
-  segments: Fragment[];
+  segments: string[];
   anomalies: SpeakAnomaly[];
 }
 
@@ -163,8 +163,8 @@ function normalizeFragment(fragment: Fragment): Element[] {
   return [fragment];
 }
 
-function splitBySep(items: Array<string | Element>): Fragment[] {
-  const segments: Fragment[] = [];
+function splitBySep(items: Array<string | Element>): string[] {
+  const segments: string[] = [];
   let current: Array<string | Element> = [];
 
   for (const item of items) {
@@ -182,10 +182,12 @@ function splitBySep(items: Array<string | Element>): Fragment[] {
   return segments;
 }
 
-function pushSegment(segments: Fragment[], items: Array<string | Element>): void {
+function pushSegment(segments: string[], items: Array<string | Element>): void {
   const compact = items.filter((item) => (typeof item === "string" ? item.length > 0 : true));
   if (compact.length === 0) return;
-  segments.push(compact);
+  segments.push(
+    compact.map((item) => (typeof item === "string" ? item : item.toString())).join(""),
+  );
 }
 
 function appendText(output: Array<string | Element>, text: string): void {

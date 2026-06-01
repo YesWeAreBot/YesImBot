@@ -15,7 +15,8 @@
       "outputs": ["dist/**", "lib/**"]
     },
     "check-types": {
-      "dependsOn": ["^check-types"]
+      "dependsOn": ["^build"],
+      "outputs": ["tsconfig.tsbuildinfo"]
     },
     "clean": {
       "cache": false

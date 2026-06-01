@@ -69,7 +69,7 @@ describe("PlatformGateway", () => {
     const subscriber = vi.fn().mockResolvedValue(undefined);
     gateway.subscribe(subscriber);
 
-    const listener: PlatformListener = {
+    const listener: PlatformListener<"message"> = {
       name: "test.echo",
       eventType: "message",
       source: { kind: "middleware" },
@@ -79,14 +79,14 @@ describe("PlatformGateway", () => {
           id: "evt-1",
           type: "message",
           timestamp: 0,
-          source: { platform: "test", channelId: "ch1", conversationType: "group" },
+          source: { platform: "test", channelId: "ch1", sourceType: "group" },
           actor: { id: "u1", name: "Alice" },
-          content: [{ type: "text", text: "hi" }],
           visible: true,
-          details: null,
+          payload: { messageId: "m-1", content: "hi" },
           metadata: { persist: true, triggerCandidate: true },
         },
       }),
+      renderContent: vi.fn((p) => [{ type: "text", text: p.content }]),
     };
 
     gateway.registerListener(listener);
@@ -110,9 +110,13 @@ describe("PlatformGateway", () => {
     expect(subscriber).toHaveBeenCalledWith(
       expect.objectContaining({
         event: expect.objectContaining({ type: "message" }),
+        content: [{ type: "text", text: "hi" }],
         bot: mockSession.bot,
         originSession: mockSession,
       }),
+    );
+    expect(listener.renderContent).toHaveBeenCalledWith(
+      expect.objectContaining({ messageId: "m-1", content: "hi" }),
     );
   });
 
@@ -120,14 +124,15 @@ describe("PlatformGateway", () => {
     const subscriber = vi.fn().mockResolvedValue(undefined);
     gateway.subscribe(subscriber);
 
-    const passListener: PlatformListener = {
+    const passListener: PlatformListener<"message"> = {
       name: "test.pass",
       eventType: "message",
       source: { kind: "middleware" },
       translate: vi.fn().mockReturnValue({ type: "pass" }),
+      renderContent: vi.fn(),
     };
 
-    const eventListener: PlatformListener = {
+    const eventListener: PlatformListener<"message"> = {
       name: "test.event",
       eventType: "message",
       source: { kind: "middleware" },
@@ -138,14 +143,14 @@ describe("PlatformGateway", () => {
           id: "evt-2",
           type: "message",
           timestamp: 0,
-          source: { platform: "test", channelId: "ch1", conversationType: "group" },
+          source: { platform: "test", channelId: "ch1", sourceType: "group" },
           actor: { id: "u1", name: "Alice" },
-          content: [{ type: "text", text: "hi" }],
           visible: true,
-          details: null,
+          payload: { messageId: "m-2", content: "hi" },
           metadata: { persist: true, triggerCandidate: true },
         },
       }),
+      renderContent: vi.fn((p) => [{ type: "text", text: p.content }]),
     };
 
     gateway.registerListener(passListener);
@@ -166,19 +171,21 @@ describe("PlatformGateway", () => {
     const subscriber = vi.fn().mockResolvedValue(undefined);
     gateway.subscribe(subscriber);
 
-    const dropListener: PlatformListener = {
+    const dropListener: PlatformListener<"message"> = {
       name: "test.drop",
       eventType: "message",
       source: { kind: "middleware" },
       translate: vi.fn().mockReturnValue({ type: "drop" }),
+      renderContent: vi.fn(),
     };
 
-    const neverCalled: PlatformListener = {
+    const neverCalled: PlatformListener<"message"> = {
       name: "test.never",
       eventType: "message",
       source: { kind: "middleware" },
       priority: -1,
       translate: vi.fn(),
+      renderContent: vi.fn(),
     };
 
     gateway.registerListener(dropListener);

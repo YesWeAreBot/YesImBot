@@ -123,7 +123,7 @@ describe("search_conversation tool", () => {
   it("searches for numeric ID in message content", async () => {
     // 创建包含数字 ID 的测试数据
     const testContent = `{"type":"session","id":"test-sess","timestamp":"2026-05-19T09:00:00.000Z","cwd":"/tmp"}
-{"type":"custom_message","id":"msg-1","timestamp":"2026-05-19T09:01:00.000Z","customType":"athena:event","content":"用户ID是1293865264","display":true,"details":{"version":1,"id":"evt-1","kind":"chat_message","timestamp":1779181260000,"source":{"platform":"test","channelId":"ch-1","conversationType":"private"},"actor":{"id":"user-1","name":"Alice"},"payload":{"messageId":"m-1","content":"用户ID是1293865264"}}}`;
+{"type":"custom_message","id":"msg-1","timestamp":"2026-05-19T09:01:00.000Z","customType":"athena:event","content":"用户ID是1293865264","display":true,"details":{"version":1,"id":"evt-1","type":"message","timestamp":1779181260000,"source":{"platform":"test","channelId":"ch-1","sourceType":"private"},"actor":{"id":"user-1","name":"Alice"},"payload":{"messageId":"m-1","content":"用户ID是1293865264"}}}`;
 
     const testSessionsDir = createTempSessionsDir();
     setupTestChannel(testSessionsDir, "test_ch-1", {

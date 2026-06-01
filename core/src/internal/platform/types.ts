@@ -1,6 +1,12 @@
+import type { UserContent } from "@yesimbot/agent/ai";
 import type { Bot, Fragment, Session } from "koishi";
 
-import type { PlatformEvent, PlatformEventType } from "../../shared/platform-event.js";
+import type {
+  PlatformEvent,
+  PlatformEventOf,
+  PlatformEventPayloadMap,
+  PlatformEventType,
+} from "../../shared/platform-event.js";
 
 // ============================================================================
 // Gateway → Runtime contract
@@ -8,6 +14,7 @@ import type { PlatformEvent, PlatformEventType } from "../../shared/platform-eve
 
 export interface GatewayEvent {
   event: PlatformEvent;
+  content: UserContent;
   bot: Bot;
   originSession?: Session;
 }
@@ -26,8 +33,8 @@ export interface RawEventInput {
 // Listener translate result
 // ============================================================================
 
-export type TranslateResult =
-  | { type: "event"; event: PlatformEvent }
+export type TranslateResult<T extends PlatformEventType> =
+  | { type: "event"; event: PlatformEventOf<T> }
   | { type: "pass" }
   | { type: "drop" };
 
@@ -35,12 +42,13 @@ export type TranslateResult =
 // PlatformListener — input translator
 // ============================================================================
 
-export interface PlatformListener {
+export interface PlatformListener<T extends PlatformEventType = PlatformEventType> {
   name: string;
-  eventType: PlatformEventType;
+  eventType: T;
   source: { kind: "middleware" } | { kind: "koishi-event"; eventName: string };
   priority?: number;
-  translate(input: RawEventInput): TranslateResult | Promise<TranslateResult>;
+  translate(input: RawEventInput): TranslateResult<T> | Promise<TranslateResult<T>>;
+  renderContent(payload: PlatformEventPayloadMap[T]): UserContent;
 }
 
 // ============================================================================

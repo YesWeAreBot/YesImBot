@@ -261,15 +261,15 @@ describe("RuntimeController observed-event dispatch", () => {
         source: {
           platform: "onebot",
           channelId: "group-1",
-          conversationType: "group",
+          sourceType: "group",
           selfId: "bot-2",
         },
         actor: { id: "user-1" },
-        content: [{ type: "text", text: "hello" }],
         visible: true,
-        details: {},
+        payload: { messageId: "msg-1", content: "hello" },
         metadata: { persist: true, triggerCandidate: true },
       },
+      content: [{ type: "text", text: "hello" }],
       bot,
       originSession,
     });

@@ -181,8 +181,8 @@ describe("compactionSummary 排除", () => {
   it("无 compactionSummary 时全量搜索当前会话文件", async () => {
     const noCompactionDir = createTempSessionsDir();
     const noCompactionContent = `{"type":"session","id":"no-compaction-session","timestamp":"2026-05-19T09:00:00.000Z","cwd":"/tmp"}
-{"type":"custom_message","id":"msg-1","timestamp":"2026-05-19T09:01:00.000Z","customType":"athena:event","content":"消息1","display":true,"details":{"version":1,"id":"evt-1","kind":"chat_message","timestamp":1779181260000,"source":{"platform":"test","channelId":"ch-1","conversationType":"private"},"actor":{"id":"user-1","name":"Alice"},"payload":{"messageId":"m-1","content":"消息1"}}}
-{"type":"custom_message","id":"msg-2","timestamp":"2026-05-19T09:02:00.000Z","customType":"athena:event","content":"消息2","display":true,"details":{"version":1,"id":"evt-2","kind":"chat_message","timestamp":1779181320000,"source":{"platform":"test","channelId":"ch-1","conversationType":"private"},"actor":{"id":"user-1","name":"Alice"},"payload":{"messageId":"m-2","content":"消息2"}}}`;
+{"type":"custom_message","id":"msg-1","timestamp":"2026-05-19T09:01:00.000Z","customType":"athena:event","content":"消息1","display":true,"details":{"version":1,"id":"evt-1","type":"message","timestamp":1779181260000,"source":{"platform":"test","channelId":"ch-1","sourceType":"private"},"actor":{"id":"user-1","name":"Alice"},"payload":{"messageId":"m-1","content":"消息1"}}}
+{"type":"custom_message","id":"msg-2","timestamp":"2026-05-19T09:02:00.000Z","customType":"athena:event","content":"消息2","display":true,"details":{"version":1,"id":"evt-2","type":"message","timestamp":1779181320000,"source":{"platform":"test","channelId":"ch-1","sourceType":"private"},"actor":{"id":"user-1","name":"Alice"},"payload":{"messageId":"m-2","content":"消息2"}}}`;
 
     setupTestChannel(noCompactionDir, "test_ch-1", {
       platform: "test",

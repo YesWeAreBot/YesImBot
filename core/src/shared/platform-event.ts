@@ -1,21 +1,5 @@
 import type { UserContent } from "@yesimbot/agent/ai";
 
-// ============================================================================
-// PlatformEventType
-// ============================================================================
-
-export type PlatformEventType =
-  | "message"
-  | "message.recall"
-  | "reaction"
-  | "member"
-  | "poke"
-  | (string & {});
-
-// ============================================================================
-// Source & Actor (migrated from bot/types.ts)
-// ============================================================================
-
 export interface EventSource {
   platform: string;
   channelId: string;
@@ -32,124 +16,185 @@ export interface Actor {
   isSelf?: boolean;
 }
 
-// ============================================================================
-// Payload types (migrated from bot/types.ts)
-// ============================================================================
+export interface EventMetadata {
+  persist: boolean;
+  triggerCandidate: boolean;
+}
 
-export interface ChatMessagePayload {
+export interface MessagePayload {
   messageId: string;
   content: string;
   quoteMessageId?: string;
   quoteSender?: Actor;
 }
 
-export interface MemberChangePayload {
-  action: "join" | "leave" | "kick" | "ban" | "unban";
-  groupId: string;
+export interface PlatformEventPayloadMap {
+  message: MessagePayload;
 }
 
-export interface MessageRecallPayload {
-  messageId: string;
-  originalSender?: Actor;
-}
+export type PlatformEventType = keyof PlatformEventPayloadMap;
 
-export interface ReactionPayload {
-  messageId: string;
-  emoji: string;
-  action: "add" | "remove";
-}
-
-export interface PokePayload {
-  targetId: string;
-}
-
-export interface AthenaEventMap {
-  chat_message: ChatMessagePayload;
-  member_change: MemberChangePayload;
-  message_recall: MessageRecallPayload;
-  reaction: ReactionPayload;
-  poke: PokePayload;
-}
-
-export type AthenaEventKind = keyof AthenaEventMap;
-
-export interface EventMetadata {
-  persist: boolean;
-  triggerCandidate: boolean;
-}
-
-export interface AthenaEvent<K extends AthenaEventKind = AthenaEventKind> {
+export interface PlatformEventOf<T extends PlatformEventType> {
   id: string;
-  kind: K;
+  type: T;
   timestamp: number;
   source: EventSource;
   actor: Actor;
   target?: Actor;
-  payload: AthenaEventMap[K];
+  visible: boolean;
+  payload: PlatformEventPayloadMap[T];
   metadata: EventMetadata;
 }
 
-export interface CreateAthenaEventInput<K extends AthenaEventKind> {
+export interface UnknownPlatformEvent {
+  id: string;
+  type: string;
+  timestamp: number;
   source: EventSource;
   actor: Actor;
   target?: Actor;
-  payload: AthenaEventMap[K];
+  visible: boolean;
+  payload: unknown;
   metadata: EventMetadata;
 }
 
-// ============================================================================
-// Serialized event (for persistence)
-// ============================================================================
+export type PlatformEvent = { [T in PlatformEventType]: PlatformEventOf<T> }[PlatformEventType];
 
-export interface SerializedPlatformEvent {
+export function isPlatformEventOf<T extends PlatformEventType>(
+  event: PlatformEvent | UnknownPlatformEvent,
+  type: T,
+): event is PlatformEventOf<T> {
+  return event.type === type;
+}
+
+export interface SerializedPlatformEvent<T extends PlatformEventType = PlatformEventType> {
   version: 1;
   id: string;
-  /** @deprecated use `type` in PlatformEvent; kept in serialized form for backward compat */
-  kind: string;
+  type: T;
   timestamp: number;
   source: EventSource;
   actor: Actor;
   target?: Actor;
-  payload: AthenaEventMap[keyof AthenaEventMap];
+  payload: PlatformEventPayloadMap[T];
 }
 
-// ============================================================================
-// PlatformEvent — unified event value object
-// ============================================================================
-
-export interface PlatformEvent {
-  /** 事件唯一标识 */
-  id: string;
-
-  /** 事件语义类型 */
-  type: PlatformEventType;
-
-  /** 事件发生时间 (epoch ms) */
-  timestamp: number;
-
-  /** 来源平台与频道 */
-  source: EventSource;
-
-  /** 行为者 */
-  actor: Actor;
-
-  /** 行为目标（可选，如 poke 的 target） */
-  target?: Actor;
-
-  /** 给 LLM 消费的标准消息内容 */
-  content: UserContent;
-
-  /** 是否在 UI/历史中显示 */
-  visible: boolean;
-
-  /** 原始结构化载荷（供扩展和持久化使用） */
-  details: unknown;
-
-  /** 路由与触发元数据 */
-  metadata: {
-    /** 是否需要持久化到会话历史 */
-    persist: boolean;
-    /** 是否为触发候选（@ 机器人、私聊消息等） */
-    triggerCandidate: boolean;
+export function serializePlatformEvent<T extends PlatformEventType>(
+  event: PlatformEventOf<T>,
+): SerializedPlatformEvent<T> {
+  const wire: SerializedPlatformEvent<T> = {
+    version: 1,
+    id: event.id,
+    type: event.type,
+    timestamp: event.timestamp,
+    source: event.source,
+    actor: event.actor,
+    payload: event.payload,
   };
+  if (event.target) {
+    wire.target = event.target;
+  }
+  return wire;
+}
+
+export function parsePlatformEvent(raw: unknown): PlatformEvent | UnknownPlatformEvent | null {
+  if (typeof raw !== "object" || raw === null) {
+    return null;
+  }
+
+  const obj = raw as Record<string, unknown>;
+  if (obj.version !== 1) {
+    return null;
+  }
+  if (
+    typeof obj.id !== "string" ||
+    typeof obj.type !== "string" ||
+    typeof obj.timestamp !== "number"
+  ) {
+    return null;
+  }
+  if (typeof obj.source !== "object" || obj.source === null) {
+    return null;
+  }
+  if (!isEventSource(obj.source)) {
+    return null;
+  }
+  if (typeof obj.actor !== "object" || obj.actor === null) {
+    return null;
+  }
+  if (typeof (obj.actor as Record<string, unknown>).id !== "string") {
+    return null;
+  }
+  if (!("payload" in obj)) {
+    return null;
+  }
+
+  const base = {
+    id: obj.id,
+    timestamp: obj.timestamp,
+    source: obj.source as EventSource,
+    actor: obj.actor as Actor,
+    visible: true,
+    // 反序列化只为满足必填类型；这两个字段仅在分发路径有语义。
+    metadata: { persist: true, triggerCandidate: false } satisfies EventMetadata,
+  };
+
+  if (obj.type === "message") {
+    if (!isMessagePayload(obj.payload)) {
+      return null;
+    }
+    return obj.target === undefined
+      ? { ...base, type: "message", payload: obj.payload }
+      : { ...base, type: "message", target: obj.target as Actor, payload: obj.payload };
+  }
+
+  return obj.target === undefined
+    ? { ...base, type: obj.type, payload: obj.payload }
+    : { ...base, type: obj.type, target: obj.target as Actor, payload: obj.payload };
+}
+
+function isEventSource(raw: unknown): raw is EventSource {
+  if (typeof raw !== "object" || raw === null) {
+    return false;
+  }
+  const obj = raw as Record<string, unknown>;
+  return (
+    typeof obj.platform === "string" &&
+    typeof obj.channelId === "string" &&
+    (obj.sourceType === "private" ||
+      obj.sourceType === "group" ||
+      obj.sourceType === "guild" ||
+      obj.sourceType === "thread")
+  );
+}
+
+function isMessagePayload(raw: unknown): raw is MessagePayload {
+  if (typeof raw !== "object" || raw === null) {
+    return false;
+  }
+  const obj = raw as Record<string, unknown>;
+  return typeof obj.messageId === "string" && typeof obj.content === "string";
+}
+
+export interface AthenaEventEntry {
+  type: "custom_message";
+  customType: "athena:event";
+  id?: string;
+  content: UserContent;
+  display?: boolean;
+  details: unknown;
+  timestamp?: string;
+}
+
+export function isAthenaEventEntry(raw: unknown): raw is AthenaEventEntry {
+  if (typeof raw !== "object" || raw === null) {
+    return false;
+  }
+
+  const obj = raw as Record<string, unknown>;
+  return (
+    obj.type === "custom_message" &&
+    obj.customType === "athena:event" &&
+    "content" in obj &&
+    "details" in obj
+  );
 }

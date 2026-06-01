@@ -2,6 +2,11 @@
 import { createReadStream } from "node:fs";
 import { createInterface } from "node:readline";
 
+import {
+  isAthenaEventEntry,
+  isPlatformEventOf,
+  parsePlatformEvent,
+} from "../../../../shared/platform-event.js";
 import type { ParsedMessage, ScanOptions } from "./types.js";
 
 function extractText(content: unknown): string {
@@ -13,47 +18,21 @@ function extractText(content: unknown): string {
     .join("");
 }
 
-function parseTimestamp(
-  obj: Record<string, unknown>,
-  details?: Record<string, unknown>,
-  message?: Record<string, unknown>,
-): number {
-  if (details?.timestamp && typeof details.timestamp === "number") {
-    if (details.timestamp >= 1e9 && details.timestamp < 1e10) {
-      return details.timestamp * 1000;
-    }
-    return details.timestamp;
-  }
-
-  // assistant 消息的时间戳在 message 对象内部
-  if (message?.timestamp && typeof message.timestamp === "number") {
-    if (message.timestamp >= 1e9 && message.timestamp < 1e10) {
-      return message.timestamp * 1000;
-    }
-    return message.timestamp;
-  }
-
-  if (obj.timestamp && typeof obj.timestamp === "string") {
-    const ts = new Date(obj.timestamp).getTime();
-    if (!Number.isNaN(ts)) return ts;
-  }
-
-  return 0;
-}
-
 export type ParseResult = ParsedMessage | null | { type: "compaction_marker" };
 
 export function parseJsonlLine(line: string): ParseResult {
   const trimmed = line.trim();
   if (!trimmed) return null;
 
-  let obj: Record<string, unknown>;
+  let raw: unknown;
   try {
-    obj = JSON.parse(trimmed);
+    raw = JSON.parse(trimmed);
   } catch {
     return null;
   }
+  if (typeof raw !== "object" || raw === null) return null;
 
+  const obj = raw as Record<string, unknown>;
   const type = obj.type;
 
   if (
@@ -68,27 +47,21 @@ export function parseJsonlLine(line: string): ParseResult {
     return null;
   }
 
-  if (type === "custom_message" && obj.customType === "athena:event") {
-    const details = (obj.details ?? {}) as Record<string, unknown>;
-    if (details.version !== 1) return null;
-    if (details.kind !== "chat_message") return null;
+  if (isAthenaEventEntry(obj)) {
+    const event = parsePlatformEvent(obj.details);
+    if (!event) return null;
+    if (!isPlatformEventOf(event, "message")) return null;
 
-    const content = obj.content;
-    const text = extractText(content);
+    const text = extractText(obj.content);
     if (!text) return null;
 
-    const actor = details.actor as { id?: string; name?: string } | undefined;
-    const speaker = actor?.name ?? actor?.id ?? "unknown";
-
-    const timestamp = parseTimestamp(obj as Record<string, unknown>, details);
-
     return {
-      id: String(details.id ?? obj.id ?? ""),
-      timestamp,
+      id: event.id || String(obj.id ?? ""),
+      timestamp: event.timestamp,
       role: "user",
-      speaker,
-      actorId: actor?.id,
-      actorName: actor?.name,
+      speaker: event.actor.name ?? event.actor.id,
+      actorId: event.actor.id,
+      actorName: event.actor.name,
       content: text,
       channelKey: "",
     };
@@ -112,7 +85,11 @@ export function parseJsonlLine(line: string): ParseResult {
       const text = extractText(content);
       if (!text) return null;
 
-      const timestamp = parseTimestamp(obj as Record<string, unknown>, undefined, message);
+      const ts = obj.timestamp;
+      const timestamp =
+        typeof ts === "string" && !Number.isNaN(new Date(ts).getTime())
+          ? new Date(ts).getTime()
+          : 0;
 
       return {
         id: String(obj.id ?? ""),

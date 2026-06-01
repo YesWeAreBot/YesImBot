@@ -19,9 +19,9 @@ describe("parseJsonlLine", () => {
       details: {
         version: 1,
         id: "msg-001",
-        kind: "chat_message",
+        type: "message",
         timestamp: 1747476060000,
-        source: { platform: "onebot", channelId: "group-123", conversationType: "group" },
+        source: { platform: "onebot", channelId: "group-123", sourceType: "group" },
         actor: { id: "user-alice", name: "Alice" },
         payload: { messageId: "msg-001", content: "Hello world" },
       },
@@ -39,7 +39,7 @@ describe("parseJsonlLine", () => {
     });
   });
 
-  it("returns null for non-chat_message events", () => {
+  it("returns null for non-message event types", () => {
     const line = JSON.stringify({
       type: "custom_message",
       id: "evt-001",
@@ -48,9 +48,9 @@ describe("parseJsonlLine", () => {
       details: {
         version: 1,
         id: "evt-001",
-        kind: "member_change",
+        type: "message.recall",
         timestamp: 1747476060000,
-        source: { platform: "onebot", channelId: "group-123" },
+        source: { platform: "onebot", channelId: "group-123", sourceType: "group" },
         actor: { id: "user-alice", name: "Alice" },
         payload: {},
       },
@@ -67,9 +67,9 @@ describe("parseJsonlLine", () => {
       details: {
         version: 1,
         id: "msg-010",
-        kind: "chat_message",
+        type: "message",
         timestamp: 1747476060000,
-        source: { platform: "onebot", channelId: "group-123" },
+        source: { platform: "onebot", channelId: "group-123", sourceType: "group" },
         actor: { id: "user-alice" },
         payload: { messageId: "msg-010", content: "Hi" },
       },
@@ -87,9 +87,9 @@ describe("parseJsonlLine", () => {
       details: {
         version: 2,
         id: "msg-011",
-        kind: "chat_message",
+        type: "message",
         timestamp: 1747476060000,
-        source: { platform: "onebot", channelId: "group-123" },
+        source: { platform: "onebot", channelId: "group-123", sourceType: "group" },
         actor: { id: "user-alice", name: "Alice" },
         payload: { messageId: "msg-011", content: "Hi" },
       },
@@ -193,19 +193,18 @@ describe("parseJsonlLine", () => {
     expect(result).toEqual({ type: "compaction_marker" });
   });
 
-  it("uses details.timestamp over top-level timestamp", () => {
+  it("reads timestamp from event body", () => {
     const line = JSON.stringify({
       type: "custom_message",
       id: "msg-ts",
-      timestamp: "2026-05-19T10:00:00.000Z", // 顶层：10:00 UTC
       customType: "athena:event",
       content: [{ type: "text", text: "test" }],
       details: {
         version: 1,
         id: "msg-ts",
-        kind: "chat_message",
-        timestamp: 1779181200000, // details：09:00 UTC (毫秒)
-        source: { platform: "test", channelId: "ch-1", conversationType: "private" },
+        type: "message",
+        timestamp: 1779181200000,
+        source: { platform: "test", channelId: "ch-1", sourceType: "private" },
         actor: { id: "user-1", name: "Test" },
         payload: { messageId: "msg-ts", content: "test" },
       },
@@ -213,30 +212,7 @@ describe("parseJsonlLine", () => {
     const result = parseJsonlLine(line);
     expect(result).not.toBeNull();
     if (result && !("type" in result)) {
-      expect(result.timestamp).toBe(1779181200000); // 应使用 details
-    }
-  });
-
-  it("converts seconds-level timestamp to milliseconds", () => {
-    const line = JSON.stringify({
-      type: "custom_message",
-      id: "msg-sec",
-      customType: "athena:event",
-      content: [{ type: "text", text: "test" }],
-      details: {
-        version: 1,
-        id: "msg-sec",
-        kind: "chat_message",
-        timestamp: 1779181200, // 秒级（10位数字）
-        source: { platform: "test", channelId: "ch-1", conversationType: "private" },
-        actor: { id: "user-1", name: "Test" },
-        payload: { messageId: "msg-sec", content: "test" },
-      },
-    });
-    const result = parseJsonlLine(line);
-    expect(result).not.toBeNull();
-    if (result && !("type" in result)) {
-      expect(result.timestamp).toBe(1779181200000); // 应转换为毫秒
+      expect(result.timestamp).toBe(1779181200000);
     }
   });
 });

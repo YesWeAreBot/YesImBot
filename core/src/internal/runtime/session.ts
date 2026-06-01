@@ -1,5 +1,5 @@
 import { Agent } from "@yesimbot/agent/agent";
-import type { ChatModelRef } from "@yesimbot/agent/ai";
+import type { ChatModelRef, UserContent } from "@yesimbot/agent/ai";
 import {
   AgentSession,
   convertToLlm,
@@ -9,7 +9,7 @@ import {
 import type { Bot, Session } from "koishi";
 
 import type { BotInfo } from "../../services/extension/built-in/system-prompt.js";
-import type { PlatformEvent } from "../../shared/platform-event.js";
+import { serializePlatformEvent, type PlatformEvent } from "../../shared/platform-event.js";
 import type { ChannelIdentifier, ChannelKey } from "../../shared/types.js";
 import type { ExtensionBindingHost } from "../extension/context.js";
 import { createExtensionBinding } from "../extension/context.js";
@@ -148,7 +148,12 @@ export class ChannelSession {
   // Ingress: handle PlatformEvent
   // ========================================================================
 
-  async handleEvent(event: PlatformEvent, bot: Bot, originSession?: Session): Promise<void> {
+  async handleEvent(
+    event: PlatformEvent,
+    content: UserContent,
+    bot: Bot,
+    originSession?: Session,
+  ): Promise<void> {
     if (this.disposed) return;
 
     const channelAllowed = isChannelAllowed(
@@ -166,13 +171,12 @@ export class ChannelSession {
 
     if (!event.metadata.persist && !shouldTriggerTurn) return;
 
-    // PlatformEvent 自带 content/visible，不再调 bot.present()
     await this.agentSession.sendCustomMessage(
       {
         customType: "athena:event",
-        content: event.content,
+        content,
         display: event.visible,
-        details: event.details,
+        details: serializePlatformEvent(event),
       },
       shouldTriggerTurn ? { triggerTurn: true, deliverAs: "followUp" } : { triggerTurn: false },
     );

@@ -256,15 +256,15 @@ describe("RuntimeController", () => {
         source: {
           platform: "onebot",
           channelId: "group-1",
-          conversationType: "group",
+          sourceType: "group",
           selfId: "bot-2",
         },
         actor: { id: "user-1" },
-        content: [{ type: "text", text: "hello" }],
         visible: true,
-        details: {},
+        payload: { messageId: "msg-1", content: "hello" },
         metadata: { persist: true, triggerCandidate: true },
       },
+      content: [{ type: "text", text: "hello" }],
       bot: { selfId: "bot-2", platform: "onebot", user: { name: "Athena" } },
       originSession: { id: "session-1" },
     });
@@ -303,15 +303,15 @@ describe("RuntimeController", () => {
         source: {
           platform: "onebot",
           channelId: "group-1",
-          conversationType: "group",
+          sourceType: "group",
           selfId: "bot-1",
         },
         actor: { id: "user-1" },
-        content: [{ type: "text", text: "hello" }],
         visible: true,
-        details: {},
+        payload: { messageId: "msg-1", content: "hello" },
         metadata: { persist: true, triggerCandidate: true },
       },
+      content: [{ type: "text", text: "hello" }],
       bot: { selfId: "bot-1", platform: "onebot", user: { name: "Athena A" } },
     });
 
@@ -324,15 +324,15 @@ describe("RuntimeController", () => {
         source: {
           platform: "onebot",
           channelId: "group-1",
-          conversationType: "group",
+          sourceType: "group",
           selfId: "bot-2",
         },
         actor: { id: "user-2" },
-        content: [{ type: "text", text: "hello again" }],
         visible: true,
-        details: {},
+        payload: { messageId: "msg-2", content: "hello again" },
         metadata: { persist: true, triggerCandidate: true },
       },
+      content: [{ type: "text", text: "hello again" }],
       bot: { selfId: "bot-2", platform: "onebot", user: { name: "Athena B" } },
     });
 

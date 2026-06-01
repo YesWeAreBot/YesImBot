@@ -253,14 +253,14 @@ export class RuntimeController {
   }
 
   private async handleGatewayEvent(ge: GatewayEvent): Promise<void> {
-    const { event, bot, originSession } = ge;
+    const { event, content, bot, originSession } = ge;
     const { platform, channelId, sourceType } = event.source;
     if (!platform || !channelId) return;
 
     const type = sourceType === "private" ? "private" : "group";
     const key: ChannelKey = `${platform}:${channelId}`;
     const session = await this.getOrCreateChannelSession(key, { platform, channelId, type }, bot);
-    await session.handleEvent(event, bot, originSession);
+    await session.handleEvent(event, content, bot, originSession);
   }
 
   private async replaceSession(
