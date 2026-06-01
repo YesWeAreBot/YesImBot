@@ -1,11 +1,45 @@
-import { h, type Element, type Fragment } from "koishi";
+import { h, type Element, type Fragment, type Session } from "koishi";
 
-import type {
-  SpeakAnomaly,
-  SpeakElementContext,
-  SpeakElementDefinition,
-  SpeakElementPromptInfo,
-} from "./types.js";
+// ============================================================================
+// SpeakElement types (migrated from types.ts)
+// ============================================================================
+
+export interface SpeakElementContext {
+  channel: { platform: string; channelId: string; type: "private" | "group" };
+  session?: Session;
+}
+
+export interface SpeakElementDefinition {
+  tag: string;
+  syntax: string;
+  description: string;
+  examples?: string[];
+  transform?: (element: Element, context: SpeakElementContext) => Fragment | Promise<Fragment>;
+}
+
+export interface SpeakElementPromptInfo {
+  tag: string;
+  syntax: string;
+  description: string;
+  examples: string[];
+}
+
+export interface SpeakAnomaly {
+  version: 1;
+  kind: "transform_failed" | "send_failed" | "partial_failed" | "cancelled";
+  timestamp: number;
+  source: "athena-bot";
+  reason: string;
+  generatedContent: string;
+  attemptedSegments: string[];
+  deliveredSegments?: string[];
+  failedSegments?: string[];
+  error?: unknown;
+}
+
+// ============================================================================
+// SpeakElementRegistry
+// ============================================================================
 
 export interface CompileSpeakResult {
   segments: Fragment[];

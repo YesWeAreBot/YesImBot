@@ -2,7 +2,8 @@ import type { Context } from "koishi";
 
 import { Config } from "../config.js";
 import { ModelService } from "../services/model/service.js";
-import { BotModule } from "./bot/index.js";
+import { createFallbackListeners } from "./platform/fallback-listeners.js";
+import { PlatformGateway } from "./platform/gateway.js";
 import { RuntimeController, RuntimeControllerConfig } from "./runtime/index.js";
 import { SessionStore } from "./session/index.js";
 
@@ -16,24 +17,23 @@ export class CoreApp {
     const modelService = ctx["yesimbot.model"] as ModelService;
     const extensionService = ctx["yesimbot.extension"];
     const sessionStore = new SessionStore(ctx, config);
-    const botModule = new BotModule({
-      ctx,
-      config: {
-        logLevel: config.logLevel,
-        consumeMessages: config.consumeMessages,
-      },
-    });
+    const platformGateway = new PlatformGateway(ctx);
+
+    for (const listener of createFallbackListeners()) {
+      platformGateway.registerListener(listener);
+    }
+
     const runtimeController = new RuntimeController({
       ctx,
       config: config as RuntimeControllerConfig,
       modelService,
       extensionRegistry: extensionService,
       sessionStore,
-      botModule,
+      platformGateway,
     });
     let disposeDefinitionSubscription: (() => void) | undefined;
     ctx.on("ready", async () => {
-      await botModule.start();
+      await platformGateway.start();
       await sessionStore.start();
       await runtimeController.start();
       disposeDefinitionSubscription = extensionService.subscribeDefinitions((change) => {
@@ -44,7 +44,7 @@ export class CoreApp {
       disposeDefinitionSubscription?.();
       disposeDefinitionSubscription = undefined;
       await runtimeController.stop();
-      await botModule.stop();
+      await platformGateway.stop();
       await sessionStore.stop();
     });
   }

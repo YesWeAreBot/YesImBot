@@ -29,12 +29,10 @@ describe("Core public/internal API boundary", () => {
 
   it("internal runtime files do not depend on internal Koishi service lookups", () => {
     const controller = readCore("internal/runtime/controller.ts");
-    const botModule = readCore("internal/bot/module.ts");
 
     expect(controller).not.toContain(internalServiceLookup("session"));
     expect(controller).not.toContain(internalServiceLookup("bot"));
     expect(controller).not.toContain(internalServiceLookup("runtime"));
-    expect(botModule).not.toContain(internalServiceLookup("session"));
   });
 
   it("removes obsolete compatibility source directories", () => {

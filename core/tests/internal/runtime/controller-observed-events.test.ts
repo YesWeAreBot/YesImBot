@@ -211,14 +211,10 @@ function createDeps() {
       }),
       subscribeSessionRotated: vi.fn().mockReturnValue(vi.fn()),
     },
-    botModule: {
-      subscribeObservedEvents: vi.fn((subscriber: (observed: unknown) => Promise<void>) => {
+    platformGateway: {
+      subscribe: vi.fn((subscriber: (observed: unknown) => Promise<void>) => {
         observedSubscribers.push(subscriber);
         return vi.fn();
-      }),
-      getPresenterCatalog: vi.fn().mockReturnValue({
-        applyTo: vi.fn(),
-        registerBase: vi.fn(),
       }),
     },
     observedSubscribers,
@@ -246,12 +242,12 @@ describe("RuntimeController observed-event dispatch", () => {
       modelService: deps.modelService as never,
       extensionRegistry: deps.extensionRegistry as never,
       sessionStore: deps.sessionStore as never,
-      botModule: deps.botModule as never,
+      platformGateway: deps.platformGateway as never,
     });
 
     await controller.start();
 
-    expect(deps.botModule.subscribeObservedEvents).toHaveBeenCalledTimes(1);
+    expect(deps.platformGateway.subscribe).toHaveBeenCalledTimes(1);
 
     const subscriber = deps.observedSubscribers[0];
     const bot = { selfId: "bot-2", platform: "onebot", user: { name: "Athena" } };
@@ -260,7 +256,7 @@ describe("RuntimeController observed-event dispatch", () => {
     await subscriber({
       event: {
         id: "event-1",
-        kind: "chat_message",
+        type: "message",
         timestamp: 1,
         source: {
           platform: "onebot",
@@ -269,7 +265,9 @@ describe("RuntimeController observed-event dispatch", () => {
           selfId: "bot-2",
         },
         actor: { id: "user-1" },
-        payload: { messageId: "m-1", content: "hello" },
+        content: [{ type: "text", text: "hello" }],
+        visible: true,
+        details: {},
         metadata: { persist: true, triggerCandidate: true },
       },
       bot,
@@ -281,7 +279,6 @@ describe("RuntimeController observed-event dispatch", () => {
       channelId: "group-1",
       type: "group",
     });
-    expect(deps.botModule.getPresenterCatalog).toHaveBeenCalled();
     expect(createExtensionBinding).toHaveBeenCalledWith(
       extension,
       expect.objectContaining({

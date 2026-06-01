@@ -1,4 +1,6 @@
-import type { SpeakElementDefinition } from "../bot/types.js";
+import type { Bot } from "koishi";
+
+import type { SpeakElementDefinition } from "../platform/speak.js";
 import type { Channel } from "./types.js";
 import type {
   ExtensionBinding,
@@ -21,7 +23,9 @@ export interface ExtensionBindingHost {
     sendMessage(message: unknown, options?: unknown): Promise<void>;
     sendUserMessage(content: unknown, options?: unknown): Promise<void>;
   };
-  bot: {
+  platform: {
+    readonly name: string;
+    readonly bot: Bot | undefined;
     registerSpeakElement(definition: SpeakElementDefinition): () => void;
   };
 }
@@ -66,14 +70,22 @@ export async function createExtensionBinding(
         void host.session.sendUserMessage(content, sendOptions);
       },
     },
-    bot: {
+    platform: {
+      get name() {
+        return host.channel.platform;
+      },
+      get bot() {
+        return host.platform.bot;
+      },
       registerSpeakElement(definition) {
         assertActive();
         if (speakElements.has(definition.tag)) {
           throw new Error(`Speak element "${definition.tag}" is already registered by ${def.id}`);
         }
         speakElements.set(definition.tag, definition);
-        speakElementDisposers.push(host.bot.registerSpeakElement(definition));
+        const dispose = host.platform.registerSpeakElement(definition);
+        speakElementDisposers.push(dispose);
+        return dispose;
       },
     },
     on(event: string, handler: (...args: unknown[]) => unknown) {

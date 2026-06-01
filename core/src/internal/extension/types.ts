@@ -10,7 +10,7 @@ import type { AgentTool } from "@yesimbot/agent/agent";
 import type { HookEventName, HookHandlerFor } from "@yesimbot/agent/session";
 import type { Bot } from "koishi";
 
-import type { SpeakElementDefinition, SpeakElementPromptInfo } from "../bot/types.js";
+import type { SpeakElementDefinition, SpeakElementPromptInfo } from "../platform/speak.js";
 
 // ============================================================================
 // Channel
@@ -26,8 +26,6 @@ export interface Channel {
   channelId: string;
   /** 频道类型 */
   type: "private" | "group";
-  /** Koishi Bot 实例（如果可用） */
-  bot?: Bot;
 }
 
 // ============================================================================
@@ -75,8 +73,10 @@ export interface ExtensionSessionContext {
   sendUserMessage(content: unknown, options?: unknown): void;
 }
 
-export interface ExtensionBotContext {
-  registerSpeakElement(definition: SpeakElementDefinition): void;
+export interface ExtensionPlatformContext {
+  readonly name: string;
+  readonly bot: Bot | undefined;
+  registerSpeakElement(definition: SpeakElementDefinition): () => void;
 }
 
 export interface SpeakElementPromptContext {
@@ -87,7 +87,7 @@ export interface ExtensionContext {
   readonly channel: Channel;
   readonly tool: ExtensionToolContext;
   readonly session: ExtensionSessionContext;
-  readonly bot: ExtensionBotContext;
+  readonly platform: ExtensionPlatformContext;
   on<K extends HookEventName>(event: K, handler: HookHandlerFor<K>): void;
   on(event: string, handler: (...args: unknown[]) => unknown): void;
 }

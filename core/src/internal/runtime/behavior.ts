@@ -1,6 +1,6 @@
 import { Context, Logger, Schema } from "koishi";
 
-import type { AthenaEvent } from "../bot/types.js";
+import type { PlatformEvent } from "../../shared/platform-event.js";
 
 export interface WillingnessConfig {
   /** 收到普通文本消息的基础分。这是对话的基石 */
@@ -232,23 +232,22 @@ export class WillingnessManager {
 
   /**
    * 核心决策方法：判断是否应该回复。
-   * @param session 消息上下文
-   * @returns 一个包含决策结果和概率的对象
+   * @param event 平台事件
+   * @param triggerCandidate 是否为触发候选
+   * @returns 一个包含决策结果的对象
    */
-  public shouldReply(
-    event: AthenaEvent,
-    isMentioned: boolean,
-  ): { decision: boolean; probability: number } {
+  public shouldReply(event: PlatformEvent, triggerCandidate: boolean): { decision: boolean } {
     const { source } = event;
     const chatId = `${source.platform}:${source.channelId}`;
-    if (event.kind !== "chat_message") return { decision: false, probability: 0 };
-    const { payload } = event as AthenaEvent<"chat_message">;
+    if (event.type !== "message") return { decision: false };
+
+    const content = typeof event.content === "string" ? event.content : "";
 
     const context: MessageContext = {
       chatId,
-      content: payload.content || "",
-      isMentioned: isMentioned,
-      isDirect: event.source.conversationType === "private",
+      content,
+      isMentioned: triggerCandidate,
+      isDirect: event.source.sourceType === "private",
     };
 
     this.logger.debug(
@@ -264,10 +263,10 @@ export class WillingnessManager {
     const decision = Math.random() < probability;
 
     this.logger.debug(
-      `[${chatId}] 回复决策: ${decision ? "回复" : "不回复"} (随机值: ${(Math.random() * 100).toFixed(2)}%)`,
+      `[${chatId}] 回复决策: ${decision ? "回复" : "不回复"} (随机值: ${(Math.random() * 100).toFixed(2)}%`,
     );
 
-    return { decision, probability };
+    return { decision };
   }
 }
 

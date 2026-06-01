@@ -18,12 +18,12 @@ import { existsSync } from "node:fs";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 
-import { SpeakElementPromptInfo } from "../../../internal/bot/types.js";
 import type {
   Channel,
   ExtensionDefinition,
   SpeakElementPromptContext,
 } from "../../../internal/extension/types.js";
+import type { SpeakElementPromptInfo } from "../../../internal/platform/speak.js";
 
 // ============================================================================
 // Types

@@ -211,14 +211,10 @@ function createDeps() {
         return vi.fn();
       }),
     },
-    botModule: {
-      subscribeObservedEvents: vi.fn((subscriber) => {
+    platformGateway: {
+      subscribe: vi.fn((subscriber) => {
         observedSubscribers.push(subscriber);
         return vi.fn();
-      }),
-      getPresenterCatalog: vi.fn().mockReturnValue({
-        applyTo: mockApplyPresenterCatalogTo,
-        registerBase: vi.fn(),
       }),
     },
     observedSubscribers,
@@ -242,7 +238,7 @@ describe("RuntimeController", () => {
       modelService: deps.modelService as never,
       extensionRegistry: deps.extensionRegistry as never,
       sessionStore: deps.sessionStore as never,
-      botModule: deps.botModule as never,
+      platformGateway: deps.platformGateway as never,
     });
 
     await controller.start();
@@ -255,7 +251,7 @@ describe("RuntimeController", () => {
     await deps.observedSubscribers[0]({
       event: {
         id: "event-1",
-        kind: "chat_message",
+        type: "message",
         timestamp: 1,
         source: {
           platform: "onebot",
@@ -264,7 +260,9 @@ describe("RuntimeController", () => {
           selfId: "bot-2",
         },
         actor: { id: "user-1" },
-        payload: { messageId: "m-1", content: "hello" },
+        content: [{ type: "text", text: "hello" }],
+        visible: true,
+        details: {},
         metadata: { persist: true, triggerCandidate: true },
       },
       bot: { selfId: "bot-2", platform: "onebot", user: { name: "Athena" } },
@@ -276,7 +274,6 @@ describe("RuntimeController", () => {
       channelId: "group-1",
       type: "group",
     });
-    expect(deps.botModule.getPresenterCatalog).toHaveBeenCalled();
   });
 
   it("rebuilds a cached channel session when observed bot identity changes", async () => {
@@ -292,7 +289,7 @@ describe("RuntimeController", () => {
       modelService: deps.modelService as never,
       extensionRegistry: deps.extensionRegistry as never,
       sessionStore: deps.sessionStore as never,
-      botModule: deps.botModule as never,
+      platformGateway: deps.platformGateway as never,
     });
 
     await controller.start();
@@ -301,7 +298,7 @@ describe("RuntimeController", () => {
     await deps.observedSubscribers[0]({
       event: {
         id: "event-1",
-        kind: "chat_message",
+        type: "message",
         timestamp: 1,
         source: {
           platform: "onebot",
@@ -310,7 +307,9 @@ describe("RuntimeController", () => {
           selfId: "bot-1",
         },
         actor: { id: "user-1" },
-        payload: { messageId: "m-1", content: "hello" },
+        content: [{ type: "text", text: "hello" }],
+        visible: true,
+        details: {},
         metadata: { persist: true, triggerCandidate: true },
       },
       bot: { selfId: "bot-1", platform: "onebot", user: { name: "Athena A" } },
@@ -320,7 +319,7 @@ describe("RuntimeController", () => {
     await deps.observedSubscribers[0]({
       event: {
         id: "event-2",
-        kind: "chat_message",
+        type: "message",
         timestamp: 2,
         source: {
           platform: "onebot",
@@ -329,7 +328,9 @@ describe("RuntimeController", () => {
           selfId: "bot-2",
         },
         actor: { id: "user-2" },
-        payload: { messageId: "m-2", content: "hello again" },
+        content: [{ type: "text", text: "hello again" }],
+        visible: true,
+        details: {},
         metadata: { persist: true, triggerCandidate: true },
       },
       bot: { selfId: "bot-2", platform: "onebot", user: { name: "Athena B" } },

@@ -7,9 +7,9 @@ import type { Bot, Context, Logger } from "koishi";
 import { createSystemPromptExtension } from "../../services/extension/built-in/system-prompt.js";
 import type { ModelService } from "../../services/model/index.js";
 import type { ChannelIdentifier, ChannelKey } from "../../shared/types.js";
-import type { BotModule } from "../bot/module.js";
-import type { ObservedEvent } from "../bot/observer-types.js";
 import type { ExtensionRegistry } from "../extension/types.js";
+import type { PlatformGateway } from "../platform/gateway.js";
+import type { GatewayEvent } from "../platform/types.js";
 import type { SessionStore } from "../session/store.js";
 import { WillingnessManager, type WillingnessConfig } from "./behavior.js";
 import { ChannelSession, type ChannelSessionDeps } from "./session.js";
@@ -29,7 +29,7 @@ export interface RuntimeControllerDeps {
   modelService: ModelService;
   extensionRegistry: ExtensionRegistry;
   sessionStore: SessionStore;
-  botModule: BotModule;
+  platformGateway: PlatformGateway;
 }
 
 export class RuntimeController {
@@ -41,14 +41,14 @@ export class RuntimeController {
   private readonly modelService: ModelService;
   private readonly extensionRegistry: ExtensionRegistry;
   private readonly sessionStore: SessionStore;
-  private readonly botModule: BotModule;
+  private readonly platformGateway: PlatformGateway;
   private readonly channels = new Map<ChannelKey, ChannelSession>();
   private readonly willingnessManager: WillingnessManager;
 
   private chatModel?: ChatModelRef;
   private globalSettingsPath?: string;
   private disposeSessionRotated?: () => void;
-  private disposeObservedEventSubscription?: () => void;
+  private disposeEventSubscription?: () => void;
   private started = false;
   private commandsRegistered = false;
 
@@ -58,7 +58,7 @@ export class RuntimeController {
     this.modelService = deps.modelService;
     this.extensionRegistry = deps.extensionRegistry;
     this.sessionStore = deps.sessionStore;
-    this.botModule = deps.botModule;
+    this.platformGateway = deps.platformGateway;
     this.logger = deps.ctx.logger("yesimbot.runtime");
     this.logger.level = deps.config.logLevel ?? 2;
     this.willingnessManager = new WillingnessManager(deps.ctx, deps.config, this.logger);
@@ -115,8 +115,8 @@ export class RuntimeController {
       }),
     );
 
-    this.disposeObservedEventSubscription = this.botModule.subscribeObservedEvents((observed) =>
-      this.handleObservedEvent(observed),
+    this.disposeEventSubscription = this.platformGateway.subscribe((ge) =>
+      this.handleGatewayEvent(ge),
     );
     this.disposeSessionRotated = this.sessionStore.subscribeSessionRotated((event) =>
       this.replaceSession(event.platform, event.channelId, event.type, event.sessionManager),
@@ -129,8 +129,8 @@ export class RuntimeController {
 
     this.disposeSessionRotated?.();
     this.disposeSessionRotated = undefined;
-    this.disposeObservedEventSubscription?.();
-    this.disposeObservedEventSubscription = undefined;
+    this.disposeEventSubscription?.();
+    this.disposeEventSubscription = undefined;
 
     for (const session of this.channels.values()) {
       session.dispose();
@@ -190,10 +190,11 @@ export class RuntimeController {
     }
 
     const deps: ChannelSessionDeps = {
-      channel: { ...channel, bot: koishiBot },
+      channel,
       sessionManager,
       koishiBot,
       model: this.chatModel,
+      platformGateway: this.platformGateway,
       settings: {
         globalPath: this.globalSettingsPath,
         localPath: this.sessionStore.getChannelSettingsPath(channel.platform, channel.channelId),
@@ -205,9 +206,6 @@ export class RuntimeController {
       },
       extensions: {
         definitions: this.extensionRegistry.getAllDefinitions(),
-      },
-      bot: {
-        presenterCatalog: this.botModule.getPresenterCatalog(),
       },
       logger: this.logger,
     };
@@ -234,7 +232,7 @@ export class RuntimeController {
     koishiBot: Bot,
   ): Promise<ChannelSession> {
     const existing = this.channels.get(key);
-    if (existing?.koishiBot.selfId === koishiBot.selfId) {
+    if (existing?.botSelfId === koishiBot.selfId) {
       return existing;
     }
 
@@ -254,15 +252,15 @@ export class RuntimeController {
     return session;
   }
 
-  private async handleObservedEvent(observed: ObservedEvent): Promise<void> {
-    const { event, bot, originSession } = observed;
-    const { platform, channelId, conversationType } = event.source;
+  private async handleGatewayEvent(ge: GatewayEvent): Promise<void> {
+    const { event, bot, originSession } = ge;
+    const { platform, channelId, sourceType } = event.source;
     if (!platform || !channelId) return;
 
-    const type = conversationType === "private" ? "private" : "group";
+    const type = sourceType === "private" ? "private" : "group";
     const key: ChannelKey = `${platform}:${channelId}`;
     const session = await this.getOrCreateChannelSession(key, { platform, channelId, type }, bot);
-    await session.handleEvent(event, { originSession });
+    await session.handleEvent(event, bot, originSession);
   }
 
   private async replaceSession(

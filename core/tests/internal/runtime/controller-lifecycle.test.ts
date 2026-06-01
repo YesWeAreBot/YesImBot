@@ -100,12 +100,8 @@ function createMockDeps() {
     sessionStore: {
       subscribeSessionRotated: vi.fn().mockReturnValue(vi.fn()),
     },
-    botModule: {
-      subscribeObservedEvents: vi.fn().mockReturnValue(vi.fn()),
-      getPresenterCatalog: vi.fn().mockReturnValue({
-        applyTo: vi.fn(),
-        registerBase: vi.fn(),
-      }),
+    platformGateway: {
+      subscribe: vi.fn().mockReturnValue(vi.fn()),
     },
   };
 }
@@ -119,19 +115,19 @@ describe("RuntimeController lifecycle", () => {
       modelService: deps.modelService as never,
       extensionRegistry: deps.extensionRegistry as never,
       sessionStore: deps.sessionStore as never,
-      botModule: deps.botModule as never,
+      platformGateway: deps.platformGateway as never,
     });
     const controllerAccess = controller as unknown as {
       channels: Map<string, { dispose(): void; koishiBot: { selfId: string } }>;
       disposeSessionRotated?: () => void;
-      disposeObservedEventSubscription?: () => void;
+      disposeEventSubscription?: () => void;
       started: boolean;
     };
 
     const disposeA = vi.fn();
     const disposeB = vi.fn();
     const disposeSessionRotated = vi.fn();
-    const disposeObservedEventSubscription = vi.fn();
+    const disposeEventSubscription = vi.fn();
     const channelA = {
       koishiBot: { selfId: "bot-1" },
       dispose: disposeA,
@@ -146,15 +142,15 @@ describe("RuntimeController lifecycle", () => {
       ["discord:dm-2", channelB],
     ]);
     controllerAccess.disposeSessionRotated = disposeSessionRotated;
-    controllerAccess.disposeObservedEventSubscription = disposeObservedEventSubscription;
+    controllerAccess.disposeEventSubscription = disposeEventSubscription;
     controllerAccess.started = true;
 
     await controller.stop();
 
     expect(disposeSessionRotated).toHaveBeenCalledTimes(1);
-    expect(disposeObservedEventSubscription).toHaveBeenCalledTimes(1);
+    expect(disposeEventSubscription).toHaveBeenCalledTimes(1);
     expect(controllerAccess.disposeSessionRotated).toBeUndefined();
-    expect(controllerAccess.disposeObservedEventSubscription).toBeUndefined();
+    expect(controllerAccess.disposeEventSubscription).toBeUndefined();
     expect(disposeA).toHaveBeenCalledTimes(1);
     expect(disposeB).toHaveBeenCalledTimes(1);
     expect(controllerAccess.channels.size).toBe(0);

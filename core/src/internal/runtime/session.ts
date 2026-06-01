@@ -6,16 +6,11 @@ import {
   HookRunner,
   type SessionManager,
 } from "@yesimbot/agent/session";
-import type { Bot, Logger, Session } from "koishi";
+import type { Bot, Session } from "koishi";
 
-import { type BotInfo } from "../../services/extension/built-in/system-prompt.js";
+import type { BotInfo } from "../../services/extension/built-in/system-prompt.js";
+import type { PlatformEvent } from "../../shared/platform-event.js";
 import type { ChannelIdentifier, ChannelKey } from "../../shared/types.js";
-import { AthenaBot } from "../bot/bot.js";
-import { serializeAthenaEvent } from "../bot/events.js";
-import type { ChannelEventContext } from "../bot/observer-types.js";
-import type { PresenterCatalog } from "../bot/presentation.js";
-import { createSpeakElementRegistry, type SpeakElementRegistry } from "../bot/speak.js";
-import type { AthenaEvent } from "../bot/types.js";
 import type { ExtensionBindingHost } from "../extension/context.js";
 import { createExtensionBinding } from "../extension/context.js";
 import { buildToolSnapshotFromBindings } from "../extension/tools.js";
@@ -26,14 +21,16 @@ import type {
   ExtensionDefinition,
   SpeakElementPromptContext,
 } from "../extension/types.js";
+import type { PlatformGateway } from "../platform/gateway.js";
+import { createSpeakElementRegistry, type SpeakElementRegistry } from "../platform/speak.js";
 import { buildAgentSessionConfig } from "./helpers.js";
 import { RuntimeSettingsManager, type PartialRuntimeSettings } from "./settings.js";
 
 export interface ChannelSessionDeps {
   channel: Channel;
   sessionManager: SessionManager;
-  koishiBot: Bot;
   model: ChatModelRef;
+  platformGateway: PlatformGateway;
   settings: {
     globalPath: string;
     localPath: string;
@@ -42,32 +39,32 @@ export interface ChannelSessionDeps {
   behavior: {
     allowedChannels: ChannelIdentifier[];
     willingnessManager: {
-      shouldReply(event: AthenaEvent, triggerCandidate: boolean): { decision: boolean };
+      shouldReply(event: PlatformEvent, triggerCandidate: boolean): { decision: boolean };
     };
   };
   extensions: {
     definitions: ExtensionDefinition[];
   };
-  bot: {
-    presenterCatalog: PresenterCatalog;
-  };
-  logger: Logger;
+  logger: import("koishi").Logger;
+  /** Koishi Bot — 仅在创建时用于 botInfo 和 host 构造，不持久持有 */
+  koishiBot: Bot;
 }
 
 export class ChannelSession {
   readonly channelKey: ChannelKey;
   readonly channel: Channel;
   readonly sessionManager: SessionManager;
-  readonly koishiBot: Bot;
   readonly agentSession: AgentSession;
   readonly hookRunner: HookRunner;
-  readonly bot: AthenaBot;
   readonly botInfo: BotInfo;
 
   private readonly agent: Agent;
+  private readonly platformGateway: PlatformGateway;
+  readonly koishiBot: Bot;
+  readonly botSelfId: string;
   private readonly allowedChannels: ChannelIdentifier[];
   private readonly willingnessManager: ChannelSessionDeps["behavior"]["willingnessManager"];
-  private readonly pendingOriginSessions: Array<Session | undefined> = [];
+  private readonly pendingReplyContexts: Array<{ bot: Bot; session?: Session }> = [];
   private readonly unsubscribeOutputBridge: () => void;
   private readonly speakElements: SpeakElementRegistry;
   private bindings: ExtensionBinding[] = [];
@@ -76,7 +73,9 @@ export class ChannelSession {
   constructor(deps: ChannelSessionDeps) {
     this.channel = deps.channel;
     this.sessionManager = deps.sessionManager;
+    this.platformGateway = deps.platformGateway;
     this.koishiBot = deps.koishiBot;
+    this.botSelfId = deps.koishiBot.selfId;
     this.channelKey = `${deps.channel.platform}:${deps.channel.channelId}`;
     this.allowedChannels = deps.behavior.allowedChannels;
     this.willingnessManager = deps.behavior.willingnessManager;
@@ -121,20 +120,12 @@ export class ChannelSession {
 
     this.speakElements = createSpeakElementRegistry();
 
-    this.bot = new AthenaBot({
-      channel: { ...deps.channel, bot: deps.koishiBot },
-      presenterCatalog: deps.bot.presenterCatalog,
-      speakElements: this.speakElements,
-      deliverySettings: merged.delivery,
-      appendEntry: (customType, data) => this.sessionManager.appendCustomEntry(customType, data),
-    });
-
     this.botInfo = {
       selfId: deps.koishiBot.selfId,
       selfName: deps.koishiBot.user?.nick || deps.koishiBot.user?.name || "(unknown)",
     };
 
-    // Assistant output bridge
+    // Output Bridge — 彻底简化
     this.unsubscribeOutputBridge = this.agentSession.subscribe((event) => {
       if (event.type !== "message_end") return;
       if (event.message.role !== "assistant") return;
@@ -146,19 +137,24 @@ export class ChannelSession {
 
       if (!text) return;
 
-      const originSession = this.pendingOriginSessions.shift();
+      const ctx = this.pendingReplyContexts.shift();
+      if (!ctx) return;
 
-      void this.bot.speak(text, { originSession, modelElapsedMs: 0 }).catch(() => undefined);
+      void this.deliverOutput(text, ctx.bot, ctx.session);
     });
   }
 
-  async handleEvent(event: AthenaEvent, context?: ChannelEventContext): Promise<void> {
+  // ========================================================================
+  // Ingress: handle PlatformEvent
+  // ========================================================================
+
+  async handleEvent(event: PlatformEvent, bot: Bot, originSession?: Session): Promise<void> {
     if (this.disposed) return;
 
     const channelAllowed = isChannelAllowed(
       event.source.platform,
       event.source.channelId,
-      event.source.conversationType === "private" ? "private" : "group",
+      event.source.sourceType === "private" ? "private" : "group",
       this.allowedChannels,
     );
 
@@ -168,32 +164,46 @@ export class ChannelSession {
     );
     const shouldTriggerTurn = channelAllowed && (event.metadata.triggerCandidate || decision);
 
-    if (!event.metadata.persist && !shouldTriggerTurn) {
-      return;
-    }
+    if (!event.metadata.persist && !shouldTriggerTurn) return;
 
-    const presentation = await this.bot.present(event);
-
-    if (presentation === null && !event.metadata.persist) {
-      return;
-    }
-
+    // PlatformEvent 自带 content/visible，不再调 bot.present()
     await this.agentSession.sendCustomMessage(
       {
         customType: "athena:event",
-        content: presentation?.content ?? [],
-        display: presentation?.visible ?? false,
-        details:
-          presentation?.details ??
-          (event.metadata.persist ? serializeAthenaEvent(event) : undefined),
+        content: event.content,
+        display: event.visible,
+        details: event.details,
       },
       shouldTriggerTurn ? { triggerTurn: true, deliverAs: "followUp" } : { triggerTurn: false },
     );
 
     if (shouldTriggerTurn) {
-      this.pendingOriginSessions.push(context?.originSession);
+      this.pendingReplyContexts.push({ bot, session: originSession });
     }
   }
+
+  // ========================================================================
+  // Egress: deliver output via gateway
+  // ========================================================================
+
+  private async deliverOutput(text: string, bot: Bot, originSession?: Session): Promise<void> {
+    const { segments } = await this.speakElements.compile(text, {
+      channel: this.channel,
+      session: originSession,
+    });
+
+    const result = await this.platformGateway.send(bot, this.channel.channelId, segments, {
+      originSession,
+    });
+
+    if (!result.ok && result.issue) {
+      this.sessionManager.appendCustomEntry("athena:delivery_issue", result.issue);
+    }
+  }
+
+  // ========================================================================
+  // Prompt context (unchanged)
+  // ========================================================================
 
   getBotInfo(): BotInfo {
     return this.botInfo;
@@ -232,6 +242,10 @@ export class ChannelSession {
     return { elements: this.speakElements.getPromptElements() };
   }
 
+  // ========================================================================
+  // Lifecycle
+  // ========================================================================
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
@@ -243,7 +257,7 @@ export class ChannelSession {
       void binding.cleanup?.dispose?.();
     }
     this.bindings = [];
-    this.pendingOriginSessions.length = 0;
+    this.pendingReplyContexts.length = 0;
   }
 
   async reloadExtensions(definitions: ExtensionDefinition[]): Promise<ChannelReloadResult> {
@@ -255,6 +269,8 @@ export class ChannelSession {
         error: "ChannelSession is disposed",
       };
     }
+
+    const session = this;
 
     const host: ExtensionBindingHost = {
       channel: this.channel,
@@ -271,8 +287,14 @@ export class ChannelSession {
         sendUserMessage: async (content, options) =>
           this.agentSession.sendUserMessage(content as never, options as never),
       },
-      bot: {
-        registerSpeakElement: (definition) => this.speakElements.register(definition),
+      platform: {
+        get name() {
+          return host.channel.platform;
+        },
+        get bot() {
+          return session.koishiBot;
+        },
+        registerSpeakElement: (definition) => session.speakElements.register(definition),
       },
     };
 
