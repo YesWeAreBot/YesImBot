@@ -43,7 +43,7 @@ export class EventListener {
                 if (session.author?.isBot)
                     return next();
 
-                await this.recordUserMessage(session);
+                const content = await this.recordUserMessage(session);
                 await next();
 
                 const percept: UserMessagePercept = {
@@ -59,7 +59,7 @@ export class EventListener {
                     timestamp: new Date(),
                     payload: {
                         messageId: session.messageId,
-                        content: session.content,
+                        content,
                         sender: {
                             id: session.userId,
                             name: session.author?.name || session.userId,
@@ -124,7 +124,7 @@ export class EventListener {
         await this.recordBotSentMessage(session);
     }
 
-    private async recordUserMessage(session: Session): Promise<void> {
+    private async recordUserMessage(session: Session): Promise<string> {
         /* prettier-ignore */
         this.ctx.logger.info(`用户消息 | ${session.author.name} | 频道: ${session.cid} | 内容: ${truncate(session.content).replace(/\n/g, " ")}`);
 
@@ -132,6 +132,8 @@ export class EventListener {
             await this.updateMemberInfo(session);
         }
 
+        // 使用原生序列化还原被分离到 session.quote 的引用元素。
+        const messageContent = session.toJSON().message?.content ?? session.content;
         const content = await this.assetService.transform(session.content);
         this.ctx.logger.debug(`记录转义后的消息：${content}`);
 
@@ -149,9 +151,10 @@ export class EventListener {
                 messageId: session.messageId,
                 senderId: session.author.id,
                 senderName: session.author.nick || session.author.name,
-                content: session.content,
+                content: messageContent,
             },
         });
+        return messageContent;
     }
 
     private async recordBotSentMessage(session: Session): Promise<void> {
