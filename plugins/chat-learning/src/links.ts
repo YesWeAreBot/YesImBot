@@ -1,9 +1,12 @@
+import { REPLY_LINK_THRESHOLD, REPLY_LINK_WINDOW, replyScore, type ReplyLinkModel } from "./reply-link.js";
 import type { MessageLink, MessageTurn } from "./types.js";
 
 export interface BuildLinksOptions {
   readonly selfId?: string;
   readonly maxAdjacentMs?: number;
   readonly maxEntityMs?: number;
+  /** 提供后，隐式回复边用 MLP 打分（替代 adjacent/entity 硬编码置信度）。 */
+  readonly replyLinkModel?: ReplyLinkModel;
 }
 
 export interface MessageGraph {
@@ -46,13 +49,32 @@ export function buildLinks(turns: readonly MessageTurn[], options: BuildLinksOpt
     }
 
     if (index === 0) continue;
-    const previous = turns[index - 1]!;
-    const delta = turn.timestamp - previous.timestamp;
-    if (delta >= 0 && delta <= (options.maxAdjacentMs ?? 60_000)) {
-      links.push({ from: turn.id, to: previous.id, kind: "adjacent", confidence: 0.35, evidence: [`time-delta:${delta}ms`] });
-    }
-    if (delta >= 0 && delta <= (options.maxEntityMs ?? 300_000) && sharesEntity(turn, previous)) {
-      links.push({ from: turn.id, to: previous.id, kind: "entity", confidence: 0.5, evidence: ["shared-bigram"] });
+    if (options.replyLinkModel) {
+      // 隐式回复边：用 MLP 打分窗口内前 K 条，取跨人的最高分候选（实测同人=负信号）
+      const windowStart = Math.max(0, index - REPLY_LINK_WINDOW);
+      let best = -1;
+      let bestTarget: MessageTurn | undefined;
+      for (let k = index - 1; k >= windowStart; k -= 1) {
+        const candidate = turns[k]!;
+        if (candidate.userId === turn.userId) continue;
+        const score = replyScore(options.replyLinkModel, turn, candidate, index - k);
+        if (score > best) {
+          best = score;
+          bestTarget = candidate;
+        }
+      }
+      if (bestTarget && best >= REPLY_LINK_THRESHOLD) {
+        links.push({ from: turn.id, to: bestTarget.id, kind: "entity", confidence: best, evidence: [`reply-link:${best.toFixed(3)}`] });
+      }
+    } else {
+      const previous = turns[index - 1]!;
+      const delta = turn.timestamp - previous.timestamp;
+      if (delta >= 0 && delta <= (options.maxAdjacentMs ?? 60_000)) {
+        links.push({ from: turn.id, to: previous.id, kind: "adjacent", confidence: 0.35, evidence: [`time-delta:${delta}ms`] });
+      }
+      if (delta >= 0 && delta <= (options.maxEntityMs ?? 300_000) && sharesEntity(turn, previous)) {
+        links.push({ from: turn.id, to: previous.id, kind: "entity", confidence: 0.5, evidence: ["shared-bigram"] });
+      }
     }
   }
 

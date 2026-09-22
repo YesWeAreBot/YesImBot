@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 // oxlint-disable-next-line unicorn/import-style -- `path` is used as a local name across this module
 import { dirname, join, resolve } from "node:path";
 
@@ -28,6 +29,7 @@ import {
 import { createChatHistoryStore, type ChatHistoryStore } from "./history.js";
 import { buildLinks } from "./links.js";
 import { buildMemeTemplates, type MemePhraseInput } from "./memes.js";
+import { parseReplyLinkModel, type ReplyLinkModel } from "./reply-link.js";
 import { ModelCache } from "./model-cache.js";
 import { classifyPatternsWithModel, generateChainStyle, sampleSignature } from "./patterns.js";
 import { detectProactiveEvent } from "./proactive.js";
@@ -77,6 +79,7 @@ export const Config: Schema<ChatLearningConfig> = Schema.object({
   maxInjectedReflections: Schema.number().min(1).max(10).default(3).description("每次注入提示词末尾的最近反思条数"),
   injectStyleAsSystem: Schema.boolean().default(false).description("将 chat-learning 风格参考作为 system 消息注入；默认使用尾部 user 消息以兼容更多 provider"),
   finalStyleModel: Schema.dynamic("registry.chatModels").default("").description("可选：在 bot 最终发言发出前用独立模型按本群风格改写；留空则关闭"),
+  replyLinkModelPath: Schema.string().default("").description("回复边打分 MLP 模型路径（4 维结构特征 → P(回复)）；留空则回退到 hardcoded 置信度"),
 });
 
 const LINK_KINDS = new Set<LinkKind | "*">(["quote", "reply", "at", "adjacent", "entity", "*"]);
@@ -112,6 +115,8 @@ export default class ChatLearningPlugin {
   private globalHistoryStore: ChatHistoryStore | undefined;
   private observeDispose: (() => void) | undefined;
   private globalSyncTimer: NodeJS.Timeout | undefined;
+  private replyLinkModel: ReplyLinkModel | undefined;
+  private replyLinkModelResolved = false;
 
   public constructor(ctx: Context, config: ChatLearningConfig) {
     this.ctx = ctx;
@@ -237,7 +242,7 @@ export default class ChatLearningPlugin {
           const entries = learnedEntries;
           const corrections = feedbackStore.read();
           logger.debug("chat_learning.rebuild_start", { scope, allowModel, entries: entries.length, corrections: corrections.length });
-          const next = buildSnapshot(entries, config, scope, corrections);
+          const next = buildSnapshot(entries, config, scope, corrections, this.replyLinkModelOrUndefined());
           logger.debug("chat_learning.rebuild_done", {
             scope,
             turns: next.turns.length,
@@ -827,6 +832,21 @@ export default class ChatLearningPlugin {
     return configured ? resolve(this.ctx.baseDir, configured) : join(this.ctx.baseDir, "data/yesimbot", "chat-learning-global.json");
   }
 
+  private replyLinkModelOrUndefined(): ReplyLinkModel | undefined {
+    if (this.replyLinkModelResolved) return this.replyLinkModel;
+    this.replyLinkModelResolved = true;
+    const configured = this.config.replyLinkModelPath?.trim();
+    if (!configured) return undefined;
+    const filePath = resolve(this.ctx.baseDir, configured);
+    try {
+      this.replyLinkModel = parseReplyLinkModel(readFileSync(filePath, "utf8"));
+      this.logger.debug("chat_learning.reply_link_model_loaded", { filePath });
+    } catch (error) {
+      this.logger.warn("chat_learning.reply_link_model_load_failed", { filePath, cause: error instanceof Error ? error.message : String(error) });
+    }
+    return this.replyLinkModel;
+  }
+
   private async globalHistoryStoreFor(): Promise<ChatHistoryStore> {
     if (this.globalHistoryStore) return this.globalHistoryStore;
     const filePath = join(dirname(this.defaultGlobalPath()), "chat-learning-global-history.jsonl");
@@ -897,7 +917,7 @@ export default class ChatLearningPlugin {
         autoBlockBotNames: config.autoBlockBotNames,
       });
       const segments = segmentTurns(turns);
-      const links = buildLinks(turns);
+      const links = buildLinks(turns, { replyLinkModel: this.replyLinkModelOrUndefined() });
       const modelId = resolveChatLearningModelId(this.ctx, config);
       const patterns = modelId
         ? await classifyPatternsWithModel(
@@ -960,6 +980,7 @@ function buildSnapshot(
   config: ChatLearningConfig,
   scope: FullScope,
   corrections: readonly LinkCorrection[],
+  replyLinkModel: ReplyLinkModel | undefined,
 ): ChatLearningState {
   const now = Date.now();
   const turns = collectTurns(entries, {
@@ -973,7 +994,7 @@ function buildSnapshot(
     autoBlockBotNames: config.autoBlockBotNames,
   });
   const segments = segmentTurns(turns);
-  const links = applyCorrections(buildLinks(turns, { selfId: scope.selfId }), turns, corrections);
+  const links = applyCorrections(buildLinks(turns, { selfId: scope.selfId, replyLinkModel }), turns, corrections);
   const lastEntry = [...entries].reverse().find((entry) => entry.type === "message");
   return { lastEntryId: lastEntry?.id, builtAt: now, turns, links, segments, responsePatterns: [], initiationPatterns: [], memeTemplates: [] };
 }
