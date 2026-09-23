@@ -1,6 +1,6 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { Context, Schema } from "koishi";
-import { ToolSet, type BaseProviderConfig } from "koishi-plugin-yesimbot";
+import { ToolSet, type BaseProviderConfig, type ChannelContext } from "koishi-plugin-yesimbot";
 
 import enUS from "./locales/en-US.json";
 import zhCN from "./locales/zh-CN.json";
@@ -18,6 +18,7 @@ export const Config: Schema<Config> = Schema.intersect([
     id: Schema.string().default("openai").description("提供商标识"),
     apiKey: Schema.string().role("secret").required().description("API Key"),
     baseURL: Schema.string().description("API Base URL"),
+    headers: Schema.dict(Schema.string()).default({}).description("自定义请求头"),
     format: Schema.union([Schema.const("chat"), Schema.const("responses")])
       .default("responses")
       .description("API 格式"),
@@ -53,20 +54,45 @@ export const Config: Schema<Config> = Schema.intersect([
 interface Config extends BaseProviderConfig {
   format: "chat" | "responses";
   webSearch?: boolean;
+  headers?: Record<string, string>;
 }
 
 export function apply(ctx: Context, config: Config) {
   ctx.on("ready", () => {
-    const client = createOpenAI({ apiKey: config.apiKey, baseURL: config.baseURL });
+    const createClient = (headers?: Record<string, string>) => createOpenAI({ apiKey: config.apiKey, baseURL: config.baseURL, headers });
+    const client = createClient(config.headers);
     const dispose = ctx.yesimbot.model.register({
       id: config.id,
       capabilities: { chat: true, embedding: true },
       chatModels: () => config.chatModels,
       embeddingModels: () => config.embeddingModels ?? [],
-      chat: (modelId: string) => (config.format === "responses" ? client.responses(modelId) : client.chat(modelId)),
+      chat: (modelId: string, context?: ChannelContext) => {
+        const client = createClient({
+          ...config.headers,
+          ...(isOpenCodeBaseURL(config.baseURL) ? { "x-opencode-session": buildOpenCodeSession(context) } : {}),
+        });
+        return config.format === "responses" ? client.responses(modelId) : client.chat(modelId);
+      },
       embedding: (modelId: string) => client.embedding(modelId),
       tools: (): ToolSet => (config.format === "responses" && config.webSearch ? { web_search: client.tools.webSearch() } : {}),
     });
     ctx.on("dispose", dispose);
   });
+}
+
+function isOpenCodeBaseURL(baseURL?: string): boolean {
+  if (!baseURL) return false;
+  try {
+    const hostname = new URL(baseURL).hostname;
+    return hostname === "opencode.ai" || hostname.endsWith(".opencode.ai");
+  } catch {
+    return false;
+  }
+}
+
+function buildOpenCodeSession(context?: ChannelContext): string {
+  if (!context) return "yesimbot:global";
+  const selfId = context.selfId ?? "shared";
+  const target = context.type === "direct" ? context.userId : `${context.guildId}:${context.channelId}`;
+  return `yesimbot:${context.platform}:${selfId}:${context.type}:${target}`;
 }

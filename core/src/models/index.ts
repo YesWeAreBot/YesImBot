@@ -53,7 +53,7 @@ interface Provider {
   readonly capabilities: { chat: boolean; embedding: boolean };
   chatModels(): ChatModelConfig[];
   embeddingModels(): EmbeddingModelConfig[];
-  chat?(modelId: string): LanguageModel;
+  chat?(modelId: string, context?: ChannelContext): LanguageModel;
   embedding?(modelId: string): EmbeddingModel;
   tools?(modelId: string): ToolSet;
 }
@@ -139,7 +139,7 @@ export class ModelService {
       model: record.modelId,
       modalities: record.config.modalities,
     });
-    const source = provider.chat!(record.modelId);
+    const source = provider.chat!(record.modelId, context);
     const model = isModelObject(source)
       ? [...this.middlewares].reduce(
           (current, middleware) => wrapLanguageModel({ model: current, middleware, providerId: record.providerId, modelId: record.modelId }),
