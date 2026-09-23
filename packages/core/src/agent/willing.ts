@@ -305,7 +305,7 @@ export class WillingnessManager {
             chatId: session.cid,
             content: session.content,
             isMentioned: this.isMentioned(session),
-            isQuote: Boolean(session.quote?.user.id === session.bot.selfId),
+            isQuote: Boolean(session.quote?.user?.id === session.bot.selfId),
             isDirect: session.isDirect,
         };
     }

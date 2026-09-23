@@ -21,6 +21,7 @@
     "node": ">=18.17.0"
   },
   "scripts": {
+    "test:quotes": "esbuild tests/horizon-quote.test.ts --bundle --platform=node --format=cjs --packages=external --tsconfig=tsconfig.json --outfile=lib/.tests/horizon-quote.test.cjs && node --test lib/.tests/horizon-quote.test.cjs",
     "build": "tsc -b && pkgroll --clean-dist --srcdist src:lib --sourcemap",
     "clean": "rm -rf lib .turbo tsconfig.tsbuildinfo",
     "lint": "eslint",
