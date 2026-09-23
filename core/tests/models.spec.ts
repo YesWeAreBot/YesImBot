@@ -17,9 +17,9 @@ const temporaryDirectories: string[] = [];
 async function createModelsPath(value: unknown): Promise<string> {
   const directory = await mkdtemp(path.join(tmpdir(), "yesimbot-model-"));
   temporaryDirectories.push(directory);
-  const path = path.join(directory, "models.json");
-  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-  return path;
+  const filePath = path.join(directory, "models.json");
+  await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  return filePath;
 }
 
 function createProvider(): ModelProvider {
@@ -59,6 +59,17 @@ afterEach(async () => {
 });
 
 describe("models.json modalities", () => {
+  it("passes channel context to chat providers", async () => {
+    const chat = vi.fn(() => ({}) as never);
+    const provider = { ...createProvider(), chat };
+    const service = await createModelService({}, undefined, provider);
+    const context = { type: "direct" as const, platform: "onebot", channelId: "private:user", selfId: "bot", userId: "user" };
+
+    service.resolveChatModel("openai:gpt-4o", context);
+
+    expect(chat).toHaveBeenCalledWith("gpt-4o", context);
+  });
+
   it("preserves configured embedding defaults through provider registration, resolution, listing, and query", async () => {
     const embedding = {};
     const provider: ModelProvider = {
