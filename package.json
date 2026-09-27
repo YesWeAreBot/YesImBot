@@ -30,6 +30,7 @@
     "test": "yakumo vitest"
   },
   "devDependencies": {
+    "@koishijs/client": "^5.30.11",
     "@koishijs/core": "^4.18.11",
     "@stylistic/eslint-plugin": "^5.10.0",
     "@types/node": "^22.16.2",
@@ -41,6 +42,7 @@
     "vite": "7.3.6",
     "vitest": "4.1.10",
     "yakumo": "^3.2.1",
+    "yakumo-client": "file:./packages/yakumo-client",
     "yakumo-esbuild": "^3.0.2",
     "yakumo-tsc": "^3.0.1",
     "yakumo-vitest": "^1.3.3"
