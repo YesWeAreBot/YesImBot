@@ -183,3 +183,7 @@ skills-lock.json
 yarn.lock
 bun.lock
 yesimbot-setup.log
+
+# Compiled Node output (tsc declarations + esbuild bundles). `dist/` stays reserved
+# for the Koishi console client bundle, which is the only frontend artifact here.
+lib/

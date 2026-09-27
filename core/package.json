@@ -17,15 +17,15 @@
     "directory": "core"
   },
   "files": [
-    "dist"
+    "lib"
   ],
-  "main": "./dist/index.cjs",
-  "types": "./dist/index.d.ts",
+  "main": "./lib/index.cjs",
+  "types": "./lib/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.js",
+      "require": "./lib/index.cjs"
     },
     "./package.json": "./package.json"
   },

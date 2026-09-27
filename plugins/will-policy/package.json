@@ -2,15 +2,15 @@
   "name": "koishi-plugin-yesimbot-will-policy",
   "version": "0.0.1",
   "files": [
-    "dist"
+    "lib"
   ],
   "type": "module",
-  "main": "./dist/index.cjs",
-  "types": "./dist/index.d.ts",
+  "main": "./lib/index.cjs",
+  "types": "./lib/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "require": "./dist/index.cjs"
+      "types": "./lib/index.d.ts",
+      "require": "./lib/index.cjs"
     },
     "./package.json": "./package.json"
   },
@@ -18,19 +18,9 @@
     "access": "public",
     "registry": "https://registry.npmjs.org/"
   },
-  "scripts": {
-    "build": "npx pkgroll",
-    "check-types": "tsc --noEmit",
-    "clean": "rimraf dist && rimraf tsconfig.tsbuildinfo",
-    "fmt": "oxfmt",
-    "lint": "oxlint",
-    "pub": "yarn npm publish --access public",
-    "test": "vitest run"
-  },
   "devDependencies": {
     "koishi": "^4.18.10",
-    "koishi-plugin-yesimbot": "workspace:^",
-    "vitest": "^4.0.18"
+    "koishi-plugin-yesimbot": "workspace:^"
   },
   "peerDependencies": {
     "koishi": "^4.18.10",
