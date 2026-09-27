@@ -1,8 +1,6 @@
-import type { AgentPlugin } from "@yesimbot/agent-runtime";
+import type { AgentPlugin } from "koishi-plugin-yesimbot";
 import type { ChannelPlugin } from "koishi-plugin-yesimbot";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
-
-vi.mock("koishi", () => ({ Context: class {}, Logger: class {}, Universal: { Channel: { Type: { TEXT: 0, DIRECT: 1, CATEGORY: 2, VOICE: 3 } } } }));
 
 import SchedulePlugin from "../src/index.js";
 import { ScheduleScheduler } from "../src/scheduler.js";
@@ -100,8 +98,8 @@ function createContext(model: TestModel) {
 }
 
 async function toolNames(plugin: AgentPlugin): Promise<string[]> {
-  const set = typeof plugin.tools === "function" ? ((await plugin.tools({} as never)) ?? []) : (plugin.tools ?? []);
-  return set.map((tool) => tool.name);
+  const set = plugin.extendTools ? ((await plugin.extendTools()) ?? {}) : {};
+  return Object.keys(set);
 }
 
 /** Walks the plugin object graph looking for a retained reference to `sought`. */
@@ -295,7 +293,7 @@ describe("SchedulePlugin", () => {
     new SchedulePlugin(ctx as never);
     await ready[0]?.();
     const agent = await plugins[0]!.setup({ type: "guild", platform: "onebot", channelId: "room", guildId: "room" }, { selfId: "bot" } as never);
-    const create = (await agent.tools!({} as never))!.find((tool) => tool.name === "schedule_create")!;
+    const create = (await agent.extendTools!())!.schedule_create!;
 
     await create.execute!({ title: "agent", prompt: "Run.", at: "2026-08-01T00:01:00.000Z" }, {} as never);
     await vi.advanceTimersByTimeAsync(60_000);
@@ -327,12 +325,12 @@ describe("SchedulePlugin", () => {
     new SchedulePlugin(ctx as never);
     await ready[0]?.();
     const agent = await plugins[0]!.setup({ type: "guild", platform: "onebot", channelId: "room", guildId: "room" }, { selfId: "bot" } as never);
-    const tools = (await agent.tools!({} as never))!;
-    const create = tools.find((tool) => tool.name === "schedule_create")!;
-    const update = tools.find((tool) => tool.name === "schedule_update")!;
-    const pause = tools.find((tool) => tool.name === "schedule_pause")!;
-    const resume = tools.find((tool) => tool.name === "schedule_resume")!;
-    const cancel = tools.find((tool) => tool.name === "schedule_cancel")!;
+    const tools = (await agent.extendTools!())!;
+    const create = tools.schedule_create!;
+    const update = tools.schedule_update!;
+    const pause = tools.schedule_pause!;
+    const resume = tools.schedule_resume!;
+    const cancel = tools.schedule_cancel!;
     const created = (await create.execute!({ title: "agent", prompt: "Run.", at: "2099-01-01T00:00:00Z" }, {} as never)) as { id: string };
 
     await update.execute!({ id: created.id, title: "agent v2" }, {} as never);

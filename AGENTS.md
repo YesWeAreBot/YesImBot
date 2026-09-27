@@ -2,10 +2,10 @@
 
 ## Project Overview
 
-Athena / YesImBot v4 is a Yarn 4 monorepo for Koishi-based LLM chat agents. The current codebase is centered on a message-first `@yesimbot/agent-runtime` and a slim Koishi core service.
+Athena / YesImBot v4 is a Bun workspace monorepo for Koishi-based LLM chat agents. The agent runtime lives in the external `@yesimagent/core` package; this repo holds the Koishi integration layer and its plugins.
 
 - `core/` is the main `koishi-plugin-yesimbot` package: Koishi integration, model registry, `messengers/`, Channels/Resources, Conversations, Agents, Runtimes, and built-in platform registration.
-- `packages/agent-runtime/` is the generic runtime core: `createAgent`, turn queue, message storage, plugin hooks, tools, state, channel events, and dogfood plugins.
+- `@yesimagent/core` (external) is the generic runtime core: `createAgent`, turn queue, message storage, plugin hooks, tools, state, and channel events. It wraps AI SDK v7.
 - `core/src/messengers/index.ts` implements the built-in Messenger. Translators register through `ctx.yesimbot.messenger.use()` and own platform-specific live-Session input resolution and resource persistence.
 - `plugins/*` are optional Koishi integrations that register named `AgentPlugin` or `WillPlugin` objects through `ctx.yesimbot.agent.use()` / `agent.will()`.
 - `providers/*` are model provider plugins built on AI SDK providers and registered into `ctx["yesimbot.model"]`.
@@ -80,7 +80,6 @@ npx vitest run plugins/memos-client/tests/tools.test.ts
 | Directory                  | npm name                                     |
 | -------------------------- | -------------------------------------------- |
 | `core/`                    | `koishi-plugin-yesimbot`                     |
-| `packages/agent-runtime/`  | `@yesimbot/agent-runtime`                    |
 | `plugins/chat-learning/`   | `koishi-plugin-yesimbot-chat-learning`       |
 | `plugins/command-bridge/`  | `koishi-plugin-yesimbot-command-bridge`      |
 | `plugins/console/`         | `koishi-plugin-yesimbot-console`             |

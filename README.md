@@ -165,17 +165,16 @@ Gateway 持有 live Session、Translator 调用、canonical record 与被动回�
 本仓库使用 **Yarn 4** 与 **Turborepo** 管理。
 
 ```bash
-yarn install
-yarn check-types
-yarn test
-yarn build
+bun install
+npx vitest run
+npx yakumo build
 ```
 
-包级验证使用 Turbo filter：
+包级验证按 `package.json` 的 `name` 传给 yakumo（不是目录名）：
 
 ```bash
-yarn turbo run test --filter=@yesimbot/agent-runtime
-yarn turbo run check-types --filter=koishi-plugin-yesimbot
+npx yakumo build koishi-plugin-yesimbot
+npx vitest run plugins/chat-learning
 ```
 
 ## Community
