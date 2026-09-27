@@ -1,4 +1,5 @@
 import type { CommonRequestOptions } from "xsai";
+import type { EvaluationRequestOptions } from "./evaluation";
 
 export interface ChatProvider<T = string> {
     chat: (model: (string & {}) | T) => CommonRequestOptions;
@@ -6,6 +7,10 @@ export interface ChatProvider<T = string> {
 
 export interface EmbedProvider<T = string> {
     embed: (model: (string & {}) | T) => CommonRequestOptions;
+}
+
+export interface EvaluationProvider<T = string> {
+    evaluate: (model: (string & {}) | T) => EvaluationRequestOptions;
 }
 
 export interface ImageProvider<T = string> {
@@ -31,6 +36,7 @@ export enum ModelType {
     Image = "image",
     Speech = "speech",
     Transcription = "transcription",
+    Evaluation = "evaluation",
     Unknown = "unknown",
 }
 
@@ -59,15 +65,21 @@ export interface EmbedModelInfo extends ModelInfo {
     dimension: number;
 }
 
+export interface EvaluationModelInfo extends ModelInfo {
+    modelType: ModelType.Evaluation;
+}
+
 export type ExtractChatModels<T> = T extends ChatProvider<infer M> ? M : never;
 export type ExtractEmbedModels<T> = T extends EmbedProvider<infer M> ? M : never;
 export type ExtractImageModels<T> = T extends ImageProvider<infer M> ? M : never;
 export type ExtractSpeechModels<T> = T extends SpeechProvider<infer M> ? M : never;
 export type ExtractTranscriptionModels<T> = T extends TranscriptionProvider<infer M> ? M : never;
+export type ExtractEvaluationModels<T> = T extends EvaluationProvider<infer M> ? M : never;
 /* prettier-ignore */
 export type UnionProvider
     = | ChatProvider<any>
         | EmbedProvider<any>
         | ImageProvider<any>
         | SpeechProvider<any>
-        | TranscriptionProvider<any>;
+        | TranscriptionProvider<any>
+        | EvaluationProvider<any>;

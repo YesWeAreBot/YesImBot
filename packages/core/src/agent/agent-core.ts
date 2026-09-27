@@ -126,7 +126,7 @@ export class AgentCore extends Service<Config> {
         this.settlePendingAssessment(channelKey);
 
         const mode = this.config.typesafe?.mode ?? "off";
-        if (mode === "off" || !this.config.typesafe?.apiKey?.trim() || !this.ctx.http
+        if (mode === "off" || (!this.config.typesafe?.evaluationModel?.trim() && (!this.config.typesafe?.apiKey?.trim() || !this.ctx.http))
             || !percept.runtime?.session || this.isForcedPercept(percept) || this.runningTasks.has(channelKey)) {
             this.applyWillingness(percept);
             return;
