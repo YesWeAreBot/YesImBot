@@ -193,7 +193,7 @@ export class WillingnessManager {
      * @param context 消息上下文
      * @returns 回复概率 (0-1)
      */
-    public calculateReplyProbability(session: Session, context: MessageContext): number {
+    public calculateReplyProbability(session: Session, context: MessageContext, gainMultiplier: number = 1): number {
         const { chatId } = context;
         const config = this._getResolvedConfig(session);
         const { lifecycle } = config;
@@ -202,12 +202,13 @@ export class WillingnessManager {
         const resolvedProbabilityThreshold = session.resolve(lifecycle.probabilityThreshold);
         const resolvedProbabilityAmplifier = session.resolve(lifecycle.probabilityAmplifier);
 
-        const gain = this.calculateGain(session, context);
+        const semanticMultiplier = Number.isFinite(gainMultiplier) ? Math.max(0, Math.min(2, gainMultiplier)) : 1;
+        const gain = this.calculateGain(session, context) * semanticMultiplier;
         let currentWillingness = this.willingnessScores.get(chatId) || 0;
 
         // --- 非线性增益 ---
-        const gainMultiplier = getDynamicGainMultiplier(currentWillingness, resolvedMaxWillingness);
-        const effectiveGain = gain * gainMultiplier;
+        const dynamicMultiplier = getDynamicGainMultiplier(currentWillingness, resolvedMaxWillingness);
+        const effectiveGain = gain * dynamicMultiplier;
 
         currentWillingness += effectiveGain;
         // -------------------------
@@ -277,13 +278,13 @@ export class WillingnessManager {
      * @param session 消息上下文
      * @returns 一个包含决策结果和概率的对象
      */
-    public shouldReply(session: Session): { decision: boolean; probability: number } {
+    public shouldReply(session: Session, gainMultiplier: number = 1): { decision: boolean; probability: number } {
         const { cid: chatId } = session;
         this.sessions.set(chatId, session);
 
         const context = this.buildMessageContext(session);
 
-        const probability = this.calculateReplyProbability(session, context);
+        const probability = this.calculateReplyProbability(session, context, gainMultiplier);
         const forced = this.isForcedReply(session);
 
         const decision = forced || Math.random() < probability;

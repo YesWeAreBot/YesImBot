@@ -33,6 +33,7 @@ export const ArousalConfig: Schema<ArousalConfig> = Schema.object({
 });
 
 export interface WillingnessConfig {
+    typesafe?: TypeSafeConfig;
     base: {
         /** 收到普通文本消息的基础分。这是对话的基石 */
         text: Computed<number>;
@@ -76,7 +77,32 @@ export interface WillingnessConfig {
     };
 }
 
+export interface TypeSafeConfig {
+    mode: "off" | "observe" | "active";
+    apiKey: string;
+    baseURL: string;
+    model: string;
+    timeoutMs: number;
+    historyLimit: number;
+    interests: string;
+    influence: number;
+}
+
 const WillingnessConfig: Schema<WillingnessConfig> = Schema.object({
+    typesafe: Schema.object({
+        mode: Schema.union([
+            Schema.const("off").description("关闭"),
+            Schema.const("observe").description("仅记录判断"),
+            Schema.const("active").description("参与意愿计算"),
+        ]).default("off").description("启用后将近期对话发送给 TypeSafe，辅助判断接话时机。仅记录模式不影响发言。"),
+        apiKey: Schema.string().role("secret").default("").description("TypeSafe API 密钥"),
+        baseURL: Schema.string().default("https://api.typesafe.ai/v1").description("TypeSafe API 地址，包含 /v1"),
+        model: Schema.string().default("jev-1.13.0").description("判断模型"),
+        timeoutMs: Schema.number().min(100).max(30000).default(3000).description("判断超时（毫秒），超时后沿用原意愿计算"),
+        historyLimit: Schema.natural().max(30).default(8).description("判断时参考的近期消息数，0 表示只看当前消息"),
+        interests: Schema.string().role("textarea").default("").description("角色感兴趣的话题，留空时使用已有的高兴趣关键词"),
+        influence: Schema.number().min(0).max(1).step(0.05).default(0.5).description("对本条消息意愿增益的影响强度；0 为不调整，0.5 时增益最多减半或增加一半"),
+    }).description("TypeSafe 接话判断"),
     base: Schema.object({
         text: Schema.computed<Schema<number>>(Schema.number().default(12))
             .default(12)

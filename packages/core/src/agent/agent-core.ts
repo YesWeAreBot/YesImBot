@@ -8,6 +8,7 @@ import { Service } from "koishi";
 import { ChatModelSwitcher } from "@/services/model";
 import { Services } from "@/shared/constants";
 import { HeartbeatProcessor } from "./heartbeat-processor";
+import { TypeSafeEvaluator } from "./typesafe";
 import { WillingnessManager } from "./willing";
 
 type WithDispose<T> = T & { dispose: () => void };
@@ -19,7 +20,15 @@ declare module "koishi" {
 }
 
 export class AgentCore extends Service<Config> {
-    static readonly inject = [Services.Asset, Services.Memory, Services.Model, Services.Prompt, Services.Plugin, Services.Horizon];
+    static readonly inject = {
+        [Services.Asset]: { required: true },
+        [Services.Memory]: { required: true },
+        [Services.Model]: { required: true },
+        [Services.Prompt]: { required: true },
+        [Services.Plugin]: { required: true },
+        [Services.Horizon]: { required: true },
+        http: { required: false },
+    };
 
     // 依赖的服务
     private readonly horizon: HorizonService;
@@ -29,6 +38,12 @@ export class AgentCore extends Service<Config> {
     // 核心组件
     private willing: WillingnessManager;
     private processor: HeartbeatProcessor;
+    private readonly typesafe: TypeSafeEvaluator;
+    private readonly pendingAssessments = new Map<string, {
+        percept: UserMessagePercept;
+        controller: AbortController;
+        active: boolean;
+    }>();
 
     private modelSwitcher: ChatModelSwitcher;
 
@@ -54,6 +69,7 @@ export class AgentCore extends Service<Config> {
 
         this.modelSwitcher = new ChatModelSwitcher(this.logger, this.model, { name: group.name, models }, this.config.switchConfig);
         this.willing = new WillingnessManager(ctx, config);
+        this.typesafe = new TypeSafeEvaluator(ctx, config, this.horizon);
         this.processor = new HeartbeatProcessor(ctx, config, this.modelSwitcher);
     }
 
@@ -66,6 +82,8 @@ export class AgentCore extends Service<Config> {
     }
 
     protected stop(): void {
+        this.pendingAssessments.forEach(pending => pending.controller.abort());
+        this.pendingAssessments.clear();
         this.debouncedReplyTasks.forEach((task) => task.dispose());
         this.deferredTimers.forEach((timer) => clearTimeout(timer));
         this.queuedMessages.clear();
@@ -90,6 +108,48 @@ export class AgentCore extends Service<Config> {
     }
 
     private handleUserMessage(percept: UserMessagePercept): void {
+        const { channel } = percept.payload;
+        const channelKey = `${channel.platform}:${channel.id}`;
+        this.settlePendingAssessment(channelKey);
+
+        const mode = this.config.typesafe?.mode ?? "off";
+        if (mode === "off" || !this.config.typesafe?.apiKey?.trim() || !this.ctx.http
+            || !percept.runtime?.session || this.isForcedPercept(percept) || this.runningTasks.has(channelKey)) {
+            this.applyWillingness(percept);
+            return;
+        }
+        if (mode === "observe")
+            this.applyWillingness(percept);
+
+        const pending = { percept, controller: new AbortController(), active: mode === "active" };
+        this.pendingAssessments.set(channelKey, pending);
+        void this.typesafe.evaluate(percept, pending.controller.signal).then((assessment) => {
+            if (this.pendingAssessments.get(channelKey) !== pending)
+                return;
+            this.pendingAssessments.delete(channelKey);
+            if (assessment) {
+                const { addressed, interested, others, multiplier, model } = assessment;
+                this.logger.debug(`[${channelKey}] TypeSafe (${mode}, ${model}): 对我说=${addressed.toFixed(2)}, 兴趣=${interested.toFixed(2)}, 对他人说=${others.toFixed(2)}, 增益乘数=${multiplier.toFixed(2)}`);
+            } else {
+                this.logger.debug(`[${channelKey}] TypeSafe 无有效判断，沿用原意愿计算`);
+            }
+            if (pending.active)
+                this.applyWillingness(percept, assessment?.multiplier ?? 1);
+        });
+    }
+
+    private settlePendingAssessment(channelKey: string): void {
+        const pending = this.pendingAssessments.get(channelKey);
+        if (!pending)
+            return;
+        this.pendingAssessments.delete(channelKey);
+        pending.controller.abort();
+        // 按到达顺序累计被替代消息的原始增益，禁止过期判断触发回复。
+        if (pending.active)
+            this.applyWillingness(pending.percept, 1, false);
+    }
+
+    private applyWillingness(percept: UserMessagePercept, gainMultiplier: number = 1, allowReply: boolean = true): void {
         const { channel, sender } = percept.payload;
         const channelKey = `${channel.platform}:${channel.id}`;
 
@@ -104,7 +164,7 @@ export class AgentCore extends Service<Config> {
             }
 
             const willingnessBefore = this.willing.getCurrentWillingness(channelKey);
-            const result = this.willing.shouldReply(percept.runtime.session);
+            const result = this.willing.shouldReply(percept.runtime.session, gainMultiplier);
             const willingnessAfter = this.willing.getCurrentWillingness(channelKey);
 
             decision = result.decision;
@@ -115,7 +175,7 @@ export class AgentCore extends Service<Config> {
             return;
         }
 
-        if (!decision) {
+        if (!decision || !allowReply) {
             return;
         }
 
@@ -157,6 +217,8 @@ export class AgentCore extends Service<Config> {
         let debouncedTask = this.debouncedReplyTasks.get(channelKey);
         if (!debouncedTask) {
             debouncedTask = this.ctx.debounce(async (percept: UserMessagePercept) => {
+                // 本轮上下文将包含等待期间的新消息，结算它们，避免迟到判断重复唤醒。
+                this.settlePendingAssessment(channelKey);
                 this.runningTasks.add(channelKey);
                 this.logger.debug(`[${channelKey}] 锁定频道并开始执行任务`);
                 try {
