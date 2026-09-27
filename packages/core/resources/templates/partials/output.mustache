@@ -1,3 +1,10 @@
+{{#nativeTools}}
+<output>
+通过提供的工具调用接口执行操作。发送聊天回复时调用 send_message，不要仅在正文中描述要执行的动作，也不要额外输出同一动作的 JSON。
+调用获取信息的工具后，你会获得结果并继续处理；完成本轮动作后等待新的对话。
+</output>
+{{/nativeTools}}
+{{^nativeTools}}
 {{!
   output.mustache
   输出格式模块 - 定义响应的JSON结构
@@ -40,3 +47,5 @@
 }
 ```
 </output>
+
+{{/nativeTools}}

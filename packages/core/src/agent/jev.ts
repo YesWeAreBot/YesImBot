@@ -1,4 +1,6 @@
 import type { Context } from "koishi";
+import { requestSystemOne } from "@yesimbot/shared-model";
+import { Services } from "@/shared/constants";
 
 /**
  * Jev（TypeSafe System One 模型）通用客户端。
@@ -16,6 +18,8 @@ export interface JevConnection {
     baseURL: string;
     model: string;
     timeoutMs: number;
+    /** 留空时使用旧连接配置；指定后仅使用所选提供商。 */
+    evaluationModel?: string;
 }
 
 export interface NoulAnswer {
@@ -59,29 +63,33 @@ export interface SystemOneResult {
  */
 export async function evaluateSystemOne(
     ctx: Context,
-    conn: JevConnection,
+    conn: JevConnection | null,
     state: unknown,
     questions: Record<string, SystemOneQuestion>,
     signal?: AbortSignal,
 ): Promise<SystemOneResult | null> {
-    if (!conn.apiKey.trim() || !ctx.http)
+    if (!conn || signal?.aborted)
         return null;
 
     const controller = new AbortController();
     const abort = () => controller.abort();
     signal?.addEventListener("abort", abort, { once: true });
     const timer = setTimeout(abort, conn.timeoutMs);
+    let onAbort: () => void;
+    const cancelled = new Promise<null>((resolve) => {
+        onAbort = () => resolve(null);
+        controller.signal.addEventListener("abort", onAbort, { once: true });
+    });
     try {
-        const response = await ctx.http.post<{ model?: unknown; answers?: unknown }>(
-            `${conn.baseURL.replace(/\/+$/, "")}/systemone`,
-            { model: conn.model, state, questions },
-            {
-                headers: { "Authorization": `Bearer ${conn.apiKey}`, "Content-Type": "application/json" },
-                timeout: conn.timeoutMs,
-                signal: controller.signal,
-                redirect: "error",
-            },
-        );
+        const selected = conn.evaluationModel?.trim();
+        const options = selected ? ctx.get(Services.Model)?.getEvaluationModel(selected) : conn;
+        if (!options || !options.apiKey.trim() || (!selected && !ctx.http))
+            return null;
+        const response = await Promise.race([requestSystemOne(options, { state, questions }, {
+            signal: controller.signal,
+            timeoutMs: conn.timeoutMs,
+            post: selected ? undefined : (url, body, options) => ctx.http.post(url, body, options),
+        }), cancelled]) as { model?: unknown; answers?: unknown } | null;
         if (controller.signal.aborted)
             return null;
         if (!response?.answers || typeof response.answers !== "object")
@@ -95,7 +103,7 @@ export async function evaluateSystemOne(
                 answers[key] = parsed;
         }
         return {
-            model: typeof response.model === "string" ? response.model : conn.model,
+            model: typeof response.model === "string" ? response.model : options.model,
             answers,
         };
     } catch {
@@ -103,6 +111,7 @@ export async function evaluateSystemOne(
     } finally {
         clearTimeout(timer);
         signal?.removeEventListener("abort", abort);
+        controller.signal.removeEventListener("abort", onAbort!);
     }
 }
 

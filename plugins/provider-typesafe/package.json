@@ -1,0 +1,17 @@
+{
+  "name": "@yesimbot/koishi-plugin-provider-typesafe",
+  "version": "0.0.1",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "scripts": {
+    "build": "tsc -b && dumble",
+    "clean": "rm -rf lib .turbo tsconfig.tsbuildinfo"
+  },
+  "exports": {
+    ".": { "types": "./lib/index.d.ts", "require": "./lib/index.js" },
+    "./package.json": "./package.json"
+  },
+  "peerDependencies": { "koishi": "^4.18.9" },
+  "dependencies": { "@yesimbot/shared-model": "^0.0.1" },
+  "devDependencies": { "koishi": "^4.18.9" }
+}

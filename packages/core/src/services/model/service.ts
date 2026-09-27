@@ -1,4 +1,4 @@
-import type { ChatModelInfo, CommonRequestOptions, EmbedModelInfo, ModelInfo, SharedProvider, UnionProvider } from "@yesimbot/shared-model";
+import type { ChatModelInfo, CommonRequestOptions, EmbedModelInfo, EvaluationModelInfo, EvaluationRequestOptions, ModelInfo, SharedProvider, UnionProvider } from "@yesimbot/shared-model";
 import type { Context } from "koishi";
 import type { ModelGroup, ModelServiceConfig } from "./config";
 import { ChatModelAbility, ModelType } from "@yesimbot/shared-model";
@@ -16,6 +16,7 @@ export class ModelService extends Service<ModelServiceConfig> {
     private readonly providers: Map<string, SharedProvider<UnionProvider>> = new Map();
     private readonly chatModelInfos: Map<string, ChatModelInfo> = new Map();
     private readonly embedModelInfos: Map<string, EmbedModelInfo> = new Map();
+    private readonly evaluationModelInfos: Map<string, EvaluationModelInfo> = new Map();
     private readonly unknownModelInfos: Map<string, ModelInfo> = new Map();
 
     constructor(ctx: Context, config: ModelServiceConfig) {
@@ -82,6 +83,10 @@ export class ModelService extends Service<ModelServiceConfig> {
             Schema.const(this.formatFullName(m.providerName, m.modelId)).description(`${m.providerName} - ${m.modelId}`),
         );
 
+        const evaluationOptions = Array.from(this.evaluationModelInfos.values()).map((m) =>
+            Schema.const(this.formatFullName(m.providerName, m.modelId)).description(`${m.providerName} - ${m.modelId}`),
+        );
+
         const customModel = Schema.string().description("自定义模型 (例如 google>gemini-3-pro)");
 
         this.ctx.schema.set("registry.chatModels", Schema.union([...chatOptions, customModel]).default(""));
@@ -92,6 +97,7 @@ export class ModelService extends Service<ModelServiceConfig> {
         );
 
         this.ctx.schema.set("registry.embedModels", this.createUnion(embedOptions, customModel).default(""));
+        this.ctx.schema.set("registry.evaluationModels", this.createUnion(evaluationOptions, customModel).default(""));
 
         // Groups
         const groupNames = (this.config.groups ?? []).map((g) => g.name);
@@ -128,6 +134,13 @@ export class ModelService extends Service<ModelServiceConfig> {
             throw new Error(`Provider with name "${name}" is not registered.`);
         }
         this.providers.delete(name);
+        for (const infos of [this.chatModelInfos, this.embedModelInfos, this.evaluationModelInfos, this.unknownModelInfos]) {
+            for (const [key, info] of infos) {
+                if (info.providerName === name)
+                    infos.delete(key);
+            }
+        }
+        this.refreshSchemas();
     }
 
     /** Register chat model metadata used for schema filtering (e.g. vision-capable). */
@@ -146,6 +159,16 @@ export class ModelService extends Service<ModelServiceConfig> {
             this.embedModelInfos.set(this.formatFullName(providerName, model.modelId), info);
         }
         this.refreshSchemas();
+    }
+
+    public addEvaluationModels(providerName: string, models: Array<Omit<EvaluationModelInfo, "providerName">>): void {
+        for (const model of models)
+            this.evaluationModelInfos.set(this.formatFullName(providerName, model.modelId), { ...model, providerName });
+        this.refreshSchemas();
+    }
+
+    public getEvaluationModelInfo(fullName: string): EvaluationModelInfo | undefined {
+        return this.evaluationModelInfos.get(fullName);
     }
 
     /** Register unknown/unclassified models for manual categorization. */
@@ -243,5 +266,14 @@ export class ModelService extends Service<ModelServiceConfig> {
         if (provider && provider.embed) {
             return provider.embed(parsed.modelName);
         }
+    }
+
+    public getEvaluationModel(fullName: string): EvaluationRequestOptions | undefined {
+        const parsed = this.parseFullName(fullName);
+        if (!parsed)
+            return undefined;
+        const provider = this.providers.get(parsed.providerName);
+        if (provider && typeof provider.evaluate === "function")
+            return provider.evaluate(parsed.modelName);
     }
 }

@@ -5,6 +5,7 @@ import type {
     ModelProvider,
     SpeechProvider,
     TranscriptionProvider,
+    EvaluationProvider,
 } from "./types";
 import type { CommonRequestOptions } from "xsai";
 import type { AnyFetch } from "./utils";
@@ -13,6 +14,7 @@ import { normalizeBaseURL } from "./utils";
 
 export * from "./classifier";
 export * from "./types";
+export * from "./evaluation";
 export * from "./utils";
 export * from "@xsai-ext/providers";
 export * from "@xsai-ext/providers/create";
@@ -48,7 +50,8 @@ export type UnionProvider
         | EmbedProvider<any>
         | ImageProvider<any>
         | SpeechProvider<any>
-        | TranscriptionProvider<any>;
+        | TranscriptionProvider<any>
+        | EvaluationProvider<any>;
 
 export abstract class SharedProvider<TProvider extends UnionProvider = ChatProvider<any>, TModelConfig = {}> {
     public readonly name: string;
@@ -72,7 +75,7 @@ export abstract class SharedProvider<TProvider extends UnionProvider = ChatProvi
         };
 
         // 运行时绑定方法
-        const methods = ["chat", "embed", "image", "speech", "transcription"] as const;
+        const methods = ["chat", "embed", "image", "speech", "transcription", "evaluate"] as const;
 
         methods.forEach((method) => {
             if (method in provider && typeof (provider as any)[method] === "function") {
@@ -111,6 +114,10 @@ export abstract class SharedProvider<TProvider extends UnionProvider = ChatProvi
 
     transcription: TProvider extends TranscriptionProvider<infer T>
         ? (model: T | (string & {})) => CommonRequestOptions & TModelConfig
+        : never = undefined as any;
+
+    evaluate: TProvider extends EvaluationProvider<infer T>
+        ? (model: T | (string & {})) => import("./evaluation").EvaluationRequestOptions & TModelConfig
         : never = undefined as any;
 
     /* prettier-ignore */

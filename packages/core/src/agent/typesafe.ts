@@ -4,6 +4,7 @@ import type { JevConnection, SystemOneAnswer, SystemOneQuestion } from "./jev";
 import type { Config } from "@/config";
 import type { HorizonService, UserMessagePercept } from "@/services/horizon";
 import { TimelineEventType, TimelineStage } from "@/services/horizon/types";
+import { Services } from "@/shared/constants";
 import { evaluateSystemOne, noulConfidence } from "./jev";
 
 export interface TypeSafeAssessment {
@@ -50,9 +51,38 @@ export class TypeSafeEvaluator {
 
     public async evaluate(percept: UserMessagePercept, signal: AbortSignal): Promise<TypeSafeAssessment | null> {
         const config = this.config.typesafe;
-        if (!config || !config.apiKey.trim() || !this.ctx.http || signal.aborted)
+        if (!config || signal.aborted)
             return null;
+        const selected = config.evaluationModel?.trim();
+        if (selected) {
+            if (!this.ctx.get(Services.Model)?.getEvaluationModel(selected))
+                return null;
+        } else if (!config.apiKey?.trim() || !this.ctx.http) {
+            return null;
+        }
 
+        const controller = new AbortController();
+        const abort = () => controller.abort();
+        signal.addEventListener("abort", abort, { once: true });
+        const timer = setTimeout(abort, config.timeoutMs);
+        let onAbort: () => void;
+        const cancelled = new Promise<null>((resolve) => {
+            onAbort = () => resolve(null);
+            controller.signal.addEventListener("abort", onAbort, { once: true });
+        });
+        try {
+            return await Promise.race([this.request(percept, controller.signal), cancelled]);
+        } catch {
+            return null;
+        } finally {
+            clearTimeout(timer);
+            signal.removeEventListener("abort", abort);
+            controller.signal.removeEventListener("abort", onAbort!);
+        }
+    }
+
+    private async request(percept: UserMessagePercept, signal: AbortSignal): Promise<TypeSafeAssessment | null> {
+        const config = this.config.typesafe!;
         const session = percept.runtime.session;
         const state = {
             bot: {
@@ -107,6 +137,7 @@ export class TypeSafeEvaluator {
 
         const questions = this.buildQuestions(config.extraQuestions);
         const connection: JevConnection = {
+            evaluationModel: config.evaluationModel,
             apiKey: config.apiKey,
             baseURL: config.baseURL,
             model: config.model,

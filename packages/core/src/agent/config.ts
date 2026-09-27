@@ -87,6 +87,7 @@ export interface WillingnessConfig {
 
 export interface TypeSafeConfig {
     mode: "off" | "observe" | "active";
+    evaluationModel?: string;
     apiKey: string;
     baseURL: string;
     model: string;
@@ -138,6 +139,7 @@ const WillingnessConfig: Schema<WillingnessConfig> = Schema.object({
             Schema.const("observe").description("仅记录判断"),
             Schema.const("active").description("参与意愿计算"),
         ]).default("off").description("启用后将近期对话发送给 TypeSafe，辅助判断接话时机。仅记录模式不影响发言。"),
+        evaluationModel: Schema.dynamic("registry.evaluationModels").default("").description("判断模型（Provider > 模型）；留空使用下方旧版直连配置"),
         apiKey: Schema.string().role("secret").default("").description("TypeSafe API 密钥"),
         baseURL: Schema.string().default("https://api.typesafe.ai/v1").description("TypeSafe API 地址，包含 /v1"),
         model: Schema.string().default("jev-latest").description("判断模型，默认跟随官方 jev-latest 别名"),

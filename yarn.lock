@@ -2716,6 +2716,17 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@yesimbot/koishi-plugin-provider-typesafe@workspace:plugins/provider-typesafe":
+  version: 0.0.0-use.local
+  resolution: "@yesimbot/koishi-plugin-provider-typesafe@workspace:plugins/provider-typesafe"
+  dependencies:
+    "@yesimbot/shared-model": "npm:^0.0.1"
+    koishi: "npm:^4.18.9"
+  peerDependencies:
+    koishi: ^4.18.9
+  languageName: unknown
+  linkType: soft
+
 "@yesimbot/shared-model@npm:^0.0.1, @yesimbot/shared-model@workspace:packages/shared-model":
   version: 0.0.0-use.local
   resolution: "@yesimbot/shared-model@workspace:packages/shared-model"

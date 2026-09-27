@@ -383,6 +383,7 @@ export class PluginService extends Service<Config> {
     private jevConnection(): JevConnection {
         const ts = this.config.typesafe;
         return {
+            evaluationModel: ts?.evaluationModel,
             apiKey: ts?.apiKey ?? "",
             baseURL: ts?.baseURL ?? "https://api.typesafe.ai/v1",
             model: ts?.model ?? "jev-latest",

@@ -1,18 +1,17 @@
-import type { Message } from "@xsai/shared-chat";
+import type { CompletionStep, Message } from "@xsai/shared-chat";
 import type { Context, Logger } from "koishi";
 import type { Config } from "@/config";
 import type { HorizonService, Percept } from "@/services/horizon";
 import type { MemoryService } from "@/services/memory";
 import type { ChatModelSwitcher, SelectedChatModel } from "@/services/model";
-import type { FunctionContext, FunctionSchema, PluginService } from "@/services/plugin";
+import type { FunctionContext, PluginService } from "@/services/plugin";
 import type { PromptService } from "@/services/prompt";
 import { generateText, streamText } from "@yesimbot/shared-model";
 import { h, Random } from "koishi";
-import { TimelineEventType, TimelinePriority, TimelineStage } from "@/services/horizon";
 import { ModelError } from "@/services/model/types";
-import { FunctionType } from "@/services/plugin";
 import { Services } from "@/shared";
 import { estimateTokensByRegex, formatDate, isNotEmpty, JsonParser } from "@/shared/utils";
+import { ToolExecution } from "./tool-execution";
 
 export class HeartbeatProcessor {
     private logger: Logger;
@@ -56,7 +55,7 @@ export class HeartbeatProcessor {
             }
         }
         // 回合结束后清理工作记忆
-        this.horizon.events.clearWorkingMemory(percept.scope);
+        await this.horizon.events.clearWorkingMemory(percept.scope);
         return success;
     }
 
@@ -78,6 +77,7 @@ export class HeartbeatProcessor {
             const renderView = {
                 // 从 ChatMode 构建的视图数据
                 ...view,
+                nativeTools: true,
                 session: context.session,
                 // 记忆块
                 memoryBlocks: this.memory.getMemoryBlocksForRendering(),
@@ -141,218 +141,107 @@ export class HeartbeatProcessor {
                 { role: "system", content: systemPrompt },
                 { role: "user", content: userPromptText },
             ];
-            const parser = new JsonParser<AgentResponse>();
             selected = this.modelSwitcher.getModel();
+            if (!selected) {
+                this.logger.warn("未找到合适的模型，跳过本次心跳");
+                return { continue: false, success: false };
+            }
             startTime = Date.now();
+            controller = new AbortController();
+            const signal = AbortSignal.any([
+                AbortSignal.timeout(this.config.switchConfig.requestTimeout),
+                controller.signal,
+            ]);
+            const execution = new ToolExecution(this.plugin, this.horizon, context, percept, signal);
             try {
-                if (!selected) {
-                    this.logger.warn("未找到合适的模型，跳过本次心跳");
-                    break;
-                }
                 this.logger.info(`调用大语言模型: ${selected.fullName}`);
-                controller = new AbortController();
-                firstTokenTimeout = setTimeout(() => {
-                    if (this.config.stream && !controller.signal.aborted) {
-                        controller.abort("请求超时");
-                    }
-                }, this.config.switchConfig.firstToken);
-
+                const options = {
+                    ...selected.options,
+                    messages,
+                    tools: execution.wrap(tools),
+                    toolChoice: "required" as const,
+                    maxSteps: 1,
+                    abortSignal: signal,
+                };
+                let fullText = "";
+                let usage: { prompt_tokens: number; completion_tokens: number } | undefined;
                 if (this.config.stream) {
                     let firstTokenReceived = false;
+                    const receiveFirstToken = () => {
+                        if (firstTokenReceived)
+                            return;
+                        firstTokenReceived = true;
+                        clearTimeout(firstTokenTimeout);
+                        this.logger.info("流式响应已开始接收");
+                    };
+                    firstTokenTimeout = setTimeout(() => controller.abort("首字响应超时"), this.config.switchConfig.firstToken);
                     const streaming = streamText({
-                        ...selected.options,
-                        messages,
-                        tools,
-                        toolChoice: "required",
-                        abortSignal: AbortSignal.any([
-                            AbortSignal.timeout(this.config.switchConfig.requestTimeout),
-                            controller.signal,
-                        ]),
+                        ...options,
                         onEvent: (event) => {
-                            switch (event.type) {
-                                case "error":
-                                    break;
-                                case "tool-call":
-                                    break;
-                                case "tool-result":
-                                    break;
-                                case "tool-call-delta":
-                                    break;
-                                case "finish":
-                                    this.ctx.logger.info("流式响应已结束");
-                                    break;
-                                case "reasoning-delta":
-                                    if (!firstTokenReceived && isNotEmpty(event.text)) {
-                                        clearTimeout(firstTokenTimeout);
-                                        firstTokenReceived = true;
-                                        this.ctx.logger.info("流式响应已开始接收");
-                                    }
-                                    break;
-                                case "text-delta":
-                                    if (!firstTokenReceived && isNotEmpty(event.text)) {
-                                        clearTimeout(firstTokenTimeout);
-                                        firstTokenReceived = true;
-                                        this.ctx.logger.info("流式响应已开始接收");
-                                    }
-                                    break;
-                                case "tool-call-streaming-start":
-                                    break;
-                            }
+                            if ((event.type === "text-delta" || event.type === "reasoning-delta") && isNotEmpty(event.text))
+                                receiveFirstToken();
+                            if (event.type === "tool-call-streaming-start" || event.type === "tool-call-delta")
+                                receiveFirstToken();
                         },
                     });
-                    const {
-                        textStream,
-                        steps,
-                        usage: usageStream,
-                        totalUsage,
-                        fullStream,
-                        messages: messageStream,
-                    } = streaming;
-                    const chunks: string[] = [];
-                    steps.catch(() => null);
-                    usageStream.catch(() => null);
-                    totalUsage.catch(() => null);
-                    messageStream.catch(() => null);
-                    for await (const chunk of textStream) {
-                        chunks.push(chunk);
-                    }
-                    const fullText = chunks.join("");
-                    const { data: agentResponseData, error } = parser.parse(fullText);
-                    if (error || !agentResponseData) {
-                        throw new Error("Invalid LLM response format");
-                    }
-                    clearTimeout(firstTokenTimeout);
-                    const usage = await totalUsage;
-                    const prompt_tokens
-                        = usage?.prompt_tokens || `~${estimateTokensByRegex(messages.map((m) => m.content).join())}`;
-                    const completion_tokens = usage?.completion_tokens || `~${estimateTokensByRegex(fullText)}`;
-                    /* prettier-ignore */
-                    this.logger.info(`💰 Token 消耗 | 输入: ${prompt_tokens} | 输出: ${completion_tokens} | 耗时: ${new Date().getTime() - startTime}ms`);
-                    this.modelSwitcher.recordResult(selected.fullName, true, undefined, Date.now() - startTime);
-                    this.logger.debug(`步骤 7/7: 执行 ${agentResponseData.actions.length} 个动作...`);
-                    let actionContinue = false;
-                    const agentActions = agentResponseData.actions;
-                    if (agentActions.length === 0) {
-                        this.logger.info("无动作需要执行");
-                        actionContinue = false;
-                    }
-
-                    for (let index = 0; index < agentActions.length; index++) {
-                        const action = agentActions[index];
-                        if (!action?.name)
-                            continue;
-
-                        const result = await this.plugin.invoke(action.name, action.params ?? {}, context);
-                        const def = await this.plugin.getFunction(action.name, context);
-
-                        if (result.status === "failed") {
-                            this.logger.warn(`动作 "${action.name}" 执行失败: ${String(result.error ?? "未知错误")}`);
-                            return { continue: false, success: false };
-                        }
-
-                        if (def && def.type === FunctionType.Tool) {
-                            this.logger.debug(`工具 "${action.name}" 触发心跳继续`);
-                            actionContinue = true;
-                            await this.horizon.events.record({
-                                id: Random.id(),
-                                timestamp: new Date(),
-                                scope: percept.scope,
-                                priority: TimelinePriority.Normal,
-                                type: TimelineEventType.AgentTool,
-                                stage: TimelineStage.Active,
-                                data: {
-                                    name: action.name,
-                                    args: action.params || {},
-                                },
-                            });
-                            await this.horizon.events.record({
-                                id: Random.id(),
-                                timestamp: new Date(),
-                                scope: percept.scope,
-                                priority: TimelinePriority.Normal,
-                                type: TimelineEventType.ToolResult,
-                                stage: TimelineStage.Active,
-                                data: {
-                                    status: result.status,
-                                    result: result.result,
-                                },
-                            });
-                        } else if (def && def.type === FunctionType.Action) {
-                            await this.horizon.events.record({
-                                id: Random.id(),
-                                timestamp: new Date(),
-                                scope: percept.scope,
-                                priority: TimelinePriority.Normal,
-                                type: TimelineEventType.AgentAction,
-                                stage: TimelineStage.Active,
-                                data: {
-                                    name: action.name,
-                                    args: action.params || {},
-                                },
-                            });
-                        }
-                    }
-                    this.logger.success("单次心跳成功完成");
-                    await this.horizon.events.markAsActive(percept.scope, new Date());
-                    const shouldContinue = agentResponseData.request_heartbeat || actionContinue;
-                    return { continue: shouldContinue };
-                } else {
+                    // 先处理所有异步结果的拒绝，防止读取正文失败后遗留未处理异常。
+                    void streaming.steps.catch(() => {});
+                    void streaming.usage.catch(() => {});
+                    void streaming.totalUsage.catch(() => {});
+                    void streaming.messages.catch(() => {});
+                    for await (const chunk of streaming.textStream)
+                        fullText += chunk;
+                    await streaming.steps;
+                    usage = await streaming.totalUsage;
+                }
+                else {
+                    // xsai 的非流式流程会自行请求下一步；每轮交由框架构建上下文并控制上限。
                     try {
-                        let stepStartTime: number = Date.now();
-                        const logger = this.ctx.logger;
-                        const response = await generateText({
-                            ...selected.options,
-                            messages,
-                            tools,
-                            toolChoice: "required",
-                            abortSignal: AbortSignal.timeout(this.config.switchConfig.requestTimeout),
-                            onStepFinish(step) {
-                                const stepEndTime = Date.now();
-                                logger.info(
-                                    `步骤完成 | 类型: ${step.stepType} | 用时: ${stepEndTime - stepStartTime} ms`,
-                                );
-                                stepStartTime = Date.now();
-                                if (step.finishReason === "tool_calls") {
-                                    logger.info("模型请求调用工具");
-                                    if (
-                                        step.toolCalls
-                                        && step.toolCalls.every((call) => call.toolName === "send_message")
-                                    ) {
-                                        logger.info("模型调用了发送消息工具，跳过本次心跳");
-                                        throw new Error("Send message tool called");
-                                    }
-                                }
-                            },
+                        await generateText({
+                            ...options,
+                            onStepFinish: (step) => { throw new HeartbeatStepComplete(step); },
                         });
-                    } catch (e) {
-                        if (e instanceof Error && e.message === "Send message tool called") {
-                            this.modelSwitcher.recordResult(selected.fullName, true, undefined, Date.now() - startTime);
-                            this.logger.success("单次心跳成功完成（发送消息工具调用）");
-                            return { continue: false };
-                        } else {
-                            throw e;
-                        }
+                    } catch (error) {
+                        if (!(error instanceof HeartbeatStepComplete))
+                            throw error;
+                        fullText = error.step.text ?? "";
+                        usage = error.step.usage;
                     }
                 }
-            } catch (error) {
-                clearTimeout(firstTokenTimeout);
-                this.ctx.logger.error(`调用大语言模型失败: ${error instanceof Error ? error.message : String(error)}`);
-                attempt++;
-                this.modelSwitcher.recordResult(
-                    selected?.fullName ?? "",
-                    false,
-                    ModelError.classify(error instanceof Error ? error : new Error(String(error))),
-                    Date.now() - startTime,
-                );
-                if (attempt < this.config.switchConfig.maxRetries) {
-                    this.logger.info(
-                        `重试调用 LLM (第 ${attempt + 1} 次，共 ${this.config.switchConfig.maxRetries} 次)...`,
-                    );
-                    continue;
-                } else {
-                    this.logger.error("达到最大重试次数，跳过本次心跳");
-                    return { continue: false, success: false };
+                await execution.executePending();
+                await execution.drain();
+                let requestHeartbeat = false;
+                // 有原生调用时不再解析正文中的动作，避免同一操作执行两次。
+                if (!execution.started) {
+                    const { data, error } = new JsonParser<AgentResponse>().parse(fullText);
+                    if (error || !data || !Array.isArray(data.actions))
+                        throw new Error("Invalid LLM response format");
+                    for (const action of data.actions) {
+                        if (!action || typeof action.name !== "string" || !action.name)
+                            throw new Error("Invalid action name");
+                        if (action.params != null && (typeof action.params !== "object" || Array.isArray(action.params)))
+                            throw new Error("Invalid action parameters");
+                        await execution.enqueue(action.name, action.params ?? {});
+                    }
+                    requestHeartbeat = data.request_heartbeat === true;
                 }
+                const promptTokens = usage?.prompt_tokens ?? `~${estimateTokensByRegex(messages.map(m => m.content).join())}`;
+                const completionTokens = usage?.completion_tokens ?? `~${estimateTokensByRegex(fullText)}`;
+                this.logger.info(`💰 Token 消耗 | 输入: ${promptTokens} | 输出: ${completionTokens} | 耗时: ${Date.now() - startTime}ms`);
+                this.modelSwitcher.recordResult(selected.fullName, true, undefined, Date.now() - startTime);
+                await this.horizon.events.markAsActive(percept.scope, new Date());
+                return { continue: !execution.hasAction && (execution.hasTool || requestHeartbeat), success: true };
+            } catch (error) {
+                controller.abort();
+                // 等待已开始的工具结束，频道锁不能先于实际操作释放。
+                await execution.drain().catch(() => {});
+                this.logger.error(`调用大语言模型失败: ${error instanceof Error ? error.message : String(error)}`);
+                this.modelSwitcher.recordResult(selected.fullName, false, ModelError.classify(error), Date.now() - startTime);
+                attempt++;
+                if (execution.started || attempt >= this.config.switchConfig.maxRetries)
+                    return { continue: false, success: false };
+            } finally {
+                clearTimeout(firstTokenTimeout);
             }
         }
     }
@@ -364,14 +253,11 @@ function _toString(obj) {
     return JSON.stringify(obj);
 }
 
-function formatFunction(tools: FunctionSchema[]): string[] {
-    return tools.map((tool) => {
-        return JSON.stringify({
-            name: tool.name,
-            description: tool.description,
-            parameters: tool.parameters,
-        });
-    });
+/** 用步骤结果结束 SDK 内部循环，后续心跳由 runCycle 调度。 */
+class HeartbeatStepComplete extends Error {
+    constructor(public readonly step: CompletionStep) {
+        super("Heartbeat step complete");
+    }
 }
 
 interface AgentResponse {
