@@ -13,7 +13,6 @@ const GROUP = "group:yesimbot";
 const MIN_NODE_MAJOR = 18;
 const MIN_YARN_MAJOR = 4;
 const CREATE_KOISHI_VERSION = "6.4.0";
-const TURBO_CONCURRENCY = process.env.YESIMBOT_TURBO_CONCURRENCY ?? "2";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const yesimbotRoot = path.resolve(scriptDir, "..");
@@ -666,7 +665,7 @@ function main() {
   updateKoishi(plugins);
 
   log("building yesimbot packages");
-  runYarn(["turbo", "run", "build", "--concurrency", TURBO_CONCURRENCY], { cwd: yesimbotRoot });
+  runYarn(["build"], { cwd: yesimbotRoot });
 
   log("verifying plugin resolution");
   verify(plugins);
