@@ -88,11 +88,15 @@ function plugins() {
   return vi.mocked(createAgent).mock.calls.at(-1)?.[0].plugins ?? [];
 }
 
-const silentTurnPlugin = () => plugins().find((item) => item.name === "core.silent-turn");
-const publishToolContext = () =>
-  plugins()
+function silentTurnPlugin() {
+  return plugins().find((item) => item.name === "core.silent-turn");
+}
+
+function toolContextStep() {
+  return plugins()
     .find((item) => item.name === "core.tool-context")
     ?.prepareStep?.({ turnId: "turn-1", toolsContext: {} } as never);
+}
 
 describe("ChannelRuntime scheduling", () => {
   beforeEach(() => {
@@ -241,7 +245,7 @@ describe("ChannelRuntime scheduling", () => {
     state.run.mockImplementation(() =>
       (async function* () {
         yield { type: "turn.start", turnId: "turn-1" };
-        await publishToolContext();
+        await toolContextStep();
         blockedDuringTurn = await silentTurnPlugin()?.beforeToolCall?.({ type: "allow" }, { toolCallId: "c1", toolName: "send_message", args: {} } as never);
         yield { type: "turn.done", turnId: "turn-1" };
       })(),
@@ -250,7 +254,7 @@ describe("ChannelRuntime scheduling", () => {
     try {
       const result = await value.post(event, { delivery: "silent" });
       if (result.kind === "run") await result.done;
-      await publishToolContext();
+      await toolContextStep();
       allowedAfterTurn = await silentTurnPlugin()?.beforeToolCall?.({ type: "allow" }, { toolCallId: "c2", toolName: "send_message", args: {} } as never);
 
       expect(blockedDuringTurn).toMatchObject({ type: "block" });

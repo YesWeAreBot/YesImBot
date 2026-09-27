@@ -22,6 +22,8 @@
     "clean": "yakumo clean",
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
+    "koishi:dev": "node scripts/start-koishi.mjs --dev",
+    "koishi:start": "node scripts/start-koishi.mjs",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
     "prepare": "husky",

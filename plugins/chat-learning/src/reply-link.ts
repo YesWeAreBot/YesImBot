@@ -30,7 +30,7 @@ export function parseReplyLinkModel(json: string): ReplyLinkModel {
 function cleanForBigram(text: string): string {
   return text
     .replace(/\[[^\]]+\]/g, " ")
-    .replace(/@[\w·\-]+/g, " ")
+    .replace(/@[\w·-]+/g, " ")
     .replace(/[^\u4e00-\u9fa5A-Za-z0-9]/g, "");
 }
 
@@ -58,7 +58,7 @@ export function replyScore(model: ReplyLinkModel, turn: MessageTurn, previous: M
   const position = Math.log10(positionDistance + 1);
   const feats = [same, overlap, timeGap, position];
   const hidden = model["fc.0.bias"].length;
-  const h = new Array<number>(hidden).fill(0);
+  const h: number[] = Array.from({ length: hidden }, () => 0);
   for (let i = 0; i < hidden; i += 1) {
     let sum = model["fc.0.bias"][i]!;
     for (let j = 0; j < 4; j += 1) sum += feats[j]! * model["fc.0.weight"][i]![j]!;
