@@ -33,22 +33,11 @@
     "access": "public",
     "registry": "https://registry.npmjs.org/"
   },
-  "scripts": {
-    "build": "npx pkgroll --sourcemap",
-    "check-types": "tsc --noEmit",
-    "clean": "rimraf .turbo && rimraf dist && rimraf tsconfig.tsbuildinfo",
-    "pub": "yarn npm publish --access public",
-    "test": "vitest run"
-  },
   "dependencies": {
-    "@yesimbot/agent-runtime": "workspace:^",
-    "ai": "6.0.264",
-    "zod": "3.25.76"
+    "@yesimagent/core": "0.0.4"
   },
   "devDependencies": {
-    "@types/json-schema": "^7.0.15",
-    "koishi": "^4.18.11",
-    "vitest": "^4.0.18"
+    "koishi": "^4.18.11"
   },
   "peerDependencies": {
     "koishi": "^4.18.11"

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { Context } from "@koishijs/core";
-import type { ToolSet } from "ai";
+import type { ToolSet } from "@yesimagent/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("koishi", async () => import("@koishijs/core"));

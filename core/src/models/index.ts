@@ -3,14 +3,14 @@ import path from "node:path";
 import {
   EmbeddingModel,
   EmbeddingModelMiddleware,
-  EmbeddingModelV3,
+  EmbeddingModelV4,
   LanguageModel,
   LanguageModelMiddleware,
-  LanguageModelV3,
+  LanguageModelV4,
   ToolSet,
   wrapEmbeddingModel,
   wrapLanguageModel,
-} from "@yesimbot/agent-runtime";
+} from "@yesimagent/core";
 import { Context, Logger, Schema } from "koishi";
 
 import type { ChannelContext } from "../channels/index.js";
@@ -144,7 +144,7 @@ export class ModelService {
       ? [...this.middlewares].reduce(
           (current, middleware) => wrapLanguageModel({ model: current, middleware, providerId: record.providerId, modelId: record.modelId }),
           wrapLanguageModel({
-            model: source as LanguageModelV3,
+            model: source as LanguageModelV4,
             middleware: createLanguageUsageMiddleware((usage) => {
               this.ctx.emit("yesimbot/model-usage", {
                 context,
@@ -180,7 +180,7 @@ export class ModelService {
     const source = provider.embedding!(record.modelId);
     return isModelObject(source)
       ? wrapEmbeddingModel({
-          model: source as EmbeddingModelV3,
+          model: source as EmbeddingModelV4,
           middleware: createEmbeddingUsageMiddleware((usage) => {
             this.ctx.emit("yesimbot/model-usage", {
               context,
@@ -418,7 +418,7 @@ function formatModelId(providerId: string, modelId: string): ModelId {
 
 function createLanguageUsageMiddleware(report: (usage: unknown) => void): LanguageModelMiddleware {
   return {
-    specificationVersion: "v3",
+    specificationVersion: "v4",
     wrapGenerate: async ({ doGenerate }) => {
       const result = await doGenerate();
       report(result.usage);
@@ -443,7 +443,7 @@ function createLanguageUsageMiddleware(report: (usage: unknown) => void): Langua
 
 function createEmbeddingUsageMiddleware(report: (usage: { inputTokens: number; outputTokens: 0 }) => void): EmbeddingModelMiddleware {
   return {
-    specificationVersion: "v3",
+    specificationVersion: "v4",
     wrapEmbed: async ({ doEmbed }) => {
       const result = await doEmbed();
       const rawUsage: unknown = result;

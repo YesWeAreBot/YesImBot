@@ -3,14 +3,13 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import type { AgentTool } from "@yesimbot/agent-runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("koishi", async () => import("@koishijs/core"));
 
 import { h } from "koishi";
 
-import { createReadTool, createSendMessageTool, type ResourceReadResult } from "../src/agents/tools.js";
+import { createReadTool, createSendMessageTool, type ChannelTool, type ResourceReadResult } from "../src/agents/tools.js";
 import { ChannelArtifactStore } from "../src/resources/artifact.js";
 import { ChannelAssetStore } from "../src/resources/asset.js";
 import { ChannelResources, prepareOutputSegments, type ResourceReader } from "../src/resources/index.js";
@@ -33,7 +32,7 @@ async function createResources(overrides: { readTimeoutMs?: number } = {}): Prom
   return new ChannelResources(await tempRoot(), false, overrides.readTimeoutMs ?? 10_000);
 }
 
-type ReadTool = AgentTool<{ uri: string }, ResourceReadResult>;
+type ReadTool = ChannelTool<{ uri: string }, ResourceReadResult>;
 
 afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))));
 
@@ -110,7 +109,7 @@ describe("ChannelResources binary stores", () => {
 const PACING = { charactersPerSecond: 10_000, maxTotalDelayMs: 1 };
 
 describe("send_message tool", () => {
-  it("documents the tool-only delivery contract and ends the turn unless asked to continue", async () => {
+  it("documents the tool-only delivery contract and the continue flag", async () => {
     const resources = await createResources();
     const sendMessage = vi.fn(async () => ["message-1"]);
     const tool = createSendMessageTool({ bot: { sendMessage } as never, channelId: "room", resources, pacing: PACING, innerThought: true });
@@ -118,9 +117,8 @@ describe("send_message tool", () => {
     expect(tool.description).toContain("唯一途径");
     expect(tool.description).toContain("必须检查 ok");
     expect(tool.description).toContain("inner_thought");
-    expect(typeof tool.terminal).toBe("function");
-    expect((tool.terminal as (input: unknown) => boolean)({ messages: ["hi"] })).toBe(true);
-    expect((tool.terminal as (input: unknown) => boolean)({ messages: ["hi"], continue: true })).toBe(false);
+    // The turn-ending rule moved to the runtime's `core.terminal` plugin; see runtimes.spec.ts.
+    expect(tool).not.toHaveProperty("terminal");
   });
 
   it("omits the inner_thought field when the monologue protocol is disabled", async () => {
@@ -147,7 +145,7 @@ describe("send_message tool", () => {
     const tool = createSendMessageTool({ bot: { sendMessage } as never, channelId: "room", resources, pacing: PACING, innerThought: false });
 
     await expect(
-      tool.execute({ messages: ["先说结论", "再说原因"] }, { toolCallId: "call-1", turnId: "turn-1", abortSignal: undefined } as never),
+      tool.execute({ messages: ["先说结论", "再说原因"] }, { toolCallId: "call-1", abortSignal: undefined, context: { turnId: "turn-1" } } as never),
     ).resolves.toEqual({ ok: true, messageIds: ["message-1", "message-2"], count: 2 });
     expect(sent.map((entry) => entry[0])).toEqual(["room", "room"]);
   });
@@ -165,8 +163,8 @@ describe("send_message tool", () => {
     await expect(
       tool.execute({ messages: ["hello", '<img src="workspace:///chart.png"/>'], channel: "other-room" }, {
         toolCallId: "call-1",
-        turnId: "turn-1",
         abortSignal: undefined,
+        context: { turnId: "turn-1" },
       } as never),
     ).resolves.toEqual({ ok: true, messageIds: ["message-1", "message-2"], count: 2 });
     expect(sendMessage).toHaveBeenCalledTimes(2);
@@ -185,8 +183,8 @@ describe("send_message tool", () => {
     await expect(
       tool.execute({ messages: ['当 x<10 且 y>5 时 <at id="1"/>'], mode: "raw" }, {
         toolCallId: "call-1",
-        turnId: "turn-1",
         abortSignal: undefined,
+        context: { turnId: "turn-1" },
       } as never),
     ).resolves.toMatchObject({ ok: true });
     expect(sent[0]).toEqual([h.text('当 x<10 且 y>5 时 <at id="1"/>')]);
@@ -208,7 +206,9 @@ describe("send_message tool", () => {
       onFailed: (notice) => failed.push(notice),
     });
 
-    await expect(tool.execute({ messages: ["一", "二", "三"] }, { toolCallId: "call-1", turnId: "turn-1", abortSignal: undefined } as never)).resolves.toEqual({
+    await expect(
+      tool.execute({ messages: ["一", "二", "三"] }, { toolCallId: "call-1", abortSignal: undefined, context: { turnId: "turn-1" } } as never),
+    ).resolves.toEqual({
       ok: false,
       error: { name: "Error", message: "offline" },
       sent: ["message-1"],
@@ -230,7 +230,7 @@ describe("send_message tool", () => {
       onDelivered: (notice) => delivered.push(notice),
     });
 
-    await tool.execute({ messages: ["hi"] }, { toolCallId: "call-1", turnId: "turn-1", abortSignal: undefined } as never);
+    await tool.execute({ messages: ["hi"] }, { toolCallId: "call-1", abortSignal: undefined, context: { turnId: "turn-1" } } as never);
     expect(delivered).toEqual([{ channelId: "room", messageId: "message-1", turnId: "turn-1", text: "hi" }]);
   });
 });
@@ -281,7 +281,9 @@ describe("read tool resource errors", () => {
   it("rejects traversal attempts", async () => {
     const resources = await createResources();
     const tool = createReadTool(resources, false);
-    await expect(tool.execute({ uri: "workspace:///../secret" }, { toolCallId: "c", abortSignal: undefined } as never)).resolves.toMatchObject({
+    await expect(
+      tool.execute({ uri: "workspace:///../secret" }, { toolCallId: "c", abortSignal: undefined, context: { turnId: "turn-1" } } as never),
+    ).resolves.toMatchObject({
       error: "invalid_resource_uri",
     });
   });
@@ -289,7 +291,9 @@ describe("read tool resource errors", () => {
   it("returns unavailable for unregistered schemes", async () => {
     const resources = await createResources();
     const tool = createReadTool(resources, false);
-    await expect(tool.execute({ uri: "skill://csv/SKILL.md" }, { toolCallId: "c", abortSignal: undefined } as never)).resolves.toMatchObject({
+    await expect(
+      tool.execute({ uri: "skill://csv/SKILL.md" }, { toolCallId: "c", abortSignal: undefined, context: { turnId: "turn-1" } } as never),
+    ).resolves.toMatchObject({
       error: "resource_unavailable",
     });
   });
@@ -308,14 +312,18 @@ describe("read tool resource errors", () => {
       }),
     );
     const tool = createReadTool(resources, false);
-    await expect(tool.execute({ uri: "test:///file" }, { toolCallId: "c", abortSignal: undefined } as never)).resolves.toMatchObject({ error: "timeout" });
+    await expect(
+      tool.execute({ uri: "test:///file" }, { toolCallId: "c", abortSignal: undefined, context: { turnId: "turn-1" } } as never),
+    ).resolves.toMatchObject({ error: "timeout" });
   });
 
   it("enforces a hard deadline when an opener ignores abort", async () => {
     const resources = await createResources({ readTimeoutMs: 1 });
     resources.use(reader("slow", "slow", async () => Promise.withResolvers<{ bytes: Uint8Array }>().promise));
     const tool = createReadTool(resources, false);
-    await expect(tool.execute({ uri: "slow:///file" }, { toolCallId: "c", abortSignal: undefined } as never)).resolves.toMatchObject({ error: "timeout" });
+    await expect(
+      tool.execute({ uri: "slow:///file" }, { toolCallId: "c", abortSignal: undefined, context: { turnId: "turn-1" } } as never),
+    ).resolves.toMatchObject({ error: "timeout" });
     await expect(resources.open("slow:///file")).resolves.toBeUndefined();
   });
 
@@ -324,7 +332,7 @@ describe("read tool resource errors", () => {
     resources.use(reader("abort", "abort", async () => Promise.withResolvers<{ bytes: Uint8Array }>().promise));
     const tool = createReadTool(resources, false);
     const controller = new AbortController();
-    const pending = tool.execute({ uri: "abort:///file" }, { toolCallId: "c", abortSignal: controller.signal } as never);
+    const pending = tool.execute({ uri: "abort:///file" }, { toolCallId: "c", abortSignal: controller.signal, context: { turnId: "turn-1" } } as never);
     controller.abort();
     await expect(pending).resolves.toMatchObject({ error: expect.any(String) });
   });
@@ -333,14 +341,18 @@ describe("read tool resource errors", () => {
     const resources = await createResources();
     resources.use(reader("unsafe", "unsafe", async () => ({ bytes: new Uint8Array([1]), filename: "../secret.txt" })));
     const tool = createReadTool(resources, false);
-    await expect(tool.execute({ uri: "unsafe:///file" }, { toolCallId: "c", abortSignal: undefined } as never)).resolves.toMatchObject({
+    await expect(
+      tool.execute({ uri: "unsafe:///file" }, { toolCallId: "c", abortSignal: undefined, context: { turnId: "turn-1" } } as never),
+    ).resolves.toMatchObject({
       error: "resource_read_failed",
     });
 
     const oversizedResources = await createResources();
     oversizedResources.use(reader("large", "large", async () => ({ bytes: new Uint8Array(5 * 1024 * 1024 + 1) })));
     const oversizedTool = createReadTool(oversizedResources, false);
-    await expect(oversizedTool.execute({ uri: "large:///file" }, { toolCallId: "c", abortSignal: undefined } as never)).resolves.toMatchObject({
+    await expect(
+      oversizedTool.execute({ uri: "large:///file" }, { toolCallId: "c", abortSignal: undefined, context: { turnId: "turn-1" } } as never),
+    ).resolves.toMatchObject({
       error: "resource_too_large",
     });
   });
@@ -350,7 +362,9 @@ describe("read tool resource errors", () => {
     const open = vi.fn(async () => ({ bytes: PNG_BYTES }));
     resources.use(reader("custom", "custom", open));
     const tool = createReadTool(resources, false);
-    await expect(tool.execute({ uri: "custom:///" }, { toolCallId: "c", abortSignal: undefined } as never)).resolves.toMatchObject({
+    await expect(
+      tool.execute({ uri: "custom:///" }, { toolCallId: "c", abortSignal: undefined, context: { turnId: "turn-1" } } as never),
+    ).resolves.toMatchObject({
       error: "invalid_resource_uri",
     });
     expect(open).not.toHaveBeenCalled();
@@ -360,7 +374,7 @@ describe("read tool resource errors", () => {
     const resources = await createResources();
     resources.use(reader("text", "text", async () => ({ bytes: new TextEncoder().encode("x".repeat(30_001)) })));
     const tool = createReadTool(resources, false);
-    const result = await tool.execute({ uri: "text:///file" }, { toolCallId: "c", abortSignal: undefined } as never);
+    const result = await tool.execute({ uri: "text:///file" }, { toolCallId: "c", abortSignal: undefined, context: { turnId: "turn-1" } } as never);
     expect(result.text).toHaveLength(30_000);
     expect(result.text).toContain("内容已截断");
   });
@@ -376,7 +390,9 @@ describe("read tool resource errors", () => {
       "asset://SHORT",
       "asset://a6e2b32e1d9d64b2e906ac5c3216d18f/extra",
     ]) {
-      await expect(tool.execute({ uri }, { toolCallId: "c", abortSignal: undefined } as never)).resolves.toMatchObject({ error: "invalid_resource_uri" });
+      await expect(tool.execute({ uri }, { toolCallId: "c", abortSignal: undefined, context: { turnId: "turn-1" } } as never)).resolves.toMatchObject({
+        error: "invalid_resource_uri",
+      });
     }
   });
 });
@@ -522,7 +538,7 @@ describe("read tool model projection", () => {
 
   // oxlint-disable-next-line unicorn/consistent-function-scoping
   async function readAndProject(tool: ReadTool, uri: string, toolCallId = "call-1") {
-    const result = await tool.execute({ uri }, { toolCallId, abortSignal: undefined } as never);
+    const result = await tool.execute({ uri }, { toolCallId, abortSignal: undefined, context: { turnId: "turn-1" } } as never);
     const output = await tool.toModelOutput!({ toolCallId, input: { uri }, output: result });
     return { result, output };
   }

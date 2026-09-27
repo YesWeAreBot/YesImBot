@@ -1,8 +1,7 @@
 import { mkdir, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { createEntry, createJsonlStorage, type AgentEntry, type AgentStorage } from "@yesimbot/agent-runtime";
-import type { LanguageModel } from "ai";
+import { createEntry, createJsonlStorage, type AgentEntry, type AgentStorage, type LanguageModel } from "@yesimagent/core";
 
 import type { MessageRecord } from "../messages/index.js";
 import { executeCompact, filterEntriesForCompression } from "./compact.js";
@@ -10,6 +9,32 @@ import { executeCompact, filterEntriesForCompression } from "./compact.js";
 export type CompactReason = "auto" | "idle" | "manual";
 
 export type CompactResult = { readonly compacted: boolean; readonly reason?: string };
+
+export interface CompactEntryData {
+  summary: string;
+  lastEntryId: string;
+  sourceSession?: string;
+}
+
+declare module "@yesimagent/core" {
+  interface AgentCustomEntry {
+    compact: CompactEntryData;
+  }
+}
+
+export type CompactEntry = AgentEntry<"compact">;
+
+export function findCompactEntry(entries: readonly AgentEntry[]): CompactEntry | undefined {
+  return [...entries].reverse().find((entry): entry is CompactEntry => entry.type === "compact");
+}
+
+/** Index of the most recent `compact` entry, or -1 when the session has never been compacted. */
+export function lastCompactEntryIndex(entries: readonly AgentEntry[]): number {
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    if (entries[index].type === "compact") return index;
+  }
+  return -1;
+}
 
 export type ConversationInfo = { filename: string; isActive: boolean; size: number; createdAt: string };
 
@@ -114,7 +139,7 @@ export class Conversation {
     if (!noSummary && input) {
       const result = await this.compact("manual", input);
       if (result.compacted) {
-        const compact = [...(await this.storage.read())].reverse().find((entry) => entry.type === "compact");
+        const compact = findCompactEntry(await this.storage.read());
         this.setStorage(await this.createSession(compact ? [compact] : []));
         return;
       }
@@ -127,8 +152,8 @@ export class Conversation {
     if (maxBytes <= 0) return false;
     const active = (await this.status()).active;
     if (!active || active.size <= maxBytes) return false;
-    const compact = [...(await this.storage.read())].reverse().find((entry) => entry.type === "compact");
-    if (compact?.type === "compact") {
+    const compact = findCompactEntry(await this.storage.read());
+    if (compact) {
       this.setStorage(await this.createSession([compact]));
     } else {
       await this.archive(!input, input);
@@ -140,7 +165,7 @@ export class Conversation {
     await this.init();
     if (this.failures >= this.compactConfig.maxFailures) return { compacted: false, reason: "failure_limit" };
     const entries = await this.storage.read();
-    const lastCompactIndex = entries.reduce((last, entry, index) => (entry.type === "compact" ? index : last), -1);
+    const lastCompactIndex = lastCompactEntryIndex(entries);
     const sourceEntries = lastCompactIndex === -1 ? entries : entries.slice(lastCompactIndex + 1);
     const messages = sourceEntries.filter((entry) => entry.type === "message");
     if (messages.length < this.compactConfig.minMessages) return { compacted: false, reason: "minimum_messages" };
@@ -220,8 +245,8 @@ export class Conversation {
   }
 
   private async restoreMemory(): Promise<void> {
-    const compact = [...(await this.storage.read())].reverse().find((entry) => entry.type === "compact");
-    this.memory = compact?.type === "compact" ? compact.data.summary : "";
+    const compact = findCompactEntry(await this.storage.read());
+    this.memory = compact?.data.summary ?? "";
   }
 
   private async createOrResolve(): Promise<string> {

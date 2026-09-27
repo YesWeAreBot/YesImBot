@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import type { SystemModelMessage } from "ai";
+import type { SystemModelMessage } from "@yesimagent/core";
 import type { Logger } from "koishi";
 
 import type { ChannelContext } from "../channels/index.js";

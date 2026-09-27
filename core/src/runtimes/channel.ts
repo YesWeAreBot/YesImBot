@@ -1,18 +1,17 @@
 import {
   AgentBusyError,
-  AssistantContent,
+  type AssistantContent,
   createAgent,
   createEntry,
-  createEventEntry,
-  createInternalEvent,
   createSystemMessage,
   type Agent,
-  type AgentInternalEvent,
   type AgentPlugin,
-  type AgentToolSet,
+  type AgentEvent,
   type LanguageModel,
+  type StepFinishInfo,
+  type StepFinishDecision,
   type ToolSet,
-} from "@yesimbot/agent-runtime";
+} from "@yesimagent/core";
 import { Universal, type Bot, type Context, type Logger } from "koishi";
 
 import {
@@ -20,12 +19,15 @@ import {
   createFinishTool,
   createReadTool,
   createSendMessageTool,
+  type ChannelTool,
   type DeliveredNotice,
   type SendFailedNotice,
+  type ToolContext,
 } from "../agents/tools.js";
-import type { WillEngine, WillState } from "../agents/will.js";
+import type { WillDebug, WillEngine, WillState } from "../agents/will.js";
 import { deriveChannelKey, type Channel, type ChannelContext } from "../channels/index.js";
 import type { Config } from "../config.js";
+import { lastCompactEntryIndex } from "../conversations/index.js";
 import {
   createEvent,
   createMessage,
@@ -33,24 +35,52 @@ import {
   isEvent,
   isMessage,
   isMessageRecord,
-  type Event,
+  type AgentMessageOf,
   type EventRecord,
-  type Message,
   type MessageRecord,
 } from "../messages/index.js";
 import { buildCoreSystemPrompt, readPersona } from "./prompt.js";
 
+type ChannelInput = AgentMessageOf<"yesimbot.message"> | AgentMessageOf<"yesimbot.event">;
+
+export interface WillDecisionEntryData {
+  eventId: string;
+  decision: "wait" | "trigger";
+  debug?: WillDebug;
+}
+
+declare module "@yesimagent/core" {
+  interface AgentCustomEntry {
+    willDecision: WillDecisionEntryData;
+  }
+}
+
+/**
+ * `toModelMessages` receives whatever the custom-message registry holds, so the channel tag is checked at
+ * runtime rather than narrowed by the declared type. `undefined` means "not mine" and lets the next plugin decide.
+ */
+function isChannelInput(value: unknown): value is ChannelInput {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "role" in value &&
+    value.role === "custom" &&
+    "type" in value &&
+    (value.type === "yesimbot.message" || value.type === "yesimbot.event")
+  );
+}
+
 const MODEL_INPUT_PLUGIN: AgentPlugin = {
   name: "core.model-input",
   enforce: "pre",
-  toModelMessages: async (message) => (isMessage(message) || isEvent(message) ? [formatInput(message)] : []),
+  toModelMessages: (message) => (isChannelInput(message) ? [formatInput(message)] : undefined),
 };
 
 const COMPACT_HISTORY_PLUGIN: AgentPlugin = {
   name: "core.compact-history",
   enforce: "pre",
   transformEntries: (entries) => {
-    const lastCompactIndex = entries.reduce((last, entry, index) => (entry.type === "compact" ? index : last), -1);
+    const lastCompactIndex = lastCompactEntryIndex(entries);
     return (lastCompactIndex === -1 ? entries : entries.slice(lastCompactIndex)).map((entry) =>
       entry.type === "compact"
         ? createEntry(
@@ -104,6 +134,10 @@ export class ChannelRuntime {
   private responseCompactionPending = false;
   /** Turns started by a silent post; `send_message` is blocked for them. */
   private readonly silentTurns = new Set<string>();
+  /** Tool calls seen in the current step, so `onStepFinish` can apply the old `terminal` rule. */
+  private readonly stepCalls: Array<{ toolName: string; args: unknown; failed: boolean }> = [];
+  /** The turn the running step belongs to; `beforeToolCall` has no turn-scoped context to read it from. */
+  private currentTurnId = "";
 
   private persona = "";
 
@@ -115,8 +149,8 @@ export class ChannelRuntime {
     this.selfId = options.bot.selfId;
     this.logger = ctx.logger("yesimbot/channel-runtime");
     this.logger.level = options.config.logLevel ?? 2;
-    const tools: AgentToolSet = [
-      createSendMessageTool({
+    const tools: ToolSet = {
+      send_message: createSendMessageTool({
         bot: options.bot,
         channelId: this.context.channelId,
         resources: options.channel.resources,
@@ -125,27 +159,26 @@ export class ChannelRuntime {
         onDelivered: (notice) => this.announceDelivered(notice),
         onFailed: (notice) => this.announceSendFailed(notice),
       }),
-      createReadTool(options.channel.resources, options.imageOutputSupported),
-      createFinishTool(),
-    ];
+      read: createReadTool(options.channel.resources, options.imageOutputSupported),
+      finish: createFinishTool(),
+    };
     if (options.visionModel) {
-      tools.push(createDescribeImageTool(options.visionModel, options.channel.resources));
+      tools.describe_image = createDescribeImageTool(options.visionModel, options.channel.resources);
     }
     this.agent = createAgent({
       id: deriveChannelKey(this.context),
       model: options.model,
       storage: options.channel.conversation.storage,
-      systemPrompt: () =>
-        buildCoreSystemPrompt({
-          basePath: options.config.basePath,
-          channel: this.context,
-          selfId: this.selfId,
-          customInnerThought: options.config.customInnerThought,
-          logger: this.logger,
-        }),
       tools,
-      providerTools: options.providerTools,
-      plugins: [COMPACT_HISTORY_PLUGIN, MODEL_INPUT_PLUGIN, this.silentTurnPlugin(), ...options.plugins],
+      plugins: [
+        this.promptPlugin(),
+        COMPACT_HISTORY_PLUGIN,
+        MODEL_INPUT_PLUGIN,
+        this.toolContextPlugin(),
+        this.terminalPlugin(),
+        this.silentTurnPlugin(),
+        ...options.plugins,
+      ],
     });
   }
 
@@ -161,7 +194,7 @@ export class ChannelRuntime {
       const decision = await this.options.will.decide(input, this.state());
       try {
         await this.options.channel.conversation.storage.append(
-          createEventEntry(createInternalEvent({ type: "will.decision", eventId: input.id, decision, debug: this.options.will.debug?.() })),
+          createEntry("willDecision", { eventId: input.id, decision, debug: this.options.will.debug?.() }),
         );
       } catch (error) {
         this.logger.warn("runtime.will_decision_persist_failed", { eventId: input.id, error });
@@ -221,14 +254,15 @@ export class ChannelRuntime {
     return this.stopTask;
   }
 
-  private async persist(record: MessageRecord | EventRecord): Promise<Message | Event> {
+  private async persist(record: MessageRecord | EventRecord): Promise<ChannelInput> {
     const input = isMessageRecord(record) ? createMessage(record) : createEvent(record);
-    await this.agent.append(input);
-    this.ctx.emit(isMessage(input) ? "yesimbot/message" : "yesimbot/event", input as never);
+    await this.agent.send(input, { trigger: false });
+    if (isMessage(input)) this.ctx.emit("yesimbot/message", input);
+    else this.ctx.emit("yesimbot/event", input);
     return input;
   }
 
-  private async commit(record: MessageRecord | EventRecord): Promise<Message | Event> {
+  private async commit(record: MessageRecord | EventRecord): Promise<ChannelInput> {
     const input = await this.persist(record);
     await this.archiveIfOversize();
     return input;
@@ -272,7 +306,7 @@ export class ChannelRuntime {
     return this.context.type === "direct" ? Universal.Channel.Type.DIRECT : Universal.Channel.Type.TEXT;
   }
 
-  private start(input: Message | Event, passive: boolean, ifBusy: "defer" | "join" | "reject", silent = false): RuntimeResult {
+  private start(input: ChannelInput, passive: boolean, ifBusy: "defer" | "join" | "reject", silent = false): RuntimeResult {
     const activeTurnId = this.agent.getActiveTurnId();
     if (ifBusy === "join" && activeTurnId !== null) {
       this.agent.send(input, { ifBusy: "join" });
@@ -284,7 +318,7 @@ export class ChannelRuntime {
     return { kind: "run", eventId: input.id, done: task };
   }
 
-  private async consume(stream: AsyncIterable<AgentInternalEvent>, passive: boolean, silent: boolean): Promise<void> {
+  private async consume(stream: AsyncIterable<AgentEvent>, passive: boolean, silent: boolean): Promise<void> {
     let delivered = false;
     let completed = false;
     let turnId = "";
@@ -299,10 +333,9 @@ export class ChannelRuntime {
         if (event.type === "turn.step") {
           this.logger.debug("runtime.turn.step", {
             turnId: event.turnId,
-            stepNumber: event.step,
+            stepNumber: event.stepNumber,
             finishReason: event.finishReason,
             usage: event.usage,
-            reasoningText: event.reasoningText === undefined ? undefined : event.reasoningText.slice(0, 1000),
           });
           continue;
         }
@@ -320,11 +353,15 @@ export class ChannelRuntime {
           continue;
         }
         if (event.type === "tool.failed") {
-          this.logger.warn("runtime.tool.failed", { turnId: event.turnId, toolName: event.toolName, toolCallId: event.toolCallId, error: event.error.message });
+          this.logger.warn("runtime.tool.failed", {
+            turnId: event.turnId,
+            toolName: event.toolName,
+            toolCallId: event.toolCallId,
+            error: event.error?.message,
+          });
           continue;
         }
-        if (event.type === "message.appended" && "turnId" in event && event.message.role === "assistant") {
-          turnId = event.turnId;
+        if (event.type === "message.appended" && event.message.role === "assistant") {
           // Model text is internal reasoning space: it is recorded and logged, never delivered.
           const content = renderAssistantText(event.message.content);
           if (content !== undefined) {
@@ -333,7 +370,7 @@ export class ChannelRuntime {
           continue;
         }
         if (event.type === "turn.failed") {
-          this.logger.warn("runtime.turn.failed", { turnId: event.turnId, error: event.error.message });
+          this.logger.warn("runtime.turn.failed", { turnId: event.turnId, error: event.error?.message });
           return;
         }
         if (event.type === "turn.aborted") {
@@ -417,10 +454,70 @@ export class ChannelRuntime {
   private silentTurnPlugin(): AgentPlugin {
     return {
       name: "core.silent-turn",
-      beforeToolCall: (call, context) =>
-        call.toolName === "send_message" && this.silentTurns.has(context.turnId)
+      beforeToolCall: (decision, call) =>
+        call.toolName === "send_message" && this.silentTurns.has(this.currentTurnId)
           ? { type: "block", reason: "本轮是静默后台任务，不能向频道发送消息。完成任务后调用 finish 结束本轮。" }
-          : { type: "allow" },
+          : decision,
+    };
+  }
+
+  /** The core assembles instructions once per turn, so a plugin is where a dynamic prompt belongs. */
+  private promptPlugin(): AgentPlugin {
+    return {
+      name: "core.prompt",
+      extendInstructions: async () =>
+        (
+          await buildCoreSystemPrompt({
+            basePath: this.options.config.basePath,
+            channel: this.context,
+            selfId: this.selfId,
+            customInnerThought: this.options.config.customInnerThought,
+            logger: this.logger,
+          })
+        )
+          .map((block) => String(block.content))
+          .join("\n\n"),
+      extendTools: () => this.options.providerTools,
+    };
+  }
+
+  /**
+   * `ToolExecutionOptions` no longer carries the turn id, so it is published as tool context instead: the core
+   * hands each tool its own `toolsContext` slice, which every channel tool declares through `contextSchema`.
+   */
+  private toolContextPlugin(): AgentPlugin {
+    return {
+      name: "core.tool-context",
+      prepareStep: (options) => {
+        this.currentTurnId = options.turnId;
+        this.stepCalls.length = 0;
+        return { ...options, toolsContext: { ...options.toolsContext, turnId: options.turnId } };
+      },
+      afterToolCall: (result) => {
+        this.stepCalls.push({ toolName: result.toolName, args: result.args, failed: result.isError });
+        return result;
+      },
+    };
+  }
+
+  /**
+   * The old tools declared `terminal` and the core ended a step whose calls were all terminal. The new core has no
+   * such flag, so the rule lives here: `finish` always ends the turn, `send_message` ends it unless the model asked
+   * to `continue`, and a failed call never ends one so the model can repair its input.
+   */
+  private terminalPlugin(): AgentPlugin {
+    return {
+      name: "core.terminal",
+      onStepFinish: (): StepFinishDecision | undefined => {
+        if (this.stepCalls.length === 0) return undefined;
+        const allTerminal = this.stepCalls.every((call) => {
+          if (call.failed) return false;
+          if (call.toolName === "finish") return true;
+          if (call.toolName === "send_message") return (call.args as { continue?: boolean } | undefined)?.continue !== true;
+          return false;
+        });
+        return allTerminal ? { continue: false } : undefined;
+      },
     };
   }
 }

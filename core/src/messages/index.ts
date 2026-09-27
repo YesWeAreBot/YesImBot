@@ -1,9 +1,9 @@
-import { createCustomMessage, type AgentMessage, type CustomMessageBase } from "@yesimbot/agent-runtime";
-import type { UserModelMessage } from "ai";
+import { createCustomMessage, type AgentMessage, type CustomMessages, type UserModelMessage } from "@yesimagent/core";
 import { h, type Element, type Universal } from "koishi";
 
 const MARK = "\u0000";
 
+/** A platform message as produced by a translator, before it becomes a custom message. */
 export type MessageRecord = Readonly<RecordBase & { readonly messageId: string; readonly elements: readonly Element[] }>;
 
 export type EventBase = Readonly<{
@@ -17,9 +17,14 @@ export type EventBase = Readonly<{
 
 export type EventRecord<K extends keyof EventMap = keyof EventMap> = K extends K ? Readonly<EventBase & { readonly eventType: K } & EventMap[K]> : never;
 
-export type Message = CustomMessageBase<"yesimbot.message", Omit<MessageRecord, "timestamp">>;
+/** The payload of a `yesimbot.message` custom message: the record minus the timestamp the core re-stamps. */
+export type Message = Omit<MessageRecord, "timestamp">;
 
-export type Event<K extends keyof EventMap = keyof EventMap> = CustomMessageBase<"yesimbot.event", K extends K ? Omit<EventRecord<K>, "timestamp"> : never>;
+/** The payload of a `yesimbot.event` custom message. */
+export type Event<K extends keyof EventMap = keyof EventMap> = K extends K ? Omit<EventRecord<K>, "timestamp"> : never;
+
+/** The wrapper the core stores: payload plus its own `id`/`timestamp`. */
+export type AgentMessageOf<T extends "yesimbot.message" | "yesimbot.event"> = CustomMessages<T>;
 
 export interface EventMap {
   "delivery.failed": {
@@ -45,8 +50,8 @@ export interface DeliveredPayload {
   readonly text: string;
 }
 
-declare module "@yesimbot/agent-runtime" {
-  interface AgentCustomMessages {
+declare module "@yesimagent/core" {
+  interface AgentCustomMessage {
     "yesimbot.event": Event;
     "yesimbot.message": Message;
   }
@@ -54,8 +59,8 @@ declare module "@yesimbot/agent-runtime" {
 
 declare module "koishi" {
   interface Events {
-    "yesimbot/event": (input: Event) => void;
-    "yesimbot/message": (input: Message) => void;
+    "yesimbot/event": (input: AgentMessageOf<"yesimbot.event">) => void;
+    "yesimbot/message": (input: AgentMessageOf<"yesimbot.message">) => void;
     "yesimbot/delivered": (payload: DeliveredPayload) => void;
   }
 }
@@ -75,27 +80,27 @@ export function isEventRecord<K extends keyof EventMap>(record: MessageRecord | 
   return "eventType" in record;
 }
 
-export function createMessage(record: MessageRecord): Message {
-  const { timestamp: _timestamp, ...data } = record;
-  return createCustomMessage("yesimbot.message", data, { timestamp: record.timestamp });
+export function createMessage(record: MessageRecord): AgentMessageOf<"yesimbot.message"> {
+  const { timestamp, ...data } = record;
+  return createCustomMessage("yesimbot.message", data, { timestamp });
 }
 
-export function createEvent<K extends keyof EventMap>(record: EventRecord<K>): Event<K>;
+export function createEvent<K extends keyof EventMap>(record: EventRecord<K>): AgentMessageOf<"yesimbot.event">;
 
-export function createEvent(record: EventRecord): Event {
-  const { timestamp: _timestamp, ...data } = record;
-  return createCustomMessage("yesimbot.event", data, { timestamp: record.timestamp });
+export function createEvent(record: EventRecord): AgentMessageOf<"yesimbot.event"> {
+  const { timestamp, ...data } = record;
+  return createCustomMessage("yesimbot.event", data, { timestamp });
 }
 
-export function isMessage(message: AgentMessage): message is Message {
+export function isMessage(message: AgentMessage): message is AgentMessageOf<"yesimbot.message"> {
   return message.role === "custom" && message.type === "yesimbot.message";
 }
 
-export function isEvent(message: AgentMessage): message is Event {
+export function isEvent(message: AgentMessage): message is AgentMessageOf<"yesimbot.event"> {
   return message.role === "custom" && message.type === "yesimbot.event";
 }
 
-export function formatInput(input: Message | Event): UserModelMessage {
+export function formatInput(input: AgentMessageOf<"yesimbot.message"> | AgentMessageOf<"yesimbot.event">): UserModelMessage {
   if (isMessage(input)) {
     const time = new Intl.DateTimeFormat("zh-CN", {
       timeZone: "Asia/Shanghai",

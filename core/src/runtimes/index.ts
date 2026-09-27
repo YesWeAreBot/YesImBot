@@ -1,10 +1,11 @@
-import type { LanguageModel } from "ai";
+import type { LanguageModel } from "@yesimagent/core";
 import type { Bot, Context, Logger, Session } from "koishi";
 
 import { Agents } from "../agents/index.js";
 import type { Channel, Channels } from "../channels/index.js";
 import { type ChannelContext, type ChannelKey, deriveChannelKey } from "../channels/index.js";
 import type { Config } from "../config.js";
+import { lastCompactEntryIndex } from "../conversations/index.js";
 import { ModelService } from "../models/index.js";
 import { ChannelRuntime } from "./channel.js";
 import { readPersona } from "./prompt.js";
@@ -132,7 +133,7 @@ export class Runtimes {
     const active = await conversation.status();
     if (!active.active) return "无会话记录。";
     const entries = await conversation.storage.read();
-    const lastCompactIndex = entries.reduce((last, entry, index) => (entry.type === "compact" ? index : last), -1);
+    const lastCompactIndex = lastCompactEntryIndex(entries);
     const lastEntry = entries.at(-1);
     const messages = entries.filter((entry) => entry.type === "message").length;
     const compacts = entries.filter((entry) => entry.type === "compact").length;

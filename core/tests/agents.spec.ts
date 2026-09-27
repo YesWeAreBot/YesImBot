@@ -2,18 +2,18 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import type { AgentPlugin } from "@yesimbot/agent-runtime";
+import type { AgentPlugin } from "@yesimagent/core";
 import { Context, type Bot, h, type Session, type Universal } from "koishi";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("koishi", async () => import("@koishijs/core"));
 
-vi.mock("ai", async (importOriginal) => {
-  const original = await importOriginal<typeof import("ai")>();
+vi.mock("@yesimagent/core", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@yesimagent/core")>();
   return { ...original, generateText: vi.fn() };
 });
 
-import { generateText } from "ai";
+import { generateText } from "@yesimagent/core";
 
 import { Agents, type ChannelPlugin } from "../src/agents/index.js";
 import { createDescribeImageTool } from "../src/agents/tools.js";

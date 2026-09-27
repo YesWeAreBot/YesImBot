@@ -3,8 +3,8 @@ import path from "node:path";
 import { type Context, Service } from "koishi";
 
 import { Agents } from "./agents/index.js";
-import { Channels } from "./channels/index.js";
 import type { ChannelContext } from "./channels/index.js";
+import { Channels } from "./channels/index.js";
 import { registerSessionCommands } from "./commands/index.js";
 import { Config } from "./config.js";
 import type { ConversationReadOptions } from "./conversations/index.js";
@@ -35,7 +35,6 @@ export default class YesImBotService extends Service<Config> {
   private platformDisposer: (() => void) | undefined;
 
   public constructor(ctx: Context, config: Config) {
-    ctx.scope.update;
     super(ctx, "yesimbot");
     config = Config(config ?? {}) as Config;
     this.config = config;

@@ -1,4 +1,4 @@
-import type { AgentPlugin } from "@yesimbot/agent-runtime";
+import type { AgentPlugin } from "@yesimagent/core";
 import type { Awaitable, Bot, Context, Logger, Session } from "koishi";
 
 import type { ChannelContext } from "../channels/index.js";
@@ -72,4 +72,4 @@ export class Agents {
   }
 }
 
-export type { WillDebug, WillEngine, WillPlugin, WillState } from "./will.js";
+export type { ChannelInput, WillDebug, WillEngine, WillPlugin, WillState } from "./will.js";

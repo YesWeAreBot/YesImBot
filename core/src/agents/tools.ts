@@ -1,5 +1,4 @@
-import { jsonSchema, type AgentTool } from "@yesimbot/agent-runtime";
-import { generateText, type LanguageModel } from "ai";
+import { jsonSchema, generateText, type FunctionTool, type LanguageModel } from "@yesimagent/core";
 import { h, type Bot, type Element } from "koishi";
 
 import type { PacingConfig } from "../config.js";
@@ -7,6 +6,20 @@ import { parseReply } from "../messages/index.js";
 import { prepareOutputSegments, ResourceReadError, type ChannelResources } from "../resources/index.js";
 
 const READ_MAX_TEXT_CHARS = 30_000;
+
+/** What every tool reads from `execution.context`; the runtime publishes the turn id per step. */
+export interface ToolContext {
+  readonly turnId: string;
+}
+
+const TOOL_CONTEXT_SCHEMA = jsonSchema<ToolContext>({
+  type: "object",
+  properties: { turnId: { type: "string", minLength: 1 } },
+  required: ["turnId"],
+});
+
+/** The AI SDK keys a tool's context by tool name, so each tool declares the schema and reads its own slice. */
+export type ChannelTool<INPUT, OUTPUT> = FunctionTool<INPUT, OUTPUT, ToolContext>;
 
 type ResourceReadInput = { uri: string };
 
@@ -65,14 +78,13 @@ export interface SendMessageToolOptions {
 
 /**
  * The only path from the model to a platform. Plain text output is never delivered, so a turn stays
- * silent until this tool runs. Ends the turn unless the model asks to `continue`.
+ * silent until this tool runs. The runtime's step plugin ends the turn unless the model asks to `continue`.
  */
-export function createSendMessageTool(options: SendMessageToolOptions): AgentTool<SendMessageInput, SendMessageOutput> {
+export function createSendMessageTool(options: SendMessageToolOptions): ChannelTool<SendMessageInput, SendMessageOutput> {
   const { bot, channelId: defaultChannelId, resources, pacing, innerThought, onDelivered, onFailed } = options;
   return {
-    name: "send_message",
-    terminal: (input) => !input.continue,
     description: sendMessageDescription(innerThought),
+    contextSchema: TOOL_CONTEXT_SCHEMA,
     inputSchema: jsonSchema<SendMessageInput>({
       type: "object",
       properties: {
@@ -102,7 +114,7 @@ export function createSendMessageTool(options: SendMessageToolOptions): AgentToo
       const sent: string[] = [];
       let elapsed = 0;
       const abort = (index: number, error: { name: string; message: string }): SendMessageOutput => {
-        onFailed?.({ channelId: target, turnId: execution.turnId, failedAt: index, total, error });
+        onFailed?.({ channelId: target, turnId: execution.context.turnId, failedAt: index, total, error });
         return { ok: false, error, sent, failedAt: index };
       };
       for (const [index, message] of input.messages.entries()) {
@@ -118,7 +130,7 @@ export function createSendMessageTool(options: SendMessageToolOptions): AgentToo
             if (execution.abortSignal?.aborted) return abort(index, { name: "AbortError", message: "send_message aborted" });
             const ids = await bot.sendMessage(target, segment);
             sent.push(...ids);
-            for (const id of ids) onDelivered?.({ channelId: target, messageId: id, turnId: execution.turnId, text: message });
+            for (const id of ids) onDelivered?.({ channelId: target, messageId: id, turnId: execution.context.turnId, text: message });
           }
         } catch (error) {
           if (error instanceof ResourceReadError) return abort(index, { name: error.code, message: error.message });
@@ -133,7 +145,7 @@ export function createSendMessageTool(options: SendMessageToolOptions): AgentToo
   };
 }
 
-export function createReadTool(resources: ChannelResources, imageOutputSupported: boolean): AgentTool<{ uri: string }, ResourceReadResult> {
+export function createReadTool(resources: ChannelResources, imageOutputSupported: boolean): ChannelTool<{ uri: string }, ResourceReadResult> {
   const pendingImages = new Map<string, { bytes: Uint8Array; mediaType: string }>();
   const imageEnabled = imageOutputSupported && resources.imageInput;
   const lines = [
@@ -162,8 +174,8 @@ export function createReadTool(resources: ChannelResources, imageOutputSupported
     "- error 存在时不会有 text：invalid_resource_uri 表示 URI 形状不合法，检查后重写而不是原样重试；resource_not_found 表示资源不存在，换来源；resource_unavailable 表示该方案当前未启用；resource_too_large 表示超出读取上限，无法读取；timeout 与 resource_read_aborted 可以重试一次；resource_read_failed 表示读取失败。",
   );
   return {
-    name: "read",
     description: lines.join("\n"),
+    contextSchema: TOOL_CONTEXT_SCHEMA,
     inputSchema: jsonSchema<ResourceReadInput>({ type: "object", properties: { uri: { type: "string", description: "要读取的资源 URI" } }, required: ["uri"] }),
     execute: async ({ uri }, execution) => {
       let opened: Awaited<ReturnType<ChannelResources["openStrict"]>>;
@@ -193,9 +205,8 @@ export function createReadTool(resources: ChannelResources, imageOutputSupported
   };
 }
 
-export function createDescribeImageTool(model: LanguageModel, resources: ChannelResources): AgentTool<DescribeImageInput, DescribeImageOutput> {
+export function createDescribeImageTool(model: LanguageModel, resources: ChannelResources): ChannelTool<DescribeImageInput, DescribeImageOutput> {
   return {
-    name: "describe_image",
     description:
       "当你需要了解图片内容、但当前无法直接查看图片时，使用本工具调用外部视觉模型生成图片描述。uri 必须是 asset://<32位十六进制id>。返回 {text} 或 {error}：invalid_uri 表示 URI 形状不合法；asset_not_found 表示资源不存在；not_an_image 表示该资源不是已知格式的图片；vision_call_failed 表示外部模型调用失败，可重试一次。",
     inputSchema: jsonSchema<DescribeImageInput>({
@@ -240,12 +251,11 @@ export function createDescribeImageTool(model: LanguageModel, resources: Channel
   };
 }
 
-export function createFinishTool(): AgentTool<FinishInput, FinishOutput> {
+export function createFinishTool(): ChannelTool<FinishInput, FinishOutput> {
   return {
-    name: "finish",
-    terminal: true,
     description:
       "结束本轮，不发送任何消息。当你判断当前场景不需要你参与、或已经做完该做的事且没有要说的话时使用。保持沉默是一个完整的选择，不需要为了确认收到或维持礼貌而发言。",
+    contextSchema: TOOL_CONTEXT_SCHEMA,
     inputSchema: jsonSchema<FinishInput>({
       type: "object",
       properties: { reason: { type: "string", description: "结束原因" } },

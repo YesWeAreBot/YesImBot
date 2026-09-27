@@ -86,7 +86,7 @@ monologue section is included in the constitution. When enabled, `send_message`
 gains an optional `inner_thought` field; the monologue is a tool argument rather
 than an output format, so the model never has to emit a bare `<inner_thought>`
 block to record a judgement. Provider-native reasoning parts are preserved by
-`@yesimbot/agent-runtime` either way. Message element syntax documentation lives
+`@yesimagent/core` either way. Message element syntax documentation lives
 in the `send_message` tool description, not in a separate system message.
 
 ## Output and delivery
@@ -101,15 +101,17 @@ model's internal working space, which removes the whole class of `保持沉默` 
 - `channel` defaults to the current channel and may target any other channel.
 - `mode` selects `element` (default, Koishi element parsing plus resource URI
   resolution) or `raw` (literal text, no parsing or escaping).
-- `continue` (default `false`) decides whether the turn ends. The tool is
-  terminal through a predicate over its own input, so one tool covers both
-  "reply and stop" and "reply and keep working".
+- `continue` (default `false`) decides whether the turn ends. The runtime's
+  `core.terminal` plugin applies the rule at the step boundary, so one tool
+  covers both "reply and stop" and "reply and keep working".
 - Adjacent messages are paced by `pacing`; a failure stops the remaining items
   and returns `{ok:false, error, sent, failedAt}` so the model sees exactly what
   was delivered.
 
 `finish` ends a turn without sending anything. Because delivery requires an
-explicit tool call, a turn that calls neither tool is simply silent.
+explicit tool call, a turn that calls neither tool is simply silent. A step
+ends the turn only when every one of its tool calls is terminal; a failed call
+never ends one, so the model can repair its input and try again.
 
 Silent scheduled posts (`delivery: "silent"`) block `send_message` for that
 turn, so a background task cannot leak its working notes into the channel.

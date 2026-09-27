@@ -1,4 +1,4 @@
-import type { AgentMessage } from "@yesimbot/agent-runtime";
+import type { AgentMessage } from "koishi-plugin-yesimbot";
 import { describe, expect, expectTypeOf, it, vi } from "vitest";
 
 vi.mock("koishi", async () => import("@koishijs/core"));

@@ -2,12 +2,12 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { createEntry } from "@yesimbot/agent-runtime";
+import { createEntry } from "@yesimagent/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const generateText = vi.hoisted(() => vi.fn());
 vi.mock("koishi", async () => import("@koishijs/core"));
-vi.mock("ai", async (original) => ({ ...(await original<typeof import("ai")>()), generateText }));
+vi.mock("@yesimagent/core", async (original) => ({ ...(await original<typeof import("@yesimagent/core")>()), generateText }));
 import { Conversation } from "../src/conversations/index.js";
 import { createMessage, type MessageRecord } from "../src/messages/index.js";
 

@@ -3,19 +3,18 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { Context } from "@koishijs/core";
-import type { ToolSet } from "ai";
+import type { ToolSet } from "@yesimagent/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ active: null as string | null, append: vi.fn(), send: vi.fn(), run: vi.fn(), decide: vi.fn(), observe: vi.fn() }));
+const state = vi.hoisted(() => ({ active: null as string | null, send: vi.fn(), run: vi.fn(), decide: vi.fn(), observe: vi.fn() }));
 
 vi.mock("koishi", async () => import("@koishijs/core"));
-vi.mock("@yesimbot/agent-runtime", async (original) => {
-  const actual = await original<typeof import("@yesimbot/agent-runtime")>();
+vi.mock("@yesimagent/core", async (original) => {
+  const actual = await original<typeof import("@yesimagent/core")>();
   return {
     ...actual,
     createAgent: vi.fn(() => ({
       init: vi.fn(),
-      append: state.append,
       send: state.send,
       run: state.run,
       getActiveTurnId: () => state.active,
@@ -27,7 +26,7 @@ vi.mock("@yesimbot/agent-runtime", async (original) => {
   };
 });
 
-import { createAgent, createEntry } from "@yesimbot/agent-runtime";
+import { createAgent, createEntry } from "@yesimagent/core";
 
 import { Agents } from "../src/agents/index.js";
 import { Channel, Channels } from "../src/channels/index.js";
@@ -84,11 +83,15 @@ async function runtime(
   return { value, root };
 }
 
+/** The plugins the last `createAgent` call was constructed with, newest mock call last. */
+function plugins() {
+  return vi.mocked(createAgent).mock.calls.at(-1)?.[0].plugins ?? [];
+}
+
 describe("ChannelRuntime scheduling", () => {
   beforeEach(() => {
     state.active = null;
     vi.mocked(createAgent).mockClear();
-    state.append.mockReset().mockResolvedValue(undefined);
     state.send.mockReset();
     state.run.mockReset().mockReturnValue((async function* () {})());
     state.decide.mockReset().mockResolvedValue("wait");
@@ -98,8 +101,8 @@ describe("ChannelRuntime scheduling", () => {
     const providerTools = { web_search: { type: "provider", id: "test.web_search", inputSchema: {} as never } } as ToolSet;
     const { value, root } = await runtime(providerTools);
     try {
-      const config = vi.mocked(createAgent).mock.calls.at(-1)?.[0];
-      expect(config?.providerTools).toBe(providerTools);
+      const plugin = plugins().find((item) => item.name === "core.prompt");
+      await expect(Promise.resolve(plugin?.extendTools?.())).resolves.toBe(providerTools);
     } finally {
       await value.stop();
       await rm(root, { recursive: true, force: true });
@@ -108,10 +111,7 @@ describe("ChannelRuntime scheduling", () => {
   it("projects the latest compact summary into model-visible history", async () => {
     const { value, root } = await runtime();
     try {
-      const plugin = vi
-        .mocked(createAgent)
-        .mock.calls.at(-1)?.[0]
-        .plugins?.find((item) => item.name === "core.compact-history");
+      const plugin = plugins().find((item) => item.name === "core.compact-history");
       const entries = await plugin?.transformEntries?.([
         createEntry("message", { id: "old", timestamp: 1, role: "user", content: "old" }),
         createEntry("compact", { summary: "remember this", lastEntryId: "old", sourceSession: "session" }),
@@ -128,9 +128,8 @@ describe("ChannelRuntime scheduling", () => {
     const { value, root } = await runtime();
     try {
       await expect(value.post(event, { trigger: false, ifBusy: "join" })).resolves.toMatchObject({ kind: "wait" });
-      expect(state.append).toHaveBeenCalledTimes(1);
+      expect(state.send).toHaveBeenCalledWith(expect.anything(), { trigger: false });
       expect(state.decide).not.toHaveBeenCalled();
-      expect(state.send).not.toHaveBeenCalled();
       expect(state.run).not.toHaveBeenCalled();
     } finally {
       await value.stop();
@@ -142,7 +141,7 @@ describe("ChannelRuntime scheduling", () => {
     const { value, root } = await runtime();
     try {
       await expect(value.post(event, { ifBusy: "reject" })).rejects.toThrow();
-      expect(state.append).not.toHaveBeenCalled();
+      expect(state.send).not.toHaveBeenCalled();
     } finally {
       await value.stop();
       await rm(root, { recursive: true, force: true });
@@ -153,7 +152,9 @@ describe("ChannelRuntime scheduling", () => {
     const { value, root } = await runtime();
     try {
       await expect(value.post(event, { ifBusy: "join" })).resolves.toEqual({ kind: "join", eventId: expect.any(String), turnId: "active" });
-      expect(state.send).toHaveBeenCalledOnce();
+      // The record is committed with `trigger: false`, then joined onto the active turn.
+      expect(state.send).toHaveBeenCalledWith(expect.anything(), { ifBusy: "join" });
+      expect(state.send).toHaveBeenCalledWith(expect.anything(), { trigger: false });
       expect(state.run).not.toHaveBeenCalled();
     } finally {
       await value.stop();
@@ -175,7 +176,9 @@ describe("ChannelRuntime scheduling", () => {
       expect(result.kind).toBe("run");
       if (result.kind === "run") await result.done;
       expect(bot.sendMessage).not.toHaveBeenCalled();
-      expect(state.send).not.toHaveBeenCalled();
+      // Only the non-triggering commit: the model text is internal, so no turn is started by it.
+      expect(state.send).toHaveBeenCalledTimes(1);
+      expect(state.send).toHaveBeenCalledWith(expect.anything(), { trigger: false });
       expect(state.decide).not.toHaveBeenCalled();
       expect(state.run).toHaveBeenCalledOnce();
     } finally {
@@ -184,14 +187,42 @@ describe("ChannelRuntime scheduling", () => {
     }
   });
 
-  it("exposes send_message and finish with the expected turn-ending semantics", async () => {
+  it("ends the turn after finish, and after send_message unless the model asks to continue", async () => {
     const { value, root } = await runtime();
     try {
-      const tools = vi.mocked(createAgent).mock.calls.at(-1)?.[0].tools ?? [];
-      const send = tools.find((tool) => tool.name === "send_message");
-      const finish = tools.find((tool) => tool.name === "finish");
-      expect(typeof send?.terminal).toBe("function");
-      expect(finish?.terminal).toBe(true);
+      const context = plugins().find((item) => item.name === "core.tool-context");
+      const terminal = plugins().find((item) => item.name === "core.terminal");
+      const tools = vi.mocked(createAgent).mock.calls.at(-1)?.[0].tools ?? {};
+      expect(Object.keys(tools)).toEqual(["send_message", "read", "finish"]);
+
+      // The turn id reaches the tools as context, since ToolExecutionOptions no longer carries it.
+      const step = await context?.prepareStep?.({ turnId: "turn-1", toolsContext: {} } as never);
+      expect(step?.toolsContext).toEqual({ turnId: "turn-1" });
+
+      const call = async (toolName: string, args: unknown, isError = false) =>
+        context?.afterToolCall?.({ toolCallId: "c", toolName, args, result: { ok: true }, isError } as never);
+
+      await call("send_message", { messages: ["hi"] });
+      expect(await terminal?.onStepFinish?.({} as never)).toEqual({ continue: false });
+
+      await context?.prepareStep?.({ turnId: "turn-1", toolsContext: {} } as never);
+      await call("send_message", { messages: ["hi"], continue: true });
+      expect(await terminal?.onStepFinish?.({} as never)).toBeUndefined();
+
+      await context?.prepareStep?.({ turnId: "turn-1", toolsContext: {} } as never);
+      await call("finish", { reason: "nothing to add" });
+      expect(await terminal?.onStepFinish?.({} as never)).toEqual({ continue: false });
+
+      // A failed call never ends the turn: the model has to be able to repair its input.
+      await context?.prepareStep?.({ turnId: "turn-1", toolsContext: {} } as never);
+      await call("finish", { reason: "x" }, true);
+      expect(await terminal?.onStepFinish?.({} as never)).toBeUndefined();
+
+      // Reading is not terminal on its own, and a non-terminal call disqualifies the whole step.
+      await context?.prepareStep?.({ turnId: "turn-1", toolsContext: {} } as never);
+      await call("read", { uri: "workspace:///a" });
+      await call("finish", { reason: "x" });
+      expect(await terminal?.onStepFinish?.({} as never)).toBeUndefined();
     } finally {
       await value.stop();
       await rm(root, { recursive: true, force: true });
@@ -201,21 +232,16 @@ describe("ChannelRuntime scheduling", () => {
   it("blocks send_message for a silent post and allows it otherwise", async () => {
     let blockedDuringTurn: unknown;
     let allowedAfterTurn: unknown;
-    // oxlint-disable-next-line unicorn/consistent-function-scoping
-    const plugin = () =>
-      vi
-        .mocked(createAgent)
-        .mock.calls.at(-1)?.[0]
-        .plugins?.find((item) => item.name === "core.silent-turn");
+    const plugin = () => plugins().find((item) => item.name === "core.silent-turn");
+    const step = () =>
+      plugins()
+        .find((item) => item.name === "core.tool-context")
+        ?.prepareStep?.({ turnId: "turn-1", toolsContext: {} } as never);
     state.run.mockImplementation(() =>
       (async function* () {
         yield { type: "turn.start", turnId: "turn-1" };
-        blockedDuringTurn = await plugin()?.beforeToolCall?.(
-          { toolCallId: "c1", toolName: "send_message", args: {} } as never,
-          {
-            turnId: "turn-1",
-          } as never,
-        );
+        await step();
+        blockedDuringTurn = await plugin()?.beforeToolCall?.({ type: "allow" }, { toolCallId: "c1", toolName: "send_message", args: {} } as never);
         yield { type: "turn.done", turnId: "turn-1" };
       })(),
     );
@@ -223,12 +249,8 @@ describe("ChannelRuntime scheduling", () => {
     try {
       const result = await value.post(event, { delivery: "silent" });
       if (result.kind === "run") await result.done;
-      allowedAfterTurn = await plugin()?.beforeToolCall?.(
-        { toolCallId: "c2", toolName: "send_message", args: {} } as never,
-        {
-          turnId: "turn-1",
-        } as never,
-      );
+      await step();
+      allowedAfterTurn = await plugin()?.beforeToolCall?.({ type: "allow" }, { toolCallId: "c2", toolName: "send_message", args: {} } as never);
 
       expect(blockedDuringTurn).toMatchObject({ type: "block" });
       expect(allowedAfterTurn).toEqual({ type: "allow" });
@@ -299,7 +321,7 @@ describe("ChannelRuntime scheduling", () => {
       state.active = null;
       state.run.mockReturnValue((async function* () {})());
       await expect(value.post(event)).resolves.toMatchObject({ kind: "run" });
-      expect(state.append).toHaveBeenCalledOnce();
+      expect(state.send).toHaveBeenCalledWith(expect.anything(), { trigger: false });
     } finally {
       await value.stop();
       await rm(root, { recursive: true, force: true });
@@ -361,7 +383,6 @@ describe("ChannelRuntime response-idle compaction", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     state.active = null;
-    state.append.mockReset().mockResolvedValue(undefined);
     state.send.mockReset();
     state.run.mockReset().mockReturnValue((async function* () {})());
   });

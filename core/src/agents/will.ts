@@ -1,11 +1,14 @@
-import type { TurnResult } from "@yesimbot/agent-runtime";
+import type { TurnResult } from "@yesimagent/core";
 import type { Awaitable, Session, Universal } from "koishi";
 
 import type { ChannelContext } from "../channels/index.js";
-import { isMessage, type Event, type Message } from "../messages/index.js";
+import { isMessage, type AgentMessageOf } from "../messages/index.js";
+
+/** What a `WillEngine` receives: the channel custom-message wrappers, not their payloads. */
+export type ChannelInput = AgentMessageOf<"yesimbot.message"> | AgentMessageOf<"yesimbot.event">;
 
 export const defaultWillEngine: WillEngine = {
-  decide(input: Message | Event, _state: WillState): "wait" | "trigger" {
+  decide(input: ChannelInput, _state: WillState): "wait" | "trigger" {
     if (!isMessage(input)) return "wait";
     if (input.data.channel.type === (1 satisfies Universal.Channel.Type)) return "trigger";
     return input.data.elements.some((element) => element.type === "at" && String(element.attrs.id) === input.data.selfId) ? "trigger" : "wait";
@@ -23,7 +26,7 @@ export interface WillState {
 }
 
 export interface WillEngine {
-  decide(input: Message | Event, state: WillState): Awaitable<"wait" | "trigger">;
+  decide(input: ChannelInput, state: WillState): Awaitable<"wait" | "trigger">;
   observe?(result: TurnResult): Awaitable<void>;
   debug?(): WillDebug | undefined;
 }
