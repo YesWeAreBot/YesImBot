@@ -98,8 +98,9 @@ export class TypeSafeEvaluator {
                 return null;
             for (const entry of entries) {
                 if (entry.type !== TimelineEventType.Message || entry.stage === TimelineStage.Deleted
-                    || entry.data.messageId === percept.payload.messageId)
+                    || entry.data.messageId === percept.payload.messageId) {
                     continue;
+                }
                 const message = {
                     id: entry.data.messageId,
                     senderId: entry.data.senderId,
@@ -107,8 +108,9 @@ export class TypeSafeEvaluator {
                     content: entry.data.content,
                 };
                 size += JSON.stringify(message).length + 1;
-                if (size > MAX_STATE_CHARS || state.recentMessages.length >= config.historyLimit)
+                if (size > MAX_STATE_CHARS || state.recentMessages.length >= config.historyLimit) {
                     break;
+                }
                 state.recentMessages.push(message);
             }
             state.recentMessages.reverse();
@@ -120,7 +122,7 @@ export class TypeSafeEvaluator {
             `${config.baseURL.replace(/\/+$/, "")}/systemone`,
             { model: config.model, state, questions },
             {
-                headers: { Authorization: `Bearer ${config.apiKey}`, "Content-Type": "application/json" },
+                headers: { "Authorization": `Bearer ${config.apiKey}`, "Content-Type": "application/json" },
                 timeout: config.timeoutMs,
                 signal,
                 redirect: "error",
@@ -140,7 +142,9 @@ export class TypeSafeEvaluator {
         const positive = (value: number) => Math.max(0, value * 2 - 1);
         const adjustment = Math.max(positive(addressed), positive(interested)) - positive(others);
         return {
-            addressed, interested, others,
+            addressed,
+            interested,
+            others,
             multiplier: 1 + config.influence * adjustment,
             model: typeof response.model === "string" ? response.model : config.model,
         };

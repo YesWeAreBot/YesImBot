@@ -136,7 +136,7 @@ export class AgentCore extends Service<Config> {
 
         const pending = { percept, controller: new AbortController(), active: mode === "active" };
         this.pendingAssessments.set(channelKey, pending);
-        void this.typesafe.evaluate(percept, pending.controller.signal).then((assessment) => {
+        void this.typesafe.evaluate(percept, pending.controller.signal).catch(() => null).then((assessment) => {
             if (this.pendingAssessments.get(channelKey) !== pending)
                 return;
             this.pendingAssessments.delete(channelKey);

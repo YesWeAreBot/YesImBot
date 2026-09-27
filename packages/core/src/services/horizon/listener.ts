@@ -176,7 +176,7 @@ export class EventListener {
             data: {
                 messageId: session.messageId,
                 senderId: session.bot.selfId,
-                senderName: session.bot.user.nick || session.bot.user.nick,
+                senderName: session.bot.user.nick || session.bot.user.name,
                 content: session.content,
             },
         });

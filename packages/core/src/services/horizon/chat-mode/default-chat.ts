@@ -2,11 +2,9 @@ import type { Context } from "koishi";
 import type { ModeResult } from "./types";
 import type { HorizonService } from "@/services/horizon/service";
 import type { AgentRecord, Percept, SelfInfo, UserMessagePercept } from "@/services/horizon/types";
-import { message } from "xsai";
 import { PerceptType, TimelineEventType, TimelineStage } from "@/services/horizon/types";
 import { loadPartial, loadTemplate } from "@/services/prompt";
 import { Services } from "@/shared";
-import { formatDate } from "@/shared/utils";
 import { BaseChatMode } from "./base";
 
 export class DefaultChatMode extends BaseChatMode {

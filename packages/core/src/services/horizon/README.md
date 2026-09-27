@@ -58,9 +58,9 @@
 
 ```typescript
 export enum PerceptType {
-    UserMessage = "user.message",     // 用户消息
-    SystemSignal = "system.signal",   // 系统信号
-    TimerTick = "system.timer.tick",  // 定时器触发
+    UserMessage = "user.message", // 用户消息
+    SystemSignal = "system.signal", // 系统信号
+    TimerTick = "system.timer.tick", // 定时器触发
 }
 
 export interface UserMessagePercept {
@@ -68,8 +68,8 @@ export interface UserMessagePercept {
     type: PerceptType.UserMessage;
     priority: number;
     timestamp: Date;
-    payload: { ... };  // 解耦的上下文数据
-    runtime?: { session };  // 可选的运行时钩子
+    payload: Record<string, unknown>; // 解耦的上下文数据
+    runtime?: { session: unknown }; // 可选的运行时钩子
 }
 ```
 
