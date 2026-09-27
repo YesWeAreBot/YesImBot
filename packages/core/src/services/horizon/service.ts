@@ -77,14 +77,56 @@ export class HorizonService extends Service<Config> {
         return null;
     }
 
-    /** 获取实体列表 */
+    /** 获取实体列表（当前频道的参与者）。群聊返回群成员，私聊返回用户 */
     public async getEntities(options: { scope: Scope }): Promise<Entity[]> {
-        return [];
+        const { scope } = options;
+        try {
+            if (scope.guildId) {
+                // member id 形如 "member:platform:uid@guild:gid"
+                const rows = await this.ctx.database
+                    .select(TableName.Entity)
+                    .where({ type: "member" })
+                    .execute();
+                return rows
+                    .filter((row) => row.id.endsWith(`@guild:${scope.guildId}`))
+                    .map((row) => this.toEntity(row));
+            }
+            if (scope.userId || scope.channelId) {
+                // 私聊场景 scope 不携带 userId，channelId 即对方 id（平台约定）
+                const matchSuffix = `:${scope.userId || scope.channelId}`;
+                const rows = await this.ctx.database
+                    .select(TableName.Entity)
+                    .where({ type: "user" })
+                    .execute();
+                return rows
+                    .filter((row) => row.id.endsWith(matchSuffix))
+                    .map((row) => this.toEntity(row));
+            }
+            return [];
+        } catch (error: any) {
+            this.ctx.logger.error(`获取实体列表失败: ${error.message}`);
+            return [];
+        }
     }
 
     /** 获取单个实体 */
     public async getEntity(options: { scope: Scope; entityId: string }): Promise<Entity | null> {
-        return null;
+        try {
+            const rows = await this.ctx.database.get(TableName.Entity, { id: options.entityId });
+            return rows.length > 0 ? this.toEntity(rows[0]) : null;
+        } catch (error: any) {
+            this.ctx.logger.error(`获取实体失败: ${error.message}`);
+            return null;
+        }
+    }
+
+    private toEntity(row: EntityRecord): Entity {
+        return {
+            id: row.id,
+            type: row.type,
+            name: row.name,
+            attributes: row.attributes,
+        };
     }
 
     /** 判断频道是否允许 */

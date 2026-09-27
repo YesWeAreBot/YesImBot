@@ -72,12 +72,11 @@ export class ToolExecution {
         // 从这里开始可能已产生外部效果，后续失败不得重新请求模型来重放调用。
         this.started = true;
         const result = await this.plugin.invoke(name, params, this.context);
-        if (result.status !== "success")
-            throw new Error(`工具 ${name} 执行失败: ${String(result.error ?? "未知错误")}`);
-
         const isTool = definition.type === FunctionType.Tool;
         this.hasTool ||= isTool;
         this.hasAction ||= !isTool;
+        // 无论成败都记录到事件线：失败的 ToolResult 会进入下一轮工作记忆，
+        // 让模型看到失败原因后决定下一步（与 legacy 的 observation 回流一致）。
         await this.horizon.events.record({
             id: Random.id(),
             timestamp: new Date(),
@@ -95,8 +94,15 @@ export class ToolExecution {
                 priority: TimelinePriority.Normal,
                 type: TimelineEventType.ToolResult,
                 stage: TimelineStage.Active,
-                data: { toolCallId: callId, status: result.status, result: result.result },
+                data: { toolCallId: callId, status: result.status, result: result.result, error: result.error },
             });
+        }
+        if (result.status !== "success") {
+            // 工具失败：返回结果并续心跳，模型能看到失败原因继续处理；
+            // 动作失败：结束回合（hasAction 已置位），避免重放副作用。
+            if (isTool)
+                return result;
+            throw new Error(`动作 ${name} 执行失败: ${String(result.error ?? "未知错误")}`);
         }
         return result;
     }

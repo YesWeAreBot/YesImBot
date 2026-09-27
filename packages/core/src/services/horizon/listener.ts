@@ -2,7 +2,7 @@ import type { Context, Session } from "koishi";
 import type { HistoryConfig } from "./config";
 import type { EventManager } from "./event-manager";
 import type { HorizonService } from "./service";
-import type { MemberEntity, UserMessagePercept } from "./types";
+import type { EntityRecord, MemberEntity, UserMessagePercept } from "./types";
 import type { AssetService } from "@/services/assets";
 import { Random } from "koishi";
 import { Services, TableName } from "@/shared/constants";
@@ -184,28 +184,51 @@ export class EventListener {
 
     // TODO: 从平台适配器拉取用户信息
     private async updateMemberInfo(session: Session): Promise<void> {
-        if (!session.guildId || !session.author)
+        if (!session.author)
             return;
 
         try {
-            const memberKey: Partial<MemberEntity> = {
-                type: "member",
-                id: `${session.platform}:${session.author.id}@guild:${session.guildId}`,
-            };
-            const memberData: Partial<MemberEntity> = {
-                name: session.author.nick || session.author.name,
-                attributes: {
-                    roles: (session.author.roles ?? []).map(role => role.id || role.name || String(role)),
-                    platform: session.platform,
-                    avatar: session.author.avatar,
-                },
-            };
+            if (session.guildId) {
+                const memberKey: Partial<MemberEntity> = {
+                    type: "member",
+                    id: `${session.platform}:${session.author.id}@guild:${session.guildId}`,
+                };
+                const memberData: Partial<MemberEntity> = {
+                    name: session.author.nick || session.author.name,
+                    attributes: {
+                        roles: (session.author.roles ?? []).map(role => role.id || role.name || String(role)),
+                        platform: session.platform,
+                        avatar: session.author.avatar,
+                    },
+                };
 
-            const existing = await this.ctx.database.get(TableName.Entity, memberKey);
-            if (existing.length > 0) {
-                await this.ctx.database.set(TableName.Entity, memberKey, memberData);
-            } else {
-                await this.ctx.database.create(TableName.Entity, { ...memberKey, ...memberData });
+                const existing = await this.ctx.database.get(TableName.Entity, memberKey);
+                if (existing.length > 0) {
+                    await this.ctx.database.set(TableName.Entity, memberKey, memberData);
+                } else {
+                    await this.ctx.database.create(TableName.Entity, { ...memberKey, ...memberData });
+                }
+            }
+            else if (session.isDirect) {
+                // 私聊：记录用户实体，供参与者列表使用
+                const userKey: Partial<EntityRecord> = {
+                    type: "user",
+                    id: `user:${session.platform}:${session.author.id}`,
+                };
+                const userData: Partial<EntityRecord> = {
+                    name: session.author.nick || session.author.name,
+                    attributes: {
+                        platform: session.platform,
+                        avatar: session.author.avatar,
+                    },
+                };
+
+                const existing = await this.ctx.database.get(TableName.Entity, userKey);
+                if (existing.length > 0) {
+                    await this.ctx.database.set(TableName.Entity, userKey, userData);
+                } else {
+                    await this.ctx.database.create(TableName.Entity, { ...userKey, ...userData });
+                }
             }
         } catch (error: any) {
             this.ctx.logger.error(`更新成员信息失败: ${error.message}`);

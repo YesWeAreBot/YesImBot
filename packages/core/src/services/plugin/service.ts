@@ -11,9 +11,12 @@ import { h, Schema, Service } from "koishi";
 import { evaluateSystemOne } from "@/agent/jev";
 import { Services } from "@/shared/constants";
 import { isEmpty, schemaToJSONSchema, stringify, truncate } from "@/shared/utils";
+import CommandExtension from "./builtin/command";
 import CoreUtilExtension from "./builtin/core-util";
 import InteractionsExtension from "./builtin/interactions";
+import MemoryExtension from "./builtin/memory";
 import QManagerExtension from "./builtin/qmanager";
+import SearchExtension from "./builtin/search";
 import { FunctionType } from "./types";
 import { Failed } from "./utils";
 
@@ -37,7 +40,7 @@ export class PluginService extends Service<Config> {
     }
 
     protected async start() {
-        const builtinPlugins = [CoreUtilExtension, QManagerExtension, InteractionsExtension];
+        const builtinPlugins = [CoreUtilExtension, QManagerExtension, InteractionsExtension, CommandExtension, SearchExtension, MemoryExtension];
         const loadedPlugins = new Map<string, ForkScope>();
 
         for (const Ext of builtinPlugins) {
@@ -110,13 +113,21 @@ export class PluginService extends Service<Config> {
                 if (!name) {
                     return "未指定要查询的工具名称";
                 }
-                const renderResult = await this.promptService.render("tool.info", { toolName: name });
-
-                if (!renderResult) {
-                    return `未找到名为 "${name}" 的工具或渲染失败。`;
+                const func = await this.getFunction(name, { session });
+                if (!func) {
+                    return `未找到名为 "${name}" 的工具或动作。`;
                 }
 
-                return h.escape(renderResult);
+                const lines = [
+                    `名称: ${func.name}`,
+                    `类型: ${func.type === FunctionType.Tool ? "工具 (Tool)" : "动作 (Action)"}`,
+                    `描述: ${func.description}`,
+                ];
+                const paramsSchema = func.parameters ? schemaToJSONSchema(func.parameters) : null;
+                if (paramsSchema) {
+                    lines.push(`参数: ${stringify(paramsSchema, 2)}`);
+                }
+                return h.escape(lines.join("\n"));
             });
 
         cmd.subcommand(".invoke <name:string> [...params:string]", "调用工具")
