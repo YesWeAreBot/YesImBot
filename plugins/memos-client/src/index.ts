@@ -65,11 +65,20 @@ export default class MemosClientPlugin {
       });
     };
 
+    const tools = {
+      search_message: createSearchMessageTool({ client, config: this.config, resolveIdentity, logger: this.logger }),
+      add_message: createAddMessageTool({ client, config: this.config, resolveIdentity, now: () => new Date(), logger: this.logger }),
+    };
+    // Both tools read the turn id from `execution.context` and the core keys tool context by tool name, so each
+    // tool needs an entry of its own.
+    const names = Object.keys(tools);
+
     return {
       name: "memos-client",
-      extendTools: () => ({
-        search_message: createSearchMessageTool({ client, config: this.config, resolveIdentity, logger: this.logger }),
-        add_message: createAddMessageTool({ client, config: this.config, resolveIdentity, now: () => new Date(), logger: this.logger }),
+      extendTools: () => tools,
+      prepareStep: (step) => ({
+        ...step,
+        toolsContext: { ...step.toolsContext, ...Object.fromEntries(names.map((name) => [name, { turnId: step.turnId }])) },
       }),
       onAppend(entries) {
         for (const entry of entries) {

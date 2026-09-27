@@ -138,6 +138,8 @@ export class ChannelRuntime {
   private readonly stepCalls: Array<{ toolName: string; args: unknown; failed: boolean }> = [];
   /** The turn the running step belongs to; `beforeToolCall` has no turn-scoped context to read it from. */
   private currentTurnId = "";
+  /** The channel's own tools; the runtime owns their context entries. */
+  private readonly tools: ToolSet;
 
   private persona = "";
 
@@ -165,6 +167,7 @@ export class ChannelRuntime {
     if (options.visionModel) {
       tools.describe_image = createDescribeImageTool(options.visionModel, options.channel.resources);
     }
+    this.tools = tools;
     this.agent = createAgent({
       id: deriveChannelKey(this.context),
       model: options.model,
@@ -482,8 +485,9 @@ export class ChannelRuntime {
   }
 
   /**
-   * `ToolExecutionOptions` no longer carries the turn id, so it is published as tool context instead: the core
-   * hands each tool its own `toolsContext` slice, which every channel tool declares through `contextSchema`.
+   * `ToolExecutionOptions` no longer carries the turn id, so it is published as tool context instead. The core
+   * keys that map by tool name, and the AI SDK hands each tool its own entry, so every channel tool that declares
+   * `contextSchema` gets an entry of its own.
    */
   private toolContextPlugin(): AgentPlugin {
     return {
@@ -491,7 +495,13 @@ export class ChannelRuntime {
       prepareStep: (options) => {
         this.currentTurnId = options.turnId;
         this.stepCalls.length = 0;
-        return { ...options, toolsContext: { ...options.toolsContext, turnId: options.turnId } };
+        const context = { turnId: options.turnId };
+        const entries: Record<string, unknown> = {};
+        for (const [name, tool] of Object.entries(this.tools)) {
+          if ((tool as { contextSchema?: unknown } | undefined)?.contextSchema == null) continue;
+          entries[name] = context;
+        }
+        return { ...options, toolsContext: { ...options.toolsContext, ...entries } };
       },
       afterToolCall: (result) => {
         this.stepCalls.push({ toolName: result.toolName, args: result.args, failed: result.isError });

@@ -133,30 +133,37 @@ export default class MemoryAgentPlugin {
 
   public setup(context: ChannelContext, _bot: Bot): AgentPlugin {
     const embeddingModel = this.config.embeddingModel ? this.ctx.yesimbot.model.resolveEmbedding(this.config.embeddingModel, context) : undefined;
+    const tools = createChannelTools(context, this.store, this.pending, {
+      batchDelayMs: this.config.batchDelayMs,
+      evidenceCount: (id) => this.evidence.count(id),
+      readConversation: this.ctx.yesimbot.conversation.read,
+      readRecent: async (channel, limit) => [...new Set((await this.ctx.yesimbot.conversation.read(channel, { limit })).map((record) => record.user.id))],
+      rearm: () => this.scheduler.arm(),
+      embeddingModel,
+      search: (value, execution) =>
+        runSearch({
+          model: this.ctx.yesimbot.model.resolveChatModel(this.config.model, context).model,
+          context,
+          execution,
+          store: this.store,
+          evidence: this.evidence,
+          query: value.query,
+          scope: value.scope,
+          limit: value.limit,
+          timeoutMs: this.config.searchTimeoutMs ?? 60 * 1_000,
+        }),
+    });
+    // The tools read the turn id from `execution.context` and the core keys tool context by tool name, so each
+    // tool needs an entry of its own.
+    const names = Object.keys(tools);
     return {
       name: "memory-agent",
       extendInstructions: () => CHANNEL_MEMORY_PROMPT,
-      extendTools: () =>
-        createChannelTools(context, this.store, this.pending, {
-          batchDelayMs: this.config.batchDelayMs,
-          evidenceCount: (id) => this.evidence.count(id),
-          readConversation: this.ctx.yesimbot.conversation.read,
-          readRecent: async (channel, limit) => [...new Set((await this.ctx.yesimbot.conversation.read(channel, { limit })).map((record) => record.user.id))],
-          rearm: () => this.scheduler.arm(),
-          embeddingModel,
-          search: (value, execution) =>
-            runSearch({
-              model: this.ctx.yesimbot.model.resolveChatModel(this.config.model, context).model,
-              context,
-              execution,
-              store: this.store,
-              evidence: this.evidence,
-              query: value.query,
-              scope: value.scope,
-              limit: value.limit,
-              timeoutMs: this.config.searchTimeoutMs ?? 60 * 1_000,
-            }),
-        }),
+      extendTools: () => tools,
+      prepareStep: (step) => ({
+        ...step,
+        toolsContext: { ...step.toolsContext, ...Object.fromEntries(names.map((name) => [name, { turnId: step.turnId }])) },
+      }),
     };
   }
 

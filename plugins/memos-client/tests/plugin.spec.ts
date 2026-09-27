@@ -92,6 +92,13 @@ describe("MemosClientPlugin", () => {
     const tools = await getTools(runtimePlugin);
 
     expect(Object.keys(tools)).toEqual(["search_message", "add_message"]);
+    // Every tool reads the turn id from its own context entry, so each tool name needs one; other plugins' entries stay.
+    const step = await runtimePlugin.prepareStep?.({ turnId: "turn-1", toolsContext: { other: { token: "x" } } } as never);
+    expect(step?.toolsContext).toEqual({
+      other: { token: "x" },
+      search_message: { turnId: "turn-1" },
+      add_message: { turnId: "turn-1" },
+    });
     const prompt = await runtimePlugin.extendInstructions?.();
     expect(prompt).toBe(formatMemosPrompt());
     expect(String(prompt)).toContain("persisted");

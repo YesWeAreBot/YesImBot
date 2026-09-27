@@ -31,6 +31,14 @@ describe("MemoryAgentPlugin", () => {
     expect(factory.setup({ type: "guild", platform: "test", channelId: "room", guildId: "room" }, { selfId: "bot" })).toMatchObject({ name: "memory-agent" });
     const channelPlugin = factory.setup({ type: "guild", platform: "test", channelId: "room", guildId: "room" }, { selfId: "bot" });
     expect(Object.keys((await channelPlugin.extendTools!())!)).toEqual(["remember", "recall", "search"]);
+    // Every tool reads the turn id from its own context entry, so each tool name needs one; other plugins' entries stay.
+    const step = await channelPlugin.prepareStep?.({ turnId: "turn-1", toolsContext: { other: { token: "x" } } } as never);
+    expect(step?.toolsContext).toEqual({
+      other: { token: "x" },
+      remember: { turnId: "turn-1" },
+      recall: { turnId: "turn-1" },
+      search: { turnId: "turn-1" },
+    });
     await plugin.stop();
   });
 });

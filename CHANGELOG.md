@@ -26,3 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **core**: Removed public `ChannelKey`, channel identity, storage registration, `getStoragePath`, reset/reload, DeliveryService, Gateway/RuntimeManager facades, resolver/factory registration, and compatibility aliases.
 - **core**: Removed generic Satori fallback, image freezer/media policy, legacy formatter modules, and JSONL semantic validation.
 - **core**: Removed compatibility readers and migrations for old channel directories, asset IDs, records, and JSONL formats.
+
+### Fixed
+
+- **core**: The channel runtime publishes the turn id as tool context keyed by tool name, so `send_message`, `read`, and `finish` receive `{ turnId }` instead of `undefined` (which made `send_message` fail with `Cannot read properties of undefined (reading 'turnId')`).
+- **plugins**: `memorizer` and `memos-client` publish one tool context entry per contributed tool for the same reason: their tools read `execution.context.turnId` and never received it.

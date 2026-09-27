@@ -205,9 +205,14 @@ describe("ChannelRuntime scheduling", () => {
       const tools = vi.mocked(createAgent).mock.calls.at(-1)?.[0].tools ?? {};
       expect(Object.keys(tools)).toEqual(["send_message", "read", "finish"]);
 
-      // The turn id reaches the tools as context, since ToolExecutionOptions no longer carries it.
+      // The turn id reaches every tool that declares a context schema, keyed by tool name, since
+      // ToolExecutionOptions no longer carries it.
       const step = await context?.prepareStep?.({ turnId: "turn-1", toolsContext: {} } as never);
-      expect(step?.toolsContext).toEqual({ turnId: "turn-1" });
+      expect(step?.toolsContext).toEqual({
+        send_message: { turnId: "turn-1" },
+        read: { turnId: "turn-1" },
+        finish: { turnId: "turn-1" },
+      });
 
       const call = async (toolName: string, args: unknown, isError = false) =>
         context?.afterToolCall?.({ toolCallId: "c", toolName, args, result: { ok: true }, isError } as never);
