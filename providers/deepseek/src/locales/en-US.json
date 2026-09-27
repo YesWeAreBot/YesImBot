@@ -3,7 +3,7 @@
     "id": "Provider identifier",
     "apiKey": "API key",
     "baseURL": "API base URL",
-    "thinking": "Default thinking level (model ID can override with :level, e.g. deepseek-v4-pro:high)",
+    "thinking": "Default thinking level: none, low, high, max (model ID can override with :level, e.g. deepseek-v4-pro:high)",
     "chatModels": {
       "$desc": "Available chat models",
       "$inner": {

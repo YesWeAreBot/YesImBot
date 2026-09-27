@@ -17,12 +17,9 @@ export const Config: Schema<Config> = Schema.object({
   apiKey: Schema.string().role("secret").required().description("API Key"),
   baseURL: Schema.string().role("link").description("API Base URL"),
   thinking: Schema.union([
-    Schema.const("auto").description("自适应"),
     Schema.const("none").description("关闭"),
     Schema.const("low").description("低"),
-    Schema.const("medium").description("中"),
     Schema.const("high").description("高"),
-    Schema.const("xhigh").description("极高"),
     Schema.const("max").description("最大"),
   ])
     .default("high")
@@ -46,7 +43,7 @@ export const Config: Schema<Config> = Schema.object({
   "en-US": enUS._config,
 });
 
-type ThinkingLevel = "auto" | "none" | "low" | "medium" | "high" | "xhigh" | "max";
+type ThinkingLevel = "none" | "low" | "high" | "max";
 
 interface Config extends BaseProviderConfig {
   thinking: ThinkingLevel;
@@ -66,17 +63,13 @@ export function apply(ctx: Context, config: Config) {
       let level: ThinkingLevel = config.thinking;
       if (colonIdx > 0) {
         const suffix = modelId.slice(colonIdx + 1) as ThinkingLevel;
-        if (["auto", "none", "low", "medium", "high", "xhigh", "max"].includes(suffix)) {
+        if (["none", "low", "high", "max"].includes(suffix)) {
           actualId = modelId.slice(0, colonIdx);
           level = suffix;
         }
       }
       const opts: DeepSeekLanguageModelOptions =
-        level === "none"
-          ? { thinking: { type: "disabled" } }
-          : level === "auto"
-            ? { thinking: { type: "adaptive" } }
-            : { thinking: { type: "enabled" }, reasoningEffort: level };
+        level === "none" ? { thinking: { type: "disabled" } } : { thinking: { type: "enabled" }, reasoningEffort: level };
       return wrapLanguageModel({
         model: client.chat(actualId),
         middleware: [defaultSettingsMiddleware({ settings: { providerOptions: { deepseek: opts } } })],
