@@ -1,5 +1,5 @@
 import type { Tool, ToolExecuteOptions } from "@xsai/shared-chat";
-import type { Percept, HorizonService } from "@/services/horizon";
+import type { HorizonService, Percept } from "@/services/horizon";
 import type { FunctionContext, PluginService, ToolResult } from "@/services/plugin";
 import { Random } from "koishi";
 import { TimelineEventType, TimelinePriority, TimelineStage } from "@/services/horizon";
