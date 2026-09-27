@@ -401,16 +401,16 @@ describe("read tool resource errors", () => {
 // prepareOutputSegments
 // ---------------------------------------------------------------------------
 
-describe("prepareOutputSegments", () => {
-  async function resourcesWith(open: ResourceReader["setup"], registrations: Map<string, ResourceReader> = new Map()): Promise<ChannelResources> {
-    const resources = await createResources();
-    for (const [_scheme, r] of registrations) resources.use(r);
-    if (!registrations.has("workspace")) {
-      resources.use(reader("workspace", "workspace 文件引用", open));
-    }
-    return resources;
+async function resourcesWith(open: ResourceReader["setup"], registrations: Map<string, ResourceReader> = new Map()): Promise<ChannelResources> {
+  const resources = await createResources();
+  for (const [_scheme, r] of registrations) resources.use(r);
+  if (!registrations.has("workspace")) {
+    resources.use(reader("workspace", "workspace 文件引用", open));
   }
+  return resources;
+}
 
+describe("prepareOutputSegments", () => {
   it("resolves a workspace image source to a data URL before delivery", async () => {
     const resources = await resourcesWith(async () => ({ bytes: PNG_BYTES, mediaType: "image/png", filename: "chart.png" }));
 
@@ -530,12 +530,12 @@ describe("prepareOutputSegments", () => {
 // read tool model projection
 // ---------------------------------------------------------------------------
 
-describe("read tool model projection", () => {
-  async function createTool(overrides: { imageCapable?: boolean; imageInput?: boolean } = {}): Promise<{ tool: ReadTool; resources: ChannelResources }> {
-    const resources = await createResources();
-    return { tool: createReadTool(new ChannelResources(resources.path, overrides.imageInput ?? false), overrides.imageCapable ?? false), resources };
-  }
+async function createTool(overrides: { imageCapable?: boolean; imageInput?: boolean } = {}): Promise<{ tool: ReadTool; resources: ChannelResources }> {
+  const resources = await createResources();
+  return { tool: createReadTool(new ChannelResources(resources.path, overrides.imageInput ?? false), overrides.imageCapable ?? false), resources };
+}
 
+describe("read tool model projection", () => {
   // oxlint-disable-next-line unicorn/consistent-function-scoping
   async function readAndProject(tool: ReadTool, uri: string, toolCallId = "call-1") {
     const result = await tool.execute({ uri }, { toolCallId, abortSignal: undefined, context: { turnId: "turn-1" } } as never);
