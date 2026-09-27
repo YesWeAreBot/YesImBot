@@ -43,7 +43,7 @@
   },
   "dependencies": {
     "@ai-sdk/deepseek": "2.0.57",
-    "ai": "6.0.264"
+    "ai": "7.0.97"
   },
   "devDependencies": {
     "koishi": "^4.18.10",
