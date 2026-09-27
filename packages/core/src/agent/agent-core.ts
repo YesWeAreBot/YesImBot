@@ -100,6 +100,7 @@ export class AgentCore extends Service<Config> {
             let decision = false;
 
             if (type === "user_message") {
+                this.scheduler.noteUserMessage(channelCid);
                 try {
                     const willingnessBefore = this.willing.getCurrentWillingness(channelCid);
                     const result = this.willing.shouldReply(session);
