@@ -74,7 +74,8 @@ export function apply(ctx: Context, config: Config) {
         return config.format === "responses" ? client.responses(modelId) : client.chat(modelId);
       },
       embedding: (modelId: string) => client.embedding(modelId),
-      tools: (): ToolSet => (config.format === "responses" && config.webSearch ? { web_search: client.tools.webSearch() } : {}),
+      // The provider-defined tool is not part of the `ToolSet` union; the SDK reads it through the same map.
+      tools: (): ToolSet => (config.format === "responses" && config.webSearch ? ({ web_search: client.tools.webSearch() } as never) : {}),
     });
     ctx.on("dispose", dispose);
   });

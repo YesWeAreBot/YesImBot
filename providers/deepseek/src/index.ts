@@ -1,6 +1,6 @@
 import { createDeepSeek, type DeepSeekLanguageModelOptions } from "@ai-sdk/deepseek";
-import { defaultSettingsMiddleware, wrapLanguageModel } from "ai";
 import { Context, Schema } from "koishi";
+import { defaultSettingsMiddleware, wrapLanguageModel } from "koishi-plugin-yesimbot";
 import { type BaseProviderConfig } from "koishi-plugin-yesimbot";
 
 import enUS from "./locales/en-US.json";

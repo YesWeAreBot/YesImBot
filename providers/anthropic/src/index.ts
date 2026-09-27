@@ -51,7 +51,8 @@ export function apply(ctx: Context, config: Config) {
       embedding: () => {
         throw new Error(`Provider "${config.id}" does not support embedding`);
       },
-      tools: (): ToolSet => (config.webSearch ? { web_search: client.tools.webSearch_20250305() } : {}),
+      // The provider-defined tool is not part of the `ToolSet` union; the SDK reads it through the same map.
+      tools: (): ToolSet => (config.webSearch ? ({ web_search: client.tools.webSearch_20250305() } as never) : {}),
     });
     ctx.on("dispose", dispose);
   });
