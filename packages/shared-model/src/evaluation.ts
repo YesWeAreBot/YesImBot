@@ -26,7 +26,12 @@ export interface EvaluationPostOptions {
     timeout?: number;
     redirect: "error";
 }
-export type EvaluationPost = (url: string, body: { model: string; state: unknown; questions: EvaluationQuestions }, options: EvaluationPostOptions) => Promise<unknown>;
+export interface SystemOneWireQuestion {
+    type: "noul" | "choice" | "score";
+    instructions?: string;
+    criteria?: Record<string, string> | string[];
+}
+export type EvaluationPost = (url: string, body: { model: string; state: unknown; questions: Record<string, SystemOneWireQuestion> }, options: EvaluationPostOptions) => Promise<unknown>;
 
 const validProbability = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
 const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
@@ -47,12 +52,12 @@ function validAnswer(question: EvaluationQuestion, answer: unknown): boolean {
         && record(answer.legend) && names.every(name => (answer.legend as Record<string, unknown>)[name] === question.criteria[Number(name)]);
 }
 
-/** Execute the System One wire request, validating every requested answer. */
-export async function evaluateQuestions<Q extends EvaluationQuestions>(
+/** Send a System One request; callers select their answer validation policy. */
+export async function requestSystemOne(
     options: EvaluationRequestOptions,
-    request: { state: unknown; questions: Q },
+    request: { state: unknown; questions: Record<string, SystemOneWireQuestion> },
     transport: { signal?: AbortSignal; timeoutMs?: number; post?: EvaluationPost } = {},
-): Promise<EvaluationResult<Q>> {
+): Promise<unknown> {
     const url = `${options.baseURL.replace(/\/+$/, "")}/systemone`;
     const body = { model: options.model, state: request.state, questions: request.questions };
     const timeoutSignal = transport.timeoutMs && transport.timeoutMs > 0
@@ -76,6 +81,16 @@ export async function evaluateQuestions<Q extends EvaluationQuestions>(
         return response.json();
     });
     const response = await post(url, body, init);
+    return response;
+}
+
+/** Execute the System One wire request, validating every requested answer. */
+export async function evaluateQuestions<Q extends EvaluationQuestions>(
+    options: EvaluationRequestOptions,
+    request: { state: unknown; questions: Q },
+    transport: { signal?: AbortSignal; timeoutMs?: number; post?: EvaluationPost } = {},
+): Promise<EvaluationResult<Q>> {
+    const response = await requestSystemOne(options, request, transport);
     if (!record(response) || !record(response.answers)
         || (response.model !== undefined && typeof response.model !== "string")
         || !Object.entries(request.questions).every(([name, question]) => validAnswer(question, (response.answers as Record<string, unknown>)[name]))) {

@@ -141,8 +141,10 @@ export class AgentCore extends Service<Config> {
                 return;
             this.pendingAssessments.delete(channelKey);
             if (assessment) {
-                const { addressed, interested, others, multiplier, model } = assessment;
-                this.logger.debug(`[${channelKey}] TypeSafe (${mode}, ${model}): 对我说=${addressed.toFixed(2)}, 兴趣=${interested.toFixed(2)}, 对他人说=${others.toFixed(2)}, 增益乘数=${multiplier.toFixed(2)}`);
+                const { addressed, interested, others, multiplier, model, confidence, gated, extra } = assessment;
+                this.logger.debug(
+                    `[${channelKey}] TypeSafe (${mode}, ${model}): 对我说=${addressed.toFixed(2)}, 兴趣=${interested.toFixed(2)}, 对他人说=${others.toFixed(2)}, 增益乘数=${multiplier.toFixed(2)}, 置信度=${confidence.toFixed(2)}${gated ? "（低于门控阈值，已沿用原意愿）" : ""}${extra ? `, 附加=${JSON.stringify(extra)}` : ""}`,
+                );
             } else {
                 this.logger.debug(`[${channelKey}] TypeSafe 无有效判断，沿用原意愿计算`);
             }

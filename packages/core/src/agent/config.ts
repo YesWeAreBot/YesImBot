@@ -95,6 +95,41 @@ export interface TypeSafeConfig {
     historyLimit: number;
     interests: string;
     influence: number;
+    /** 置信度门控阈值 (0-1)。0 表示关闭；开启后，判断置信度低于阈值时沿用原意愿计算 */
+    confidenceThreshold: number;
+    /** 附加原子问题（与内置问题同一次调用并行评估），默认空数组表示关闭 */
+    extraQuestions: TypeSafeExtraQuestion[];
+    /** 回复质量门禁：在 send_message 发出前用 Jev 判断回复是否适合发送 */
+    qualityGate: TypeSafeQualityGate;
+}
+
+/** 附加原子问题。内置三个 noul 问题（addressed/interested/others）始终存在，此为可选的补充 */
+export interface TypeSafeExtraQuestion {
+    /** 问题标识，同时用作答案的键；不可与内置问题重名 */
+    name: string;
+    /** choice: 从选项选一；score: 按等级打分；noul: 是否成立（0-1） */
+    type: "noul" | "choice" | "score";
+    /** 要模型判断的问题描述 */
+    instructions: string;
+    /**
+     * 按类型解释：
+     * - choice: 选项 -> 选项说明（必填）
+     * - score: 按顺序的等级说明数组，2~10 项（必填）
+     * - noul: { true: 成立的含义, false: 不成立的含义 }（可选）
+     */
+    criteria?: Record<string, string> | string[];
+    /** 对增益调整的贡献权重。仅 noul/score 生效；choice 只用于观察记录 */
+    weight: number;
+}
+
+/** 回复质量门禁配置（连接信息复用本组 apiKey/baseURL/model/timeoutMs） */
+export interface TypeSafeQualityGate {
+    /** 是否启用（默认关闭） */
+    enabled: boolean;
+    /** noul 门槛：回复合适度低于该值时拦截（默认 0.6） */
+    threshold: number;
+    /** 判断时参考的最近消息数（默认 8） */
+    historyLimit: number;
 }
 
 const WillingnessConfig: Schema<WillingnessConfig> = Schema.object({
@@ -107,11 +142,33 @@ const WillingnessConfig: Schema<WillingnessConfig> = Schema.object({
         evaluationModel: Schema.dynamic("registry.evaluationModels").default("").description("判断模型（Provider > 模型）；留空使用下方旧版直连配置"),
         apiKey: Schema.string().role("secret").default("").description("TypeSafe API 密钥"),
         baseURL: Schema.string().default("https://api.typesafe.ai/v1").description("TypeSafe API 地址，包含 /v1"),
-        model: Schema.string().default("jev-1.13.0").description("判断模型"),
+        model: Schema.string().default("jev-latest").description("判断模型，默认跟随官方 jev-latest 别名"),
         timeoutMs: Schema.number().min(100).max(30000).default(3000).description("判断超时（毫秒），超时后沿用原意愿计算"),
         historyLimit: Schema.natural().max(30).default(8).description("判断时参考的近期消息数，0 表示只看当前消息"),
         interests: Schema.string().role("textarea").default("").description("角色感兴趣的话题，留空时使用已有的高兴趣关键词"),
         influence: Schema.number().min(0).max(1).step(0.05).default(0.5).description("对本条消息意愿增益的影响强度；0 为不调整，0.5 时增益最多减半或增加一半"),
+        confidenceThreshold: Schema.number().min(0).max(1).step(0.05).default(0).description("置信度门控阈值。0 表示关闭；开启后，判断置信度（三个内置问题伪置信度 |值-0.5|×2 的最小值）低于该值时沿用原意愿计算"),
+        extraQuestions: Schema.array(
+            Schema.object({
+                name: Schema.string().required().description("问题标识，同时用作答案的键；不可与内置问题重名"),
+                type: Schema.union([
+                    Schema.const("noul").description("是否成立（0-1）"),
+                    Schema.const("choice").description("从选项中选择一个"),
+                    Schema.const("score").description("按等级打分"),
+                ]).required().description("问题类型"),
+                instructions: Schema.string().required().description("要模型判断的问题描述"),
+                criteria: Schema.union([
+                    Schema.dict(Schema.string()).description("choice: 选项->说明；noul: true/false 的含义"),
+                    Schema.array(Schema.string()).description("score: 按顺序的等级说明（2~10 项）"),
+                ]).description("判断依据（按问题类型解释）"),
+                weight: Schema.number().min(-1).max(1).step(0.05).default(0).description("对增益调整的贡献权重。仅 noul/score 生效；choice 只用于观察记录"),
+            }),
+        ).default([]).description("附加原子问题（与内置问题同一次调用并行评估）"),
+        qualityGate: Schema.object({
+            enabled: Schema.boolean().default(false).description("是否启用回复质量门禁"),
+            threshold: Schema.number().min(0).max(1).step(0.05).default(0.6).description("回复合适度 noul 门槛，低于该值时拦截发送"),
+            historyLimit: Schema.natural().max(30).default(8).description("判断时参考的最近消息数"),
+        }).description("回复质量门禁：send_message 发出前用 Jev 判断回复是否适合发送，连接信息复用本组配置"),
     }).description("TypeSafe 接话判断"),
     base: Schema.object({
         text: Schema.computed<Schema<number>>(Schema.number().default(12))
