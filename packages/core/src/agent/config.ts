@@ -14,6 +14,8 @@ export interface ArousalConfig {
     allowedChannels: ChannelDescriptor[];
     /** 消息防抖时间 (毫秒)，防止短时间内对相同模式的重复响应 */
     debounceMs: number;
+    newMessageStrategy: "skip" | "immediate" | "deferred";
+    deferredProcessingTime?: number;
 }
 
 export const ArousalConfig: Schema<ArousalConfig> = Schema.object({
@@ -30,6 +32,12 @@ export const ArousalConfig: Schema<ArousalConfig> = Schema.object({
         .default([{ platform: "onebot", type: "guild", id: "*" }])
         .description("允许 Agent 响应的频道。使用 * 作为通配符"),
     debounceMs: Schema.number().default(1000).description("消息防抖时间 (毫秒)"),
+    newMessageStrategy: Schema.union([
+        Schema.const("skip").description("跳过"),
+        Schema.const("immediate").description("当前回复结束后处理"),
+        Schema.const("deferred").description("当前回复结束并等待安静期后处理"),
+    ]).default("skip").description("回复期间新消息的处理策略；强制回复的 @ 和私聊消息仍优先排队"),
+    deferredProcessingTime: Schema.number().min(0).default(10000).description("延迟处理策略的安静期时间（毫秒）"),
 });
 
 export interface WillingnessConfig {

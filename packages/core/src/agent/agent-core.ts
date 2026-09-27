@@ -47,7 +47,10 @@ export class AgentCore extends Service<Config> {
 
     private modelSwitcher: ChatModelSwitcher;
 
+    private stopped = false;
     private readonly runningTasks = new Set<string>();
+    private readonly scheduledMessages = new Map<string, UserMessagePercept>();
+    private readonly pendingMessages = new Map<string, UserMessagePercept>();
     private readonly debouncedReplyTasks = new Map<string, WithDispose<(percept: Percept) => void>>();
     private readonly deferredTimers = new Map<string, NodeJS.Timeout>();
     private readonly queuedMessages = new Map<string, UserMessagePercept[]>();
@@ -82,11 +85,16 @@ export class AgentCore extends Service<Config> {
     }
 
     protected stop(): void {
+        this.stopped = true;
         this.pendingAssessments.forEach(pending => pending.controller.abort());
         this.pendingAssessments.clear();
         this.debouncedReplyTasks.forEach((task) => task.dispose());
         this.deferredTimers.forEach((timer) => clearTimeout(timer));
         this.queuedMessages.clear();
+        this.debouncedReplyTasks.clear();
+        this.deferredTimers.clear();
+        this.scheduledMessages.clear();
+        this.pendingMessages.clear();
         this.willing.stopDecayCycle();
     }
 
@@ -108,8 +116,13 @@ export class AgentCore extends Service<Config> {
     }
 
     private handleUserMessage(percept: UserMessagePercept): void {
+        if (this.stopped)
+            return;
         const { channel } = percept.payload;
         const channelKey = `${channel.platform}:${channel.id}`;
+        // 所有新消息都重置安静期，不受意愿判断和语义请求耗时影响。
+        if (this.deferredTimers.has(channelKey))
+            this.setupDeferredTimer(channelKey);
         this.settlePendingAssessment(channelKey);
 
         const mode = this.config.typesafe?.mode ?? "off";
@@ -184,77 +197,132 @@ export class AgentCore extends Service<Config> {
     }
 
     public schedule(percept: Percept): void {
-        const { type } = percept;
+        if (this.stopped || percept.type !== "user.message")
+            return;
 
-        switch (type) {
-            case "user.message": { // PerceptType.UserMessage
-                const { channel } = percept.payload;
-                const channelKey = `${channel.platform}:${channel.id}`;
+        const { channel } = percept.payload;
+        const channelKey = `${channel.platform}:${channel.id}`;
+        const forced = this.isForcedPercept(percept);
+        const scheduled = this.scheduledMessages.get(channelKey);
 
-                if (this.runningTasks.has(channelKey)) {
-                    if (this.isForcedPercept(percept)) {
-                        const queue = this.queuedMessages.get(channelKey) ?? [];
-                        queue.push(percept);
-                        this.queuedMessages.set(channelKey, queue);
-                        this.logger.info(`[${channelKey}] 频道忙，@/私聊消息已排队，等待当前任务结束`);
-                    }
-                    else {
-                        this.logger.info(`[${channelKey}] 频道当前有任务在运行，跳过本次响应`);
-                    }
-                    return;
-                }
-
-                const schedulingStack = new Error("Scheduling context stack").stack;
-
-                // 将堆栈传递给任务
-                this.getDebouncedTask(channelKey, schedulingStack)(percept);
-                break;
+        // 强制回复在防抖期间也保留队列位置，避免被后来的普通消息覆盖。
+        if (this.runningTasks.has(channelKey) || (scheduled && this.isForcedPercept(scheduled))) {
+            if (forced) {
+                const queue = this.queuedMessages.get(channelKey) ?? [];
+                queue.push(percept);
+                this.queuedMessages.set(channelKey, queue);
+                this.logger.info(`[${channelKey}] 频道忙，@/私聊消息已排队，等待当前任务结束`);
             }
+            else if (this.config.newMessageStrategy === "immediate" || this.config.newMessageStrategy === "deferred") {
+                this.pendingMessages.set(channelKey, percept);
+            }
+            else {
+                this.logger.info(`[${channelKey}] 频道当前有任务在运行，跳过本次响应`);
+            }
+            return;
         }
+
+        if (!forced && this.deferredTimers.has(channelKey)) {
+            // 安静期由接收消息时重置，语义判断完成不能再次延长等待。
+            this.pendingMessages.set(channelKey, percept);
+            return;
+        }
+
+        this.clearDeferredTimer(channelKey);
+        this.scheduledMessages.set(channelKey, percept);
+        this.getDebouncedTask(channelKey)(percept);
     }
 
-    private getDebouncedTask(channelKey: string, _schedulingStack?: string): WithDispose<(percept: UserMessagePercept) => void> {
+    private getDebouncedTask(channelKey: string): WithDispose<(percept: UserMessagePercept) => void> {
         let debouncedTask = this.debouncedReplyTasks.get(channelKey);
         if (!debouncedTask) {
-            debouncedTask = this.ctx.debounce(async (percept: UserMessagePercept) => {
-                // 本轮上下文将包含等待期间的新消息，结算它们，避免迟到判断重复唤醒。
-                this.settlePendingAssessment(channelKey);
-                this.runningTasks.add(channelKey);
-                this.logger.debug(`[${channelKey}] 锁定频道并开始执行任务`);
-                try {
-                    const { channel } = percept.payload;
-                    const chatKey = `${channel.platform}:${channel.id}`;
-                    this.willing.handlePreReply(chatKey);
-                    const success = await this.processor.runCycle(percept);
-                    if (success && percept.runtime?.session) {
-                        const willingnessBeforeReply = this.willing.getCurrentWillingness(chatKey);
-                        this.willing.handlePostReply(percept.runtime.session, chatKey);
-                        const willingnessAfterReply = this.willing.getCurrentWillingness(chatKey);
-                        /* prettier-ignore */
-                        this.logger.debug(`[${chatKey}] 回复成功，意愿值已更新: ${willingnessBeforeReply.toFixed(2)} -> ${willingnessAfterReply.toFixed(2)}`);
-                    }
-                } catch (error: any) {
-                    this.logger.error(`调度任务执行失败 (Channel: ${channelKey}): ${error.message}`);
-                } finally {
-                    this.runningTasks.delete(channelKey);
-                    this.logger.debug(`[${channelKey}] 频道锁已释放`);
-
-                    const queue = this.queuedMessages.get(channelKey);
-                    const next = queue?.shift();
-                    if (next) {
-                        if (queue.length === 0)
-                            this.queuedMessages.delete(channelKey);
-                        this.logger.debug(`[${channelKey}] 开始处理排队消息`);
-                        this.schedule(next);
-                    }
-                    else if (queue) {
-                        this.queuedMessages.delete(channelKey);
-                    }
-                }
+            debouncedTask = this.ctx.debounce((percept: UserMessagePercept) => {
+                this.scheduledMessages.delete(channelKey);
+                return this.executeTask(channelKey, percept);
             }, this.config.debounceMs);
             this.debouncedReplyTasks.set(channelKey, debouncedTask);
         }
         return debouncedTask;
+    }
+
+    private async executeTask(channelKey: string, percept: UserMessagePercept): Promise<void> {
+        if (this.stopped)
+            return;
+        if (this.runningTasks.has(channelKey)) {
+            this.schedule(percept);
+            return;
+        }
+
+        // 本轮上下文包含此前的新消息，结算语义判断并清除已被本轮覆盖的普通积压消息。
+        this.settlePendingAssessment(channelKey);
+        this.pendingMessages.delete(channelKey);
+        this.clearDeferredTimer(channelKey);
+        this.runningTasks.add(channelKey);
+        this.logger.debug(`[${channelKey}] 锁定频道并开始执行任务`);
+        try {
+            this.willing.handlePreReply(channelKey);
+            const success = await this.processor.runCycle(percept);
+            if (success && percept.runtime?.session) {
+                const willingnessBeforeReply = this.willing.getCurrentWillingness(channelKey);
+                this.willing.handlePostReply(percept.runtime.session, channelKey);
+                const willingnessAfterReply = this.willing.getCurrentWillingness(channelKey);
+                /* prettier-ignore */
+                this.logger.debug(`[${channelKey}] 回复成功，意愿值已更新: ${willingnessBeforeReply.toFixed(2)} -> ${willingnessAfterReply.toFixed(2)}`);
+            }
+        } catch (error: any) {
+            this.logger.error(`调度任务执行失败 (Channel: ${channelKey}): ${error.message}`);
+        } finally {
+            this.runningTasks.delete(channelKey);
+            this.logger.debug(`[${channelKey}] 频道锁已释放`);
+            if (!this.stopped)
+                this.schedulePendingMessage(channelKey);
+        }
+    }
+
+    private schedulePendingMessage(channelKey: string): void {
+        const queue = this.queuedMessages.get(channelKey);
+        const next = queue?.shift();
+        if (!queue?.length)
+            this.queuedMessages.delete(channelKey);
+        if (next) {
+            this.schedule(next);
+            return;
+        }
+
+        const pending = this.pendingMessages.get(channelKey);
+        if (!pending)
+            return;
+        if (this.config.newMessageStrategy === "immediate") {
+            this.pendingMessages.delete(channelKey);
+            this.schedule(pending);
+        }
+        else if (this.config.newMessageStrategy === "deferred") {
+            this.setupDeferredTimer(channelKey);
+        }
+        else {
+            this.pendingMessages.delete(channelKey);
+        }
+    }
+
+    private clearDeferredTimer(channelKey: string): void {
+        const timer = this.deferredTimers.get(channelKey);
+        if (timer !== undefined)
+            clearTimeout(timer);
+        this.deferredTimers.delete(channelKey);
+    }
+
+    private setupDeferredTimer(channelKey: string): void {
+        this.clearDeferredTimer(channelKey);
+        const timer = setTimeout(() => {
+            this.deferredTimers.delete(channelKey);
+            if (this.stopped || this.runningTasks.has(channelKey))
+                return;
+            const pending = this.pendingMessages.get(channelKey);
+            // 安静期已完成消息合并，直接进入互斥执行，避免再次防抖造成调度空档。
+            if (pending)
+                void this.executeTask(channelKey, pending);
+        }, this.config.deferredProcessingTime ?? 10000);
+        this.deferredTimers.set(channelKey, timer);
     }
 
     private isForcedPercept(percept: UserMessagePercept): boolean {
