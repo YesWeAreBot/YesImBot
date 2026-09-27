@@ -1,6 +1,5 @@
-import type { AgentEntry } from "@yesimbot/agent-runtime";
 import { h, type Element } from "koishi";
-import type { ArtifactStore } from "koishi-plugin-yesimbot";
+import type { AgentEntry, ArtifactStore } from "koishi-plugin-yesimbot";
 
 import { prepareStaticGif } from "./frames.js";
 import type { StickerStore } from "./store.js";

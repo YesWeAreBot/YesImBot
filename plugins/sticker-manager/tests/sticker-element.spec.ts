@@ -1,6 +1,4 @@
-import type { AgentEntry } from "@yesimbot/agent-runtime";
-import { createAssistantMessage, createMessageEntry } from "@yesimbot/agent-runtime";
-import type { ArtifactStore } from "koishi-plugin-yesimbot";
+import { createAssistantMessage, createEntry, type AgentEntry, type ArtifactStore } from "koishi-plugin-yesimbot";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("koishi", async () => import("@koishijs/core"));
@@ -66,7 +64,7 @@ function createArtifacts(overrides: Partial<ArtifactStore> = {}): ArtifactStore 
 }
 
 function assistantEntry(content: string): AgentEntry {
-  return createMessageEntry(createAssistantMessage(content));
+  return createEntry("message", createAssistantMessage(content));
 }
 
 describe("sticker output element", () => {

@@ -2,8 +2,8 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { createAgentChannel, createMemoryStorage, createPluginHost, createStateManager } from "@yesimbot/agent-runtime";
 import type { Context } from "koishi";
+import { createMemoryStorage, type Agent, type AgentPlugin } from "koishi-plugin-yesimbot";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("koishi", async () => import("@koishijs/core"));
@@ -51,12 +51,9 @@ async function createCardFile(): Promise<string> {
   return cardPath;
 }
 
-async function greeting(plugin: Parameters<typeof createPluginHost>[0]["plugins"][number]): Promise<string> {
+async function greeting(plugin: AgentPlugin): Promise<string> {
   const storage = createMemoryStorage();
-  const channel = createAgentChannel();
-  const state = createStateManager({ storage });
-  const host = createPluginHost({ plugins: [plugin], runtime: { id: "channel", channel, state, storage } });
-  await host.init();
+  await plugin.init?.({ storage } as unknown as Agent);
   const [entry] = await storage.read();
   if (entry?.type !== "message" || entry.data.role !== "assistant" || typeof entry.data.content !== "string") {
     throw new Error("Expected an assistant greeting");

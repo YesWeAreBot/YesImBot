@@ -1,4 +1,4 @@
-import { jsonSchema, type AgentTool } from "@yesimbot/agent-runtime";
+import { jsonSchema, type FunctionTool } from "koishi-plugin-yesimbot";
 
 import type { MemosCloudClient } from "../../client.js";
 import type { MemosClientConfig, MemosIdentity, MemosSearchFilter } from "../../types.js";
@@ -10,6 +10,18 @@ export type SearchMessageToolOutput =
 export interface SearchMessageToolInput {
   query: string;
 }
+
+/** `ToolExecutionOptions` no longer carries the turn id, so the runtime publishes it as tool context. */
+export interface SearchMessageToolContext {
+  turnId: string;
+}
+
+const TOOL_CONTEXT_SCHEMA = jsonSchema<SearchMessageToolContext>({
+  type: "object",
+  properties: { turnId: { type: "string" } },
+  required: ["turnId"],
+  additionalProperties: false,
+});
 
 export interface SearchMemoryItem {
   content: string;
@@ -48,19 +60,21 @@ interface SearchMemoryData {
   }>;
 }
 
-export function createSearchMessageTool(options: SearchMessageToolOptions): AgentTool<SearchMessageToolInput, SearchMessageToolOutput> {
+export function createSearchMessageTool(
+  options: SearchMessageToolOptions,
+): FunctionTool<SearchMessageToolInput, SearchMessageToolOutput, SearchMessageToolContext> {
   return {
-    name: "search_message",
     description: "Search relevant long-term memory before answering.",
+    contextSchema: TOOL_CONTEXT_SCHEMA,
     inputSchema: jsonSchema<SearchMessageToolInput>({
       type: "object",
       properties: { query: { type: "string", minLength: 1, description: "Memory search query." } },
       required: ["query"],
       additionalProperties: false,
     }),
-    execute: async ({ query }, context) => {
+    execute: async ({ query }, execution) => {
       try {
-        const identity = options.resolveIdentity(context.turnId);
+        const identity = options.resolveIdentity(execution.context.turnId);
         return await searchWithIdentity(options, identity, query);
       } catch (error) {
         const message = sanitizeErrorMessage(error, options.config.apiKey);

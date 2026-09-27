@@ -1,49 +1,10 @@
-import type { AgentPlugin, AgentToolExecuteContext } from "@yesimbot/agent-runtime";
+import type { AgentPlugin, ToolSet } from "koishi-plugin-yesimbot";
 import { describe, expect, it, vi } from "vitest";
-
-import type { MemosClientConfig } from "../src/types.js";
-
-const mocks = vi.hoisted(() => ({
-  schema: {
-    array: vi.fn<() => unknown>(),
-    boolean: vi.fn<() => unknown>(),
-    const: vi.fn<() => unknown>(),
-    number: vi.fn<() => unknown>(),
-    object: vi.fn<() => unknown>(),
-    string: vi.fn<() => unknown>(),
-    union: vi.fn<() => unknown>(),
-  },
-}));
-
-vi.mock("koishi", () => {
-  // oxlint-disable-next-line unicorn/consistent-function-scoping
-  const chain = () => ({
-    default: vi.fn<() => unknown>().mockReturnThis(),
-    description: vi.fn<() => unknown>().mockReturnThis(),
-    required: vi.fn<() => unknown>().mockReturnThis(),
-    role: vi.fn<() => unknown>().mockReturnThis(),
-  });
-  for (const key of Object.keys(mocks.schema) as Array<keyof typeof mocks.schema>) {
-    mocks.schema[key].mockImplementation(chain);
-  }
-  return { Context: class Context {}, Logger: class Logger {}, Schema: mocks.schema, Universal: { Channel: { Type: { DIRECT: 1 } } } };
-});
-
-vi.mock("koishi-plugin-yesimbot", () => ({
-  isMessage(message: unknown) {
-    return (
-      typeof message === "object" &&
-      message !== null &&
-      (message as { role?: unknown }).role === "custom" &&
-      (message as { type?: unknown }).type === "yesimbot.message" &&
-      (message as { data?: { schemaVersion?: unknown } }).data?.schemaVersion === 1
-    );
-  },
-}));
 
 import { deriveMemosIdentity } from "../src/identity.js";
 import MemosClientPlugin from "../src/index.js";
 import { formatMemosPrompt } from "../src/prompt.js";
+import type { MemosClientConfig } from "../src/types.js";
 
 const config: MemosClientConfig = {
   baseUrl: "https://memos.example/api",
@@ -101,12 +62,12 @@ function channelContext() {
   return { scope: { platform: "onebot", channelId: "group-raw", guildId: "group-raw", type: "guild" } };
 }
 
-function toolContext(turnId = "turn-real"): AgentToolExecuteContext {
-  return { runtime: { id: "runtime" }, channel: {} as never, state: {} as never, storage: {} as never, turnId, toolCallId: "tool-call" };
+function execution(turnId = "turn-real") {
+  return { toolCallId: "tool-call", messages: [], context: { turnId } };
 }
 
-async function getTools(plugin: AgentPlugin) {
-  return typeof plugin.tools === "function" ? ((await plugin.tools({} as never)) ?? []) : (plugin.tools ?? []);
+async function getTools(plugin: AgentPlugin): Promise<ToolSet> {
+  return (await plugin.extendTools?.()) ?? {};
 }
 
 describe("MemosClientPlugin", () => {
@@ -130,8 +91,8 @@ describe("MemosClientPlugin", () => {
     const runtimePlugin = await plugins[0]!.setup(channelContext().scope, {});
     const tools = await getTools(runtimePlugin);
 
-    expect(tools.map((tool) => tool.name)).toEqual(["search_message", "add_message"]);
-    const prompt = await runtimePlugin.appendSystemPrompt?.({} as never);
+    expect(Object.keys(tools)).toEqual(["search_message", "add_message"]);
+    const prompt = await runtimePlugin.extendInstructions?.();
     expect(prompt).toBe(formatMemosPrompt());
     expect(String(prompt)).toContain("persisted");
     expect(String(prompt)).toContain("accepted");
@@ -167,9 +128,9 @@ describe("MemosClientPlugin", () => {
       },
     };
     await runtimePlugin.onAppend?.([{ id: "entry-message", type: "message", timestamp: message.timestamp, data: message }], {} as never);
-    const addTool = (await getTools(runtimePlugin)).find((tool) => tool.name === "add_message");
+    const addTool = (await getTools(runtimePlugin)).add_message;
 
-    await addTool?.execute?.({ content: "Ada 偏好简洁回答。" }, toolContext("turn-real"));
+    await addTool?.execute?.({ content: "Ada 偏好简洁回答。" }, execution("turn-real"));
 
     const body = post.mock.calls[0]?.[1] as { user_id: string; conversation_id: string; info: Record<string, unknown> };
     const groupIdentity = deriveMemosIdentity({
@@ -198,8 +159,8 @@ describe("MemosClientPlugin", () => {
       ...message,
       data: { ...message.data, channel: { id: "direct-raw", type: 1 }, user: { id: "direct-author" }, messageId: "direct-message" },
     };
-    await runtimePlugin.toModelMessages?.(directMessage as never, {} as never);
-    await addTool?.execute?.({ content: "私聊偏好" }, toolContext("turn-direct"));
+    await runtimePlugin.toModelMessages?.(directMessage as never);
+    await addTool?.execute?.({ content: "私聊偏好" }, execution("turn-direct"));
 
     const directIdentity = deriveMemosIdentity({
       channelScope: { platform: "onebot", channelId: "group-raw", guildId: "group-raw", type: "guild" },
@@ -239,27 +200,24 @@ describe("MemosClientPlugin", () => {
       },
     };
     await runtimePlugin.onAppend?.([{ id: "entry-message", type: "message", timestamp: message.timestamp, data: message }], {} as never);
-    await runtimePlugin.toModelMessages?.(
-      {
-        ...message,
-        type: "yesimbot.event",
-        data: {
-          schemaVersion: 1,
-          eventType: "delivery.failed",
-          platform: "onebot",
-          selfId: "bot-raw",
-          channel: { id: "group-raw", type: 0 },
-          delivery: { turnId: "turn-failed", messageId: "assistant-message", error: { name: "Error", message: "offline" } },
-        },
-      } as never,
-      {} as never,
-    );
-    await runtimePlugin.toModelMessages?.({ ...message, data: { ...message.data, schemaVersion: 2 } } as never, {} as never);
-    await runtimePlugin.toModelMessages?.({ ...message, data: { ...message.data, schemaVersion: undefined } } as never, {} as never);
-    await runtimePlugin.toModelMessages?.({ role: "user", id: "user-message", timestamp: Date.now(), content: "ignored" } as never, {} as never);
+    await runtimePlugin.toModelMessages?.({
+      ...message,
+      type: "yesimbot.event",
+      data: {
+        schemaVersion: 1,
+        eventType: "delivery.failed",
+        platform: "onebot",
+        selfId: "bot-raw",
+        channel: { id: "group-raw", type: 0 },
+        delivery: { turnId: "turn-failed", messageId: "assistant-message", error: { name: "Error", message: "offline" } },
+      },
+    } as never);
+    await runtimePlugin.toModelMessages?.({ ...message, data: { ...message.data, schemaVersion: 2 } } as never);
+    await runtimePlugin.toModelMessages?.({ ...message, data: { ...message.data, schemaVersion: undefined } } as never);
+    await runtimePlugin.toModelMessages?.({ role: "user", id: "user-message", timestamp: Date.now(), content: "ignored" } as never);
 
-    const addTool = (await getTools(runtimePlugin)).find((tool) => tool.name === "add_message");
-    await addTool?.execute?.({ content: "仍归属原作者" }, toolContext("turn-real"));
+    const addTool = (await getTools(runtimePlugin)).add_message;
+    await addTool?.execute?.({ content: "仍归属原作者" }, execution("turn-real"));
 
     const expected = deriveMemosIdentity({
       channelScope: { platform: "onebot", channelId: "group-raw", guildId: "group-raw", type: "guild" },

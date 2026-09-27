@@ -1,7 +1,7 @@
 import path from "node:path";
 
-import type { AgentPlugin } from "@yesimbot/agent-runtime";
 import { Schema, type Bot, type Context } from "koishi";
+import type { AgentPlugin } from "koishi-plugin-yesimbot";
 import type { ChannelContext } from "koishi-plugin-yesimbot";
 
 import { runMaintenance } from "./maintainer.js";
@@ -135,12 +135,13 @@ export default class MemoryAgentPlugin {
     const embeddingModel = this.config.embeddingModel ? this.ctx.yesimbot.model.resolveEmbedding(this.config.embeddingModel, context) : undefined;
     return {
       name: "memory-agent",
-      appendSystemPrompt: () => CHANNEL_MEMORY_PROMPT,
-      tools: () =>
+      extendInstructions: () => CHANNEL_MEMORY_PROMPT,
+      extendTools: () =>
         createChannelTools(context, this.store, this.pending, {
           batchDelayMs: this.config.batchDelayMs,
           evidenceCount: (id) => this.evidence.count(id),
           readConversation: this.ctx.yesimbot.conversation.read,
+          readRecent: async (channel, limit) => [...new Set((await this.ctx.yesimbot.conversation.read(channel, { limit })).map((record) => record.user.id))],
           rearm: () => this.scheduler.arm(),
           embeddingModel,
           search: (value, execution) =>

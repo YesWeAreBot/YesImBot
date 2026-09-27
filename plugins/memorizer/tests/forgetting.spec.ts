@@ -47,7 +47,7 @@ describe("MemoryStore.sweep", () => {
   it("soft-forgets low-retention records and removes expired forgotten records only after evidence removal", async () => {
     const model = new Model();
     model.rows.push(row("low", "active"), row("expired", "forgotten"));
-    const store = new MemoryStore(model as never);
+    const store = new MemoryStore({ model } as never);
     const removed: string[] = [];
 
     await store.sweep(365 * 24 * 60 * 60 * 1_000, { halfLifeDays: 90, forgottenGraceDays: 30, maxActivePerScope: 1000 }, async (id) => removed.push(id));

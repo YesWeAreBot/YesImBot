@@ -1,6 +1,5 @@
-import type { AgentEntry } from "@yesimbot/agent-runtime";
 import type { Element } from "koishi";
-import { isMessage } from "koishi-plugin-yesimbot";
+import { AgentEntry, isMessage } from "koishi-plugin-yesimbot";
 
 import type { ConversationSegment, MessageTurn } from "./types.js";
 

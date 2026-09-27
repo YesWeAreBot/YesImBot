@@ -1,5 +1,4 @@
-import { jsonSchema, type AgentTool } from "@yesimbot/agent-runtime";
-import type { AssetStore, ChannelContext } from "koishi-plugin-yesimbot";
+import { jsonSchema, type AssetStore, type ChannelContext, type FunctionTool, type ToolSet } from "koishi-plugin-yesimbot";
 
 import type { StickerClassifier } from "./classifier.js";
 import { detectImageMediaType, sha256Hex } from "./files.js";
@@ -38,12 +37,11 @@ interface SearchStickerInput {
   limit?: number;
 }
 
-export function createStickerTools(options: StickerToolsOptions): AgentTool[] {
+export function createStickerTools(options: StickerToolsOptions): ToolSet {
   const { store, classifier, sender, assets, scope, config } = options;
   const scopeKey = scopeKeyFor(scope, config);
 
-  const stealTool: AgentTool<StealStickerInput, ToolResult> = {
-    name: "sticker_steal",
+  const stealTool: FunctionTool<StealStickerInput, ToolResult> = {
     description: [
       "收藏当前消息中的一张表情包图片。",
       "asset_id 必须来自消息里的 [图片：asset://<id>]，只传 32 位十六进制 id，不要拼接或猜测。",
@@ -103,8 +101,7 @@ export function createStickerTools(options: StickerToolsOptions): AgentTool[] {
     },
   };
 
-  const sendTool: AgentTool<SendStickerInput, ToolResult> = {
-    name: "sticker_send",
+  const sendTool: FunctionTool<SendStickerInput, ToolResult> = {
     description: [
       "发送一个已收藏的表情包。",
       "可用 sticker_categories 和 sticker_search 查询；sticker_id 优先，也可按 category 随机或按 index 指定。",
@@ -171,8 +168,7 @@ export function createStickerTools(options: StickerToolsOptions): AgentTool[] {
     },
   };
 
-  const categoriesTool: AgentTool<Record<string, never>, ToolResult> = {
-    name: "sticker_categories",
+  const categoriesTool: FunctionTool<Record<string, never>, ToolResult> = {
     description: "列出当前可见的表情包分类和每类数量，用于选择 sticker_steal 或 sticker_send 的分类。",
     inputSchema: jsonSchema<Record<string, never>>({ type: "object", additionalProperties: false }),
     execute: async () => {
@@ -183,18 +179,16 @@ export function createStickerTools(options: StickerToolsOptions): AgentTool[] {
 
   const tagsTool = config.tagMode
     ? ({
-        name: "sticker_tags",
         description: "实验性：列出当前可见表情包的标签和数量，用于 sticker_send 按标签发送。",
         inputSchema: jsonSchema<Record<string, never>>({ type: "object", additionalProperties: false }),
         execute: async () => {
           const tags = await store.listTags(scopeKey);
           return { ok: true, tags, message: tags.length ? "已返回标签列表" : "暂无标签" };
         },
-      } satisfies AgentTool<Record<string, never>, ToolResult>)
+      } satisfies FunctionTool<Record<string, never>, ToolResult>)
     : null;
 
-  const searchTool: AgentTool<SearchStickerInput, ToolResult> = {
-    name: "sticker_search",
+  const searchTool: FunctionTool<SearchStickerInput, ToolResult> = {
     description: [
       "搜索当前可见的表情包，返回紧凑 id 列表，供 sticker_send 使用。",
       'sticker_search 只用于查询；确定目标后调用 sticker_send，或在启用 sticker 元素时输出 <sticker id="..."/>。',
@@ -228,7 +222,13 @@ export function createStickerTools(options: StickerToolsOptions): AgentTool[] {
     },
   };
 
-  return [stealTool, sendTool, categoriesTool, searchTool, ...(tagsTool ? [tagsTool] : [])];
+  return {
+    sticker_steal: stealTool,
+    sticker_send: sendTool,
+    sticker_categories: categoriesTool,
+    sticker_search: searchTool,
+    ...(tagsTool ? { sticker_tags: tagsTool } : {}),
+  };
 }
 
 export async function pickBestTaggedSticker(

@@ -1,9 +1,8 @@
-import { generateText, type LanguageModel } from "@yesimbot/agent-runtime";
-import { z } from "zod";
+import { generateText, jsonSchema, LanguageModel } from "koishi-plugin-yesimbot";
 
 import { buildConversationChains } from "./links.js";
 import { modelCacheId, type ModelCache } from "./model-cache.js";
-import { patternPhrase, sanitizeForDisplay } from "./text.js";
+import { asRecord, patternPhrase, sanitizeForDisplay } from "./text.js";
 import type {
   ConversationSegment,
   InitiationIntent,
@@ -19,9 +18,44 @@ const RESPONSE_INTENTS = ["ack", "agree", "question", "joke", "roast", "empathy"
 
 const INITIATION_INTENTS = ["share", "question", "react", "recall", "opinion"] as const;
 
-const messageAnnotationSchema = z.object({ id: z.string(), role: z.enum(["response", "initiation", "noise"]), intent: z.string() });
+const ANNOTATION_ROLES = ["response", "initiation", "noise"] as const;
 
-const modelOutputSchema = z.object({ messages: z.array(messageAnnotationSchema).optional() });
+interface MessageAnnotation {
+  id: string;
+  role: (typeof ANNOTATION_ROLES)[number];
+  intent: string;
+}
+
+/** Model output, so the SDK does not validate it for us; the prompt asks for JSON but cannot guarantee it. */
+const modelOutputSchema = jsonSchema<{ messages?: MessageAnnotation[] }>(
+  {
+    type: "object",
+    properties: {
+      messages: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: { id: { type: "string" }, role: { type: "string", enum: [...ANNOTATION_ROLES] }, intent: { type: "string" } },
+          required: ["id", "role", "intent"],
+        },
+      },
+    },
+  },
+  {
+    validate: (value) => {
+      const messages = asRecord(value)?.messages;
+      if (messages === undefined) return { success: true, value: {} as { messages?: MessageAnnotation[] } };
+      if (!Array.isArray(messages)) return { success: false, error: new TypeError("messages must be an array") };
+      for (const item of messages) {
+        const entry = asRecord(item);
+        if (typeof entry?.id !== "string" || typeof entry.intent !== "string" || !ANNOTATION_ROLES.includes(entry.role as never)) {
+          return { success: false, error: new TypeError("each annotation needs id: string, role: response|initiation|noise, intent: string") };
+        }
+      }
+      return { success: true, value: value as { messages?: MessageAnnotation[] } };
+    },
+  },
+);
 
 const MAX_MODEL_MESSAGES = 80;
 
@@ -71,7 +105,7 @@ export async function classifyPatternsWithModel(
 
     try {
       const { text } = await generateText({ model, system, prompt, temperature: 0.1 });
-      return parseModelAnnotations(text, messageByPromptId);
+      return await parseModelAnnotations(text, messageByPromptId);
     } catch {
       return undefined;
     }
@@ -186,7 +220,7 @@ function byFrequency(left: { readonly frequency: number }, right: { readonly fre
   return right.frequency - left.frequency;
 }
 
-function parseModelAnnotations(text: string, messageByPromptId: ReadonlyMap<string, MessageTurn>): PatternSnapshot | undefined {
+async function parseModelAnnotations(text: string, messageByPromptId: ReadonlyMap<string, MessageTurn>): Promise<PatternSnapshot | undefined> {
   const cleaned = text
     .trim()
     .replace(/^```(?:json)?\s*/i, "")
@@ -201,13 +235,13 @@ function parseModelAnnotations(text: string, messageByPromptId: ReadonlyMap<stri
   if (typeof parsed !== "object" || parsed === null) return undefined;
   if (!("messages" in parsed)) return undefined;
 
-  const result = modelOutputSchema.safeParse(parsed);
+  const result = await modelOutputSchema.validate!(parsed);
   if (!result.success) return undefined;
 
   const responseCounts = new Map<string, { intent: ResponseIntent; phrase: string; sampleIds: string[] }>();
   const initiationCounts = new Map<string, { intent: InitiationIntent; phrase: string; sampleIds: string[] }>();
 
-  for (const item of result.data.messages ?? []) {
+  for (const item of result.value.messages ?? []) {
     if (item.role === "noise") continue;
     const turn = messageByPromptId.get(item.id);
     if (!turn) continue;

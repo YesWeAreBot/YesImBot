@@ -1,5 +1,14 @@
 import type { Logger, Universal } from "koishi";
-import { isMessage, type WillDebug, type WillState, type Event, type Message, type WillEngine, TurnResult } from "koishi-plugin-yesimbot";
+import {
+  isMessage,
+  type AgentMessageOf,
+  type ChannelInput,
+  type Message,
+  type WillDebug,
+  type WillState,
+  type WillEngine,
+  TurnResult,
+} from "koishi-plugin-yesimbot";
 
 import { hasImage, hasQuote, mentionKind } from "./message-context.js";
 import type { PolicyWillingnessConfig } from "./types.js";
@@ -18,7 +27,7 @@ export class PolicyWillingnessEngine implements WillEngine {
     this.score = config.initialScore;
   }
 
-  public async decide(input: Message | Event, _state: WillState): Promise<"wait" | "trigger"> {
+  public async decide(input: ChannelInput, _state: WillState): Promise<"wait" | "trigger"> {
     if (!isMessage(input)) {
       return isPokeEvent(input) ? this.decidePoke(input) : "wait";
     }
@@ -47,7 +56,7 @@ export class PolicyWillingnessEngine implements WillEngine {
     return decision;
   }
 
-  private decidePoke(input: Event): "wait" | "trigger" {
+  private decidePoke(input: AgentMessageOf<"yesimbot.event">): "wait" | "trigger" {
     const now = Date.now();
     const decayed =
       this.lastDecayAt === null || this.lastMessageAt === null ? this.score : decayScore(this.score, this.lastDecayAt, this.lastMessageAt, now, this.config);
@@ -111,7 +120,7 @@ function decayHighScore(score: number, weightedSeconds: number, threshold: numbe
   return threshold * 0.5 ** ((weightedSeconds - weightedSecondsToThreshold) / halfLife);
 }
 
-function calculateScore(current: number, data: Message["data"], config: PolicyWillingnessConfig): number {
+function calculateScore(current: number, data: Message, config: PolicyWillingnessConfig): number {
   const attributes =
     (mentionKind(data.selfId, data.elements) === "none" ? 0 : config.mentionGain) +
     (hasQuote(data.elements) ? config.quoteGain : 0) +
@@ -155,12 +164,12 @@ function hasKeyword(elements: readonly unknown[] | undefined, keywords: readonly
   return keywords.some((keyword) => text?.includes(keyword) ?? false);
 }
 
-function shouldForce(data: Message["data"], config: PolicyWillingnessConfig): boolean {
+function shouldForce(data: Message, config: PolicyWillingnessConfig): boolean {
   if (config.directForce && data.channel.type === DIRECT_CHANNEL_TYPE) return true;
   if (config.mentionForce && mentionKind(data.selfId, data.elements) !== "none") return true;
   return config.quoteForce && hasQuote(data.elements);
 }
 
-function isPokeEvent(input: Event): boolean {
+function isPokeEvent(input: AgentMessageOf<"yesimbot.event">): boolean {
   return input.role === "custom" && input.type === "yesimbot.event" && (input.data as { eventType?: string }).eventType === "notice.poke";
 }

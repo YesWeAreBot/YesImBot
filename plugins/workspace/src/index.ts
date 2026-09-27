@@ -2,9 +2,8 @@ import { readFile, mkdir, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { URL } from "node:url";
 
-import type { AgentPlugin } from "@yesimbot/agent-runtime";
 import { Context, Logger, Schema } from "koishi";
-import type { ChannelResources, ChannelContext, ResourceReader } from "koishi-plugin-yesimbot";
+import type { AgentPlugin, ChannelResources, ChannelContext, ResourceReader } from "koishi-plugin-yesimbot";
 
 import { createBashToolSet } from "./bash-tool";
 import { normalizeMounts, type NormalizedMountSpec } from "./mounts";
@@ -128,10 +127,10 @@ export default class WorkspacePlugin {
     const runtimeMounts = this.normalizedMounts;
     return {
       name: "workspace",
-      tools: async () => createBashToolSet(await this.getOrCreateWorkspace(scope, resources, sandbox, runtimeMounts)),
-      appendSystemPrompt: async () => {
+      extendTools: async () => createBashToolSet(await this.getOrCreateWorkspace(scope, resources, sandbox, runtimeMounts)),
+      extendInstructions: async () => {
         const workspace = await this.getOrCreateWorkspace(scope, resources, sandbox, runtimeMounts);
-        return [formatWorkspacePrompt(workspace), formatSkillsForPrompt(runtimeSkills)].filter(Boolean);
+        return [formatWorkspacePrompt(workspace), formatSkillsForPrompt(runtimeSkills)].filter(Boolean).join("\n\n");
       },
     } satisfies AgentPlugin;
   }

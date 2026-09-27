@@ -1,9 +1,11 @@
-import { AgentTool, jsonSchema } from "@yesimbot/agent-runtime";
 import type { Context, Logger } from "koishi";
 import { Schema } from "koishi";
+import { jsonSchema, type FunctionTool } from "koishi-plugin-yesimbot";
 
 import type { SearchBackend, SearchRuntimeConfig, WebScrapeOutput, WebSearchOutput } from "../types";
 import { clampLimit, compileBlacklist, dedupeByUrl, filterBlockedResults, normalizeUrlList } from "../utils";
+export const TAVILY_SEARCH_TOOL_NAME = "tavily_web_search";
+export const TAVILY_SCRAPE_TOOL_NAME = "tavily_web_scrape";
 
 export const tavilyConfigSchema: Schema<TavilyConfig> = Schema.object({
   apiKey: Schema.string().required().description("Tavily API Key"),
@@ -107,6 +109,10 @@ interface TavilyExtractResponse {
 class TavilyBackend implements SearchBackend {
   public readonly name = "tavily";
 
+  public readonly searchToolName = TAVILY_SEARCH_TOOL_NAME;
+
+  public readonly scrapeToolName = TAVILY_SCRAPE_TOOL_NAME;
+
   private readonly blacklist: RegExp[];
 
   constructor(
@@ -117,9 +123,8 @@ class TavilyBackend implements SearchBackend {
     this.blacklist = compileBlacklist(config.blacklist);
   }
 
-  public createSearchTool(): AgentTool<TavilySearchInput, WebSearchOutput> {
+  public createSearchTool(): FunctionTool<TavilySearchInput, WebSearchOutput> {
     return {
-      name: "tavily_web_search",
       description: "Search the web for current information, news, facts, or web content. " + "Returns structured JSON with titles, URLs, and snippets.",
 
       inputSchema: searchInputSchema,
@@ -127,9 +132,8 @@ class TavilyBackend implements SearchBackend {
     };
   }
 
-  public createScrapeTool(): AgentTool<TavilyScrapeInput, WebScrapeOutput> {
+  public createScrapeTool(): FunctionTool<TavilyScrapeInput, WebScrapeOutput> {
     return {
-      name: "tavily_web_scrape",
       description: "Extract readable content from one or more web pages. " + "Use after tavily_web_search when full page text is needed.",
       inputSchema: scrapeInputSchema,
       execute: async (input) => {

@@ -1,8 +1,7 @@
 import type { ReadableStream } from "node:stream/web";
 
-import { jsonSchema, type AgentPlugin, type AgentTool } from "@yesimbot/agent-runtime";
 import { Context, Logger, Schema, type Bot } from "koishi";
-import type { ChannelResources, ChannelContext } from "koishi-plugin-yesimbot";
+import { jsonSchema, type AgentPlugin, type ChannelResources, type ChannelContext, type FunctionTool, type ToolSet } from "koishi-plugin-yesimbot";
 
 import { projectAnimatedImages } from "./animated-image.js";
 import { createForwardReader, type ForwardImageRequest, type ForwardResult, type ForwardToolInput } from "./forward.js";
@@ -90,7 +89,7 @@ export default class OnebotUtilsPlugin {
     const resources = await this.ctx.yesimbot.resource.get(scope);
     return {
       name: "onebot-utils",
-      tools: createOneBotTools(this.ctx, bot, this.config, scope, resources),
+      extendTools: () => createOneBotTools(this.ctx, bot, this.config, scope, resources),
       onAppend: (entries) => projectAnimatedImages(entries, { attachImageSummary: this.config.attachImageSummary }),
       transformEntries: (entries) => projectAnimatedImages(entries, { attachImageSummary: this.config.attachImageSummary }),
     } satisfies AgentPlugin;
@@ -230,13 +229,12 @@ async function readForwardImage(stream: ReadableStream<Uint8Array>, signal: Abor
   return bytes;
 }
 
-function createOneBotTools(ctx: Context, bot: Bot, config: Readonly<OnebotUtilsConfig>, scope: ChannelContext, resources: ChannelResources): AgentTool[] {
+function createOneBotTools(ctx: Context, bot: Bot, config: Readonly<OnebotUtilsConfig>, scope: ChannelContext, resources: ChannelResources): ToolSet {
   let forwardReader: ReturnType<typeof createForwardReader> | undefined;
 
   const isGroupScope = scope.type !== "direct";
 
-  const getForwardMessageTool: AgentTool<ForwardToolInput, ForwardResult> = {
-    name: TOOLS.GET_FORWARD_MESSAGE,
+  const getForwardMessageTool: FunctionTool<ForwardToolInput, ForwardResult> = {
     description: "分页获取合并转发消息的紧凑元组。使用 forwardId；若返回 tips，表示还有剩余内容，可按其中的 nextOffset 使用相同 forwardId 继续读取。",
     inputSchema: jsonSchema<ForwardToolInput>({
       type: "object",
@@ -255,8 +253,7 @@ function createOneBotTools(ctx: Context, bot: Bot, config: Readonly<OnebotUtilsC
     },
   };
 
-  const sendForwardMessageTool: AgentTool<{ forwardId: string }, ForwardSendResult> = {
-    name: TOOLS.SEND_FORWARD_MESSAGE,
+  const sendForwardMessageTool: FunctionTool<{ forwardId: string }, ForwardSendResult> = {
     description: "将合并转发消息原样发送到当前频道。传入与 onebot_get_forward_message 相同的 forwardId；不要根据摘要逐条粘贴或重建消息。",
     inputSchema: jsonSchema<{ forwardId: string }>({
       type: "object",
@@ -280,8 +277,7 @@ function createOneBotTools(ctx: Context, bot: Bot, config: Readonly<OnebotUtilsC
     },
   };
 
-  const createReactionTool: AgentTool<{ messageId: string; emojiId: string }, unknown> = {
-    name: TOOLS.CREATE_REACTION,
+  const createReactionTool: FunctionTool<{ messageId: string; emojiId: string }, unknown> = {
     description: "对消息进行表态",
     inputSchema: jsonSchema<{ messageId: string; emojiId: string }>({
       type: "object",
@@ -296,8 +292,7 @@ function createOneBotTools(ctx: Context, bot: Bot, config: Readonly<OnebotUtilsC
     },
   };
 
-  const setEssenceTool: AgentTool<{ messageId: string }, { success: true }> = {
-    name: TOOLS.SET_ESSENCE,
+  const setEssenceTool: FunctionTool<{ messageId: string }, { success: true }> = {
     description: "将消息设置为精华",
     inputSchema: jsonSchema<{ messageId: string }>({
       type: "object",
@@ -311,8 +306,7 @@ function createOneBotTools(ctx: Context, bot: Bot, config: Readonly<OnebotUtilsC
     },
   };
 
-  const ocrImageTool: AgentTool<OcrImageToolInput, OcrImageToolOutput> = {
-    name: TOOLS.OCR_IMAGE,
+  const ocrImageTool: FunctionTool<OcrImageToolInput, OcrImageToolOutput> = {
     description: "对图片进行 OCR 识别",
     inputSchema: jsonSchema<OcrImageToolInput>({ type: "object", properties: { image: { type: "string" } }, required: ["image"] }),
     outputSchema: jsonSchema<OcrImageToolOutput>({
@@ -336,8 +330,7 @@ function createOneBotTools(ctx: Context, bot: Bot, config: Readonly<OnebotUtilsC
     },
   };
 
-  const setQqProfileTool: AgentTool<{ nickname?: string; personal_note?: string; sex?: number }, { success: true }> = {
-    name: TOOLS.SET_QQ_PROFILE,
+  const setQqProfileTool: FunctionTool<{ nickname?: string; personal_note?: string; sex?: number }, { success: true }> = {
     description: "设置 QQ 个人资料",
     inputSchema: jsonSchema<{ nickname?: string; personal_note?: string }>({
       type: "object",
@@ -352,8 +345,7 @@ function createOneBotTools(ctx: Context, bot: Bot, config: Readonly<OnebotUtilsC
     },
   };
 
-  const setQqAvatarTool: AgentTool<{ file: string }, { success: true }> = {
-    name: TOOLS.SET_QQ_AVATAR,
+  const setQqAvatarTool: FunctionTool<{ file: string }, { success: true }> = {
     description: "设置 QQ 头像",
     inputSchema: jsonSchema<{ file: string }>({ type: "object", properties: { file: { type: "string" } }, required: ["file"], additionalProperties: false }),
     execute: async (input) => {
@@ -364,8 +356,7 @@ function createOneBotTools(ctx: Context, bot: Bot, config: Readonly<OnebotUtilsC
     },
   };
 
-  const banUserTool: AgentTool<BanUserInput, GroupToolResult> = {
-    name: TOOLS.BAN_USER,
+  const banUserTool: FunctionTool<BanUserInput, GroupToolResult> = {
     description: "禁言当前群内的指定成员，duration 单位秒",
     inputSchema: jsonSchema<BanUserInput>({
       type: "object",
@@ -383,8 +374,7 @@ function createOneBotTools(ctx: Context, bot: Bot, config: Readonly<OnebotUtilsC
     },
   };
 
-  const unbanUserTool: AgentTool<GroupUserInput, GroupToolResult> = {
-    name: TOOLS.UNBAN_USER,
+  const unbanUserTool: FunctionTool<GroupUserInput, GroupToolResult> = {
     description: "解除当前群内指定成员的禁言",
     inputSchema: jsonSchema<GroupUserInput>({ type: "object", properties: { userId: { type: "string" } }, required: ["userId"], additionalProperties: false }),
     execute: async ({ userId }) => {
@@ -397,8 +387,7 @@ function createOneBotTools(ctx: Context, bot: Bot, config: Readonly<OnebotUtilsC
     },
   };
 
-  const kickUserTool: AgentTool<KickUserInput, GroupToolResult> = {
-    name: TOOLS.KICK_USER,
+  const kickUserTool: FunctionTool<KickUserInput, GroupToolResult> = {
     description: "将指定成员移出当前群",
     inputSchema: jsonSchema<KickUserInput>({
       type: "object",
@@ -421,19 +410,19 @@ function createOneBotTools(ctx: Context, bot: Bot, config: Readonly<OnebotUtilsC
   };
 
   const enabledTools = new Set(config.enabledTools);
-  const tools: AgentTool[] = [];
+  const tools: ToolSet = {};
   if (isGroupScope) {
-    if (enabledTools.has(TOOLS.SET_ESSENCE)) tools.push(setEssenceTool);
-    if (enabledTools.has(TOOLS.BAN_USER)) tools.push(banUserTool);
-    if (enabledTools.has(TOOLS.UNBAN_USER)) tools.push(unbanUserTool);
-    if (enabledTools.has(TOOLS.KICK_USER)) tools.push(kickUserTool);
+    if (enabledTools.has(TOOLS.SET_ESSENCE)) tools[TOOLS.SET_ESSENCE] = setEssenceTool;
+    if (enabledTools.has(TOOLS.BAN_USER)) tools[TOOLS.BAN_USER] = banUserTool;
+    if (enabledTools.has(TOOLS.UNBAN_USER)) tools[TOOLS.UNBAN_USER] = unbanUserTool;
+    if (enabledTools.has(TOOLS.KICK_USER)) tools[TOOLS.KICK_USER] = kickUserTool;
   }
-  if (enabledTools.has(TOOLS.GET_FORWARD_MESSAGE)) tools.push(getForwardMessageTool);
-  if (enabledTools.has(TOOLS.SEND_FORWARD_MESSAGE)) tools.push(sendForwardMessageTool);
-  if (enabledTools.has(TOOLS.CREATE_REACTION)) tools.push(createReactionTool);
-  if (enabledTools.has(TOOLS.OCR_IMAGE)) tools.push(ocrImageTool);
-  if (enabledTools.has(TOOLS.SET_QQ_PROFILE)) tools.push(setQqProfileTool);
-  if (enabledTools.has(TOOLS.SET_QQ_AVATAR)) tools.push(setQqAvatarTool);
+  if (enabledTools.has(TOOLS.GET_FORWARD_MESSAGE)) tools[TOOLS.GET_FORWARD_MESSAGE] = getForwardMessageTool;
+  if (enabledTools.has(TOOLS.SEND_FORWARD_MESSAGE)) tools[TOOLS.SEND_FORWARD_MESSAGE] = sendForwardMessageTool;
+  if (enabledTools.has(TOOLS.CREATE_REACTION)) tools[TOOLS.CREATE_REACTION] = createReactionTool;
+  if (enabledTools.has(TOOLS.OCR_IMAGE)) tools[TOOLS.OCR_IMAGE] = ocrImageTool;
+  if (enabledTools.has(TOOLS.SET_QQ_PROFILE)) tools[TOOLS.SET_QQ_PROFILE] = setQqProfileTool;
+  if (enabledTools.has(TOOLS.SET_QQ_AVATAR)) tools[TOOLS.SET_QQ_AVATAR] = setQqAvatarTool;
   return tools;
 }
 

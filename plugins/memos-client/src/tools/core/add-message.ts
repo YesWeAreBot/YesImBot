@@ -1,4 +1,4 @@
-import { jsonSchema, type AgentTool } from "@yesimbot/agent-runtime";
+import { jsonSchema, type FunctionTool } from "koishi-plugin-yesimbot";
 
 import type { MemosCloudClient } from "../../client.js";
 import type { MemosClientConfig, MemosIdentity } from "../../types.js";
@@ -9,6 +9,18 @@ export interface AddMessageToolInput {
   content: string;
 }
 
+/** `ToolExecutionOptions` no longer carries the turn id, so the runtime publishes it as tool context. */
+export interface AddMessageToolContext {
+  turnId: string;
+}
+
+const TOOL_CONTEXT_SCHEMA = jsonSchema<AddMessageToolContext>({
+  type: "object",
+  properties: { turnId: { type: "string" } },
+  required: ["turnId"],
+  additionalProperties: false,
+});
+
 export interface AddMessageToolOptions {
   client: MemosCloudClient;
   config: MemosClientConfig;
@@ -17,19 +29,19 @@ export interface AddMessageToolOptions {
   logger?: { warn(message: string): void };
 }
 
-export function createAddMessageTool(options: AddMessageToolOptions): AgentTool<AddMessageToolInput, AddMessageToolOutput> {
+export function createAddMessageTool(options: AddMessageToolOptions): FunctionTool<AddMessageToolInput, AddMessageToolOutput, AddMessageToolContext> {
   return {
-    name: "add_message",
     description: "Write a durable long-term memory candidate to MemOS.",
+    contextSchema: TOOL_CONTEXT_SCHEMA,
     inputSchema: jsonSchema<AddMessageToolInput>({
       type: "object",
       properties: { content: { type: "string", minLength: 1, description: "Durable memory content to remember." } },
       required: ["content"],
       additionalProperties: false,
     }),
-    execute: async ({ content }, context) => {
+    execute: async ({ content }, execution) => {
       try {
-        const identity = options.resolveIdentity(context.turnId);
+        const identity = options.resolveIdentity(execution.context.turnId);
         const response = await options.client.addMessage<{ task_id?: string; status?: string }>({
           user_id: identity.userId,
           conversation_id: identity.conversationId,

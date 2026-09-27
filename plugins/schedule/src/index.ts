@@ -1,5 +1,5 @@
-import type { AgentPlugin } from "@yesimbot/agent-runtime";
 import { Context, Logger, type Bot, type Command, type Session } from "koishi";
+import type { AgentPlugin } from "koishi-plugin-yesimbot";
 import type { ChannelContext } from "koishi-plugin-yesimbot";
 
 import { ScheduleScheduler } from "./scheduler.js";
@@ -61,7 +61,7 @@ export default class SchedulePlugin {
     const scheduleScope = { ...scope, selfId: bot.selfId } as ScheduleScope;
     return {
       name: "schedule",
-      tools: () => createScheduleTools(scheduleScope, this.store, () => this.scheduler?.rearm() ?? Promise.resolve()),
+      extendTools: () => createScheduleTools(scheduleScope, this.store, () => this.scheduler?.rearm() ?? Promise.resolve()),
     } satisfies AgentPlugin;
   }
   public async stop(): Promise<void> {

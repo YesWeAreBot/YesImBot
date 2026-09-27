@@ -4,7 +4,7 @@ Expose tools from configured MCP servers to Athena channel runtimes.
 
 ## Tool Registry
 
-On startup, the plugin connects to each configured MCP server, calls `listTools()`, converts the returned MCP tools to `AgentTool` definitions, and publishes them through `AgentPlugin.tools`.
+On startup, the plugin connects to each configured MCP server, calls `listTools()`, converts the returned MCP tools to `ToolSet` entries, and publishes them through `AgentPlugin.extendTools`.
 
 Tool names are prefixed with the server name:
 
@@ -23,7 +23,7 @@ The published tool list is sorted by final tool name so model-call tool order re
 The plugin listens for MCP `notifications/tools/list_changed`. When a connected server reports a catalog change, the plugin:
 
 1. Calls `listTools()` again for that server.
-2. Rebuilds that server's cached `AgentTool` definitions.
+2. Rebuilds that server's cached `ToolSet` entries.
 3. Disposes the previous agent plugin factory.
 4. Registers a replacement factory with the refreshed stable tool list.
 

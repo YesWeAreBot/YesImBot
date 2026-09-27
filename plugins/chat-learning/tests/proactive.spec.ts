@@ -1,4 +1,4 @@
-import { createCustomMessage, createMessageEntry, type AgentEntry } from "@yesimbot/agent-runtime";
+import { createCustomMessage, createEntry, type AgentEntry } from "koishi-plugin-yesimbot";
 import { describe, expect, it } from "vitest";
 
 import { detectProactiveEvent } from "../src/proactive.js";
@@ -9,7 +9,7 @@ function eventEntry(id: string, eventType: string, timestamp: number): AgentEntr
     { platform: "test", selfId: "bot-1", channel: { id: "room-1", type: 0 }, eventType, text: "event" },
     { id: `${id}-event`, timestamp },
   );
-  return createMessageEntry(message, { id, timestamp }) as unknown as AgentEntry;
+  return createEntry("message", message, { id, timestamp }) as unknown as AgentEntry;
 }
 
 describe("detectProactiveEvent", () => {

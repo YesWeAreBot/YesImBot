@@ -1,8 +1,7 @@
 import path from "node:path";
 
-import type { AgentPlugin } from "@yesimbot/agent-runtime";
 import { Context, Logger, Schema, type Bot } from "koishi";
-import type { ChannelResources, ChannelContext } from "koishi-plugin-yesimbot";
+import type { AgentPlugin, ChannelResources, ChannelContext } from "koishi-plugin-yesimbot";
 
 import { formatBrainDigest } from "./digest.js";
 import { formatBrainPrompt } from "./prompt.js";
@@ -85,21 +84,22 @@ export default class GlobalBrainPlugin {
     let injectedTurn: string | undefined;
     return {
       name: "global-brain",
-      tools: createBrainTools({
-        store,
-        scope,
-        assets,
-        artifacts,
-        defaultShareImmediately: this.config.shareImmediately,
-        onImmediateShare: (thread) => this.enqueueImmediateShare(thread, scope),
-      }),
-      appendSystemPrompt: () => (this.config.brainPrompt && this.config.brainPrompt.trim().length > 0 ? this.config.brainPrompt : formatBrainPrompt()),
-      prepareStep: async (messages, context) => {
-        if (injectedTurn === context.turnId) return messages;
-        injectedTurn = context.turnId;
+      extendTools: () =>
+        createBrainTools({
+          store,
+          scope,
+          assets,
+          artifacts,
+          defaultShareImmediately: this.config.shareImmediately,
+          onImmediateShare: (thread) => this.enqueueImmediateShare(thread, scope),
+        }),
+      extendInstructions: () => (this.config.brainPrompt && this.config.brainPrompt.trim().length > 0 ? this.config.brainPrompt : formatBrainPrompt()),
+      prepareStep: async (options) => {
+        if (injectedTurn === options.turnId) return options;
+        injectedTurn = options.turnId;
         const digest = await store.digest(scope);
         const text = formatBrainDigest(digest, this.config.maxDigestContentLength);
-        return text ? [...messages, { role: "user", content: `[全局脑摘要，不要回复本段]\n\n${text}` }] : messages;
+        return text ? { ...options, messages: [...options.messages, { role: "user", content: `[全局脑摘要，不要回复本段]\n\n${text}` }] } : options;
       },
     } satisfies AgentPlugin;
   }

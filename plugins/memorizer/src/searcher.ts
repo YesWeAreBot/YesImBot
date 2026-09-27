@@ -1,8 +1,7 @@
-import { createAgent, createUserMessage, jsonSchema, type AgentTool, type AgentToolExecuteContext } from "@yesimbot/agent-runtime";
-import type { LanguageModel } from "@yesimbot/agent-runtime";
+import { createAgent, createUserMessage, jsonSchema, type LanguageModel, type ToolSet } from "koishi-plugin-yesimbot";
 import type { ChannelContext } from "koishi-plugin-yesimbot";
 
-import { participants, toRecall } from "./plugin.js";
+import { toRecall } from "./plugin.js";
 import { EvidenceStore } from "./store/evidence.js";
 import { MemoryStore } from "./store/memory.js";
 import type { Memory, MemoryQuery, MemorySearchReport } from "./types.js";
@@ -21,7 +20,7 @@ const REPORT_SCHEMA = jsonSchema<SearchReport>({
 export interface SearchInput {
   readonly model: LanguageModel;
   readonly context: ChannelContext;
-  readonly execution: AgentToolExecuteContext;
+  readonly execution: { readonly turnId: string; readonly participants: readonly string[] };
   readonly store: MemoryStore;
   readonly evidence: EvidenceStore;
   readonly query: string;
@@ -48,7 +47,7 @@ export async function runSearch(input: SearchInput): Promise<MemorySearchReport>
       scopes: requested.scopes ? requested.scopes.filter((scope) => allowedScopes.includes(scope)) : allowedScopes,
       limit: requested.limit ?? input.limit,
     };
-    const memories = await input.store.queryVisible(input.context, participants(input.execution.messages), resolved);
+    const memories = await input.store.queryVisible(input.context, [...input.execution.participants], resolved);
     for (const memory of memories) authorized.set(memory.id, memory);
     return Promise.all(memories.map((memory) => toRecall(memory, (id) => input.evidence.count(id))));
   };
@@ -62,9 +61,8 @@ export async function runSearch(input: SearchInput): Promise<MemorySearchReport>
     report = value;
   };
 
-  const tools: AgentTool[] = [
-    {
-      name: "query_memories",
+  const tools: ToolSet = {
+    query_memories: {
       description: "查询当前可见的记忆。可多次调用，用不同关键词和过滤条件扩展搜索范围。",
       inputSchema: jsonSchema<MemoryQuery>({
         type: "object",
@@ -83,8 +81,7 @@ export async function runSearch(input: SearchInput): Promise<MemorySearchReport>
       }),
       execute: query,
     },
-    {
-      name: "read_evidence",
+    read_evidence: {
       description: "读取某条已授权记忆的原始证据消息。用于验证记忆准确性或获取更多细节。",
       inputSchema: jsonSchema<{ id: string }>({
         type: "object",
@@ -94,8 +91,7 @@ export async function runSearch(input: SearchInput): Promise<MemorySearchReport>
       }),
       execute: evidence,
     },
-    {
-      name: "submit_report",
+    submit_report: {
       description: "提交最终的结构化搜索报告。必须在搜索完成后调用一次。",
       inputSchema: REPORT_SCHEMA,
       execute: async (reportInput) => {
@@ -103,7 +99,7 @@ export async function runSearch(input: SearchInput): Promise<MemorySearchReport>
         return { submitted: true };
       },
     },
-  ];
+  };
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(new Error("memory search timed out")), input.timeoutMs);
   const systemPrompt = `你是一个记忆搜索助手。你的任务是基于已授权的记忆和证据，回答用户的查询。
@@ -130,7 +126,7 @@ export async function runSearch(input: SearchInput): Promise<MemorySearchReport>
   const agent = createAgent({
     model: input.model,
     tools,
-    systemPrompt,
+    instructions: systemPrompt,
   });
   try {
     await agent.init();

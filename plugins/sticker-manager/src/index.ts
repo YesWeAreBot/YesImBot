@@ -1,6 +1,5 @@
-import type { AgentPlugin } from "@yesimbot/agent-runtime";
 import { Context, Logger, type Bot } from "koishi";
-import type { ChannelResources, ChannelContext } from "koishi-plugin-yesimbot";
+import type { AgentPlugin, ChannelResources, ChannelContext } from "koishi-plugin-yesimbot";
 
 import { ModelStickerClassifier } from "./classifier.js";
 import { registerStickerCommands } from "./commands.js";
@@ -67,7 +66,7 @@ export default class StickerManagerPlugin {
     const artifactIds = new Map<string, string>();
     return {
       name: "sticker-manager",
-      tools: () =>
+      extendTools: () =>
         createStickerTools({ store: this.store, classifier, sender: new BotStickerSender(bot, scope), assets: resources.assets, scope, config: this.config }),
       onAppend: (entries) =>
         projectStickerElements(entries, {
@@ -85,7 +84,7 @@ export default class StickerManagerPlugin {
           config: this.config,
           artifactIds,
         }),
-      appendSystemPrompt: () => formatStickerPrompt(this.config),
+      extendInstructions: () => formatStickerPrompt(this.config),
     } satisfies AgentPlugin;
   }
 

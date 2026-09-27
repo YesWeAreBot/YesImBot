@@ -19,15 +19,16 @@ function store(rows: Array<Record<string, unknown>>): MemoryStore {
   } as unknown as MemoryStore;
 }
 
-function recallTool(rows: Array<Record<string, unknown>>, options: { embed?: (query: string) => Promise<readonly number[]> } = {}) {
+function recallTool(rows: Array<Record<string, unknown>>, options: { embed?: (query: string) => Promise<readonly number[]>; participants?: string[] } = {}) {
   const tools = createChannelTools(channel, store(rows), {} as PendingStore, {
     evidenceCount: async () => 0,
     readConversation: async () => [],
+    readRecent: async () => options.participants ?? [],
     rearm: async () => {},
     search: async () => ({ answer: "", memories: [], unresolved: [] }),
     embeddingModel: options.embed ? ({ modelId: "test" } as never) : undefined,
   });
-  return tools.find((t) => t.name === "recall")!;
+  return tools.recall!;
 }
 
 describe("recall tool", () => {
@@ -37,8 +38,8 @@ describe("recall tool", () => {
       { id: "alice", type: "fact", content: "alice fact", scope: "user", userId: "alice", importance: 1, confidence: 1, updatedAt: 0, accessCount: 0 },
       { id: "bob", type: "fact", content: "bob fact", scope: "user", userId: "bob", importance: 1, confidence: 1, updatedAt: 0, accessCount: 0 },
     ];
-    const tool = recallTool(rows);
-    const result = await tool.execute({ limit: 10 }, { messages: [{ role: "custom", type: "yesimbot.message", data: { user: { id: "alice" } } }] } as never);
+    const tool = recallTool(rows, { participants: ["alice"] });
+    const result = await tool.execute({ limit: 10 }, { context: { turnId: "turn-1" } } as never);
 
     expect(result).toMatchObject({
       semanticUsed: false,

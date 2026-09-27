@@ -1,5 +1,14 @@
 const ANIMATED_STICKER = /\[动画表情[^\]]*\]/g;
 
+/** Narrowing helpers for hand-written `jsonSchema` validate passes over model output. */
+export function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : undefined;
+}
+
+export function isBoundedString(value: unknown, min: number, max: number): value is string {
+  return typeof value === "string" && value.length >= min && value.length <= max;
+}
+
 export function sanitizeForDisplay(value: string): string {
   let result = value.replace(ANIMATED_STICKER, "<sticker />");
   for (let index = 0; index < 3; index += 1) {

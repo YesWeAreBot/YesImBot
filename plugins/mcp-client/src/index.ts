@@ -1,8 +1,15 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
-import { jsonSchema, type AgentPlugin, type AgentTool } from "@yesimbot/agent-runtime";
 import { Context, Logger, Schema, type Bot } from "koishi";
-import type { ArtifactStore, ChannelContext } from "koishi-plugin-yesimbot";
+import {
+  jsonSchema,
+  type AgentPlugin,
+  type ArtifactStore,
+  type ChannelContext,
+  type FunctionTool,
+  type ToolResultOutput,
+  type ToolSet,
+} from "koishi-plugin-yesimbot";
 
 import { connectMcpServer } from "./transports.js";
 import type { McpClientConfig, McpClientTransport } from "./types.js";
@@ -68,7 +75,7 @@ export default class McpClientPlugin {
 
   private transports: Map<string, McpClientTransport> = new Map();
   private clients: Map<string, Client> = new Map();
-  private registeredTools: AgentTool[] = [];
+  private registeredTools: ToolSet = {};
   private disposeAgentPlugin?: () => void;
   public constructor(ctx: Context, config: McpClientConfig) {
     this.ctx = ctx;
@@ -80,8 +87,10 @@ export default class McpClientPlugin {
 
   public async setup(scope: ChannelContext, _bot: Bot): Promise<AgentPlugin> {
     const resources = await this.ctx.yesimbot.resource.get(scope);
-    const channelTools = this.registeredTools.map((tool) => wrapToolWithArtifacts(tool, resources.artifacts));
-    return { name: "mcp-client", tools: channelTools, appendSystemPrompt: () => MCP_ARTIFACT_GUIDANCE } satisfies AgentPlugin;
+    const channelTools: ToolSet = Object.fromEntries(
+      Object.entries(this.registeredTools).map(([name, tool]) => [name, wrapToolWithArtifacts(name, tool, resources.artifacts)]),
+    );
+    return { name: "mcp-client", extendTools: () => channelTools, extendInstructions: () => MCP_ARTIFACT_GUIDANCE } satisfies AgentPlugin;
   }
 
   public async start(): Promise<void> {
@@ -101,13 +110,14 @@ export default class McpClientPlugin {
       }
     }
 
-    const registry = new Map<string, { client: Client; tools: Record<string, AgentTool> }>();
+    const registry = new Map<string, { client: Client; tools: ToolSet }>();
 
     const publishAgentPlugin = () => {
-      this.registeredTools = [...registry.values()].flatMap(({ tools }) => Object.values(tools)).sort((left, right) => left.name.localeCompare(right.name));
+      const merged: ToolSet = Object.assign({}, ...[...registry.values()].map(({ tools }) => tools));
+      this.registeredTools = Object.fromEntries(Object.entries(merged).sort(([left], [right]) => left.localeCompare(right)));
 
-      for (const tool of this.registeredTools) {
-        this.logger.info(`注册工具 ${tool.name}`);
+      for (const name of Object.keys(this.registeredTools)) {
+        this.logger.info(`注册工具 ${name}`);
       }
 
       this.disposeAgentPlugin?.();
@@ -118,12 +128,11 @@ export default class McpClientPlugin {
       const resp = await client.listTools();
       const tools = resp.tools;
       this.ctx.logger.info(`MCP 服务器 ${name} 提供的工具: ${tools.map((t) => t.name).join(", ")}`);
-      const toolDefs: Record<string, AgentTool> = {};
+      const toolDefs: ToolSet = {};
       const usedExposedNames = new Set<string>();
       for (const tool of tools) {
         const exposedName = uniqueToolName(safeToolName(`${name}-${tool.name}`), usedExposedNames);
-        toolDefs[tool.name] = {
-          name: exposedName,
+        toolDefs[exposedName] = {
           description: tool.description,
           inputSchema: jsonSchema(tool.inputSchema),
           execute: async (params: unknown) => {
@@ -135,7 +144,7 @@ export default class McpClientPlugin {
               throw error;
             }
           },
-        } satisfies AgentTool;
+        } satisfies FunctionTool<unknown, McpToolOutputBlock[]>;
       }
       registry.set(name, { client, tools: toolDefs });
     };
@@ -203,12 +212,12 @@ function uniqueToolName(base: string, used: Set<string>): string {
   return unique;
 }
 
-function wrapToolWithArtifacts(tool: AgentTool, artifacts: ArtifactStore): AgentTool {
-  const writer = artifacts.forTool(tool.name);
+function wrapToolWithArtifacts(name: string, tool: ToolSet[string], artifacts: ArtifactStore): ToolSet[string] {
+  const writer = artifacts.forTool(name);
   return {
     ...tool,
-    toModelOutput: async (options) => {
-      const { output } = options as { output: McpToolOutputBlock[] };
+    toModelOutput: async (options: { output: unknown }): Promise<ToolResultOutput> => {
+      const output = options.output as McpToolOutputBlock[] | undefined;
       if (!output || output.length === 0) {
         return { type: "text" as const, value: "" };
       }

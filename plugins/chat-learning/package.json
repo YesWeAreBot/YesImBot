@@ -28,17 +28,13 @@
     "test": "vitest run"
   },
   "devDependencies": {
-    "@yesimbot/agent-runtime": "workspace:^",
     "koishi": "^4.18.10",
     "koishi-plugin-yesimbot": "workspace:^",
-    "vitest": "^4.0.18",
-    "zod": "^3.25.76"
+    "vitest": "^4.0.18"
   },
   "peerDependencies": {
-    "@yesimbot/agent-runtime": "workspace:^",
     "koishi": "^4.18.10",
-    "koishi-plugin-yesimbot": "workspace:^",
-    "zod": "^3.25.76"
+    "koishi-plugin-yesimbot": "workspace:^"
   },
   "koishi": {
     "description": {

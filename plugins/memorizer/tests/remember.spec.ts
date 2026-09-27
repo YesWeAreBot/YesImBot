@@ -1,4 +1,3 @@
-import { createUserMessage } from "@yesimbot/agent-runtime";
 import { describe, expect, it } from "vitest";
 
 import { createChannelTools } from "../src/plugin.js";
@@ -18,16 +17,15 @@ describe("remember channel tool", () => {
         expect(options).toEqual({ messageIds: ["source"], before: 10, after: 10, limit: 50 });
         return [{ messageId: "source" } as never];
       },
+      readRecent: async () => [],
       rearm: async () => {
         calls.push("arm");
       },
       search: async () => ({ answer: "", memories: [], unresolved: [] }),
     });
-    const tool = tools.find((candidate) => candidate.name === "remember")!;
+    const tool = tools.remember!;
 
-    await expect(
-      tool.execute({ content: "remember", sources: ["source", "source"] }, { turnId: "turn", messages: [createUserMessage("ignored")] } as never),
-    ).resolves.toEqual({
+    await expect(tool.execute({ content: "remember", sources: ["source", "source"] }, { context: { turnId: "turn" } } as never)).resolves.toEqual({
       queued: true,
       pendingId: "pending",
       sourceCount: 1,

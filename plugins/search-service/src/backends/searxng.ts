@@ -1,9 +1,11 @@
-import { AgentTool, jsonSchema } from "@yesimbot/agent-runtime";
 import type { Context, Logger } from "koishi";
 import { Schema } from "koishi";
+import { jsonSchema, type FunctionTool } from "koishi-plugin-yesimbot";
 
 import type { SearchBackend, SearchRuntimeConfig, WebSearchOutput } from "../types.js";
 import { clampLimit, compileBlacklist, dedupeByUrl, filterBlockedResults } from "../utils.js";
+export const SEARXNG_SEARCH_TOOL_NAME = "searxng_web_search";
+
 export const searxngConfigSchema: Schema<SearXNGConfig> = Schema.object({
   endpoint: Schema.string().required().description("SearXNG 实例地址"),
   engines: Schema.array(Schema.string()).default([]).description("搜索引擎列表"),
@@ -67,6 +69,8 @@ interface SearXNGResponse {
 class SearXNGBackend implements SearchBackend {
   public readonly name = "searxng";
 
+  public readonly searchToolName = SEARXNG_SEARCH_TOOL_NAME;
+
   private readonly blacklist: RegExp[];
 
   constructor(
@@ -77,9 +81,8 @@ class SearXNGBackend implements SearchBackend {
     this.blacklist = compileBlacklist(config.blacklist);
   }
 
-  public createSearchTool(): AgentTool<SearXNGSearchInput, WebSearchOutput> {
+  public createSearchTool(): FunctionTool<SearXNGSearchInput, WebSearchOutput> {
     return {
-      name: "searxng_web_search",
       description: "Search the web for current information, news, facts, or web content. " + "Returns structured JSON with titles, URLs, and snippets.",
       inputSchema: searchInputSchema,
       execute: async (input) => this.search(input),

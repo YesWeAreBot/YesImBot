@@ -1,5 +1,5 @@
 import type { Logger, Universal } from "koishi";
-import { isMessage, type Event, type Message, type WillDebug, type WillEngine } from "koishi-plugin-yesimbot";
+import { isMessage, type AgentMessageOf, type ChannelInput, type WillDebug, type WillEngine } from "koishi-plugin-yesimbot";
 
 import { hasImage, hasQuote, mentionKind } from "./message-context.js";
 import type { PolicyRoutingConfig } from "./types.js";
@@ -12,7 +12,7 @@ export class PolicyRoutingEngine implements WillEngine {
     private readonly logger?: Pick<Logger, "debug">,
   ) {}
 
-  public async decide(input: Message | Event, _state: Parameters<WillEngine["decide"]>[1]): Promise<"wait" | "trigger"> {
+  public async decide(input: ChannelInput, _state: Parameters<WillEngine["decide"]>[1]): Promise<"wait" | "trigger"> {
     const decision: "wait" | "trigger" = this.resolve(input);
     this.logger?.debug("will_policy.routing", { messageId: input.id, channelId: input.data.channel.id, decision });
     return decision;
@@ -22,7 +22,7 @@ export class PolicyRoutingEngine implements WillEngine {
     return { engine: "routing", config: this.config as unknown as Record<string, unknown> };
   }
 
-  private resolve(input: Message | Event): "wait" | "trigger" {
+  private resolve(input: ChannelInput): "wait" | "trigger" {
     if (!isMessage(input)) {
       return isPokeEvent(input) ? this.config.poke : "wait";
     }
@@ -38,6 +38,6 @@ export class PolicyRoutingEngine implements WillEngine {
   }
 }
 
-function isPokeEvent(input: Event): boolean {
+function isPokeEvent(input: AgentMessageOf<"yesimbot.event">): boolean {
   return input.role === "custom" && input.type === "yesimbot.event" && (input.data as { eventType?: string }).eventType === "notice.poke";
 }

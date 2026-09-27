@@ -1,6 +1,5 @@
-import type { AgentMessage, AgentPlugin, AgentTool } from "@yesimbot/agent-runtime";
 import { Schema, Universal, type Bot, type Context, type Logger } from "koishi";
-import { isMessage, type ChannelContext } from "koishi-plugin-yesimbot";
+import { isMessage, type AgentMessage, type AgentPlugin, type ChannelContext } from "koishi-plugin-yesimbot";
 
 import { MemosCloudClient } from "./client.js";
 import { memosConfigSchema } from "./config.js";
@@ -66,14 +65,12 @@ export default class MemosClientPlugin {
       });
     };
 
-    const tools: AgentTool[] = [
-      createSearchMessageTool({ client, config: this.config, resolveIdentity, logger: this.logger }),
-      createAddMessageTool({ client, config: this.config, resolveIdentity, now: () => new Date(), logger: this.logger }),
-    ];
-
     return {
       name: "memos-client",
-      tools,
+      extendTools: () => ({
+        search_message: createSearchMessageTool({ client, config: this.config, resolveIdentity, logger: this.logger }),
+        add_message: createAddMessageTool({ client, config: this.config, resolveIdentity, now: () => new Date(), logger: this.logger }),
+      }),
       onAppend(entries) {
         for (const entry of entries) {
           if (entry.type !== "message") continue;
@@ -85,13 +82,13 @@ export default class MemosClientPlugin {
         return entries;
       },
       toModelMessages(message) {
-        captureMessageEvent(message, ({ authorId, messageId }) => {
+        captureMessageEvent(message as AgentMessage, ({ authorId, messageId }) => {
           latestAuthorId = authorId;
           latestMessageId = messageId;
         });
         return undefined;
       },
-      appendSystemPrompt: () => formatMemosPrompt(),
+      extendInstructions: () => formatMemosPrompt(),
     } satisfies AgentPlugin;
   }
 

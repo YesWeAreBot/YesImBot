@@ -1,6 +1,5 @@
-import type { AgentPlugin, AgentTool } from "@yesimbot/agent-runtime";
 import { Context, Logger, Schema, type Bot } from "koishi";
-import type { ChannelContext } from "koishi-plugin-yesimbot";
+import type { AgentPlugin, ChannelContext, ToolSet } from "koishi-plugin-yesimbot";
 
 import { createSearXNGBackend, searxngConfigSchema, type SearXNGConfig } from "./backends/searxng";
 import { createTavilyBackend, tavilyConfigSchema, type TavilyConfig } from "./backends/tavily";
@@ -44,7 +43,7 @@ export default class SearchService {
   public readonly config: SearchServiceConfig;
 
   private backend?: SearchBackend;
-  private searchTools: AgentTool[] = [];
+  private searchTools: ToolSet = {};
   private hasScrape = false;
   private disposeAgentPlugin?: () => void;
 
@@ -78,10 +77,10 @@ export default class SearchService {
 
     const backend = this.backend;
     const hasScrape = typeof backend.createScrapeTool === "function";
-    const searchTools = [backend.createSearchTool()];
+    const searchTools: ToolSet = { [backend.searchToolName]: backend.createSearchTool() };
     const scrapeTool = backend.createScrapeTool?.();
-    if (scrapeTool) {
-      searchTools.push(scrapeTool);
+    if (scrapeTool && backend.scrapeToolName) {
+      searchTools[backend.scrapeToolName] = scrapeTool;
     }
 
     this.searchTools = searchTools;
@@ -97,15 +96,15 @@ export default class SearchService {
     if (!backend) return null;
     return {
       name: "search-service",
-      tools: this.searchTools,
-      appendSystemPrompt: () => formatSearchPrompt(backend.name, this.hasScrape),
+      extendTools: () => this.searchTools,
+      extendInstructions: () => formatSearchPrompt(backend.name, this.hasScrape),
     } satisfies AgentPlugin;
   }
 
   public async stop(): Promise<void> {
     this.disposeAgentPlugin?.();
     this.disposeAgentPlugin = undefined;
-    this.searchTools = [];
+    this.searchTools = {};
     this.hasScrape = false;
     this.backend = undefined;
   }

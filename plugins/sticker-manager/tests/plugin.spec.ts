@@ -1,25 +1,6 @@
 /* eslint-disable vitest/require-mock-type-parameters */
-import type { AgentPlugin } from "@yesimbot/agent-runtime";
-import type { ChannelContext } from "koishi-plugin-yesimbot";
+import type { AgentPlugin, ChannelContext } from "koishi-plugin-yesimbot";
 import { afterEach, describe, expect, it, vi } from "vitest";
-
-vi.mock("koishi", () => {
-  // oxlint-disable-next-line unicorn/consistent-function-scoping
-  const chain = () => {
-    const target: Record<string, unknown> = {};
-    target.default = () => target;
-    target.description = () => target;
-    target.role = () => target;
-    target.min = () => target;
-    return target;
-  };
-  return {
-    Context: class {},
-    Logger: class {},
-    Schema: { object: chain, union: chain, const: chain, dynamic: chain, string: chain, boolean: chain, path: chain, number: chain },
-    h: { image: (src: string) => ({ type: "img", attrs: { src } }) },
-  };
-});
 
 import StickerManagerPlugin from "../src/index.js";
 import type { StickerConfig, StickerRow } from "../src/types.js";
@@ -117,8 +98,7 @@ describe("StickerManagerPlugin", () => {
     expect(commands.map((record) => record.name)).toContain("yesimbot.sticker.reclassify");
 
     const agentPlugin = await plugins[0]!.setup({ type: "guild", platform: "test", channelId: "room", guildId: "room" }, { selfId: "bot" } as never);
-    const tools = typeof agentPlugin?.tools === "function" ? ((await agentPlugin.tools({} as never)) ?? []) : [];
-    expect(tools.map((tool) => tool.name)).toEqual(["sticker_steal", "sticker_send", "sticker_categories", "sticker_search"]);
+    expect(Object.keys((await agentPlugin?.extendTools?.()) ?? {})).toEqual(["sticker_steal", "sticker_send", "sticker_categories", "sticker_search"]);
 
     await dispose[0]?.();
     expect(disposeAgent).toHaveBeenCalledOnce();

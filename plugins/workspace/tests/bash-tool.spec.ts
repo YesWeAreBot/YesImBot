@@ -42,29 +42,29 @@ function createFakeBackend(output = { stdout: "out", stderr: "err", exitCode: 7 
 }
 
 function toolByName(tools: Awaited<ReturnType<typeof createBashToolSet>>, name: string) {
-  const tool = tools.find((candidate) => candidate.name === name);
+  const tool = tools[name];
   expect(tool).toBeDefined();
   return tool!;
 }
 
 describe("bash-tool adapter", () => {
-  it("returns named AgentTools from bash-tool", async () => {
+  it("returns a keyed ToolSet from bash-tool", async () => {
     const workspace = await createWorkspace();
     const tools = await createBashToolSet(workspace);
 
-    expect(tools.map((tool) => tool.name).sort()).toEqual(["bash", "editFile", "readFile", "writeFile"]);
+    expect(Object.keys(tools).sort()).toEqual(["bash", "editFile", "readFile", "writeFile"]);
   });
 
   it("reads and writes through the same virtual filesystem used by bash", async () => {
     const workspace = await createWorkspace();
     const tools = await createBashToolSet(workspace);
-    const writeFile = tools.find((tool) => tool.name === "writeFile");
-    const readFile = tools.find((tool) => tool.name === "readFile");
-    const bash = tools.find((tool) => tool.name === "bash");
+    const writeFile = toolByName(tools, "writeFile");
+    const readFile = toolByName(tools, "readFile");
+    const bash = toolByName(tools, "bash");
 
-    expect(writeFile?.execute).toBeTypeOf("function");
-    expect(readFile?.execute).toBeTypeOf("function");
-    expect(bash?.execute).toBeTypeOf("function");
+    expect(writeFile.execute).toBeTypeOf("function");
+    expect(readFile.execute).toBeTypeOf("function");
+    expect(bash.execute).toBeTypeOf("function");
 
     await writeFile!.execute!({ path: "note.txt", content: "hello\n" }, {} as never);
     const readResult = await readFile!.execute!({ path: "note.txt" }, {} as never);
@@ -78,10 +78,10 @@ describe("bash-tool adapter", () => {
     const workspace = await createWorkspace();
     const exec = vi.spyOn(workspace.bash, "exec").mockResolvedValue({ stdout: "", stderr: "", exitCode: 0 });
     const tools = await createBashToolSet(workspace);
-    const bash = tools.find((tool) => tool.name === "bash");
+    const bash = toolByName(tools, "bash");
     const abortController = new AbortController();
 
-    expect(bash?.execute).toBeTypeOf("function");
+    expect(bash.execute).toBeTypeOf("function");
     exec.mockClear();
 
     await bash!.execute!({ command: "pwd" }, { abortSignal: abortController.signal } as never);

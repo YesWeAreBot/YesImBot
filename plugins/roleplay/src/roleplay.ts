@@ -1,5 +1,5 @@
 import type { CharacterCardV3 } from "@risuai/ccardlib";
-import { createAssistantMessage, createMessageEntry, type AgentPlugin } from "@yesimbot/agent-runtime";
+import { createAssistantMessage, createEntry, type AgentPlugin, type StepOptions } from "koishi-plugin-yesimbot";
 
 import type { CBSContext } from "./cbs.js";
 import { renderCBS } from "./cbs.js";
@@ -28,14 +28,14 @@ export function createRoleplayPlugin(options: RoleplayAgentPluginOptions): Agent
 
   return {
     name: "roleplay",
-    appendSystemPrompt: () => instructionExtension || undefined,
-    async init(runtime) {
-      const entries = await runtime.storage.read();
+    extendInstructions: () => instructionExtension || undefined,
+    async init(agent) {
+      const entries = await agent.storage.read();
       if (entries.some((entry) => entry.type === "message") || greeting.length === 0) return;
-      await runtime.storage.append(createMessageEntry(createAssistantMessage(greeting)));
+      await agent.storage.append(createEntry("message", createAssistantMessage(greeting)));
     },
-    prepareStep(messages) {
-      return [...prefix, ...messages, ...suffix];
+    prepareStep(options: StepOptions) {
+      return { ...options, messages: [...prefix, ...options.messages, ...suffix] };
     },
   };
 }

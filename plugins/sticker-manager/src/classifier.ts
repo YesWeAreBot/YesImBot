@@ -1,5 +1,5 @@
-import { generateText } from "@yesimbot/agent-runtime";
 import type { Context } from "koishi";
+import { generateText } from "koishi-plugin-yesimbot";
 
 import { firstFrameToPng } from "./frames.js";
 import { normalizeCategory, type StickerConfig } from "./types.js";

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ embedMany: vi.fn<() => Promise<{ embeddings: number[][] }>>() }));
 
-vi.mock("ai", () => ({ embedMany: mocks.embedMany }));
+vi.mock("koishi-plugin-yesimbot", async (importOriginal) => ({ ...(await importOriginal()), embedMany: mocks.embedMany }));
 
 import { buildPatternEmbeddingMap, cosineSimilarity } from "../src/embedding.js";
 import type { ChatLearningConfig, ResponsePattern } from "../src/types.js";

@@ -1,6 +1,5 @@
 /* eslint-disable vitest/require-mock-type-parameters */
-import type { AgentTool } from "@yesimbot/agent-runtime";
-import type { AssetStore, ChannelContext } from "koishi-plugin-yesimbot";
+import type { AssetStore, ChannelContext, ToolSet } from "koishi-plugin-yesimbot";
 import { PNG } from "pngjs";
 import { describe, expect, it, vi } from "vitest";
 
@@ -62,28 +61,27 @@ function createDeps(overrides: Partial<StickerConfig> = {}) {
   return { store, classifier, sender, assets, tools };
 }
 
-async function execute(tool: AgentTool, input: unknown): Promise<unknown> {
+async function execute(tool: ToolSet[string], input: unknown): Promise<unknown> {
   return tool.execute!(input, { abortSignal: undefined } as never);
 }
 
 describe("sticker agent tools", () => {
   it("exposes the expected sticker tool names", () => {
     const { tools } = createDeps();
-    expect(tools.map((tool) => tool.name)).toEqual(["sticker_steal", "sticker_send", "sticker_categories", "sticker_search"]);
+    expect(Object.keys(tools)).toEqual(["sticker_steal", "sticker_send", "sticker_categories", "sticker_search"]);
   });
 
   it("exposes sticker_tags only in experimental tag mode", () => {
     const disabled = createDeps();
-    expect(disabled.tools.some((tool) => tool.name === "sticker_tags")).toBe(false);
+    expect(disabled.tools.sticker_tags).toBeUndefined();
 
     const enabled = createDeps({ tagMode: true });
-    expect(enabled.tools.some((tool) => tool.name === "sticker_tags")).toBe(true);
+    expect(enabled.tools.sticker_tags).toBeDefined();
   });
 
   it("sticker_steal reads the asset and saves with classified category", async () => {
     const deps = createDeps();
-    const [tool] = deps.tools;
-    const result = await execute(tool, { asset_id: "a".repeat(32) });
+    const result = await execute(deps.tools.sticker_steal!, { asset_id: "a".repeat(32) });
     expect(deps.assets.get).toHaveBeenCalledWith("a".repeat(32));
     expect(deps.classifier.classify).toHaveBeenCalled();
     expect(deps.store.save).toHaveBeenCalledWith(expect.objectContaining({ scopeKey: "global", category: "meme", mediaType: "image/png" }));
@@ -92,8 +90,7 @@ describe("sticker agent tools", () => {
 
   it("sticker_steal auto-tags the classified category in tag mode", async () => {
     const deps = createDeps({ tagMode: true });
-    const [tool] = deps.tools;
-    const result = await execute(tool, { asset_id: "a".repeat(32) });
+    const result = await execute(deps.tools.sticker_steal!, { asset_id: "a".repeat(32) });
     expect(deps.store.save).toHaveBeenCalledWith(expect.objectContaining({ tags: ["meme", "搞笑"] }));
     expect(result).toMatchObject({ ok: true, tags: ["meme", "搞笑"] });
   });
@@ -101,9 +98,8 @@ describe("sticker agent tools", () => {
   it("sticker_steal skips classifier and save for an existing sticker", async () => {
     const deps = createDeps({ tagMode: true });
     deps.store.get.mockResolvedValue(projection({ id: "a".repeat(64), category: "meme", tags: ["meme"] }));
-    const [tool] = deps.tools;
 
-    const result = await execute(tool, { asset_id: "a".repeat(32) });
+    const result = await execute(deps.tools.sticker_steal!, { asset_id: "a".repeat(32) });
 
     expect(deps.classifier.classify).not.toHaveBeenCalled();
     expect(deps.store.save).not.toHaveBeenCalled();
@@ -116,8 +112,7 @@ describe("sticker agent tools", () => {
       projection({ id: "a".repeat(64), tags: ["可爱猫猫", "工作"] }),
       projection({ id: "b".repeat(64), tags: ["猫"] }),
     ]);
-    const [, sendTool] = deps.tools;
-    const result = await execute(sendTool, { tags: ["猫", "可爱"] });
+    const result = await execute(deps.tools.sticker_send!, { tags: ["猫", "可爱"] });
     expect(deps.store.listByScopeKey).toHaveBeenCalledWith("global");
     expect(deps.sender.send).toHaveBeenCalledWith({ bytes: pngBytes, mediaType: "image/png" });
     expect(deps.store.markUsed).toHaveBeenCalledWith("global", "a".repeat(64));
@@ -130,11 +125,10 @@ describe("sticker agent tools", () => {
       projection({ id: "a".repeat(64), tags: ["可爱猫猫", "工作"] }),
       projection({ id: "b".repeat(64), tags: ["可爱"] }),
     ]);
-    const [, sendTool] = deps.tools;
     const random = vi.spyOn(Math, "random").mockReturnValue(0.99);
 
     try {
-      await execute(sendTool, { tags: ["猫", "可爱"] });
+      await execute(deps.tools.sticker_send!, { tags: ["猫", "可爱"] });
     } finally {
       random.mockRestore();
     }
@@ -147,9 +141,8 @@ describe("sticker agent tools", () => {
     const first = projection({ id: "a".repeat(64), tags: ["猫猫"] });
     const second = projection({ id: "b".repeat(64), tags: ["猫"] });
     deps.store.listByScopeKey.mockResolvedValue([first, second]);
-    const [, sendTool] = deps.tools;
 
-    await execute(sendTool, { tags: ["猫"] });
+    await execute(deps.tools.sticker_send!, { tags: ["猫"] });
 
     expect(deps.sender.send).toHaveBeenCalledOnce();
     expect(deps.store.markUsed).toHaveBeenCalledWith("global", expect.stringMatching(/^(a{64}|b{64})$/));
@@ -158,9 +151,8 @@ describe("sticker agent tools", () => {
   it("sticker_send keeps exact tag matching when fuzzy matching is disabled", async () => {
     const deps = createDeps({ tagMode: true, fuzzyTagMatch: false });
     deps.store.listByScopeKey.mockResolvedValue([projection({ id: "a".repeat(64), tags: ["猫猫"] }), projection({ id: "b".repeat(64), tags: ["猫"] })]);
-    const [, sendTool] = deps.tools;
 
-    const result = await execute(sendTool, { tags: ["猫"] });
+    const result = await execute(deps.tools.sticker_send!, { tags: ["猫"] });
 
     expect(deps.store.markUsed).toHaveBeenCalledWith("global", "b".repeat(64));
     expect(result).toMatchObject({ ok: true, tags: ["猫"] });
@@ -169,8 +161,7 @@ describe("sticker agent tools", () => {
   it("sticker_send sends the selected sticker and records usage", async () => {
     const deps = createDeps();
     deps.store.get.mockResolvedValue(projection());
-    const [, sendTool] = deps.tools;
-    const result = await execute(sendTool, { sticker_id: "a".repeat(64) });
+    const result = await execute(deps.tools.sticker_send!, { sticker_id: "a".repeat(64) });
     expect(deps.sender.send).toHaveBeenCalledWith({ bytes: pngBytes, mediaType: "image/png" });
     expect(deps.store.markUsed).toHaveBeenCalledWith("global", "a".repeat(64));
     expect(result).toMatchObject({ ok: true, category: "meme" });
@@ -182,9 +173,8 @@ describe("sticker agent tools", () => {
     const png = new PNG({ width: 1, height: 1 });
     png.data.set([255, 0, 0, 255]);
     deps.store.readBytes.mockResolvedValue(new Uint8Array(PNG.sync.write(png)));
-    const [, sendTool] = deps.tools;
 
-    await execute(sendTool, { sticker_id: "a".repeat(64) });
+    await execute(deps.tools.sticker_send!, { sticker_id: "a".repeat(64) });
 
     expect(deps.sender.send).toHaveBeenCalledWith({ bytes: expect.any(Uint8Array), mediaType: "image/gif" });
   });
@@ -192,16 +182,14 @@ describe("sticker agent tools", () => {
   it("sticker_categories returns category summaries", async () => {
     const deps = createDeps();
     deps.store.listCategories.mockResolvedValue([{ category: "meme", count: 2 }]);
-    const [, , categoriesTool] = deps.tools;
-    const result = await execute(categoriesTool, {});
+    const result = await execute(deps.tools.sticker_categories!, {});
     expect(result).toMatchObject({ ok: true, categories: [{ category: "meme", count: 2 }] });
   });
 
   it("sticker_tags returns tag summaries in tag mode", async () => {
     const deps = createDeps({ tagMode: true });
     deps.store.listTags.mockResolvedValue([{ tag: "猫猫", count: 2 }]);
-    const tagsTool = deps.tools.find((tool) => tool.name === "sticker_tags");
-    const result = await execute(tagsTool!, {});
+    const result = await execute(deps.tools.sticker_tags!, {});
     expect(result).toMatchObject({ ok: true, tags: [{ tag: "猫猫", count: 2 }] });
   });
 });

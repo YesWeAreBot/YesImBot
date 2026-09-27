@@ -1,4 +1,4 @@
-import { createAgent, createUserMessage, jsonSchema, LanguageModel, type AgentTool } from "@yesimbot/agent-runtime";
+import { createAgent, createUserMessage, jsonSchema, type FunctionTool, type LanguageModel, type ToolSet } from "koishi-plugin-yesimbot";
 import type { ChannelContext, MessageRecord } from "koishi-plugin-yesimbot";
 
 import { EvidenceStore } from "./store/evidence.js";
@@ -86,8 +86,7 @@ export async function runMaintenance(input: MaintenanceInput): Promise<void> {
     return input.store.restore(id);
   };
 
-  const createTool: AgentTool<CreateInput, unknown> = {
-    name: "create_memory",
+  const createTool: FunctionTool<CreateInput, unknown> = {
     description: "从本批证据中创建一条长期记忆。content 应简洁客观、可检索，标注主体。",
     inputSchema: CREATE_SCHEMA,
     execute: async (toolInput) => {
@@ -106,9 +105,8 @@ export async function runMaintenance(input: MaintenanceInput): Promise<void> {
     },
   };
 
-  const tools: AgentTool[] = [
-    {
-      name: "query_memories",
+  const tools: ToolSet = {
+    query_memories: {
       description: "查询当前可见的已有记忆。先查询再决定是否创建/更新/合并。",
       inputSchema: jsonSchema<MemoryQuery>({
         type: "object",
@@ -127,8 +125,7 @@ export async function runMaintenance(input: MaintenanceInput): Promise<void> {
       }),
       execute: query,
     },
-    {
-      name: "read_evidence",
+    read_evidence: {
       description: "读取某条已授权记忆的原始证据消息。用于验证记忆内容是否准确。",
       inputSchema: jsonSchema<{ id: string }>({
         type: "object",
@@ -138,9 +135,8 @@ export async function runMaintenance(input: MaintenanceInput): Promise<void> {
       }),
       execute: evidence,
     },
-    createTool,
-    {
-      name: "update_memory",
+    create_memory: createTool,
+    update_memory: {
       description: "更新一条已授权记忆的内容、重要性、置信度或标签。用于补充信息或纠正内容。",
       inputSchema: jsonSchema<{ id: string } & MemoryUpdateInput>({
         type: "object",
@@ -157,8 +153,7 @@ export async function runMaintenance(input: MaintenanceInput): Promise<void> {
       }),
       execute: update,
     },
-    {
-      name: "merge_memories",
+    merge_memories: {
       description: "将两条记忆合并为一条。canonicalId 保留，mergedId 被删除，证据合并到 canonical。用于消除重复。",
       inputSchema: jsonSchema<{ canonicalId: string; mergedId: string } & MemoryUpdateInput>({
         type: "object",
@@ -175,8 +170,7 @@ export async function runMaintenance(input: MaintenanceInput): Promise<void> {
       }),
       execute: merge,
     },
-    {
-      name: "forget_memory",
+    forget_memory: {
       description: "标记一条记忆为遗忘。用于被新证据否定或不再相关的记忆。",
       inputSchema: jsonSchema<{ id: string }>({
         type: "object",
@@ -186,8 +180,7 @@ export async function runMaintenance(input: MaintenanceInput): Promise<void> {
       }),
       execute: forget,
     },
-    {
-      name: "restore_memory",
+    restore_memory: {
       description: "恢复一条已遗忘的记忆为活跃状态。用于发现之前的遗忘决策有误时。",
       inputSchema: jsonSchema<{ id: string }>({
         type: "object",
@@ -197,7 +190,7 @@ export async function runMaintenance(input: MaintenanceInput): Promise<void> {
       }),
       execute: restore,
     },
-  ];
+  };
   const systemPrompt = `你是一个后台记忆整理助手。你的任务是从对话证据中提取、更新、合并长期记忆。
 
 ## 工作流程
@@ -281,7 +274,7 @@ export async function runMaintenance(input: MaintenanceInput): Promise<void> {
   const agent = createAgent({
     model: input.model,
     tools,
-    systemPrompt,
+    instructions: systemPrompt,
   });
   try {
     await agent.init();

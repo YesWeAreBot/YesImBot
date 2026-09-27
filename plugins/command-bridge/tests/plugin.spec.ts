@@ -1,11 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("koishi", async () => {
-  const { Schema } = await import("@koishijs/core");
-  const { default: h } = await import("@satorijs/element");
-  return { Context: class {}, Logger: class {}, Schema, h };
-});
-
 import CommandBridgePlugin from "../src/index.js";
 import type { CommandBridgeConfig } from "../src/types.js";
 
@@ -39,14 +33,8 @@ describe("CommandBridgePlugin", () => {
     expect(use).toHaveBeenCalledOnce();
 
     const agent = await plugin.setup({ type: "guild", platform: "test", channelId: "room", guildId: "room" }, { platform: "test", selfId: "bot" } as never);
-    const tools = agent.tools ? await agent.tools({} as never) : [];
-    expect(tools.map((tool) => tool.name)).toEqual([
-      "koishi_execute_list",
-      "koishi_execute_help",
-      "koishi_execute",
-      "koishi_prompt_answer",
-      "koishi_execute_abort",
-    ]);
+    const tools = agent.extendTools ? ((await agent.extendTools()) ?? {}) : {};
+    expect(Object.keys(tools)).toEqual(["koishi_execute_list", "koishi_execute_help", "koishi_execute", "koishi_prompt_answer", "koishi_execute_abort"]);
 
     await plugin.stop();
   });
@@ -70,7 +58,7 @@ describe("CommandBridgePlugin", () => {
       { platform: "test", selfId: "bot" } as never,
       {} as never,
     );
-    const listTool = tools.find((tool) => tool.name === "koishi_execute_list");
+    const listTool = tools.koishi_execute_list;
     expect(listTool).toBeDefined();
 
     const output = await listTool!.execute({} as never);

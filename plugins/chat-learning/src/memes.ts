@@ -1,14 +1,70 @@
-import { generateText, type LanguageModel } from "@yesimbot/agent-runtime";
-import { z } from "zod";
+import { generateText, jsonSchema, LanguageModel } from "koishi-plugin-yesimbot";
 
 import { modelCacheId, type ModelCache } from "./model-cache.js";
+import { asRecord, isBoundedString } from "./text.js";
 import type { MemeTemplate } from "./types.js";
 
-const memeUsageSchema = z.object({ usage: z.string().min(1).max(140) });
+/** Model output, so the SDK does not validate it for us: the `validate` pass is what the prompt cannot guarantee. */
+const memeUsageSchema = jsonSchema<{ usage: string }>(
+  { type: "object", properties: { usage: { type: "string", minLength: 1, maxLength: 140 } }, required: ["usage"] },
+  {
+    validate: (value) =>
+      isBoundedString(asRecord(value)?.usage, 1, 140)
+        ? { success: true, value: value as { usage: string } }
+        : { success: false, error: new TypeError("expected { usage: string } with 1..140 characters") },
+  },
+);
 
-const semanticTemplateSchema = z.object({
-  templates: z.array(z.object({ template: z.string().min(1).max(60), examples: z.array(z.string()).min(2).max(5), usage: z.string().min(1).max(140) })).max(3),
-});
+const semanticTemplateSchema = jsonSchema<{ templates: SemanticTemplate[] }>(
+  {
+    type: "object",
+    properties: {
+      templates: {
+        type: "array",
+        maxItems: 3,
+        items: {
+          type: "object",
+          properties: {
+            template: { type: "string", minLength: 1, maxLength: 60 },
+            examples: { type: "array", items: { type: "string" }, minItems: 2, maxItems: 5 },
+            usage: { type: "string", minLength: 1, maxLength: 140 },
+          },
+          required: ["template", "examples", "usage"],
+        },
+      },
+    },
+    required: ["templates"],
+  },
+  {
+    validate: (value) => {
+      const templates = asRecord(value)?.templates;
+      if (!Array.isArray(templates) || templates.length > 3) {
+        return { success: false, error: new TypeError("expected { templates: Template[] } with at most 3 entries") };
+      }
+      for (const item of templates) {
+        const entry = asRecord(item);
+        const examples = entry?.examples;
+        if (
+          !isBoundedString(entry?.template, 1, 60) ||
+          !isBoundedString(entry?.usage, 1, 140) ||
+          !Array.isArray(examples) ||
+          examples.length < 2 ||
+          examples.length > 5 ||
+          !examples.every((example) => typeof example === "string")
+        ) {
+          return { success: false, error: new TypeError("each template needs template(1..60), usage(1..140) and 2..5 string examples") };
+        }
+      }
+      return { success: true, value: value as { templates: SemanticTemplate[] } };
+    },
+  },
+);
+
+interface SemanticTemplate {
+  template: string;
+  examples: string[];
+  usage: string;
+}
 
 export interface MemePhraseInput {
   readonly phrase: string;
@@ -154,8 +210,8 @@ async function summarizeUsage(model: LanguageModel, candidate: TemplateCandidate
       .replace(/\s*```$/, "")
       .trim();
     const parsed = JSON.parse(cleaned);
-    const result = memeUsageSchema.safeParse(parsed);
-    return result.success ? result.data.usage : undefined;
+    const result = await memeUsageSchema.validate!(parsed);
+    return result.success ? result.value.usage : undefined;
   } catch {
     return undefined;
   }
@@ -179,10 +235,10 @@ async function summarizeSemanticTemplates(model: LanguageModel, phrases: readonl
       .replace(/\s*```$/, "")
       .trim();
     const parsed = JSON.parse(cleaned);
-    const result = semanticTemplateSchema.safeParse(parsed);
+    const result = await semanticTemplateSchema.validate!(parsed);
     if (!result.success) return [];
 
-    return result.data.templates.flatMap((item) => {
+    return result.value.templates.flatMap((item) => {
       if (item.template.includes("@")) return [];
       const examples = [...new Set(item.examples.filter((example) => allowed.has(example)))];
       if (examples.length < 2) return [];

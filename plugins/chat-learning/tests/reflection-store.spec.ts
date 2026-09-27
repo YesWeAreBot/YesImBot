@@ -33,7 +33,7 @@ describe("createReflectionStore", () => {
 
     expect(store.latestHuman()?.reflection).toBe(human.reflection);
     expect(store.recent(1)[0]?.source).toBe("human");
-    const reopened = createReflectionStore(path);
+    const reopened = createReflectionStore(filePath);
     await reopened.init();
     expect(reopened.latestHuman()?.reflection).toBe("这条更像群友，保持");
     expect(reopened.latestAuto()?.reflection).toBe("更短一些");

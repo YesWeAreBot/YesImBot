@@ -2,12 +2,12 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { createAssistantMessage, createMessageEntry, type AgentEntry } from "@yesimbot/agent-runtime";
+import { createAssistantMessage, createEntry, type AgentEntry } from "koishi-plugin-yesimbot";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ generateText: vi.fn<() => Promise<{ text: string }>>() }));
 
-vi.mock("ai", () => ({ generateText: mocks.generateText }));
+vi.mock("koishi-plugin-yesimbot", async (importOriginal) => ({ ...(await importOriginal()), generateText: mocks.generateText }));
 
 import { createReflectionStore, type ReflectionStore } from "../src/reflection-store.js";
 import { buildReflectionHistory, generateReflection, reflectOnSentMessage } from "../src/reflection.js";
@@ -16,7 +16,7 @@ const roots: string[] = [];
 
 function assistantEntry(id: string, text: string): AgentEntry {
   const message = createAssistantMessage(text, { id: `${id}-message`, timestamp: 1000 });
-  return createMessageEntry(message, { id, timestamp: 1000 });
+  return createEntry("message", message, { id, timestamp: 1000 });
 }
 
 afterEach(() => {
@@ -89,7 +89,8 @@ describe("generateReflection", () => {
 
   it("does not feed provider reasoning parts into reflection prompts", async () => {
     mocks.generateText.mockResolvedValue({ text: "更好" });
-    const entry = createMessageEntry(
+    const entry = createEntry(
+      "message",
       createAssistantMessage(
         [
           { type: "reasoning", text: "private chain" },

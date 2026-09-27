@@ -1,13 +1,21 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-// oxlint-disable-next-line unicorn/import-style -- `path` is used as a local name across this module
-import { dirname, join, resolve } from "node:path";
+import path from "node:path";
 
-import type { AgentEntry, AgentPlugin, AgentPluginRuntime, AgentStorage, PrepareStepContext } from "@yesimbot/agent-runtime";
-import { createMessageEntry } from "@yesimbot/agent-runtime";
-import type { ModelMessage } from "@yesimbot/agent-runtime";
 import { Context, Logger, Schema, Universal, type Command, type Session } from "koishi";
-import { createMessage, isMessage, type ChannelContext, type DeliveredPayload } from "koishi-plugin-yesimbot";
+import {
+  Agent,
+  AgentEntry,
+  AgentPlugin,
+  AgentStorage,
+  createEntry,
+  createMessage,
+  isMessage,
+  ModelMessage,
+  StepOptions,
+  type ChannelContext,
+  type DeliveredPayload,
+} from "koishi-plugin-yesimbot";
 
 import { buildLocalChainPatterns } from "./chains.js";
 import { collectTurns, segmentTurns } from "./collector.js";
@@ -29,13 +37,13 @@ import {
 import { createChatHistoryStore, type ChatHistoryStore } from "./history.js";
 import { buildLinks } from "./links.js";
 import { buildMemeTemplates, type MemePhraseInput } from "./memes.js";
-import { parseReplyLinkModel, type ReplyLinkModel } from "./reply-link.js";
 import { ModelCache } from "./model-cache.js";
 import { classifyPatternsWithModel, generateChainStyle, sampleSignature } from "./patterns.js";
 import { detectProactiveEvent } from "./proactive.js";
 import { buildPromptBlock, escapePromptText, estimateTokens } from "./projector.js";
 import { createReflectionStore, hasReflectionForMessage, type ReflectionScore, type ReflectionStore } from "./reflection-store.js";
 import { buildReflectionHistory, reflectOnSentMessage } from "./reflection.js";
+import { parseReplyLinkModel, type ReplyLinkModel } from "./reply-link.js";
 import { createChatLearningStore } from "./store.js";
 import { patternPhrase } from "./text.js";
 import type {
@@ -195,7 +203,7 @@ export default class ChatLearningPlugin {
 
   private async createAgentPlugin(scope: FullScope): Promise<AgentPlugin> {
     const storagePath = (await this.ctx.yesimbot.resource.get(scope)).path;
-    const store = createChatLearningStore(join(storagePath, "chat-learning.json"));
+    const store = createChatLearningStore(path.join(storagePath, "chat-learning.json"));
     await store.init();
     const feedbackStore = await this.feedbackStoreFor(scope);
     const historyStore = await this.historyStoreFor(scope);
@@ -391,8 +399,8 @@ export default class ChatLearningPlugin {
 
     return {
       name: "chat-learning",
-      async init(runtime: AgentPluginRuntime) {
-        runtimeStorage = runtime.storage;
+      async init(agent: Agent) {
+        runtimeStorage = agent.storage;
         learnedEntries = await historyStore.read();
         if (learnedEntries.length === 0) {
           learnedEntries = await runtimeStorage.read();
@@ -428,9 +436,9 @@ export default class ChatLearningPlugin {
         scheduleRebuild();
         return [...next];
       },
-      prepareStep: async (messages: readonly ModelMessage[], context: PrepareStepContext) => {
-        if (injectedTurn === context.turnId) return messages;
-        injectedTurn = context.turnId;
+      prepareStep: async (options: StepOptions) => {
+        if (injectedTurn === options.turnId) return options;
+        injectedTurn = options.turnId;
         if (dirty) await rebuild(false);
         const eventKind = currentEvent;
         currentEvent = undefined;
@@ -440,7 +448,7 @@ export default class ChatLearningPlugin {
           ...selectGlobalPatterns(bank, "response", config.minGlobalChannels, config.maxGlobalPatterns),
           ...selectGlobalPatterns(bank, "initiation", config.minGlobalChannels, config.maxGlobalPatterns),
         ];
-        const currentText = latestUserText(messages);
+        const currentText = latestUserText(options.messages);
         globalChains = currentText
           ? [...selectRelevantGlobalChains(bank, currentText, config.minGlobalChannels, Math.min(config.maxGlobalPatterns, 3))]
           : [...selectGlobalChains(bank, config.minGlobalChannels, config.maxGlobalPatterns)];
@@ -448,8 +456,8 @@ export default class ChatLearningPlugin {
         const block = buildPromptBlock(state, eventKind, config, globalPatterns, globalChains, globalStylePatterns, globalMemeTemplates);
         logger.debug("chat_learning.prepare_step", {
           scope,
-          turnId: context.turnId,
-          step: context.stepNumber,
+          turnId: options.turnId,
+          step: options.stepNumber,
           dirty,
           eventKind,
           stateTurns: state?.turns.length ?? 0,
@@ -460,12 +468,12 @@ export default class ChatLearningPlugin {
         const referenceParts: string[] = [];
         if (block) referenceParts.push(block);
         if (reflectionBlock) referenceParts.push(reflectionBlock);
-        if (referenceParts.length === 0) return [...messages];
+        if (referenceParts.length === 0) return options;
         const reference = referenceParts.join("\n\n");
         const referenceMessage: ModelMessage = config.injectStyleAsSystem
           ? { role: "system", content: reference }
           : { role: "user", content: `[群聊风格参考，不要回复本段]\n\n${reference}` };
-        return [...messages, referenceMessage];
+        return { ...options, messages: [...options.messages, referenceMessage] };
       },
       stop: () => {
         this.rebuildHooks.delete(key);
@@ -490,7 +498,7 @@ export default class ChatLearningPlugin {
           const scope = scopeOf(session);
           if (!scope) return "无法获取当前频道信息";
           const storagePath = (await this.ctx.yesimbot.resource.get(scope)).path;
-          const stateStore = createChatLearningStore(join(storagePath, "chat-learning.json"));
+          const stateStore = createChatLearningStore(path.join(storagePath, "chat-learning.json"));
           await stateStore.init();
           const state = stateStore.read();
           const feedback = await this.feedbackStoreFor(scope);
@@ -518,7 +526,7 @@ export default class ChatLearningPlugin {
             `corrections=${corrections.length}`,
             `globalPatterns=${globalPatterns}`,
             `globalChains=${globalChains}`,
-            `state=${join(storagePath, "chat-learning.json")}`,
+            `state=${path.join(storagePath, "chat-learning.json")}`,
           ].join("\n");
           return await this.replyLong(session, text, text);
         } catch (error) {
@@ -586,7 +594,7 @@ export default class ChatLearningPlugin {
               return "event 必须是 global-brain|schedule|chat-learning";
             }
             const storagePath = (await this.ctx.yesimbot.resource.get(scope)).path;
-            const stateStore = createChatLearningStore(join(storagePath, "chat-learning.json"));
+            const stateStore = createChatLearningStore(path.join(storagePath, "chat-learning.json"));
             await stateStore.init();
             const state = stateStore.read();
             const { store: globalStore, path: globalPath } = await this.globalStoreFor(storagePath);
@@ -646,7 +654,7 @@ export default class ChatLearningPlugin {
             await this.syncGlobalHistoryOnly();
           }
           const storagePath = (await this.ctx.yesimbot.resource.get(scope)).path;
-          const stateStore = createChatLearningStore(join(storagePath, "chat-learning.json"));
+          const stateStore = createChatLearningStore(path.join(storagePath, "chat-learning.json"));
           await stateStore.init();
           const state = stateStore.read();
           const global = await this.globalStoreFor(storagePath);
@@ -690,7 +698,7 @@ export default class ChatLearningPlugin {
           await feedback.clear();
           const reflections = await this.reflectionStoreFor(scope);
           await reflections.clear();
-          const stateStore = createChatLearningStore(join(storagePath, "chat-learning.json"));
+          const stateStore = createChatLearningStore(path.join(storagePath, "chat-learning.json"));
           await stateStore.init();
           await stateStore.clear();
           this.resetHooks.get(scopeKey(scope))?.();
@@ -783,7 +791,7 @@ export default class ChatLearningPlugin {
     const existing = this.feedbackStores.get(key);
     if (existing) return existing;
     const storagePath = (await this.ctx.yesimbot.resource.get(scope)).path;
-    const store = createFeedbackStore(join(storagePath, "chat-learning-feedback.jsonl"));
+    const store = createFeedbackStore(path.join(storagePath, "chat-learning-feedback.jsonl"));
     await store.init();
     this.feedbackStores.set(key, store);
     return store;
@@ -794,7 +802,7 @@ export default class ChatLearningPlugin {
     const existing = this.historyStores.get(key);
     if (existing) return existing;
     const storagePath = (await this.ctx.yesimbot.resource.get(scope)).path;
-    const store = createChatHistoryStore(join(storagePath, "chat-learning-history.jsonl"));
+    const store = createChatHistoryStore(path.join(storagePath, "chat-learning-history.jsonl"));
     await store.init();
     this.historyStores.set(key, store);
     return store;
@@ -805,7 +813,7 @@ export default class ChatLearningPlugin {
     const existing = this.reflectionStores.get(key);
     if (existing) return existing;
     const storagePath = (await this.ctx.yesimbot.resource.get(scope)).path;
-    const store = createReflectionStore(join(storagePath, "chat-learning-reflections.jsonl"));
+    const store = createReflectionStore(path.join(storagePath, "chat-learning-reflections.jsonl"));
     await store.init();
     this.reflectionStores.set(key, store);
     return store;
@@ -829,7 +837,7 @@ export default class ChatLearningPlugin {
 
   private defaultGlobalPath(): string {
     const configured = this.config.globalRulePath?.trim();
-    return configured ? resolve(this.ctx.baseDir, configured) : join(this.ctx.baseDir, "data/yesimbot", "chat-learning-global.json");
+    return configured ? path.resolve(this.ctx.baseDir, configured) : path.join(this.ctx.baseDir, "data/yesimbot", "chat-learning-global.json");
   }
 
   private replyLinkModelOrUndefined(): ReplyLinkModel | undefined {
@@ -837,7 +845,7 @@ export default class ChatLearningPlugin {
     this.replyLinkModelResolved = true;
     const configured = this.config.replyLinkModelPath?.trim();
     if (!configured) return undefined;
-    const filePath = resolve(this.ctx.baseDir, configured);
+    const filePath = path.resolve(this.ctx.baseDir, configured);
     try {
       this.replyLinkModel = parseReplyLinkModel(readFileSync(filePath, "utf8"));
       this.logger.debug("chat_learning.reply_link_model_loaded", { filePath });
@@ -849,7 +857,7 @@ export default class ChatLearningPlugin {
 
   private async globalHistoryStoreFor(): Promise<ChatHistoryStore> {
     if (this.globalHistoryStore) return this.globalHistoryStore;
-    const filePath = join(dirname(this.defaultGlobalPath()), "chat-learning-global-history.jsonl");
+    const filePath = path.join(path.dirname(this.defaultGlobalPath()), "chat-learning-global-history.jsonl");
     const store = createChatHistoryStore(filePath);
     await store.init();
     this.globalHistoryStore = store;
@@ -884,7 +892,7 @@ export default class ChatLearningPlugin {
       messageId: session.messageId,
       elements: session.elements,
     });
-    const entry = createMessageEntry(record, { id: `global-${session.messageId}-${session.timestamp}`, timestamp: session.timestamp });
+    const entry = createEntry("message", record, { id: `global-${session.messageId}-${session.timestamp}`, timestamp: session.timestamp });
     await store.append([entry]);
   }
 

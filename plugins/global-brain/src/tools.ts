@@ -1,4 +1,4 @@
-import { jsonSchema, type AgentTool } from "@yesimbot/agent-runtime";
+import { jsonSchema, type FunctionTool, type ToolSet } from "koishi-plugin-yesimbot";
 import type { ArtifactStore, AssetStore, ChannelContext } from "koishi-plugin-yesimbot";
 
 import type { GlobalBrainStore } from "./store.js";
@@ -24,20 +24,19 @@ interface BrainDepositToolInput {
   readonly forward?: { readonly platform: string; readonly forwardId: string; readonly summary?: string };
 }
 
-export function createBrainTools(options: BrainToolOptions): AgentTool[] {
-  return [
-    createBrainDepositTool(options),
-    createBrainReadTool(options),
-    createBrainReplyTool(options),
-    createBrainResolveTool(options),
-    createBrainStatusTool(options),
-  ];
+export function createBrainTools(options: BrainToolOptions): ToolSet {
+  return {
+    brain_deposit: createBrainDepositTool(options),
+    brain_read: createBrainReadTool(options),
+    brain_reply: createBrainReplyTool(options),
+    brain_resolve: createBrainResolveTool(options),
+    brain_status: createBrainStatusTool(options),
+  };
 }
 
-function createBrainDepositTool(options: BrainToolOptions): AgentTool {
+function createBrainDepositTool(options: BrainToolOptions): FunctionTool<BrainDepositToolInput> {
   const { store, scope } = options;
   return {
-    name: "brain_deposit",
     description:
       "向持久化全局脑写入一条内容。支持文本、图片（assetId）、工具产物（artifactUri）和合并转发引用（forward）。asset/artifact 会在读取时物化到目标 session；不要写入完整聊天记录或敏感数据。",
     inputSchema: jsonSchema<BrainDepositToolInput>({
@@ -74,10 +73,9 @@ function createBrainDepositTool(options: BrainToolOptions): AgentTool {
   };
 }
 
-function createBrainReadTool(options: BrainToolOptions): AgentTool {
+function createBrainReadTool(options: BrainToolOptions): FunctionTool<{ threadId: string }> {
   const { store, scope, assets } = options;
   return {
-    name: "brain_read",
     description:
       "读取全局脑 thread 的完整内容、回复和可发送资源；asset/artifact 会物化到当前 session 并返回 localAssetUri，同平台 forward 会返回 localForward。读取后该 thread 对当前 session 不再重复出现在摘要中。",
     inputSchema: jsonSchema<{ threadId: string }>({
@@ -99,10 +97,11 @@ function createBrainReadTool(options: BrainToolOptions): AgentTool {
   };
 }
 
-function createBrainReplyTool(options: BrainToolOptions): AgentTool {
+function createBrainReplyTool(
+  options: BrainToolOptions,
+): FunctionTool<{ threadId: string; content: string; replySource?: BrainReplySource; author?: { id: string; name?: string } }> {
   const { store, scope } = options;
   return {
-    name: "brain_reply",
     description:
       "回复全局脑中的一条 thread。replySource 为 agent 时表示这是本 session agent 自己的回答；为 human 时表示这是当前 session 中群友提供的信息，应尽量提供 author。",
     inputSchema: jsonSchema<{ threadId: string; content: string; replySource?: BrainReplySource; author?: { id: string; name?: string } }>({
@@ -138,10 +137,9 @@ function createBrainReplyTool(options: BrainToolOptions): AgentTool {
   };
 }
 
-function createBrainResolveTool(options: BrainToolOptions): AgentTool {
+function createBrainResolveTool(options: BrainToolOptions): FunctionTool<{ threadId: string }> {
   const { store, scope } = options;
   return {
-    name: "brain_resolve",
     description: "由发起 thread 的 session 将问题标记为已解决；其他 session 不能调用。",
     inputSchema: jsonSchema<{ threadId: string }>({
       type: "object",
@@ -160,10 +158,9 @@ function createBrainResolveTool(options: BrainToolOptions): AgentTool {
   };
 }
 
-function createBrainStatusTool(options: BrainToolOptions): AgentTool {
+function createBrainStatusTool(options: BrainToolOptions): FunctionTool<Record<string, never>> {
   const { store, scope } = options;
   return {
-    name: "brain_status",
     description: "查看当前 session 发布到全局脑的 thread、状态和回复数。",
     inputSchema: jsonSchema<Record<string, never>>({ type: "object", properties: {}, additionalProperties: false }),
     async execute() {

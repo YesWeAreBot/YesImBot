@@ -1,6 +1,5 @@
-import { jsonSchema, type AgentMessage, type AgentTool, type AgentToolExecuteContext } from "@yesimbot/agent-runtime";
-import { embed, type EmbeddingModel } from "@yesimbot/agent-runtime";
-import { isMessage, type ChannelContext, type ConversationReadOptions, type MessageRecord } from "koishi-plugin-yesimbot";
+import { embed, jsonSchema, type EmbeddingModel, type FunctionTool, type ToolSet } from "koishi-plugin-yesimbot";
+import type { ChannelContext, ConversationReadOptions, MessageRecord } from "koishi-plugin-yesimbot";
 
 import { MemoryStore } from "./store/memory.js";
 import { PendingStore } from "./store/pending.js";
@@ -32,6 +31,19 @@ const REMEMBER_SCHEMA = jsonSchema<RememberInput>({
   },
   required: ["content", "sources"],
   additionalProperties: false,
+});
+
+/** `ToolExecutionOptions` no longer carries the turn id, so the runtime publishes it as tool context. */
+const PARTICIPANT_SCAN_LIMIT = 20;
+
+export interface ToolContext {
+  readonly turnId: string;
+}
+
+const TOOL_CONTEXT_SCHEMA = jsonSchema<ToolContext>({
+  type: "object",
+  properties: { turnId: { type: "string", minLength: 1 } },
+  required: ["turnId"],
 });
 
 const SEARCH_SCHEMA = jsonSchema<SearchInput>({
@@ -74,18 +86,18 @@ export function createChannelTools(
     batchDelayMs?: number;
     evidenceCount: (memoryId: string) => Promise<number>;
     readConversation: (context: ChannelContext, options: ConversationReadOptions) => Promise<MessageRecord[]>;
+    readRecent: (context: ChannelContext, limit: number) => Promise<readonly string[]>;
     rearm: () => Promise<void>;
-    search: (input: SearchInput, execution: AgentToolExecuteContext) => Promise<MemorySearchReport>;
+    search: (input: SearchInput, execution: ToolContext & { participants: readonly string[] }) => Promise<MemorySearchReport>;
     embeddingModel?: EmbeddingModel;
   },
-): AgentTool[] {
-  const recall: AgentTool<RecallInput, { memories: MemoryRecall[]; semanticUsed: boolean }> = {
-    name: "recall",
+): ToolSet {
+  const recall: FunctionTool<RecallInput, { memories: MemoryRecall[]; semanticUsed: boolean }, ToolContext> = {
+    contextSchema: TOOL_CONTEXT_SCHEMA,
     description: "检索当前频道、当前轮参与者和全局可见的长期记忆。",
     inputSchema: RECALL_SCHEMA,
     execute: async (input, execution) => {
-      const current = execution as unknown as AgentToolExecuteContext;
-      const userIds = participants(current.messages);
+      const userIds = await options.readRecent(context, PARTICIPANT_SCAN_LIMIT);
       let semanticUsed = false;
       if (input.semantic && options.embeddingModel && input.query) {
         try {
@@ -106,22 +118,21 @@ export function createChannelTools(
       return { memories: await Promise.all(memories.map(async (memory) => toRecall(memory, options.evidenceCount))), semanticUsed };
     },
   };
-  const remember: AgentTool<RememberInput, { queued: true; pendingId: string; sourceCount: number }> = {
-    name: "remember",
+  const remember: FunctionTool<RememberInput, { queued: true; pendingId: string; sourceCount: number }, ToolContext> = {
+    contextSchema: TOOL_CONTEXT_SCHEMA,
     description: "将当前频道的指定消息上下文加入长期记忆整理队列。",
     inputSchema: REMEMBER_SCHEMA,
     execute: async (input, execution) => {
       const sources = [...new Set(input.sources)];
       if (!input.content.trim() || !sources.length) throw new Error("memory request needs non-empty content and sources");
       const messages = await options.readConversation(context, { messageIds: sources, before: 10, after: 10, limit: 50 });
-      const current = execution as unknown as AgentToolExecuteContext;
       const item = await pending.enqueue(
         {
           content: input.content,
           sources,
           scope: input.scope,
           channel: context,
-          turnId: current.turnId,
+          turnId: execution.context.turnId,
           messageCount: messages.length,
           queuedAt: Date.now(),
         },
@@ -131,17 +142,14 @@ export function createChannelTools(
       return { queued: true, pendingId: item.id, sourceCount: sources.length };
     },
   };
-  const search: AgentTool<SearchInput, MemorySearchReport> = {
-    name: "search",
+  const search: FunctionTool<SearchInput, MemorySearchReport, ToolContext> = {
+    contextSchema: TOOL_CONTEXT_SCHEMA,
     description: "让记忆代理基于已授权的记忆和证据生成结构化报告。",
     inputSchema: SEARCH_SCHEMA,
-    execute: (input, execution) => options.search(input, execution as unknown as AgentToolExecuteContext),
+    execute: async (input, execution) =>
+      options.search(input, { turnId: execution.context.turnId, participants: await options.readRecent(context, PARTICIPANT_SCAN_LIMIT) }),
   };
-  return [remember, recall, search];
-}
-
-export function participants(messages: readonly AgentMessage[]): string[] {
-  return [...new Set(messages.filter(isMessage).map((message) => message.data.user.id))];
+  return { remember, recall, search };
 }
 
 export async function toRecall(

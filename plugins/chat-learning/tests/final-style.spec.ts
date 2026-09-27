@@ -1,9 +1,9 @@
-import { createAssistantMessage, createMessageEntry, createUserMessage } from "@yesimbot/agent-runtime";
+import { createAssistantMessage, createEntry, createUserMessage } from "koishi-plugin-yesimbot";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ generateText: vi.fn<() => Promise<{ text: string }>>() }));
 
-vi.mock("ai", () => ({ generateText: mocks.generateText }));
+vi.mock("koishi-plugin-yesimbot", async (importOriginal) => ({ ...(await importOriginal()), generateText: mocks.generateText }));
 
 import { buildFinalStylePrompt, rewriteAssistantEntries } from "../src/final-style.js";
 
@@ -25,11 +25,12 @@ describe("buildFinalStylePrompt", () => {
 describe("rewriteAssistantEntries", () => {
   it("rewrites only text-only assistant entries and preserves message identity", async () => {
     mocks.generateText.mockResolvedValue({ text: "草，太真实了" });
-    const assistant = createMessageEntry(createAssistantMessage("好的，我来为你详细解释一下这个问题。", { id: "assistant-message", timestamp: 100 }), {
+    const assistant = createEntry("message", createAssistantMessage("好的，我来为你详细解释一下这个问题。", { id: "assistant-message", timestamp: 100 }), {
       id: "assistant-entry",
       timestamp: 100,
     });
-    const toolAssistant = createMessageEntry(
+    const toolAssistant = createEntry(
+      "message",
       createAssistantMessage(
         [
           { type: "text", text: "先读取一下" },
@@ -39,7 +40,7 @@ describe("rewriteAssistantEntries", () => {
       ),
       { id: "tool-entry", timestamp: 200 },
     );
-    const user = createMessageEntry(createUserMessage("hello"), { id: "user-entry", timestamp: 300 });
+    const user = createEntry("message", createUserMessage("hello"), { id: "user-entry", timestamp: 300 });
 
     const result = await rewriteAssistantEntries([assistant, toolAssistant, user], {} as never, "<style>短句，直接</style>");
 
@@ -57,7 +58,7 @@ describe("rewriteAssistantEntries", () => {
 
   it("keeps the original reply when the rewrite model fails or returns nothing", async () => {
     mocks.generateText.mockResolvedValue({ text: "   " });
-    const assistant = createMessageEntry(createAssistantMessage("这条回复保持原样"), { id: "assistant-entry", timestamp: 100 });
+    const assistant = createEntry("message", createAssistantMessage("这条回复保持原样"), { id: "assistant-entry", timestamp: 100 });
 
     const result = await rewriteAssistantEntries([assistant], {} as never, "<style>短句，直接</style>");
 

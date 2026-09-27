@@ -1,10 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("koishi", () => {
-  const schema = new Proxy({}, { get: () => () => schema });
-  return { Schema: schema };
-});
-
 import MemoryAgentPlugin from "../src/index.js";
 
 const context = {
@@ -34,11 +29,8 @@ describe("MemoryAgentPlugin", () => {
     await plugin.start();
     const factory = agentUse.mock.calls[0]![0];
     expect(factory.setup({ type: "guild", platform: "test", channelId: "room", guildId: "room" }, { selfId: "bot" })).toMatchObject({ name: "memory-agent" });
-    expect(
-      (factory.setup({ type: "guild", platform: "test", channelId: "room", guildId: "room" }, { selfId: "bot" }) as { tools: () => Array<{ name: string }> })
-        .tools()
-        .map((tool) => tool.name),
-    ).toEqual(["remember", "recall", "search"]);
+    const channelPlugin = factory.setup({ type: "guild", platform: "test", channelId: "room", guildId: "room" }, { selfId: "bot" });
+    expect(Object.keys((await channelPlugin.extendTools!())!)).toEqual(["remember", "recall", "search"]);
     await plugin.stop();
   });
 });

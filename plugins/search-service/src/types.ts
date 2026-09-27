@@ -1,4 +1,4 @@
-import { AgentTool } from "@yesimbot/agent-runtime";
+import type { FunctionTool } from "koishi-plugin-yesimbot";
 
 export interface SearchRuntimeConfig {
   defaultLimit: number;
@@ -44,6 +44,10 @@ export interface WebScrapeOutput {
 
 export interface SearchBackend {
   readonly name: string;
-  createSearchTool(): AgentTool;
-  createScrapeTool?(): AgentTool;
+  /** ToolSet key of the search tool. */
+  readonly searchToolName: string;
+  /** ToolSet key of the scrape tool, when the provider has one. */
+  readonly scrapeToolName?: string;
+  createSearchTool(): FunctionTool;
+  createScrapeTool?(): FunctionTool;
 }

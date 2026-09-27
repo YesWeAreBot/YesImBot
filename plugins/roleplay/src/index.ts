@@ -1,8 +1,8 @@
 import path from "node:path";
 
 import type { CharacterCardV3 } from "@risuai/ccardlib";
-import type { AgentPlugin } from "@yesimbot/agent-runtime";
 import { Context, Logger, Schema, type Bot } from "koishi";
+import type { AgentPlugin } from "koishi-plugin-yesimbot";
 import type { ChannelContext } from "koishi-plugin-yesimbot";
 
 import { loadCharacterCard } from "./card.js";

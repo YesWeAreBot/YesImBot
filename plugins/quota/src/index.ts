@@ -1,10 +1,9 @@
 import { appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import type { AgentPlugin } from "@yesimbot/agent-runtime";
 import { Schema, Time } from "koishi";
 import type { Context, Logger, Session } from "koishi";
-import type { ChannelContext, ModelUsageEvent } from "koishi-plugin-yesimbot";
+import type { AgentPlugin, ChannelContext, ModelUsageEvent, StepOptions } from "koishi-plugin-yesimbot";
 
 export const Config: Schema<Config> = Schema.object({
   quotaStorageDir: Schema.string().default("data/yesimbot/quota").description("按会话额度记录与动态覆盖的存储目录"),
@@ -366,13 +365,13 @@ export default class QuotaPlugin {
   private createMeter(context: ChannelContext): AgentPlugin {
     return {
       name: "quota.meter",
-      init: async (runtime) => {
+      init: async (agent) => {
         const modelId = await this.resolveModel(context);
-        if (modelId) runtime.setModel(this.ctx.yesimbot.model.resolveChatModel(modelId, context).model);
+        if (modelId) agent.setModel(this.ctx.yesimbot.model.resolveChatModel(modelId, context).model);
       },
-      prepareStep: async (messages) => {
+      prepareStep: async (options: StepOptions) => {
         if (!(await this.allow(context))) throw new Error("Quota exceeded");
-        return messages;
+        return options;
       },
     };
   }

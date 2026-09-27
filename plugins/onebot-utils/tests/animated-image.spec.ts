@@ -1,7 +1,5 @@
-import type { AgentEntry } from "@yesimbot/agent-runtime";
-import { createMessageEntry } from "@yesimbot/agent-runtime";
 import { h, Universal, type Element } from "koishi";
-import type { Message, MessageRecord } from "koishi-plugin-yesimbot";
+import { createEntry, createMessage, type AgentEntry } from "koishi-plugin-yesimbot";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("koishi", async () => import("@koishijs/core"));
@@ -11,7 +9,7 @@ import { projectAnimatedImages } from "../src/animated-image.js";
 const ID = "00000000000000000000000000000000";
 
 function messageEntry(subType: unknown, id = ID, summary?: string): AgentEntry {
-  const record: MessageRecord = {
+  const record = {
     platform: "onebot",
     selfId: "bot-1",
     channel: { id: "group", type: Universal.Channel.Type.TEXT },
@@ -20,21 +18,7 @@ function messageEntry(subType: unknown, id = ID, summary?: string): AgentEntry {
     elements: [h("img", { id, ...(subType === undefined ? {} : { subType }), ...(summary === undefined ? {} : { summary }) })],
     timestamp: 1,
   };
-  const message: Message = {
-    id: "m-1",
-    timestamp: 1,
-    role: "custom",
-    type: "yesimbot.message",
-    data: {
-      platform: record.platform,
-      selfId: record.selfId,
-      channel: record.channel,
-      user: record.user,
-      messageId: record.messageId,
-      elements: record.elements,
-    },
-  };
-  return createMessageEntry(message);
+  return createEntry("message", createMessage(record), { id: "m-1", timestamp: 1 });
 }
 
 function textElement(content: string): Element {
@@ -71,30 +55,21 @@ describe("animated image projection", () => {
   });
 
   it("supports snake_case subtype metadata", () => {
-    const record: MessageRecord = {
-      platform: "onebot",
-      selfId: "bot-1",
-      channel: { id: "group", type: Universal.Channel.Type.TEXT },
-      user: { id: "user-1", name: "User" },
-      messageId: "m-2",
-      elements: [h("img", { id: ID, sub_type: "1", summary: "微笑" })],
-      timestamp: 1,
-    };
-    const message: Message = {
-      id: "m-2",
-      timestamp: 1,
-      role: "custom",
-      type: "yesimbot.message",
-      data: {
-        platform: record.platform,
-        selfId: record.selfId,
-        channel: record.channel,
-        user: record.user,
-        messageId: record.messageId,
-        elements: record.elements,
-      },
-    };
-    const [projected] = projectAnimatedImages([createMessageEntry(message)]);
+    const [projected] = projectAnimatedImages([
+      createEntry(
+        "message",
+        createMessage({
+          platform: "onebot",
+          selfId: "bot-1",
+          channel: { id: "group", type: Universal.Channel.Type.TEXT },
+          user: { id: "user-1", name: "User" },
+          messageId: "m-2",
+          elements: [h("img", { id: ID, sub_type: "1", summary: "微笑" })],
+          timestamp: 1,
+        }),
+        { id: "m-2", timestamp: 1 },
+      ),
+    ]);
     const projectedMessage = projected.data as { data: { elements: readonly Element[] } };
 
     expect(projectedMessage.data.elements).toEqual([textElement(`[动画表情: 微笑 asset://${ID}]`)]);

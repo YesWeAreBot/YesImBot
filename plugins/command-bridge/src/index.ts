@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
-import { jsonSchema, type AgentPlugin, type AgentTool } from "@yesimbot/agent-runtime";
 import { Context, Logger, Schema, type Bot, type Element } from "koishi";
+import { jsonSchema, type AgentPlugin, type ToolResultOutput, type ToolSet } from "koishi-plugin-yesimbot";
 import type { ChannelContext, ChannelResources } from "koishi-plugin-yesimbot";
 
 import { collectCommandCatalog, filterCommandCatalog, formatCommandCatalog, formatCommandHelp } from "./catalog.js";
@@ -80,8 +80,8 @@ export default class CommandBridgePlugin {
   public async setup(context: ChannelContext, bot: Bot): Promise<AgentPlugin> {
     const resources = await this.ctx.yesimbot.resource.get(context);
     const tools = this.createTools(context, bot, resources);
-    this.logger.debug("command_bridge.tools_ready", { channelId: context.channelId, toolCount: tools.length, toolNames: tools.map((tool) => tool.name) });
-    return { name: "command-bridge", tools: (): AgentTool[] => tools, appendSystemPrompt: () => COMMAND_TOOL_GUIDANCE } satisfies AgentPlugin;
+    this.logger.debug("command_bridge.tools_ready", { channelId: context.channelId, toolCount: Object.keys(tools).length, toolNames: Object.keys(tools) });
+    return { name: "command-bridge", extendTools: () => tools, extendInstructions: () => COMMAND_TOOL_GUIDANCE } satisfies AgentPlugin;
   }
 
   public async stop(): Promise<void> {
@@ -95,10 +95,9 @@ export default class CommandBridgePlugin {
     this.logger.info("command bridge plugin stopped");
   }
 
-  public createTools(context: ChannelContext, bot: Bot, resources: ChannelResources): AgentTool[] {
-    return [
-      {
-        name: "koishi_execute_list",
+  public createTools(context: ChannelContext, bot: Bot, resources: ChannelResources): ToolSet {
+    return {
+      koishi_execute_list: {
         description: "列出当前策略下可用的 Koishi 命令",
         inputSchema: jsonSchema({
           type: "object",
@@ -106,10 +105,9 @@ export default class CommandBridgePlugin {
           additionalProperties: false,
         }),
         execute: async (input: ListCommandsInput) => this.listCommands(input),
-        toModelOutput: async (options) => ({ type: "text", value: String((options as { output: string }).output) }),
+        toModelOutput: async (options: { output: string }): Promise<ToolResultOutput> => ({ type: "text", value: String(options.output) }),
       },
-      {
-        name: "koishi_execute_help",
+      koishi_execute_help: {
         description: "查看某个 Koishi 命令的详细帮助信息，包括参数、选项、示例和子命令。使用 koishi_execute 前先调用此工具了解参数格式。",
         inputSchema: jsonSchema({
           type: "object",
@@ -118,10 +116,9 @@ export default class CommandBridgePlugin {
           additionalProperties: false,
         }),
         execute: async (input: CommandHelpInput) => this.commandHelp(input),
-        toModelOutput: async (options) => ({ type: "text", value: String((options as { output: string }).output) }),
+        toModelOutput: async (options: { output: string }): Promise<ToolResultOutput> => ({ type: "text", value: String(options.output) }),
       },
-      {
-        name: "koishi_execute",
+      koishi_execute: {
         description: "静默执行一条 Koishi 命令，把输出返回给主模型；支持 ask 交互模式",
         inputSchema: jsonSchema({
           type: "object",
@@ -141,10 +138,9 @@ export default class CommandBridgePlugin {
           additionalProperties: false,
         }),
         execute: async (input: ExecuteCommandInput) => this.executeCommand(context, bot, resources, input),
-        toModelOutput: async (options) => formatToolOutput(options as { output: CommandExecutionEvent }),
+        toModelOutput: async (options: { output: CommandExecutionEvent }): Promise<ToolResultOutput> => formatToolOutput(options),
       },
-      {
-        name: "koishi_prompt_answer",
+      koishi_prompt_answer: {
         description: "回答 koishi_execute 返回的 awaiting_prompt，并返回命令后续事件",
         inputSchema: jsonSchema({
           type: "object",
@@ -153,16 +149,15 @@ export default class CommandBridgePlugin {
           additionalProperties: false,
         }),
         execute: async (input: AnswerPromptInput) => this.answerPrompt(input),
-        toModelOutput: async (options) => formatToolOutput(options as { output: CommandExecutionEvent }),
+        toModelOutput: async (options: { output: CommandExecutionEvent }): Promise<ToolResultOutput> => formatToolOutput(options),
       },
-      {
-        name: "koishi_execute_abort",
+      koishi_execute_abort: {
         description: "中止一个正在等待输入或超时的 Koishi 命令执行",
         inputSchema: jsonSchema({ type: "object", properties: { executionId: { type: "string" } }, required: ["executionId"], additionalProperties: false }),
         execute: async (input: AbortCommandInput) => this.abortCommand(input),
-        toModelOutput: async (options) => formatToolOutput(options as { output: CommandExecutionEvent }),
+        toModelOutput: async (options: { output: CommandExecutionEvent }): Promise<ToolResultOutput> => formatToolOutput(options),
       },
-    ];
+    };
   }
 
   private async executeCommand(context: ChannelContext, bot: Bot, resources: ChannelResources, input: ExecuteCommandInput): Promise<CommandExecutionEvent> {
@@ -293,7 +288,7 @@ export default class CommandBridgePlugin {
   }
 }
 
-async function formatToolOutput(options: { output: CommandExecutionEvent }): Promise<{ type: "text"; value: string }> {
+async function formatToolOutput(options: { output: CommandExecutionEvent }): Promise<ToolResultOutput> {
   const event = options.output;
   const lines = [`状态: ${event.status}`, `执行ID: ${event.executionId}`];
   if (event.prompt) lines.push(`命令请求输入: ${event.prompt}`);

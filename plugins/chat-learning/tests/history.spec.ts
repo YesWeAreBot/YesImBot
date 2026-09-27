@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { createMessageEntry, createUserMessage, type AgentEntry } from "@yesimbot/agent-runtime";
+import { createEntry, createUserMessage, type AgentEntry } from "koishi-plugin-yesimbot";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createChatHistoryStore } from "../src/history.js";
@@ -15,7 +15,7 @@ afterEach(async () => {
 
 function messageEntry(id: string, timestamp: number): AgentEntry {
   const message = createUserMessage("hello", { id: `${id}-message`, timestamp });
-  return createMessageEntry(message, { id, timestamp });
+  return createEntry("message", message, { id, timestamp });
 }
 
 describe("createChatHistoryStore", () => {

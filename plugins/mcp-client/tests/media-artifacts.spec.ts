@@ -1,36 +1,11 @@
-import type { AgentPlugin } from "@yesimbot/agent-runtime";
+import type { AgentPlugin, ToolSet } from "koishi-plugin-yesimbot";
 import { describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   connectMcpServer: vi.fn<() => Promise<unknown>>(),
-  schema: {
-    array: vi.fn<() => unknown>(),
-    boolean: vi.fn<() => unknown>(),
-    const: vi.fn<() => unknown>(),
-    dict: vi.fn<() => unknown>(),
-    intersect: vi.fn<() => unknown>(),
-    object: vi.fn<() => unknown>(),
-    string: vi.fn<() => unknown>(),
-    union: vi.fn<() => unknown>(),
-  },
 }));
 
 vi.mock("../src/transports", () => ({ connectMcpServer: mocks.connectMcpServer }));
-
-vi.mock("koishi", () => {
-  // oxlint-disable-next-line unicorn/consistent-function-scoping
-  const chain = () => ({
-    collapse: vi.fn<() => unknown>().mockReturnThis(),
-    default: vi.fn<() => unknown>().mockReturnThis(),
-    description: vi.fn<() => unknown>().mockReturnThis(),
-    required: vi.fn<() => unknown>().mockReturnThis(),
-    role: vi.fn<() => unknown>().mockReturnThis(),
-  });
-  for (const key of Object.keys(mocks.schema) as Array<keyof typeof mocks.schema>) {
-    mocks.schema[key].mockImplementation(chain);
-  }
-  return { Context: class Context {}, Logger: class Logger {}, Schema: mocks.schema };
-});
 
 import McpClientPlugin from "../src/index";
 
@@ -90,12 +65,19 @@ async function buildPlugin(serverName = "tools", toolNames: string[] = ["snap"])
   return { client, agentPlugin, artifactForTool, artifactPut };
 }
 
+async function resolveTools(agentPlugin: AgentPlugin): Promise<ToolSet> {
+  return (await agentPlugin.extendTools?.()) ?? {};
+}
+
 describe("McpClientPlugin media outputs", () => {
   it("persists supported inline images as artifact references", async () => {
     const { client, agentPlugin, artifactForTool, artifactPut } = await buildPlugin();
     client.callTool.mockResolvedValueOnce({ content: [{ type: "image", data: PNG_BASE64, mimeType: "image/png" }] });
 
-    const tool = agentPlugin.tools![0]!;
+    const tools = await resolveTools(agentPlugin);
+    expect(Object.keys(tools)).toEqual(["tools-snap"]);
+    const tool = tools["tools-snap"]!;
+    if (!tool.execute) throw new Error("execute unavailable");
     const output = await tool.execute({}, {} as never);
 
     if (typeof tool.toModelOutput !== "function") throw new Error("toModelOutput unavailable");
@@ -115,10 +97,12 @@ describe("McpClientPlugin media outputs", () => {
     const { client, agentPlugin, artifactForTool } = await buildPlugin("mcp hub", ["search/tool"]);
     client.callTool.mockResolvedValueOnce({ content: [{ type: "image", data: PNG_BASE64, mimeType: "image/png" }] });
 
-    const tool = agentPlugin.tools![0]!;
-    expect(tool.name).toMatch(/^[a-zA-Z0-9_-]+$/);
-    expect(tool.name).toBe("mcp_hub-search_tool");
+    const tools = await resolveTools(agentPlugin);
+    expect(Object.keys(tools)[0]).toMatch(/^[a-zA-Z0-9_-]+$/);
+    expect(Object.keys(tools)).toEqual(["mcp_hub-search_tool"]);
 
+    const tool = tools["mcp_hub-search_tool"]!;
+    if (!tool.execute) throw new Error("execute unavailable");
     const output = await tool.execute({}, {} as never);
     if (typeof tool.toModelOutput !== "function") throw new Error("toModelOutput unavailable");
     await tool.toModelOutput({ output, toolCallId: "call-1" });
@@ -131,7 +115,8 @@ describe("McpClientPlugin media outputs", () => {
     const image = { type: "image", data: PNG_BASE64, mimeType: "image/png" };
     client.callTool.mockResolvedValueOnce({ content: [image, image, image, image, image] });
 
-    const tool = agentPlugin.tools![0]!;
+    const tool = (await resolveTools(agentPlugin))["tools-snap"]!;
+    if (!tool.execute) throw new Error("execute unavailable");
     const output = await tool.execute({}, {} as never);
     if (typeof tool.toModelOutput !== "function") throw new Error("toModelOutput unavailable");
     const modelOutput = await tool.toModelOutput({ output, toolCallId: "call-1" });
@@ -144,7 +129,8 @@ describe("McpClientPlugin media outputs", () => {
     const { client, agentPlugin } = await buildPlugin();
     client.callTool.mockResolvedValueOnce({ content: [{ type: "resource", uri: "https://example.test/file.pdf", text: "not readable" }] });
 
-    const tool = agentPlugin.tools![0]!;
+    const tool = (await resolveTools(agentPlugin))["tools-snap"]!;
+    if (!tool.execute) throw new Error("execute unavailable");
     const output = await tool.execute({}, {} as never);
     if (typeof tool.toModelOutput !== "function") throw new Error("toModelOutput unavailable");
     const modelOutput = await tool.toModelOutput({ output, toolCallId: "call-1" });
@@ -157,9 +143,9 @@ describe("McpClientPlugin media outputs", () => {
   it("keeps remote tool descriptions untouched and adds one prompt block", async () => {
     const { agentPlugin } = await buildPlugin();
 
-    expect(agentPlugin.tools![0]!.description).toBe("take a screenshot");
-    if (typeof agentPlugin.appendSystemPrompt !== "function") throw new Error("appendSystemPrompt unavailable");
-    const prompt = await agentPlugin.appendSystemPrompt({} as never);
+    expect((await resolveTools(agentPlugin))["tools-snap"]!.description).toBe("take a screenshot");
+    if (typeof agentPlugin.extendInstructions !== "function") throw new Error("extendInstructions unavailable");
+    const prompt = await agentPlugin.extendInstructions();
     expect(String(prompt)).toContain("artifact://");
     expect(String(prompt)).toContain("read");
   });

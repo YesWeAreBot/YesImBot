@@ -1,4 +1,4 @@
-import { AgentTool, jsonSchema } from "@yesimbot/agent-runtime";
+import { jsonSchema, type FunctionTool } from "koishi-plugin-yesimbot";
 
 import type { WorkspaceBashBackend } from "./bash-tool";
 
@@ -37,11 +37,10 @@ export interface CreateEditToolInput {
   cwd: string;
 }
 
-export function createEditTool(input: CreateEditToolInput): AgentTool {
+export function createEditTool(input: CreateEditToolInput): FunctionTool {
   const { backend, cwd } = input;
 
   return {
-    name: "editFile",
     description:
       "Make a targeted edit to a file by specifying the exact text to find and its replacement. " +
       "Use this for surgical changes instead of rewriting the entire file with writeFile. " +

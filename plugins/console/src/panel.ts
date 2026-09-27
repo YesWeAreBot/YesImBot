@@ -5,7 +5,7 @@ import path from "node:path";
 import { DataService } from "@koishijs/console";
 import {} from "@koishijs/loader";
 import { Context } from "koishi";
-import { type Event as YesImBotEvent } from "koishi-plugin-yesimbot";
+import type { AgentMessageOf } from "koishi-plugin-yesimbot";
 
 const REFRESH_INTERVAL = 5_000;
 
@@ -195,20 +195,20 @@ export class PanelProvider extends DataService<PanelPayload> {
     return this.packageRegistryPromise;
   }
 
-  private recordEvent(event: YesImBotEvent): void {
-    const data = event.data as {
+  private recordEvent(message: AgentMessageOf<"yesimbot.event">): void {
+    const { eventType, platform, channel, delivery } = message.data as {
       eventType?: string;
       platform?: string;
       channel?: { id?: string };
       delivery?: { error?: { message?: string } };
     };
-    if (data.eventType !== "delivery.failed") return;
+    if (eventType !== "delivery.failed") return;
     this.recent.unshift({
       timestamp: new Date().toISOString(),
       level: "error",
-      type: data.eventType,
-      message: data.delivery?.error?.message ?? "消息投递失败",
-      channel: `${data.platform ?? ""}:${data.channel?.id ?? ""}`,
+      type: eventType,
+      message: delivery?.error?.message ?? "消息投递失败",
+      channel: `${platform ?? ""}:${channel?.id ?? ""}`,
     });
     this.recent = this.recent.slice(0, 30);
     this.refreshSoon?.();

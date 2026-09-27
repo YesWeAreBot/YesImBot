@@ -1,5 +1,5 @@
-import type { AgentEntry, AgentMessage } from "@yesimbot/agent-runtime";
 import { h, type Element } from "koishi";
+import type { AgentEntry, AgentMessage } from "koishi-plugin-yesimbot";
 
 const ASSET_ID = /^[a-f0-9]{32}$/;
 

@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import type { AgentToolExecuteContext } from "@yesimbot/agent-runtime";
+import type { FunctionTool } from "koishi-plugin-yesimbot";
 import { describe, expect, it, vi } from "vitest";
 
 import { createGlobalBrainStore } from "../src/store.js";
@@ -12,9 +12,10 @@ const scopeA = { type: "guild", platform: "onebot", channelId: "group-a", guildI
 
 const scopeB = { type: "guild", platform: "onebot", channelId: "group-b", guildId: "group-b" };
 
-function toolContext(): AgentToolExecuteContext {
-  return { runtime: { id: "runtime" }, channel: {} as never, state: {} as never, storage: {} as never, turnId: "turn-real", toolCallId: "tool-call" };
-}
+/** Tool execution only needs `toolCallId`/`messages`; the brain tools never read the options argument. */
+const executionOptions = { toolCallId: "tool-call", messages: [] } as never;
+
+const call = (tool: FunctionTool<any, any>, input: unknown): Promise<any> => Promise.resolve(tool.execute!(input, executionOptions));
 
 function createMemoryAssets() {
   const entries = new Map<string, Uint8Array>();
@@ -60,8 +61,8 @@ describe("GlobalBrain tools", () => {
       await store.init();
       const tools = createBrainTools({ store, scope: scopeA as never, assets: createMemoryAssets(), artifacts: createMemoryArtifacts() });
 
-      expect(tools.map((tool) => tool.name)).toEqual(["brain_deposit", "brain_read", "brain_reply", "brain_resolve", "brain_status"]);
-      const schema = JSON.stringify(tools.map((tool) => tool.inputSchema));
+      expect(Object.keys(tools)).toEqual(["brain_deposit", "brain_read", "brain_reply", "brain_resolve", "brain_status"]);
+      const schema = JSON.stringify(Object.values(tools).map((tool) => tool.inputSchema));
       expect(schema).toContain("kind");
       expect(schema).toContain("content");
       expect(schema).toContain("replySource");
@@ -80,27 +81,25 @@ describe("GlobalBrain tools", () => {
       const store = createGlobalBrainStore({ filePath: path.join(dir, "brain.jsonl"), maxDigestThreads: 5, maxDigestReplies: 5 });
       await store.init();
       const tools = createBrainTools({ store, scope: scopeA as never, assets: createMemoryAssets(), artifacts: createMemoryArtifacts() });
-      const context = toolContext();
 
-      const created = (await tools[0]?.execute?.({ kind: "question", content: "谁有 XX 的资料？", tags: ["search"] }, context)) as {
-        outcome: "created";
-        thread: { id: string };
-      };
+      const created = await call(tools.brain_deposit, { kind: "question", content: "谁有 XX 的资料？", tags: ["search"] });
       expect(created.outcome).toBe("created");
 
-      const reply = await tools[2]?.execute?.(
-        { threadId: created.thread.id, content: "我这边有资料。", replySource: "human", author: { id: "user-1", name: "Ada" } },
-        context,
-      );
+      const reply = await call(tools.brain_reply, {
+        threadId: created.thread.id,
+        content: "我这边有资料。",
+        replySource: "human",
+        author: { id: "user-1", name: "Ada" },
+      });
       expect(reply).toMatchObject({ outcome: "created", reply: { replySource: "human", author: { id: "user-1", name: "Ada" } } });
 
-      const read = await tools[1]?.execute?.({ threadId: created.thread.id }, context);
+      const read = await call(tools.brain_read, { threadId: created.thread.id });
       expect(read).toMatchObject({ outcome: "ok", replies: [{ replySource: "human" }] });
 
-      const resolved = await tools[3]?.execute?.({ threadId: created.thread.id }, context);
+      const resolved = await call(tools.brain_resolve, { threadId: created.thread.id });
       expect(resolved).toEqual({ outcome: "resolved" });
 
-      const status = await tools[4]?.execute?.({}, context);
+      const status = await call(tools.brain_status, {});
       expect(status).toMatchObject({ outcome: "ok", threads: [{ replyCount: 1 }] });
     });
   });
@@ -116,14 +115,11 @@ describe("GlobalBrain tools", () => {
       const sourceTools = createBrainTools({ store, scope: scopeA as never, assets: sourceAssets, artifacts: createMemoryArtifacts() });
       const targetTools = createBrainTools({ store, scope: scopeB as never, assets: targetAssets, artifacts: createMemoryArtifacts() });
 
-      const created = (await sourceTools[0]?.execute?.({ kind: "share", assetId, content: "一张梗图", tags: ["meme"] }, toolContext())) as {
-        outcome: "created";
-        thread: { id: string; payload: { kind: string; blobId: string } };
-      };
+      const created = await call(sourceTools.brain_deposit, { kind: "share", assetId, content: "一张梗图", tags: ["meme"] });
       expect(created.outcome).toBe("created");
       expect(created.thread.payload).toMatchObject({ kind: "asset", blobId: expect.any(String) });
 
-      const read = (await targetTools[1]?.execute?.({ threadId: created.thread.id }, toolContext())) as { outcome: "ok"; localAssetUri?: string };
+      const read = await call(targetTools.brain_read, { threadId: created.thread.id });
       expect(read.outcome).toBe("ok");
       expect(read.localAssetUri).toBe("asset://asset-1");
       expect(targetAssets.put).toHaveBeenCalledOnce();
@@ -137,22 +133,16 @@ describe("GlobalBrain tools", () => {
       const artifacts = createMemoryArtifacts();
       const tools = createBrainTools({ store, scope: scopeA as never, assets: createMemoryAssets(), artifacts });
 
-      const artifact = (await tools[0]?.execute?.(
-        { kind: "share", artifactUri: "artifact://web-fetch/0192abcd-0192-7000-8000-000000000000" },
-        toolContext(),
-      )) as { outcome: "created"; thread: { payload: { kind: string; mediaType: string; filename: string } } };
+      const artifact = await call(tools.brain_deposit, { kind: "share", artifactUri: "artifact://web-fetch/0192abcd-0192-7000-8000-000000000000" });
       expect(artifact.outcome).toBe("created");
       expect(artifact.thread.payload).toMatchObject({ kind: "artifact", mediaType: "application/pdf", filename: "report.pdf" });
 
-      const forward = (await tools[0]?.execute?.(
-        { kind: "share", forward: { platform: "onebot", forwardId: "forward-1", summary: "炸裂转发" } },
-        toolContext(),
-      )) as { outcome: "created"; thread: { payload: { kind: string; forwardId: string } } };
+      const forward = await call(tools.brain_deposit, { kind: "share", forward: { platform: "onebot", forwardId: "forward-1", summary: "炸裂转发" } });
       expect(forward.outcome).toBe("created");
       expect(forward.thread.payload).toMatchObject({ kind: "forward", forwardId: "forward-1" });
 
       const targetTools = createBrainTools({ store, scope: scopeB as never, assets: createMemoryAssets(), artifacts: createMemoryArtifacts() });
-      const read = (await targetTools[1]?.execute?.({ threadId: forward.thread.id }, toolContext())) as { outcome: string; localForward?: unknown };
+      const read = await call(targetTools.brain_read, { threadId: forward.thread.id });
       expect(read.outcome).toBe("ok");
       expect(read.localForward).toEqual({ forwardId: "forward-1", sendTool: "onebot_send_forward_message" });
 
@@ -162,7 +152,7 @@ describe("GlobalBrain tools", () => {
         assets: createMemoryAssets(),
         artifacts: createMemoryArtifacts(),
       });
-      const crossRead = (await discordTools[1]?.execute?.({ threadId: forward.thread.id }, toolContext())) as { outcome: string; localForward?: unknown };
+      const crossRead = await call(discordTools.brain_read, { threadId: forward.thread.id });
       expect(crossRead.outcome).toBe("ok");
       expect(crossRead.localForward).toBeUndefined();
     });
@@ -181,21 +171,17 @@ describe("GlobalBrain tools", () => {
         defaultShareImmediately: true,
         onImmediateShare,
       });
-      const context = toolContext();
 
-      const created = (await tools[0]?.execute?.({ kind: "share", content: "urgent", shareImmediately: true }, context)) as {
-        outcome: "created";
-        thread: { id: string };
-      };
+      const created = await call(tools.brain_deposit, { kind: "share", content: "urgent", shareImmediately: true });
       expect(created.outcome).toBe("created");
       expect(onImmediateShare).toHaveBeenCalledTimes(1);
       expect(onImmediateShare).toHaveBeenCalledWith(expect.objectContaining({ id: created.thread.id, kind: "share", content: "urgent" }));
 
       onImmediateShare.mockClear();
-      await tools[0]?.execute?.({ kind: "share", content: "waiting", shareImmediately: false }, context);
+      await call(tools.brain_deposit, { kind: "share", content: "waiting", shareImmediately: false });
       expect(onImmediateShare).not.toHaveBeenCalled();
 
-      await tools[0]?.execute?.({ kind: "share", content: "default immediate" }, context);
+      await call(tools.brain_deposit, { kind: "share", content: "default immediate" });
       expect(onImmediateShare).toHaveBeenCalledTimes(1);
     });
   });
@@ -206,7 +192,7 @@ describe("GlobalBrain tools", () => {
       await store.init();
       const tools = createBrainTools({ store, scope: scopeA as never, assets: createMemoryAssets(), artifacts: createMemoryArtifacts() });
 
-      const read = await tools[1]?.execute?.({ threadId: "missing" }, toolContext());
+      const read = await call(tools.brain_read, { threadId: "missing" });
       expect(read).toEqual({ outcome: "failed", error: { code: "thread_not_found", message: "Thread does not exist" } });
     });
   });

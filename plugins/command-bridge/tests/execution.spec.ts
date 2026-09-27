@@ -1,11 +1,6 @@
 import { h } from "koishi";
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("koishi", async () => {
-  const { default: h } = await import("@satorijs/element");
-  return { h };
-});
-
 import { CommandExecution } from "../src/execution.js";
 import type { CommandActor, InteractiveMode } from "../src/types.js";
 

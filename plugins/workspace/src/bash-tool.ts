@@ -1,5 +1,5 @@
-import type { AgentTool, AgentToolSet, Tool } from "@yesimbot/agent-runtime";
 import type { CommandResult, Sandbox } from "bash-tool";
+import type { Tool, ToolSet } from "koishi-plugin-yesimbot";
 
 import { createEditTool } from "./edit-tool";
 
@@ -18,7 +18,7 @@ export interface CreateBashToolSetInput {
   destination: string;
 }
 
-export async function createBashToolSet(input: CreateBashToolSetInput): Promise<AgentToolSet> {
+export async function createBashToolSet(input: CreateBashToolSetInput): Promise<ToolSet> {
   // bash-tool 是 ESM-only 包（exports 无 require 条件）；动态 import 让 Node
   // 运行时直接加载其 ESM build，避免 pkgroll 内联转译进 CJS bundle。
   const { createBashTool } = await import("bash-tool");
@@ -36,12 +36,12 @@ export async function createBashToolSet(input: CreateBashToolSetInput): Promise<
 
   const editTool = createEditTool({ backend: input.backend, cwd: input.destination });
 
-  return [
-    withName("bash", toolkit.tools.bash, abortSignals),
-    withName("readFile", toolkit.tools.readFile),
-    withName("writeFile", toolkit.tools.writeFile),
-    editTool,
-  ];
+  return {
+    bash: withAbortBridge(toolkit.tools.bash, abortSignals),
+    readFile: toolkit.tools.readFile,
+    writeFile: toolkit.tools.writeFile,
+    editFile: editTool,
+  };
 }
 
 function createAbortSignalScope(): AbortSignalScope {
@@ -64,19 +64,17 @@ function createAbortSignalScope(): AbortSignalScope {
   };
 }
 
-function withName(name: string, tool: Tool, abortSignals?: AbortSignalScope): AgentTool {
-  const agentTool = { ...tool, name } as unknown as AgentTool;
-
-  if (!agentTool.execute || !abortSignals) {
-    return agentTool;
+function withAbortBridge(tool: Tool, abortSignals: AbortSignalScope): Tool {
+  if (!tool.execute) {
+    return tool;
   }
 
-  const execute = agentTool.execute;
+  const execute = tool.execute;
   return {
-    ...agentTool,
+    ...tool,
     execute(input, context) {
       // bash-tool calls sandbox.executeCommand before its first await; this bridges
-      // AgentToolExecuteContext.abortSignal without replacing bash-tool's execute logic.
+      // the tool execution's abortSignal without replacing bash-tool's execute logic.
       return abortSignals.run(context.abortSignal, () => execute(input, context));
     },
   };

@@ -1,4 +1,3 @@
-import type { AgentToolExecuteContext } from "@yesimbot/agent-runtime";
 import { describe, expect, it, vi } from "vitest";
 
 import { createAddMessageTool } from "../src/tools/core/add-message.js";
@@ -39,8 +38,8 @@ const identity: MemosIdentity = {
   },
 };
 
-function toolContext(turnId = "turn-real"): AgentToolExecuteContext {
-  return { runtime: { id: "runtime" }, channel: {} as never, state: {} as never, storage: {} as never, turnId, toolCallId: "tool-call" };
+function execution(turnId = "turn-real") {
+  return { toolCallId: "tool-call", messages: [], context: { turnId } };
 }
 
 function schemaText(value: unknown): string {
@@ -52,7 +51,6 @@ describe("MemOS tools", () => {
     const tool = createSearchMessageTool({ client: {} as never, config, resolveIdentity: () => identity });
     const schema = schemaText(tool.inputSchema);
 
-    expect(tool.name).toBe("search_message");
     expect(schema).toContain("query");
     for (const forbidden of [
       "user_id",
@@ -78,7 +76,7 @@ describe("MemOS tools", () => {
       resolveIdentity: () => identity,
     });
 
-    await tool.execute?.({ query: "项目背景" }, toolContext());
+    await tool.execute?.({ query: "项目背景" }, execution());
 
     expect(JSON.stringify(tool.inputSchema)).not.toContain("filter");
     expect(searchMemory).toHaveBeenCalledWith(
@@ -130,7 +128,7 @@ describe("MemOS tools", () => {
     const resolveIdentity = vi.fn<() => MemosIdentity>(() => identity);
     const tool = createSearchMessageTool({ client: { searchMemory } as never, config, resolveIdentity });
 
-    await expect(tool.execute?.({ query: "项目包管理器" }, toolContext())).resolves.toEqual({
+    await expect(tool.execute?.({ query: "项目包管理器" }, execution())).resolves.toEqual({
       outcome: "completed",
       memories: [
         {
@@ -171,7 +169,7 @@ describe("MemOS tools", () => {
       logger: { warn },
     });
 
-    const result = await tool.execute?.({ query: "secret" }, toolContext());
+    const result = await tool.execute?.({ query: "secret" }, execution());
 
     expect(result).toEqual({ outcome: "failed", memories: [], error: { code: "request_failed", message: "Authorization failed for Token [REDACTED]" } });
     expect(JSON.stringify(result)).not.toContain("mpg-secret");
@@ -182,7 +180,6 @@ describe("MemOS tools", () => {
     const tool = createAddMessageTool({ client: {} as never, config, resolveIdentity: () => identity, now: () => new Date() });
     const schema = schemaText(tool.inputSchema);
 
-    expect(tool.name).toBe("add_message");
     expect(schema).toContain("content");
     for (const forbidden of ["messages", "role", "user_id", "conversation_id", "agent_id", "chat_time", "tags", "info", "baseUrl", "apiKey", "async_mode"]) {
       expect(schema).not.toContain(forbidden);
@@ -198,7 +195,7 @@ describe("MemOS tools", () => {
     const resolveIdentity = vi.fn<() => MemosIdentity>(() => identity);
     const tool = createAddMessageTool({ client: { addMessage } as never, config, resolveIdentity, now: () => new Date("2026-07-05T03:04:05.000Z") });
 
-    await expect(tool.execute?.({ content: "团队稳定使用 Yarn 4。" }, toolContext())).resolves.toEqual({ outcome: "accepted", taskId: "task-1" });
+    await expect(tool.execute?.({ content: "团队稳定使用 Yarn 4。" }, execution())).resolves.toEqual({ outcome: "accepted", taskId: "task-1" });
 
     expect(resolveIdentity).toHaveBeenCalledWith("turn-real");
     expect(addMessage).toHaveBeenCalledWith({
@@ -217,7 +214,7 @@ describe("MemOS tools", () => {
       resolveIdentity,
       now: () => new Date("2026-07-05T03:04:05.000Z"),
     });
-    await expect(synchronousTool.execute?.({ content: "团队稳定使用 Yarn 4。" }, toolContext())).resolves.toEqual({ outcome: "persisted", taskId: "task-1" });
+    await expect(synchronousTool.execute?.({ content: "团队稳定使用 Yarn 4。" }, execution())).resolves.toEqual({ outcome: "persisted", taskId: "task-1" });
     expect(addMessage).toHaveBeenLastCalledWith(expect.objectContaining({ async_mode: false }));
   });
 
@@ -235,7 +232,7 @@ describe("MemOS tools", () => {
       logger: { warn },
     });
 
-    const result = await tool.execute?.({ content: "remember me" }, toolContext());
+    const result = await tool.execute?.({ content: "remember me" }, execution());
 
     expect(result).toEqual({ outcome: "failed", error: { code: "request_failed", message: "bad api key [REDACTED]" } });
     expect(JSON.stringify(result)).not.toContain("mpg-secret");

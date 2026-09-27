@@ -4,11 +4,6 @@ import path from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("koishi", async () => {
-  const { Schema } = await import("@koishijs/core");
-  return { Context: class {}, Logger: class {}, Schema };
-});
-
 import WorkspacePlugin from "../src/index.js";
 import type { WorkspacePluginConfig } from "../src/types.js";
 
@@ -67,8 +62,8 @@ describe("WorkspacePlugin", () => {
 
       expect(agentPlugin).toBeTruthy();
       expect(fixture.ctx.yesimbot.resource.get).toHaveBeenCalledWith({ type: "guild", platform: "test", channelId: "room", guildId: "room" });
-      const tools = typeof agentPlugin?.tools === "function" ? ((await agentPlugin.tools({} as never)) ?? []) : [];
-      expect(tools.map((tool) => tool.name)).toEqual(["bash", "readFile", "writeFile", "editFile"]);
+      const tools = (await agentPlugin?.extendTools?.()) ?? {};
+      expect(Object.keys(tools)).toEqual(["bash", "readFile", "writeFile", "editFile"]);
     } finally {
       await fixture.plugin.stop();
       await rm(fixture.baseDir, { recursive: true, force: true });
@@ -80,10 +75,10 @@ describe("WorkspacePlugin", () => {
     try {
       await fixture.plugin.start();
       const agentPlugin = await fixture.plugins[0]!.setup({ type: "guild", platform: "test", channelId: "room", guildId: "room" }, { selfId: "bot" } as never);
-      const tools = typeof agentPlugin?.tools === "function" ? ((await agentPlugin.tools({} as never)) ?? []) : [];
+      const tools = (await agentPlugin?.extendTools?.()) ?? {};
 
-      expect(tools).toHaveLength(4);
-      expect(tools.map((t) => t.name).sort()).toEqual(["bash", "editFile", "readFile", "writeFile"]);
+      expect(Object.keys(tools)).toHaveLength(4);
+      expect(Object.keys(tools).sort()).toEqual(["bash", "editFile", "readFile", "writeFile"]);
     } finally {
       await fixture.plugin.stop();
       await rm(fixture.baseDir, { recursive: true, force: true });

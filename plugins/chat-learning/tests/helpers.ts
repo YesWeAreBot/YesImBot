@@ -1,5 +1,5 @@
-import { createAssistantMessage, createCustomMessage, createMessageEntry, type AgentEntry } from "@yesimbot/agent-runtime";
 import type { Element } from "koishi";
+import { createAssistantMessage, createCustomMessage, createEntry, type AgentEntry } from "koishi-plugin-yesimbot";
 
 export function humanMessage(
   id: string,
@@ -22,11 +22,11 @@ export function humanMessage(
     },
     { id: `${id}-message`, timestamp },
   );
-  return createMessageEntry(message, { id, timestamp }) as unknown as AgentEntry;
+  return createEntry("message", message, { id, timestamp }) as unknown as AgentEntry;
 }
 
 export function assistantMessage(id: string, timestamp: number, text: string): AgentEntry {
-  return createMessageEntry(createAssistantMessage(text, { id: `${id}-assistant`, timestamp }), { id, timestamp }) as unknown as AgentEntry;
+  return createEntry("message", createAssistantMessage(text, { id: `${id}-assistant`, timestamp }), { id, timestamp }) as unknown as AgentEntry;
 }
 
 export function textElement(content: string): Element {

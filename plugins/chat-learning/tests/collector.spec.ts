@@ -1,6 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
-
-vi.mock("koishi", async () => import("@koishijs/core"));
+import { describe, expect, it } from "vitest";
 
 import { collectTurns, segmentTurns } from "../src/collector.js";
 import { assistantMessage, atElement, humanMessage, quoteElement } from "./helpers.js";

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ generateText: vi.fn<() => Promise<{ text: string }>>() }));
 
-vi.mock("ai", () => ({ generateText: mocks.generateText }));
+vi.mock("koishi-plugin-yesimbot", async (importOriginal) => ({ ...(await importOriginal()), generateText: mocks.generateText }));
 
 import { classifyPatternsWithModel, generateChainStyle } from "../src/patterns.js";
 import type { ConversationSegment, MessageLink, MessageTurn } from "../src/types.js";

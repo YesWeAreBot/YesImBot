@@ -1,36 +1,11 @@
-import type { AgentPlugin } from "@yesimbot/agent-runtime";
+import type { AgentPlugin } from "koishi-plugin-yesimbot";
 import { describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   connectMcpServer: vi.fn<() => Promise<unknown>>(),
-  schema: {
-    array: vi.fn<() => unknown>(),
-    boolean: vi.fn<() => unknown>(),
-    const: vi.fn<() => unknown>(),
-    dict: vi.fn<() => unknown>(),
-    intersect: vi.fn<() => unknown>(),
-    object: vi.fn<() => unknown>(),
-    string: vi.fn<() => unknown>(),
-    union: vi.fn<() => unknown>(),
-  },
 }));
 
 vi.mock("../src/transports", () => ({ connectMcpServer: mocks.connectMcpServer }));
-
-vi.mock("koishi", () => {
-  // oxlint-disable-next-line unicorn/consistent-function-scoping
-  const chain = () => ({
-    collapse: vi.fn<() => unknown>().mockReturnThis(),
-    default: vi.fn<() => unknown>().mockReturnThis(),
-    description: vi.fn<() => unknown>().mockReturnThis(),
-    required: vi.fn<() => unknown>().mockReturnThis(),
-    role: vi.fn<() => unknown>().mockReturnThis(),
-  });
-  for (const key of Object.keys(mocks.schema) as Array<keyof typeof mocks.schema>) {
-    mocks.schema[key].mockImplementation(chain);
-  }
-  return { Context: class Context {}, Logger: class Logger {}, Schema: mocks.schema };
-});
 
 import McpClientPlugin from "../src/index";
 
@@ -96,8 +71,7 @@ function createClient(toolBatches: string[][]) {
 }
 
 async function resolveToolNames(plugin: AgentPlugin): Promise<string[]> {
-  const tools = typeof plugin.tools === "function" ? await plugin.tools({} as never) : plugin.tools;
-  return tools?.map((tool) => tool.name) ?? [];
+  return Object.keys((await plugin.extendTools?.()) ?? {});
 }
 describe("mcp-client tool registry", () => {
   it("refreshes stable tools when a server reports tool list changes", async () => {

@@ -48,12 +48,12 @@ describe("mergeLocalPatterns", () => {
     roots.push(root);
     const filePath = path.join(root, "global.json");
     const response: ResponsePattern = { intent: "agree", phrase: "确实", frequency: 1, sampleIds: ["a"] };
-    const first = createGlobalRuleStore(path);
+    const first = createGlobalRuleStore(filePath);
     await first.init();
     const merged = mergeLocalPatterns(first.read(), [response], [], [], "channel-a", 1000);
     await first.update(merged);
 
-    const second = createGlobalRuleStore(path);
+    const second = createGlobalRuleStore(filePath);
     await second.init();
 
     expect(second.read().patterns).toHaveLength(1);
