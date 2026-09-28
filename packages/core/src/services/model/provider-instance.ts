@@ -2,6 +2,7 @@ import { Services } from "@/shared/constants";
 import { isNotEmpty } from "@/shared/utils";
 import { Context, Logger } from "koishi";
 import { ProxyAgent, fetch as ufetch } from "undici";
+import { EvaluationModel } from "./evaluation-model";
 import { BaseModel } from "./base-model";
 import { ChatModel, IChatModel } from "./chat-model";
 import { ModelAbility, ModelConfig, ProviderConfig } from "./config";
@@ -64,6 +65,10 @@ export class ProviderInstance {
 
         //this.logger.debug(`[获取模型] 🟢 成功 | 模型ID: ${modelId} | 能力: ${capabilityName}`);
         return new modelConstructor(this.ctx, providerCapability, finalModelConfig, this.fetch);
+    }
+
+    public getEvaluationModel(modelId: string): EvaluationModel | null {
+        return this._getModel(modelId, ModelAbility.Evaluation, EvaluationModel, this.client.evaluate, "评估");
     }
 
     public getChatModel(modelId: string): IChatModel | null {

@@ -188,7 +188,7 @@ export class WillingnessManager {
      * @param context 消息上下文
      * @returns 回复概率 (0-1)
      */
-    public calculateReplyProbability(session: Session, context: MessageContext): number {
+    public calculateReplyProbability(session: Session, context: MessageContext, assessmentMultiplier = 1): number {
         const { chatId } = context;
         const config = this._getResolvedConfig(session);
         const { lifecycle } = config;
@@ -202,7 +202,7 @@ export class WillingnessManager {
 
         // --- 非线性增益 ---
         const gainMultiplier = getDynamicGainMultiplier(currentWillingness, resolvedMaxWillingness);
-        const effectiveGain = gain * gainMultiplier;
+        const effectiveGain = gain * gainMultiplier * assessmentMultiplier;
 
         currentWillingness += effectiveGain;
         // -------------------------
@@ -272,7 +272,7 @@ export class WillingnessManager {
      * @param session 消息上下文
      * @returns 一个包含决策结果和概率的对象
      */
-    public shouldReply(session: Session): { decision: boolean; probability: number } {
+    public shouldReply(session: Session, assessmentMultiplier = 1): { decision: boolean; probability: number } {
         const { cid: chatId } = session;
         this.sessions.set(chatId, session);
 
@@ -284,7 +284,7 @@ export class WillingnessManager {
             isDirect: session.isDirect,
         };
 
-        const probability = this.calculateReplyProbability(session, context);
+        const probability = this.calculateReplyProbability(session, context, assessmentMultiplier);
 
         const decision = Math.random() < probability;
 

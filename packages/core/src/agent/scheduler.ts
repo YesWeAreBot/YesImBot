@@ -28,6 +28,10 @@ export class StimulusScheduler {
         this.logger = ctx[Services.Logger].getLogger("[刺激调度器]");
     }
 
+    public isBusy(channelKey: string): boolean {
+        return this.runningTasks.has(channelKey) || this.deferredTimers.has(channelKey);
+    }
+
     public schedule(stimulus: AgentStimulus<any>): void {
         if (this.disposed) return;
         const { channelCid: channelKey, type, priority } = stimulus;

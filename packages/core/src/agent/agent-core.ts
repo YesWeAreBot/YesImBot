@@ -11,6 +11,7 @@ import { ErrorDefinitions } from "@/shared/errors/definitions";
 import { PromptContextBuilder } from "./context-builder";
 import { HeartbeatProcessor } from "./heartbeat-processor";
 import { StimulusScheduler } from "./scheduler";
+import { TypeSafeEvaluator } from "./typesafe";
 import { WillingnessManager } from "./willing";
 
 declare module "koishi" {
@@ -42,6 +43,41 @@ export class AgentCore extends Service<Config> {
     private processor: HeartbeatProcessor;
 
     private modelSwitcher: ChatModelSwitcher;
+    private readonly pendingAssessments = new Map<string, { controller: AbortController; stimulus: AgentStimulus<any> }>();
+    private stopped = false;
+
+    private cancelAssessment(channelCid: string, settle = true): void {
+        const pending = this.pendingAssessments.get(channelCid);
+        if (!pending) return;
+        this.pendingAssessments.delete(channelCid);
+        pending.controller.abort();
+        if (settle) this.processStimulus(pending.stimulus, 1, false);
+    }
+
+    private receiveStimulus(stimulus: AgentStimulus<any>): void {
+        if (this.stopped) return;
+        const { channelCid, session, type } = stimulus;
+        if (type === "user_message") this.scheduler.noteUserMessage(channelCid);
+        this.cancelAssessment(channelCid);
+        const config = this.config.typesafe;
+        const addressed = session?.isDirect || session?.stripped?.atSelf
+            || session?.elements?.some(e => e.type === "at" && e.attrs.id === session.bot.selfId);
+        if (type !== "user_message" || !config || config.mode === "off" || addressed
+            || this.scheduler.isBusy(channelCid)
+            || !config.evaluationModel?.providerName || !config.evaluationModel.modelId) {
+            this.processStimulus(stimulus);
+            return;
+        }
+        const pending = { controller: new AbortController(), stimulus };
+        this.pendingAssessments.set(channelCid, pending);
+        const finish = (multiplier: number | null) => {
+            if (this.stopped || this.pendingAssessments.get(channelCid) !== pending) return;
+            this.pendingAssessments.delete(channelCid);
+            this.logger.debug(`[${channelCid}] TypeSafe 增益乘数: ${multiplier ?? "不可用，沿用原计算"}`);
+            this.processStimulus(stimulus, config.mode === "adjust" ? multiplier ?? 1 : 1);
+        };
+        void new TypeSafeEvaluator(this.ctx, this.config).evaluate(session, pending.controller.signal).then(finish, () => finish(null));
+    }
 
     constructor(ctx: Context, config: Config) {
         super(ctx, Services.Agent, true);
@@ -76,6 +112,7 @@ export class AgentCore extends Service<Config> {
         this.scheduler = new StimulusScheduler(ctx, config, async (stimulus) => {
             const { channelCid } = stimulus;
 
+            this.cancelAssessment(channelCid);
             this.willing.handlePreReply(channelCid);
 
             const success = await this.processor.runCycle(stimulus);
@@ -94,16 +131,20 @@ export class AgentCore extends Service<Config> {
     protected async start(): Promise<void> {
         this._registerPromptTemplates();
 
-        this.ctx.on("agent/stimulus", (stimulus: AgentStimulus<any>) => {
+        this.ctx.on("agent/stimulus", stimulus => this.receiveStimulus(stimulus));
+
+        this.willing.startDecayCycle();
+    }
+
+    private processStimulus(stimulus: AgentStimulus<any>, assessmentMultiplier = 1, allowSchedule = true): void {
             const { type, channelCid, session } = stimulus;
 
             let decision = false;
 
             if (type === "user_message") {
-                this.scheduler.noteUserMessage(channelCid);
                 try {
                     const willingnessBefore = this.willing.getCurrentWillingness(channelCid);
-                    const result = this.willing.shouldReply(session);
+                    const result = this.willing.shouldReply(session, assessmentMultiplier);
                     const willingnessAfter = this.willing.getCurrentWillingness(channelCid); // 获取衰减后的值
                     decision = result.decision;
 
@@ -125,7 +166,7 @@ export class AgentCore extends Service<Config> {
                 this.logger.info(`[${channelCid}] 接收到系统刺激 [${type}]，自动触发响应。`);
             }
 
-            if (!decision) {
+            if (!decision || !allowSchedule) {
                 return;
             }
 
@@ -135,12 +176,11 @@ export class AgentCore extends Service<Config> {
             }
 
             this.scheduler.schedule(stimulus);
-        });
-
-        this.willing.startDecayCycle();
     }
 
     protected stop(): void {
+        this.stopped = true;
+        for (const channelCid of this.pendingAssessments.keys()) this.cancelAssessment(channelCid, false);
         this.scheduler.dispose();
         this.willing.stopDecayCycle();
     }
