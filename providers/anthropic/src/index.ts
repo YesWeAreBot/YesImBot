@@ -1,6 +1,6 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { Context, Schema } from "koishi";
-import { ToolSet, type BaseProviderConfig } from "koishi-plugin-yesimbot";
+import { defaultSettingsMiddleware, wrapLanguageModel, ToolSet, type BaseProviderConfig } from "koishi-plugin-yesimbot";
 
 import enUS from "./locales/en-US.json";
 import zhCN from "./locales/zh-CN.json";
@@ -47,7 +47,13 @@ export function apply(ctx: Context, config: Config) {
       capabilities: { chat: true, embedding: false },
       chatModels: () => config.chatModels,
       embeddingModels: () => [],
-      chat: (modelId: string) => client.chat(modelId),
+      // One top-level breakpoint caches tools, system and history as a single prefix and slides forward as the
+      // conversation grows, so a growing channel keeps reusing the same cache instead of rewriting it every turn.
+      chat: (modelId: string) =>
+        wrapLanguageModel({
+          model: client.chat(modelId),
+          middleware: [defaultSettingsMiddleware({ settings: { providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } } } })],
+        }),
       embedding: () => {
         throw new Error(`Provider "${config.id}" does not support embedding`);
       },
