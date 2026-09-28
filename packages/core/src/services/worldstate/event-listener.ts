@@ -301,7 +301,7 @@ export class EventListenerManager {
             sender: {
                 id: session.userId,
                 name: session.author.nick || session.author.name,
-                roles: session.author.roles,
+                roles: roleIds(session.author.roles),
             },
             content,
             timestamp: new Date(session.timestamp),
@@ -333,7 +333,7 @@ export class EventListenerManager {
             const memberKey = { pid: session.userId, platform: session.platform, guildId: session.guildId };
             const memberData = {
                 name: session.author.nick || session.author.name,
-                roles: session.author.roles,
+                roles: roleIds(session.author.roles),
                 avatar: session.author.avatar,
                 lastActive: new Date(),
             };
@@ -350,3 +350,8 @@ export class EventListenerManager {
     }
 }
 // #endregion
+
+/** 兼容旧适配器的角色 ID 数组及新版 Satori 的角色对象数组。 */
+function roleIds(roles?: readonly (string | { id: string })[]): string[] | undefined {
+    return roles?.map(role => typeof role === "string" ? role : role.id);
+}
