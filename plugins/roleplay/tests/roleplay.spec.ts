@@ -1,10 +1,8 @@
 import type { CharacterCardV3 } from "@risuai/ccardlib";
-import { createMemoryStorage, type Agent, type StepOptions } from "koishi-plugin-yesimbot";
+import { createMemoryStorage, type Agent } from "koishi-plugin-yesimbot";
 import { describe, expect, it } from "vitest";
 
 import { createRoleplayPlugin } from "../src/roleplay.js";
-
-const step = (): StepOptions => ({ turnId: "turn", stepNumber: 0, messages: [{ role: "user", content: "hello" }] }) as unknown as StepOptions;
 
 function createCard(): CharacterCardV3 {
   return {
@@ -55,7 +53,7 @@ describe("roleplay agent plugin", () => {
     ]);
   });
 
-  it("renders one frozen prompt envelope around every model step", async () => {
+  it("folds the character definition and post-history instructions into the prompt instructions", async () => {
     const card = createCard();
     card.data.description = "A {{pick:bright,dark}} character.";
     card.data.personality = "Mood: {{random:calm,kind}}.";
@@ -65,16 +63,13 @@ describe("roleplay agent plugin", () => {
     card.data.post_history_instructions = "Answer {{user}} last.";
     const plugin = createRoleplayPlugin({ card, greeting: "", userName: "direct-user", random: () => 0.8 });
 
-    const first = (await plugin.prepareStep!(step())).messages;
-    const second = (await plugin.prepareStep!(step())).messages;
-    const instructions = await plugin.extendInstructions!();
-    expect(instructions).toContain("Protect direct-user.");
-    expect(instructions).toContain("<example_dialogues>");
-    expect(first).toEqual([
-      { role: "system", content: "Name: Athena\n\nA dark character.\n\nPersonality:\nMood: kind.\n\nScenario:\nRoll: 5." },
-      { role: "user", content: "hello" },
-      { role: "system", content: "Answer direct-user last." },
-    ]);
+    const first = await plugin.extendInstructions!();
+    const second = await plugin.extendInstructions!();
+    expect(first).toContain("Protect direct-user.");
+    expect(first).toContain("<example_dialogues>");
+    expect(first).toContain("Name: Athena\n\nA dark character.\n\nPersonality:\nMood: kind.\n\nScenario:\nRoll: 5.");
+    expect(first).toContain("Answer direct-user last.");
     expect(second).toEqual(first);
+    expect(plugin.prepareStep).toBeUndefined();
   });
 });

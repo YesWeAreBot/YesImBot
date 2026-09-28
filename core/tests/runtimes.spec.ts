@@ -128,7 +128,7 @@ describe("ChannelRuntime scheduling", () => {
         createEntry("message", { id: "new", timestamp: 2, role: "user", content: "new" }),
       ]);
       expect(entries).toHaveLength(2);
-      expect(entries?.[0]).toMatchObject({ type: "message", data: { role: "system", content: expect.stringContaining("remember this") } });
+      expect(entries?.[0]).toMatchObject({ type: "message", data: { role: "user", content: expect.stringContaining("remember this") } });
     } finally {
       await value.stop();
       await rm(root, { recursive: true, force: true });

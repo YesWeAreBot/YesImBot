@@ -1,7 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import type { SystemModelMessage } from "@yesimagent/core";
 import type { Logger } from "koishi";
 
 import type { ChannelContext } from "../channels/index.js";
@@ -37,15 +36,15 @@ export async function readPersona(basePath: string, logger?: Logger): Promise<st
   return (await readPromptFile(basePath, "PERSONA.md", logger)) ?? DEFAULT_PERSONA;
 }
 
-export async function buildCoreSystemPrompt(options: CoreSystemPromptOptions): Promise<SystemModelMessage[]> {
+export async function buildCoreSystemPrompt(options: CoreSystemPromptOptions): Promise<string> {
   const [agents, persona] = await Promise.all([readPromptFile(options.basePath, "AGENTS.md", options.logger), readPersona(options.basePath, options.logger)]);
 
   return [
-    { role: "system", content: coreConstitution(options.customInnerThought ?? true) },
+    coreConstitution(options.customInnerThought ?? true),
     wrap("persona", persona),
     ...(agents ? [wrap("agents", agents)] : []),
     formatRuntimeContext(options.channel, options.selfId),
-  ];
+  ].join("\n\n");
 }
 
 export async function ensureDefaultPersona(basePath: string): Promise<void> {
@@ -151,20 +150,17 @@ function escapeXml(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&apos;");
 }
 
-function wrap(tag: "agents" | "persona", content: string): SystemModelMessage {
-  return { role: "system", content: `<${tag}>\n${content}\n</${tag}>` };
+function wrap(tag: "agents" | "persona", content: string): string {
+  return `<${tag}>\n${content}\n</${tag}>`;
 }
 
-function formatRuntimeContext(channel: ChannelContext, selfId: string): SystemModelMessage {
-  return {
-    role: "system",
-    content: [
-      "<runtime_context>",
-      `  <platform>${escapeXml(channel.platform)}</platform>`,
-      `  <selfId>${escapeXml(selfId)}</selfId>`,
-      `  <channelId>${escapeXml(channel.channelId)}</channelId>`,
-      `  <type>${channel.type}</type>`,
-      "</runtime_context>",
-    ].join("\n"),
-  };
+function formatRuntimeContext(channel: ChannelContext, selfId: string): string {
+  return [
+    "<runtime_context>",
+    `  <platform>${escapeXml(channel.platform)}</platform>`,
+    `  <selfId>${escapeXml(selfId)}</selfId>`,
+    `  <channelId>${escapeXml(channel.channelId)}</channelId>`,
+    `  <type>${channel.type}</type>`,
+    "</runtime_context>",
+  ].join("\n");
 }

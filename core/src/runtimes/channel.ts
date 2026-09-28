@@ -1,16 +1,15 @@
 import {
   AgentBusyError,
-  type AssistantContent,
   createAgent,
   createEntry,
-  createSystemMessage,
+  createUserMessage,
   type Agent,
   type AgentEntry,
   type AgentMessage,
   type AgentPlugin,
   type AgentEvent,
+  type AssistantContent,
   type LanguageModel,
-  type StepFinishInfo,
   type StepFinishDecision,
   type ToolSet,
 } from "@yesimagent/core";
@@ -21,10 +20,8 @@ import {
   createFinishTool,
   createReadTool,
   createSendMessageTool,
-  type ChannelTool,
   type DeliveredNotice,
   type SendFailedNotice,
-  type ToolContext,
 } from "../agents/tools.js";
 import type { WillDebug, WillEngine, WillState } from "../agents/will.js";
 import { deriveChannelKey, type Channel, type ChannelContext } from "../channels/index.js";
@@ -34,7 +31,6 @@ import {
   createEvent,
   createMessage,
   formatInput,
-  isEvent,
   isMessage,
   isMessageRecord,
   type AgentMessageOf,
@@ -87,7 +83,7 @@ const COMPACT_HISTORY_PLUGIN: AgentPlugin = {
       entry.type === "compact"
         ? createEntry(
             "message",
-            createSystemMessage(`<conversation_memory>\n${entry.data.summary}\n</conversation_memory>`, { id: entry.id, timestamp: entry.timestamp }),
+            createUserMessage(`<conversation_memory>\n${entry.data.summary}\n</conversation_memory>`, { id: entry.id, timestamp: entry.timestamp }),
             { id: entry.id, timestamp: entry.timestamp },
           )
         : entry,
@@ -532,18 +528,14 @@ export class ChannelRuntime {
   private promptPlugin(): AgentPlugin {
     return {
       name: "core.prompt",
-      extendInstructions: async () =>
-        (
-          await buildCoreSystemPrompt({
-            basePath: this.options.config.basePath,
-            channel: this.context,
-            selfId: this.selfId,
-            customInnerThought: this.options.config.customInnerThought,
-            logger: this.logger,
-          })
-        )
-          .map((block) => String(block.content))
-          .join("\n\n"),
+      extendInstructions: () =>
+        buildCoreSystemPrompt({
+          basePath: this.options.config.basePath,
+          channel: this.context,
+          selfId: this.selfId,
+          customInnerThought: this.options.config.customInnerThought,
+          logger: this.logger,
+        }),
       extendTools: () => this.options.providerTools,
     };
   }
