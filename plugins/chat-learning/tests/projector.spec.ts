@@ -27,7 +27,6 @@ const config: ChatLearningConfig = {
   maxModelThreadMessages: 30,
   reflectionModel: undefined,
   maxInjectedReflections: 3,
-  injectStyleAsSystem: false,
 };
 
 function turn(id: string, messageId: string, timestamp: number, text: string, userId = "u1", userName = "Alice"): MessageTurn {

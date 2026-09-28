@@ -17,7 +17,7 @@ describe("buildCoreSystemPrompt", () => {
         customInnerThought: false,
       });
 
-      const constitution = String(prompt[0].content);
+      const constitution = prompt;
       expect(constitution).toContain("你输出的文本不会被发送到任何地方");
       expect(constitution).toContain("send_message");
       expect(constitution).not.toContain("# 最终回复标签");
@@ -44,8 +44,8 @@ describe("buildCoreSystemPrompt", () => {
         customInnerThought: false,
       });
 
-      expect(String(enabled[0].content)).toContain("send_message 的 inner_thought 字段");
-      expect(String(disabled[0].content)).not.toContain("# 内心独白");
+      expect(enabled).toContain("send_message 的 inner_thought 字段");
+      expect(disabled).not.toContain("# 内心独白");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -60,7 +60,7 @@ describe("buildCoreSystemPrompt", () => {
         selfId: "bot",
       });
 
-      expect(prompt.map((block) => String(block.content)).some((content) => content.startsWith("# 消息元素"))).toBe(false);
+      expect(prompt.startsWith("# 消息元素")).toBe(false);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

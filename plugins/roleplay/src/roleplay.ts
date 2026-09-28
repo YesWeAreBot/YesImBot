@@ -1,5 +1,5 @@
 import type { CharacterCardV3 } from "@risuai/ccardlib";
-import { createAssistantMessage, createEntry, type AgentPlugin, type StepOptions } from "koishi-plugin-yesimbot";
+import { createAssistantMessage, createEntry, type AgentPlugin } from "koishi-plugin-yesimbot";
 
 import type { CBSContext } from "./cbs.js";
 import { renderCBS } from "./cbs.js";
@@ -23,19 +23,15 @@ export function createRoleplayPlugin(options: RoleplayAgentPluginOptions): Agent
   const characterDefinition = assembleCharacterDefinition(options.card, context);
   const postHistoryInstructions = assemblePostHistoryInstructions(options.card, context);
   const greeting = renderCBS(options.greeting, context).text;
-  const prefix = characterDefinition.length > 0 ? [{ role: "system" as const, content: characterDefinition }] : [];
-  const suffix = postHistoryInstructions.length > 0 ? [{ role: "system" as const, content: postHistoryInstructions }] : [];
+  const envelope = [characterDefinition, postHistoryInstructions].filter((section) => section.length > 0).join("\n\n");
 
   return {
     name: "roleplay",
-    extendInstructions: () => instructionExtension || undefined,
+    extendInstructions: () => [instructionExtension, envelope].filter((section) => section.length > 0).join("\n\n") || undefined,
     async init(agent) {
       const entries = await agent.storage.read();
       if (entries.some((entry) => entry.type === "message") || greeting.length === 0) return;
       await agent.storage.append(createEntry("message", createAssistantMessage(greeting)));
-    },
-    prepareStep(options: StepOptions) {
-      return { ...options, messages: [...prefix, ...options.messages, ...suffix] };
     },
   };
 }

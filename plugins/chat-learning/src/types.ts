@@ -169,5 +169,4 @@ export interface ChatLearningConfig {
   readonly finalStyleModel?: string;
   readonly replyLinkModelPath: string | undefined;
   readonly maxInjectedReflections: number;
-  readonly injectStyleAsSystem: boolean;
 }

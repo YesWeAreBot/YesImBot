@@ -31,7 +31,6 @@ const config: ChatLearningConfig = {
   maxModelThreadMessages: 30,
   reflectionModel: undefined,
   maxInjectedReflections: 3,
-  injectStyleAsSystem: false,
 };
 
 afterEach(() => {
