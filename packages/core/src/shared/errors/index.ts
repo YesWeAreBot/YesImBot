@@ -32,7 +32,7 @@ export class ErrorReporter {
     private readonly config: ErrorReporterConfig;
     private readonly logger: Logger;
 
-    constructor(config: ErrorReporterConfig, logger: Logger) {
+    constructor(config: ErrorReporterConfig, logger: Logger, private readonly saveLocal?: (errorId: string, error: Error) => Promise<void>) {
         this.config = {
             enabled: false,
             includeSystemInfo: true,
@@ -50,6 +50,10 @@ export class ErrorReporter {
      * @param context 包含错误和附加上下文的对象
      */
     public async report(context: ReportContext): Promise<string> {
+        // 本地保存不依赖远程上报开关，也不等待远程服务。
+        if (this.saveLocal) {
+            try { await this.saveLocal(context.errorId, context.error); } catch { this.logger.warn("本地错误报告保存失败"); }
+        }
         if (!this.config.enabled || !this.config.pasteServiceUrl) {
             return null;
         }
@@ -156,8 +160,8 @@ export class ErrorReporter {
 
 let globalErrorReporter: ErrorReporter | null = null;
 
-export function initializeErrorReporter(config: ErrorReporterConfig, logger: Logger) {
-    globalErrorReporter = new ErrorReporter(config, logger);
+export function initializeErrorReporter(config: ErrorReporterConfig, logger: Logger, saveLocal?: (errorId: string, error: Error) => Promise<void>) {
+    globalErrorReporter = new ErrorReporter(config, logger, saveLocal);
 }
 
 type ErrorDomains = keyof typeof ErrorDefinitions;
@@ -249,7 +253,7 @@ export function handleError(logger: Logger, error: unknown, contextDescription: 
     const devContext = { ...context };
     // 对可能很长的原始响应进行截断，防止刷屏
     if (devContext.rawResponse) {
-        devContext.rawResponse = truncate(devContext.rawResponse as string, 200) + "... (完整响应见上报信息)";
+        devContext.rawResponse = truncate(devContext.rawResponse as string, 200) + "... (完整响应见已启用的本地日志或上报信息)";
     }
     if (Object.keys(devContext).length > 0) {
         logger.warn(`   - 调试上下文: ${JSON.stringify(devContext)}`);
