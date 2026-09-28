@@ -179,6 +179,7 @@ export type AgentBehaviorConfig = ArousalConfig &
         multiModalSystemTemplate: string;
     } & {
         streamAction: boolean;
+        nativeToolCalling?: boolean;
         heartbeat: number;
 
         newMessageStrategy: "skip" | "immediate" | "deferred";
@@ -204,6 +205,7 @@ export const AgentBehaviorConfigSchema: Schema<AgentBehaviorConfig> = Schema.int
             .description("多模态系统提示词 (用于向模型解释图片占位符)"),
     }).description("提示词模板"),
     Schema.object({
+        nativeToolCalling: Schema.boolean().default(false).description("使用模型原生工具调用（需模型支持），关闭时沿用 JSON 动作"),
         streamAction: Schema.boolean().default(false).experimental(),
         heartbeat: Schema.number().min(1).max(10).default(5).role("slider").step(1).description("每轮对话最大心跳次数"),
 

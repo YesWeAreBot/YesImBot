@@ -1,3 +1,5 @@
+import type { Tool } from "@xsai/shared-chat";
+import { toolJSONSchema } from "@/services/extension/json-schema";
 import { GenerateTextResult } from "@xsai/generate-text";
 import { Message } from "@xsai/shared-chat";
 import { Context, h, Logger, Session } from "koishi";
@@ -47,7 +49,9 @@ export class HeartbeatProcessor {
             heartbeatCount++;
             try {
                 this.logger.info(`Heartbeat | 第 ${heartbeatCount}/${this.config.heartbeat} 轮`);
-                const result = this.config.streamAction
+                const result = this.config.nativeToolCalling
+                    ? await this.performNativeHeartbeat(turnId, stimulus)
+                    : this.config.streamAction
                     ? await this.performSingleHeartbeatWithStreaming(turnId, stimulus)
                     : await this.performSingleHeartbeat(turnId, stimulus);
 
@@ -408,6 +412,51 @@ export class HeartbeatProcessor {
         data.request_heartbeat = typeof data.request_heartbeat === "boolean" ? data.request_heartbeat : false;
 
         return data as Omit<AgentResponse, "observations">;
+    }
+
+    private async performNativeHeartbeat(turnId: string, stimulus: AgentStimulus<any>): Promise<{ continue: boolean }> {
+        const session = stimulus.session;
+        const { messages } = await this._prepareLlmRequest(stimulus);
+        messages.push({ role: "system", content: "本轮启用原生工具调用。请通过工具接口执行动作，不要输出 JSON actions；需要先查询时，先调用查询工具，获得结果后下一轮再决策。使用 send_message 发送回复。" });
+        const definitions = this.toolService.getAvailableTools(session);
+        if (!definitions.length) throw new Error("当前会话没有可用工具");
+        const tools: Tool[] = definitions.map(definition => ({
+            type: "function",
+            function: { name: definition.name, description: definition.description, parameters: toolJSONSchema(definition.parameters) },
+            // SDK 阶段不执行任何真实工具，失败重试不会重放消息。
+            execute: () => ({}),
+        }));
+        const response = await this.modelSwitcher.chat({ messages, tools, toolChoice: "required", maxSteps: 1, singleStep: true });
+        if (!response.toolCalls?.length) {
+            const legacy = this.parseAndValidateResponse(response, session.cid);
+            if (!legacy) throw new Error("模型没有返回有效工具调用");
+            await this.executeActions(turnId, session, legacy.actions);
+            return { continue: legacy.request_heartbeat };
+        }
+        const seen = new Map<string, string>();
+        const actions: Array<{ function: string; params: Record<string, unknown> }> = [];
+        // 完整校验后才执行，防止坏调用旁边的发送动作先发生。
+        for (const call of response.toolCalls) {
+            const params = JSON.parse(call.args);
+            if (!params || typeof params !== "object" || Array.isArray(params)) throw new Error("工具参数必须是对象");
+            const definition = this.toolService.getTool(call.toolName, session);
+            if (!definition) throw new Error(`工具不可用: ${call.toolName}`);
+            definition.parameters(params);
+            const signature = JSON.stringify([call.toolName, params]);
+            if (seen.has(call.toolCallId)) {
+                if (seen.get(call.toolCallId) !== signature) throw new Error("工具调用 ID 重复但参数不同");
+                continue;
+            }
+            seen.set(call.toolCallId, signature);
+            actions.push({ function: call.toolName, params });
+        }
+        for (const action of actions) {
+            const actionId = await this.interactionManager.recordAction(turnId, session.platform, session.channelId, action);
+            const result = await this.toolService.invoke(action.function, action.params, session);
+            await this.interactionManager.recordObservation(actionId, session.platform, session.channelId, { turnId, ...action, status: result.status, result: result.result, error: result.error });
+            if (result.status !== "success") throw new Error(`工具 ${action.function} 执行失败: ${result.error?.message ?? "未知错误"}`);
+        }
+        return { continue: !actions.some(action => action.function === "send_message") };
     }
 
     private displayThoughts(thoughts: AgentResponse["thoughts"]) {

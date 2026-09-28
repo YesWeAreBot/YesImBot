@@ -369,10 +369,12 @@ class RequestExecutor {
                 //attemptLogger.info("发送请求...");
                 const result = await model.chat(options_copy);
                 clearTimeout(timeoutId);
+                clearTimeout(firstTokenTimeoutId);
                 //attemptLogger.success("请求成功");
                 return { success: true, data: result };
             } catch (error) {
                 clearTimeout(timeoutId);
+                clearTimeout(firstTokenTimeoutId);
 
                 // 内容验证失败的特定处理
                 if (error instanceof AppError && error.code === ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED.code) {
