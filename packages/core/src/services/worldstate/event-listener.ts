@@ -17,6 +17,7 @@ interface PendingCommand {
 export class EventListenerManager {
     private readonly disposers: (() => boolean)[] = [];
     private readonly pendingCommands = new Map<string, PendingCommand[]>();
+    private pendingCleanupTimer: ReturnType<Context["setInterval"]> | null = null;
     private logger: Logger;
     private assetService: AssetService;
 
@@ -31,11 +32,15 @@ export class EventListenerManager {
 
     public start(): void {
         this.registerEventListeners();
+        this.pendingCleanupTimer = this.ctx.setInterval(() => this.cleanupPendingCommands(), 5 * 60 * 1000);
     }
 
     public stop(): void {
+        this.pendingCleanupTimer?.();
+        this.pendingCleanupTimer = null;
         this.disposers.forEach((dispose) => dispose());
         this.disposers.length = 0;
+        this.pendingCommands.clear();
     }
 
     public cleanupPendingCommands(): void {
@@ -252,26 +257,29 @@ export class EventListenerManager {
 
         await this.service.recordSystemEvent(eventPayload);
 
-        const pendingList = this.pendingCommands.get(session.channelId) || [];
+        this.cleanupPendingCommands();
+        const pendingList = this.pendingCommands.get(session.cid) || [];
         pendingList.push({
             commandEventId,
             scope: session.scope,
             invokerId: session.userId,
             timestamp: Date.now(),
         });
-        this.pendingCommands.set(session.channelId, pendingList);
+        this.pendingCommands.set(session.cid, pendingList);
     }
 
     private async matchCommandResult(session: Session): Promise<void> {
         if (!session.scope) return;
 
-        const pendingInChannel = this.pendingCommands.get(session.channelId);
+        this.cleanupPendingCommands();
+        const pendingInChannel = this.pendingCommands.get(session.cid);
         if (!pendingInChannel?.length) return;
 
         const pendingIndex = pendingInChannel.findIndex((p) => p.scope === session.scope);
         if (pendingIndex === -1) return;
 
         const [pendingCmd] = pendingInChannel.splice(pendingIndex, 1);
+        if (!pendingInChannel.length) this.pendingCommands.delete(session.cid);
         this.logger.debug(`匹配到指令结果 | 事件ID: ${pendingCmd.commandEventId}`);
 
         const [existingEvent] = await this.ctx.database.get(TableName.SystemEvents, { id: pendingCmd.commandEventId });

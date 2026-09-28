@@ -98,7 +98,9 @@ export class HistoryCommandManager {
                         let agentLogRemoved = false;
                         if (target || options.all) {
                             try {
-                                await this.service.l1_manager.clearAgentHistory(target?.platform, target?.channelId);
+                                if (target) await this.service.l1_manager.clearAgentHistory(target.platform, target.channelId);
+                                else if (options.all === "all") await this.service.l1_manager.clearAgentHistory();
+                                else await this.service.l1_manager.clearAgentHistoryByType(options.all as "private" | "guild");
                                 agentLogRemoved = true;
                             } catch (e) {
                                 // ignore if file not found
@@ -117,7 +119,7 @@ export class HistoryCommandManager {
                 };
 
                 if (options.all) {
-                    if (options.all === undefined) return "错误：-a 的参数必须是 'private', 'guild', 或 'all'";
+                    if (!["private", "guild", "all"].includes(options.all)) return "错误：-a 的参数必须是 'private', 'guild', 或 'all'";
                     let query: Query.Expr<MessageData> = {};
                     let description = "";
                     switch (options.all) {

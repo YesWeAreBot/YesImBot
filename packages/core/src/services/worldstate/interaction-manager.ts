@@ -173,8 +173,8 @@ export class InteractionManager {
      */
     public async getL1History(platform: string, channelId: string, limit: number): Promise<L1HistoryItem[]> {
         const [messages, systemEvents, agentEvents] = await Promise.all([
-            this.ctx.database.get(TableName.Messages, { channelId }, { limit, sort: { timestamp: "desc" } }),
-            this.ctx.database.get(TableName.SystemEvents, { channelId }, { limit, sort: { timestamp: "desc" } }),
+            this.ctx.database.get(TableName.Messages, { platform, channelId }, { limit, sort: { timestamp: "desc" } }),
+            this.ctx.database.get(TableName.SystemEvents, { platform, channelId }, { limit, sort: { timestamp: "desc" } }),
             this.getAgentHistoryFromFile(platform, channelId, limit),
         ]);
 
@@ -296,6 +296,25 @@ export class InteractionManager {
             // force: true 已经避免 ENOENT 报错，这里主要处理其他异常
             this.logger.error(`删除Agent日志${targetType === "dir" ? "目录" : "文件"}失败: ${targetPath}`, error);
             throw error;
+        }
+    }
+
+    public async clearAgentHistoryByType(type: "private" | "guild"): Promise<void> {
+        let platforms: import("fs").Dirent[];
+        try {
+            platforms = await fs.readdir(this.basePath, { withFileTypes: true });
+        } catch (error) {
+            if (error.code === "ENOENT") return;
+            throw error;
+        }
+
+        for (const platform of platforms) {
+            if (!platform.isDirectory()) continue;
+            const directory = path.join(this.basePath, platform.name);
+            for (const file of await fs.readdir(directory)) {
+                if (!file.endsWith(".agent.jsonl") || file.startsWith("private_") !== (type === "private")) continue;
+                await fs.rm(path.join(directory, file), { force: true });
+            }
         }
     }
 

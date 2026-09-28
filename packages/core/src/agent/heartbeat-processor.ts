@@ -279,7 +279,6 @@ export class HeartbeatProcessor {
                     }
                 } finally {
                     this.logger.debug(`[批次 ${id}] thoughts consumer end`);
-                    await this.interactionManager.recordThought(turnId, platform, channelId, thoughts);
                 }
             })();
 
@@ -288,8 +287,7 @@ export class HeartbeatProcessor {
                 let count = 1;
                 for await (const action of streamParser.stream<any>("actions")) {
                     if (signal.aborted) break;
-                    this.logger.info(`[流式执行 #${id}] ⚡️ 动作 #${count++}: ${action.function} (耗时: ${Date.now() - stime}ms)`);
-                    await this.executeActions(turnId, session, [action]);
+                    this.logger.debug(`[流式解析 #${id}] 动作 #${count++}: ${action.function} (耗时: ${Date.now() - stime}ms)`);
                 }
                 this.logger.debug(`[批次 ${id}] actions consumer end`);
             })();
@@ -365,19 +363,26 @@ export class HeartbeatProcessor {
                         return { valid: true, earlyExit: true, parsedData: finalData };
                     }
 
-                    return { valid: true, earlyExit: false, parsedData: finalData };
+                    return { valid: false, earlyExit: false, error: "Incomplete agent response" };
                 },
             },
         });
 
         // 等待 LLM 结束后，再只等待最后的批次
-        await llmPromise;
+        const llmRawResponse = await llmPromise;
         if (currentBatch) {
             await Promise.all(currentBatch.promises);
         }
 
+        const agentResponseData = this.parseAndValidateResponse(llmRawResponse, session.cid);
+        if (!agentResponseData) return null;
+
+        this.displayThoughts(agentResponseData.thoughts);
+        await this.interactionManager.recordThought(turnId, platform, channelId, agentResponseData.thoughts);
+        await this.executeActions(turnId, session, agentResponseData.actions);
+
         this.logger.success("单次心跳成功完成");
-        return { continue: request_heartbeat };
+        return { continue: agentResponseData.request_heartbeat };
     }
 
     /**
