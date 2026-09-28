@@ -5,6 +5,8 @@ import {
   createEntry,
   createSystemMessage,
   type Agent,
+  type AgentEntry,
+  type AgentMessage,
   type AgentPlugin,
   type AgentEvent,
   type LanguageModel,
@@ -81,7 +83,7 @@ const COMPACT_HISTORY_PLUGIN: AgentPlugin = {
   enforce: "pre",
   transformEntries: (entries) => {
     const lastCompactIndex = lastCompactEntryIndex(entries);
-    return (lastCompactIndex === -1 ? entries : entries.slice(lastCompactIndex)).map((entry) =>
+    const projected = (lastCompactIndex === -1 ? entries : entries.slice(lastCompactIndex)).map((entry) =>
       entry.type === "compact"
         ? createEntry(
             "message",
@@ -90,8 +92,70 @@ const COMPACT_HISTORY_PLUGIN: AgentPlugin = {
           )
         : entry,
     );
+    return normalizeInterleavedToolMessages(projected);
   },
 };
+
+/**
+ * Keep an assistant tool call adjacent to its tool result in the model history.
+ *
+ * Inbound channel messages are persisted while a tool is running. The agent
+ * runtime can therefore observe `assistant(tool-call) -> user -> tool(result)`
+ * even though the provider protocol requires the tool result immediately
+ * after its call. Defer those inbound messages until all pending results have
+ * been appended; otherwise the runtime's missing-result repair creates a
+ * second output for the same call id.
+ */
+function normalizeInterleavedToolMessages(entries: readonly AgentEntry[]): AgentEntry[] {
+  const normalized: AgentEntry[] = [];
+  const deferred: AgentEntry[] = [];
+  const pending = new Set<string>();
+
+  const flushDeferred = () => {
+    if (deferred.length === 0) return;
+    normalized.push(...deferred.splice(0));
+  };
+
+  for (const entry of entries) {
+    if (entry.type !== "message") {
+      normalized.push(entry);
+      continue;
+    }
+
+    const message = entry.data as AgentMessage;
+    if (message.role === "assistant") {
+      // A new assistant message means the previous tool sequence was already
+      // resolved (or malformed); do not move unrelated history across it.
+      if (pending.size > 0) pending.clear();
+      flushDeferred();
+      normalized.push(entry);
+      for (const part of message.content) {
+        if (typeof part !== "string" && part.type === "tool-call" && !part.providerExecuted) {
+          pending.add(part.toolCallId);
+        }
+      }
+      continue;
+    }
+
+    if (message.role === "tool") {
+      normalized.push(entry);
+      for (const part of message.content) {
+        if (part.type === "tool-result") pending.delete(part.toolCallId);
+      }
+      if (pending.size === 0) flushDeferred();
+      continue;
+    }
+
+    if (pending.size > 0) {
+      deferred.push(entry);
+    } else {
+      normalized.push(entry);
+    }
+  }
+
+  flushDeferred();
+  return normalized;
+}
 
 export type RuntimeResult =
   | { readonly kind: "wait"; readonly eventId: string }

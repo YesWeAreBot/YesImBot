@@ -26,7 +26,7 @@ vi.mock("@yesimagent/core", async (original) => {
   };
 });
 
-import { createAgent, createEntry } from "@yesimagent/core";
+import { createAgent, createCustomMessage, createEntry } from "@yesimagent/core";
 
 import { Agents } from "../src/agents/index.js";
 import { Channel, Channels } from "../src/channels/index.js";
@@ -129,6 +129,39 @@ describe("ChannelRuntime scheduling", () => {
       ]);
       expect(entries).toHaveLength(2);
       expect(entries?.[0]).toMatchObject({ type: "message", data: { role: "system", content: expect.stringContaining("remember this") } });
+    } finally {
+      await value.stop();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+  it("keeps inbound messages after tool results when they arrive mid-call", async () => {
+    const { value, root } = await runtime();
+    try {
+      const plugin = plugins().find((item) => item.name === "core.compact-history");
+      const assistant = createEntry(
+        "message",
+        {
+          id: "assistant",
+          timestamp: 1,
+          role: "assistant",
+          content: [{ type: "tool-call", toolCallId: "call_1", toolName: "lookup", input: {} }],
+        },
+        { id: "assistant" },
+      );
+      const inbound = createEntry("message", createCustomMessage("yesimbot.message", {} as never, { id: "inbound", timestamp: 2 }), { id: "inbound" });
+      const result = createEntry(
+        "message",
+        {
+          id: "result",
+          timestamp: 3,
+          role: "tool",
+          content: [{ type: "tool-result", toolCallId: "call_1", toolName: "lookup", output: { type: "json", value: { ok: true } } }],
+        },
+        { id: "result" },
+      );
+
+      const entries = await plugin?.transformEntries?.([assistant, inbound, result]);
+      expect(entries?.map((entry) => entry.id)).toEqual(["assistant", "result", "inbound"]);
     } finally {
       await value.stop();
       await rm(root, { recursive: true, force: true });
