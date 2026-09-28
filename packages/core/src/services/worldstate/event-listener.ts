@@ -289,7 +289,9 @@ export class EventListenerManager {
             await this.updateMemberInfo(session);
         }
 
-        const content = await this.assetService.transform(session.content);
+        // 使用原生序列化还原被分离到 session.quote 的引用元素。
+        const messageContent = session.toJSON().message?.content ?? session.content;
+        const content = await this.assetService.transform(messageContent);
         this.logger.debug(`记录转义后的消息：${content}`);
 
         const message: MessageData = {

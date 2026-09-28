@@ -280,7 +280,7 @@ export class WillingnessManager {
             chatId: session.cid,
             content: session.content,
             isMentioned: session.stripped.atSelf || session.elements.some((e) => e.type === "at" && e.attrs.id === session.bot.selfId),
-            isQuote: session.quote && session.quote?.user.id === session.bot.selfId,
+            isQuote: session.quote && session.quote?.user?.id === session.bot.selfId,
             isDirect: session.isDirect,
         };
 
