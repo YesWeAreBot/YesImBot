@@ -1,3 +1,4 @@
+import { Services } from "./shared/constants";
 import {} from "@koishijs/plugin-notifier";
 import { Context, ForkScope, Service, sleep } from "koishi";
 
@@ -96,7 +97,7 @@ export default class YesImBot extends Service<Config> {
                 agentCore,
             ];
 
-            initializeErrorReporter(config.errorReporting, this.ctx.logger("[错误报告]"));
+            initializeErrorReporter(config.errorReporting, this.ctx.logger("[错误报告]"), (id, error) => this.ctx[Services.Logger].recordError(id, error));
 
             waitForServices(services)
                 .then(() => {

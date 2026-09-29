@@ -1,3 +1,5 @@
+import { format } from "util";
+import { LocalLogWriter, LocalLoggingConfig, sanitizeLog } from "./local-writer";
 import { Context, Logger, Schema, Service } from "koishi";
 
 import { Config } from "@/config";
@@ -20,9 +22,18 @@ export enum LogLevel {
 
 export interface LoggingConfig {
     level: LogLevel;
+    local?: LocalLoggingConfig;
 }
 
 export const LoggingConfigSchema: Schema<LoggingConfig> = Schema.object({
+    local: Schema.object({
+        enabled: Schema.boolean().default(false).description("保存本地调试日志和完整错误报告"),
+        directory: Schema.string().default("data/yesimbot/debug_logs").description("日志目录，相对路径以 Koishi 工作目录为准"),
+        level: Schema.union([1, 2, 3]).default(3).description("本地日志级别：1 错误 / 2 常规 / 3 调试，独立于控制台"),
+        maxFileSizeMB: Schema.number().min(1).max(1024).default(10).description("单文件轮换大小（MB），一条完整记录可超出此值"),
+        maxFiles: Schema.natural().min(1).max(1000).default(20).description("最多保留的日志文件数"),
+        retentionDays: Schema.natural().max(3650).default(7).description("保留天数，0 表示仅按文件数清理"),
+    }).description("本地日志（可能包含对话内容，请妥善保管）"),
     level: Schema.union([
         Schema.const(LogLevel.SILENT).description("SILENT"),
         Schema.const(LogLevel.ERROR).description("ERROR"),
@@ -35,7 +46,7 @@ export const LoggingConfigSchema: Schema<LoggingConfig> = Schema.object({
     - DEBUG: 显示所有信息，包括详细的调试日志`),
 });
 
-function createLevelAwareLoggerProxy(logger: Logger, configuredLevel: LogLevel): Logger {
+function createLevelAwareLoggerProxy(logger: Logger, configuredLevel: LogLevel, write?: (name: string, level: number, method: string, args: any[]) => void): Logger {
     logger.level = configuredLevel;
 
     // 映射到 reggol 的实际级别值
@@ -56,7 +67,7 @@ function createLevelAwareLoggerProxy(logger: Logger, configuredLevel: LogLevel):
                 const originalExtend = Reflect.get(target, prop, receiver);
                 return (...args: any[]) => {
                     const newLogger = originalExtend.apply(target, args);
-                    return createLevelAwareLoggerProxy(newLogger, configuredLevel);
+                    return createLevelAwareLoggerProxy(newLogger, configuredLevel, write);
                 };
             }
 
@@ -64,14 +75,11 @@ function createLevelAwareLoggerProxy(logger: Logger, configuredLevel: LogLevel):
             if (propName in methodLevels) {
                 const methodLevel = methodLevels[propName];
 
-                // 检查方法的详细度是否在用户配置的允许范围内
-                if (methodLevel <= configuredLevel) {
-                    const originalMethod = Reflect.get(target, prop, receiver);
-                    return originalMethod.bind(target);
-                } else {
-                    // 方法的详细度太高，超出配置范围，忽略它
-                    return () => {};
-                }
+                const originalMethod = Reflect.get(target, prop, receiver);
+                return (...args: any[]) => {
+                    try { write?.(target.name, methodLevel, propName, args); } catch {}
+                    if (methodLevel <= configuredLevel) return originalMethod.apply(target, args);
+                };
             }
 
             // 转发其他所有属性 (逻辑不变)
@@ -87,25 +95,40 @@ declare module "koishi" {
 
 export class LoggerService extends Service<Config> {
     _logger: Logger;
+    private localWriter?: LocalLogWriter;
 
     constructor(ctx: Context, config: Config) {
         super(ctx, Services.Logger, true);
         this.ctx = ctx;
         this.config = config;
-        this._logger = createLevelAwareLoggerProxy(ctx.logger("[日志服务]"), config.logging.level);
+        if (config.logging.local?.enabled) {
+            this.localWriter = new LocalLogWriter(ctx.baseDir, config.logging.local, message => ctx.logger("[本地日志]").warn(message), config.providers?.map(provider => provider.apiKey).filter(Boolean));
+        }
+        this._logger = createLevelAwareLoggerProxy(ctx.logger("[日志服务]"), config.logging.level, this.writeLocal.bind(this));
     }
 
     protected start(): void {
         //this._logger.info("服务已启动");
     }
 
-    protected stop(): void {
-        //this._logger.info("服务已停止");
+    protected async stop(): Promise<void> {
+        await this.localWriter?.close();
+    }
+
+    private writeLocal(name: string, level: number, method: string, args: any[]): void {
+        if (!this.localWriter || level > this.config.logging.local.level) return;
+        void this.localWriter.write({ timestamp: new Date().toISOString(), name, level: method, message: format(...args.map(value => sanitizeLog(value))), arguments: args });
+    }
+
+    public async recordError(errorId: string, error: Error): Promise<void> {
+        if (!this.localWriter) return;
+        await this.localWriter.write({ timestamp: new Date().toISOString(), level: "error", errorId, error });
+        this.ctx.logger("[本地日志]").info(`错误 ${errorId} 的本地日志目录：${this.localWriter.directory}`);
     }
 
     /** @deprecated */
     public getLogger(name?: string): Logger {
         const originalLogger = this.ctx?.logger(name) || new Logger(name, {});
-        return createLevelAwareLoggerProxy(originalLogger, this.config.logging.level);
+        return createLevelAwareLoggerProxy(originalLogger, this.config.logging.level, this.writeLocal.bind(this));
     }
 }
