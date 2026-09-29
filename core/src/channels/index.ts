@@ -218,9 +218,6 @@ export class Channels implements Resources {
     }
     const root = path.join(this.channelsPath, channelDirectoryName(ctx));
     if ((await fs.lstat(root)).isSymbolicLink()) throw new Error("Channel directory is a symbolic link");
-    const realRoot = await fs.realpath(root);
-    const rel = path.relative(this.channelsPath, realRoot);
-    if (rel.startsWith(`..${path.sep}`) || rel === ".." || path.isAbsolute(rel)) throw new Error("Resolved storage path escapes its channel root");
     return root;
   }
 }
