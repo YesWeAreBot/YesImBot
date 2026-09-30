@@ -299,7 +299,7 @@ export class EventListenerManager {
             sender: {
                 id: session.userId,
                 name: session.author.nick || session.author.name,
-                roles: session.author.roles,
+                roles: session.author.roles?.map((role) => (typeof role === "string" ? role : role.id)),
             },
             content,
             timestamp: new Date(session.timestamp),
@@ -331,7 +331,7 @@ export class EventListenerManager {
             const memberKey = { pid: session.userId, platform: session.platform, guildId: session.guildId };
             const memberData = {
                 name: session.author.nick || session.author.name,
-                roles: session.author.roles,
+                roles: session.author.roles?.map((role) => (typeof role === "string" ? role : role.id)),
                 avatar: session.author.avatar,
                 lastActive: new Date(),
             };

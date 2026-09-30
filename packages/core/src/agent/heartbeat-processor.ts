@@ -35,7 +35,7 @@ export class HeartbeatProcessor {
 
     /**
      * 运行完整的 Agent 思考-行动周期
-     * @returns 返回 true 如果至少有一次心跳成功
+     * @returns 返回 true 如果至少有一次 send_message 成功
      */
     public async runCycle(stimulus: AgentStimulus<any>): Promise<boolean> {
         const turnId = uuidv4();
@@ -48,12 +48,16 @@ export class HeartbeatProcessor {
             try {
                 this.logger.info(`Heartbeat | 第 ${heartbeatCount}/${this.config.heartbeat} 轮`);
                 const result = this.config.streamAction
-                    ? await this.performSingleHeartbeatWithStreaming(turnId, stimulus)
-                    : await this.performSingleHeartbeat(turnId, stimulus);
+                    ? await this.performSingleHeartbeatWithStreaming(turnId, stimulus, () => {
+                          success = true;
+                      })
+                    : await this.performSingleHeartbeat(turnId, stimulus, () => {
+                          success = true;
+                      });
 
                 if (result) {
                     shouldContinueHeartbeat = result.continue;
-                    success = true; // 至少成功一次心跳
+                    success = success || result.replySent;
                 } else {
                     shouldContinueHeartbeat = false;
                 }
@@ -156,7 +160,11 @@ export class HeartbeatProcessor {
     /**
      * 执行单次心跳的完整逻辑（非流式）
      */
-    private async performSingleHeartbeat(turnId: string, stimulus: AgentStimulus<any>): Promise<{ continue: boolean } | null> {
+    private async performSingleHeartbeat(
+        turnId: string,
+        stimulus: AgentStimulus<any>,
+        onReplySent: () => void
+    ): Promise<{ continue: boolean; replySent: boolean } | null> {
         const { session } = stimulus;
         const { platform, channelId } = session;
         const parser = new JsonParser<AgentResponse>();
@@ -213,16 +221,21 @@ export class HeartbeatProcessor {
 
         // 步骤 7: 执行动作
         this.logger.debug(`步骤 7/7: 执行 ${agentResponseData.actions.length} 个动作...`);
-        await this.executeActions(turnId, session, agentResponseData.actions);
+        const replySent = await this.executeActions(turnId, session, agentResponseData.actions, onReplySent);
 
-        this.logger.success("单次心跳成功完成");
-        return { continue: agentResponseData.request_heartbeat };
+        if (replySent) this.logger.success("单次心跳成功完成");
+        else this.logger.debug("单次心跳完成，未成功发送回复");
+        return { continue: agentResponseData.request_heartbeat, replySent };
     }
 
     /**
      * 执行单次心跳的完整逻辑（流式，支持重试批次切换）
      */
-    private async performSingleHeartbeatWithStreaming(turnId: string, stimulus: AgentStimulus<any>): Promise<{ continue: boolean } | null> {
+    private async performSingleHeartbeatWithStreaming(
+        turnId: string,
+        stimulus: AgentStimulus<any>,
+        onReplySent: () => void
+    ): Promise<{ continue: boolean; replySent: boolean } | null> {
         const { session } = stimulus;
         const { platform, channelId } = session;
 
@@ -243,6 +256,8 @@ export class HeartbeatProcessor {
 
         let thoughts = { observe: "", analyze_infer: "", plan: "" };
         let request_heartbeat = false;
+        // 批次切换不能丢失已经开始执行的发送结果。
+        const pendingActions: Promise<boolean>[] = [];
 
         let streamParser = new StreamParser({
             thoughts: { observe: "string", analyze_infer: "string", plan: "string" },
@@ -289,7 +304,9 @@ export class HeartbeatProcessor {
                 for await (const action of streamParser.stream<any>("actions")) {
                     if (signal.aborted) break;
                     this.logger.info(`[流式执行 #${id}] ⚡️ 动作 #${count++}: ${action.function} (耗时: ${Date.now() - stime}ms)`);
-                    await this.executeActions(turnId, session, [action]);
+                    const pending = this.executeActions(turnId, session, [action], onReplySent);
+                    pendingActions.push(pending);
+                    await pending;
                 }
                 this.logger.debug(`[批次 ${id}] actions consumer end`);
             })();
@@ -309,6 +326,10 @@ export class HeartbeatProcessor {
                 promises: [thoughtsPromise, actionsPromise, heartbeatPromise],
                 id,
             };
+            // 动作可能在模型结束之前失败，立即观察以避免未处理的拒绝。
+            currentBatch.promises.forEach((promise) => {
+                void promise.catch(() => {});
+            });
         };
 
         // 第一次启动消费者
@@ -371,13 +392,22 @@ export class HeartbeatProcessor {
         });
 
         // 等待 LLM 结束后，再只等待最后的批次
-        await llmPromise;
-        if (currentBatch) {
-            await Promise.all(currentBatch.promises);
+        try {
+            await llmPromise;
+            if (currentBatch) await Promise.all(currentBatch.promises);
+        } finally {
+            currentBatch?.controller.abort();
+            try {
+                streamParser.processText("", true);
+            } catch {}
+            // 即使模型失败，也要等已开始的动作结束后再释放频道锁。
+            await Promise.allSettled(pendingActions);
         }
 
-        this.logger.success("单次心跳成功完成");
-        return { continue: request_heartbeat };
+        const replySent = (await Promise.all(pendingActions)).some(Boolean);
+        if (replySent) this.logger.success("单次心跳成功完成");
+        else this.logger.debug("单次心跳完成，未成功发送回复");
+        return { continue: request_heartbeat, replySent };
     }
 
     /**
@@ -419,18 +449,28 @@ export class HeartbeatProcessor {
   - 计划: ${plan || "N/A"}`);
     }
 
-    private async executeActions(turnId: string, session: Session, actions: AgentResponse["actions"]): Promise<void> {
+    private async executeActions(
+        turnId: string,
+        session: Session,
+        actions: AgentResponse["actions"],
+        onReplySent: () => void
+    ): Promise<boolean> {
         if (actions.length === 0) {
             this.logger.info("无动作需要执行");
-            return;
+            return false;
         }
 
         const { platform, channelId } = session;
+        let replySent = false;
 
         for await (const action of actions) {
             if (!action.function) continue; // FIXME: params is nullable
             const actionId = await this.interactionManager.recordAction(turnId, platform, channelId, action);
             const result = await this.toolService.invoke(action.function, action.params, session);
+            if (action.function === "send_message" && result.status === "success") {
+                replySent = true;
+                onReplySent();
+            }
             await this.interactionManager.recordObservation(actionId, platform, channelId, {
                 turnId,
                 function: action.function,
@@ -439,6 +479,7 @@ export class HeartbeatProcessor {
                 error: result.error,
             });
         }
+        return replySent;
     }
 }
 
