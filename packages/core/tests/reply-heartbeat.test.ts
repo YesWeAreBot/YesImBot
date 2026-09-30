@@ -2,8 +2,9 @@ import { expect, it } from "bun:test";
 import { HeartbeatProcessor } from "../src/agent/heartbeat-processor";
 import { withReplyTurn } from "../src/agent/reply-turn";
 import { Services } from "../src/shared/constants";
-for (const streamAction of [false, true])
-    it(`cancels an in-flight ${streamAction ? "streaming" : "normal"} model request and stops all actions`, async () => {
+import { Schema } from "koishi";
+for (const mode of ["normal", "streaming", "native"])
+    it(`cancels an in-flight ${mode} model request and stops all actions`, async () => {
         const controller = new AbortController();
         let ready!: () => void;
         const started = new Promise<void>((r) => {
@@ -21,10 +22,11 @@ for (const streamAction of [false, true])
         };
         const processor = new HeartbeatProcessor(
             { [Services.Logger]: { getLogger: () => logger } } as any,
-            { heartbeat: 2, streamAction } as any,
+            { heartbeat: 2, streamAction: mode === "streaming", nativeToolCalling: mode === "native" } as any,
             model as any,
             {} as any,
             {
+                getAvailableTools: () => [{ name: "send_message", description: "test", parameters: Schema.object({}) }],
                 invoke: async () => {
                     calls.push("tool");
                 },

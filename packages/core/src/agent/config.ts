@@ -42,7 +42,17 @@ export const ArousalConfigSchema: Schema<ArousalConfig> = Schema.object({
     debounceMs: Schema.number().default(1000).description("消息防抖时间 (毫秒)"),
 });
 
+export interface TypeSafeConfig {
+    mode: "off" | "observe" | "adjust";
+    evaluationModel: { providerName: string; modelId: string };
+    timeoutMs: number;
+    historyLimit: number;
+    interests: string;
+    influence: number;
+}
+
 export interface WillingnessConfig {
+    typesafe?: TypeSafeConfig;
     base: {
         /** 收到普通文本消息的基础分。这是对话的基石 */
         text: Computed<number>;
@@ -85,6 +95,14 @@ export interface WillingnessConfig {
 }
 
 const WillingnessConfigSchema: Schema<WillingnessConfig> = Schema.object({
+    typesafe: Schema.object({
+        mode: Schema.union(["off", "observe", "adjust"]).default("off").description("TypeSafe 接话判断：关闭 / 仅记录 / 调整意愿"),
+        evaluationModel: Schema.dynamic("modelService.evaluationModels").description("判断模型，请在模型服务中配置 TypeSafe 提供商和评估能力"),
+        timeoutMs: Schema.number().min(100).max(30000).default(3000).description("判断超时（毫秒），失败后沿用原意愿"),
+        historyLimit: Schema.natural().max(30).default(8).description("判断时参考的近期消息数"),
+        interests: Schema.string().role("textarea").default("").description("角色兴趣，留空使用高兴趣关键词"),
+        influence: Schema.number().min(0).max(1).default(0.5).description("本条消息意愿增益的调整强度"),
+    }).description("TypeSafe 接话判断（启用后将近期对话发送给所选提供商）"),
     base: Schema.object({
         text: Schema.computed<Schema<number>>(Schema.number().default(12))
             .default(12)
@@ -162,6 +180,7 @@ export type AgentBehaviorConfig = ArousalConfig &
     } & {
         replySuppression?: { defaultDurationSeconds: number };
         streamAction: boolean;
+        nativeToolCalling?: boolean;
         heartbeat: number;
 
         newMessageStrategy: "skip" | "immediate" | "deferred";
@@ -190,6 +209,7 @@ export const AgentBehaviorConfigSchema: Schema<AgentBehaviorConfig> = Schema.int
         replySuppression: Schema.object({
             defaultDurationSeconds: Schema.number().min(1).default(60).description("回复暂停命令的默认时长（秒），命令参数仅覆盖本次操作"),
         }).description("回复抑制"),
+        nativeToolCalling: Schema.boolean().default(false).description("使用模型原生工具调用（需模型支持），关闭时沿用 JSON 动作"),
         streamAction: Schema.boolean().default(false).experimental(),
         heartbeat: Schema.number().min(1).max(10).default(5).role("slider").step(1).description("每轮对话最大心跳次数"),
 

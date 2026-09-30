@@ -111,7 +111,7 @@ export default class CoreUtilExtension {
             return Success();
         } catch (error) {
             //this.logger.error(error);
-            return Failed(`发送消息失败，可能是已被禁言或网络错误。错误: ${error.message}`);
+            return Failed(`发送消息失败。错误: ${this.getSendErrorMessage(error) || "未知发送错误"}`);
         }
     }
 
@@ -261,12 +261,25 @@ export default class CoreUtilExtension {
         }
     }
 
+    private getSendErrorMessage(error: unknown, seen = new Set<unknown>()): string {
+        if (typeof error === "string") return error;
+        if (!error || typeof error !== "object" || seen.has(error)) return "";
+        seen.add(error);
+        const details = error as { message?: string; errors?: unknown[]; cause?: unknown };
+        const messages = [
+            ...(Array.isArray(details.errors) ? details.errors.map((inner) => this.getSendErrorMessage(inner, seen)) : []),
+            this.getSendErrorMessage(details.cause, seen),
+            typeof details.message === "string" ? details.message : "",
+        ].filter(Boolean);
+        return [...new Set(messages)].join("; ");
+    }
+
     /**
      * 带有“人性化”延迟的消息发送执行器
      * @param messages 要发送的消息数组
      * @param bot 用于发送的机器人实例
      * @param channelId 目标频道ID
-     * @param originalSession 原始会话，用于创建after-send事件
+     * @param originalSession 原始会话，用于被动回复及创建after-send事件
      */
     private async sendMessagesWithHumanLikeDelay(messages: string[], bot: Bot, channelId: string, originalSession: Session): Promise<void> {
         for (let i = 0; i < messages.length; i++) {
@@ -283,11 +296,17 @@ export default class CoreUtilExtension {
 
             await sleep(delay);
 
-            if (this.disposed) return;
+            if (this.disposed) throw new Error("核心工具已卸载，消息未发送");
             assertReplyDestination({ platform: bot.platform, selfId: bot.selfId, channelId });
 
             // --- 发送消息 ---
-            const messageIds = await bot.sendMessage(channelId, content);
+            const sameSession = bot === originalSession.bot && channelId === originalSession.channelId;
+            const messageIds = sameSession
+                ? await bot.sendMessage(channelId, content, originalSession.event.referrer, { session: originalSession })
+                : await bot.sendMessage(channelId, content);
+            if (!messageIds?.length) {
+                throw new Error("适配器未返回消息 ID，无法确认发送结果");
+            }
 
             // --- 发送后处理 ---
             if (messageIds && messageIds.length > 0) {

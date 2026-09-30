@@ -5,9 +5,10 @@ import { Services } from "@/shared/constants";
 import { AppError, ErrorDefinitions } from "@/shared/errors";
 import { isNotEmpty } from "@/shared/utils";
 import { GenerateTextResult } from "@xsai/generate-text";
+import { EvaluationModel } from "./evaluation-model";
 import { BaseModel } from "./base-model";
 import { ChatRequestOptions, IChatModel } from "./chat-model";
-import { CircuitBreakerPolicy, ContentFailureAction, ModelDescriptor, ModelSwitchingStrategy } from "./config";
+import { CircuitBreakerPolicy, ContentFailureAction, ModelAbility, ModelDescriptor, ModelSwitchingStrategy } from "./config";
 import { IEmbedModel } from "./embed-model";
 import { ProviderFactoryRegistry } from "./factories";
 import { ProviderInstance } from "./provider-instance";
@@ -120,6 +121,10 @@ export class ModelService extends Service<Config> {
         this.logger.info("--- 模型提供商初始化完成 ---");
     }
 
+    public getEvaluationModel(providerName: string, modelId: string): EvaluationModel | null {
+        return this.providerInstances.get(providerName)?.getEvaluationModel(modelId) ?? null;
+    }
+
     public getChatModel(providerName: string, modelId: string): IChatModel | null {
         const instance = this.providerInstances.get(providerName);
         return instance ? instance.getChatModel(modelId) : null;
@@ -203,6 +208,11 @@ export class ModelService extends Service<Config> {
     }
 
     private registerSchemas() {
+        this.ctx.schema.set("modelService.evaluationModels", Schema.union([
+            ...this.config.providers.flatMap(p => p.models.filter(m => m.abilities.includes(ModelAbility.Evaluation))
+                .map(m => Schema.const({ providerName: p.name, modelId: m.modelId }).description(`${p.name} / ${m.modelId}`))),
+            Schema.object({ providerName: Schema.string(), modelId: Schema.string() }).description("自定义评估模型"),
+        ]).default({ providerName: "", modelId: "" }));
         const models = this.config.providers.map((p) => p.models.map((m) => ({ providerName: p.name, modelId: m.modelId }))).flat();
 
         const selectableModels = models
@@ -361,10 +371,12 @@ class RequestExecutor {
                 //attemptLogger.info("发送请求...");
                 const result = await model.chat(options_copy);
                 clearTimeout(timeoutId);
+                clearTimeout(firstTokenTimeoutId);
                 //attemptLogger.success("请求成功");
                 return { success: true, data: result };
             } catch (error) {
                 clearTimeout(timeoutId);
+                clearTimeout(firstTokenTimeoutId);
                 options.abortSignal?.throwIfAborted();
 
                 // 内容验证失败的特定处理

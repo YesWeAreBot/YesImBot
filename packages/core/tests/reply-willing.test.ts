@@ -30,4 +30,6 @@ it("only counts allowed at gain from a text/at/quote/private message", () => {
     expect(willing.getCurrentWillingness("text-only")).toBe(12);
     willing.shouldReply(session as any, "normal");
     expect(willing.getCurrentWillingness("normal")).toBe(67);
+    willing.shouldReply(session as any, "assessed-at-only", ["at"], 0.4);
+    expect(willing.getCurrentWillingness("assessed-at-only")).toBe(10);
 });

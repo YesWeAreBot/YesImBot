@@ -289,7 +289,9 @@ export class EventListenerManager {
             await this.updateMemberInfo(session);
         }
 
-        const content = await this.assetService.transform(session.content);
+        // 使用原生序列化还原被分离到 session.quote 的引用元素。
+        const messageContent = session.toJSON().message?.content ?? session.content;
+        const content = await this.assetService.transform(messageContent);
         this.logger.debug(`记录转义后的消息：${content}`);
 
         const message: MessageData = {
@@ -299,7 +301,7 @@ export class EventListenerManager {
             sender: {
                 id: session.userId,
                 name: session.author.nick || session.author.name,
-                roles: session.author.roles?.map((role) => (typeof role === "string" ? role : role.id)),
+                roles: roleIds(session.author.roles),
             },
             content,
             timestamp: new Date(session.timestamp),
@@ -331,7 +333,7 @@ export class EventListenerManager {
             const memberKey = { pid: session.userId, platform: session.platform, guildId: session.guildId };
             const memberData = {
                 name: session.author.nick || session.author.name,
-                roles: session.author.roles?.map((role) => (typeof role === "string" ? role : role.id)),
+                roles: roleIds(session.author.roles),
                 avatar: session.author.avatar,
                 lastActive: new Date(),
             };
@@ -348,3 +350,8 @@ export class EventListenerManager {
     }
 }
 // #endregion
+
+/** 兼容旧适配器的角色 ID 数组及新版 Satori 的角色对象数组。 */
+function roleIds(roles?: readonly (string | { id: string })[]): string[] | undefined {
+    return roles?.map(role => typeof role === "string" ? role : role.id);
+}

@@ -191,7 +191,7 @@ export class WillingnessManager {
      * @param context 消息上下文
      * @returns 回复概率 (0-1)
      */
-    public calculateReplyProbability(session: Session, context: MessageContext): number {
+    public calculateReplyProbability(session: Session, context: MessageContext, assessmentMultiplier = 1): number {
         const { chatId } = context;
         const config = this._getResolvedConfig(session);
         const { lifecycle } = config;
@@ -205,7 +205,7 @@ export class WillingnessManager {
 
         // --- 非线性增益 ---
         const gainMultiplier = getDynamicGainMultiplier(currentWillingness, resolvedMaxWillingness);
-        const effectiveGain = gain * gainMultiplier;
+        const effectiveGain = gain * gainMultiplier * assessmentMultiplier;
 
         currentWillingness += effectiveGain;
         // -------------------------
@@ -284,7 +284,8 @@ export class WillingnessManager {
     public shouldReply(
         session: Session,
         chatId: string = session.cid,
-        allowedCategories?: ReplyCategory[]
+        allowedCategories?: ReplyCategory[],
+        assessmentMultiplier = 1
     ): { decision: boolean; probability: number } {
         this.sessions.set(chatId, session);
 
@@ -297,11 +298,11 @@ export class WillingnessManager {
                 : session.stripped.atSelf || session.elements.some((e) => e.type === "at" && e.attrs.id === session.bot.selfId),
             isQuote: allowedCategories
                 ? !!session.quote || session.elements.some((e) => e.type === "quote")
-                : session.quote && session.quote?.user.id === session.bot.selfId,
+                : session.quote && session.quote?.user?.id === session.bot.selfId,
             isDirect: session.isDirect,
         };
 
-        const probability = this.calculateReplyProbability(session, context);
+        const probability = this.calculateReplyProbability(session, context, assessmentMultiplier);
 
         const decision = Math.random() < probability;
 

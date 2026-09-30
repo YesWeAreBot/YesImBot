@@ -32,6 +32,7 @@ it("records mixed adapter role formats as IDs while keeping message XML", async 
         cid: "onebot:g",
         timestamp: Date.now(),
         content: '<at id="bot"/>text',
+        toJSON: () => ({ message: { content: '<at id="bot"/>text' } }),
         messageId: "m",
     });
     expect(messages[0].sender.roles).toEqual(["member", "admin"]);

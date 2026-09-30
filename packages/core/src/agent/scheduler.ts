@@ -18,6 +18,7 @@ export class StimulusScheduler {
     private readonly debouncedReplyTasks = new Map<string, WithDispose<(stimulus: AgentStimulus<any>) => void>>();
     private readonly skippedStimulus = new Map<string, AgentStimulus<any>>();
     private readonly deferredTimers = new Map<string, NodeJS.Timeout>();
+    private disposed = false;
 
     constructor(
         private readonly ctx: Context,
@@ -27,7 +28,12 @@ export class StimulusScheduler {
         this.logger = ctx[Services.Logger].getLogger("[刺激调度器]");
     }
 
+    public isBusy(channelKey: string): boolean {
+        return this.runningTasks.has(channelKey) || this.deferredTimers.has(channelKey);
+    }
+
     public schedule(stimulus: AgentStimulus<any>): void {
+        if (this.disposed) return;
         const { channelCid: channelKey, type, priority } = stimulus;
 
         if (this.runningTasks.has(channelKey)) {
@@ -38,6 +44,19 @@ export class StimulusScheduler {
             return;
         }
 
+        if (this.deferredTimers.has(channelKey)) {
+            if (type === "user_message") {
+                this.skippedStimulus.set(channelKey, stimulus);
+                this.setupDeferredTimer(channelKey);
+                return;
+            }
+            // 系统任务优先执行，积压消息在它结束后重新等待安静期。
+            clearTimeout(this.deferredTimers.get(channelKey));
+            this.deferredTimers.delete(channelKey);
+        }
+
+        if (type === "user_message") this.skippedStimulus.delete(channelKey);
+
         const schedulingStack = new Error("Scheduling context stack").stack;
 
         // 将堆栈传递给任务
@@ -47,28 +66,10 @@ export class StimulusScheduler {
     private getDebouncedTask(channelKey: string, schedulingStack?: string): WithDispose<(stimulus: AgentStimulus<any>) => void> {
         let debouncedTask = this.debouncedReplyTasks.get(channelKey);
         if (!debouncedTask) {
-            debouncedTask = this.ctx.debounce(async (stimulus: AgentStimulus<any>) => {
-                this.runningTasks.add(channelKey);
-                this.logger.debug(`[${channelKey}] 锁定频道并开始执行任务`);
-                try {
-                    await this.taskCallback(stimulus);
-                } catch (error) {
-                    // 创建错误时附加调度堆栈
-                    const taskError = new AppError(ErrorDefinitions.TASK.EXECUTION_FAILED, {
-                        cause: error as Error,
-                        context: {
-                            channelCid: channelKey,
-                            stimulusType: stimulus.type,
-                            schedulingStack: schedulingStack,
-                        },
-                    });
-                    handleError(this.logger, taskError, `调度任务执行失败 (Channel: ${channelKey})`);
-                } finally {
-                    this.runningTasks.delete(channelKey);
-                    this.logger.debug(`[${channelKey}] 频道锁已释放`);
-                    this.handleSkippedMessagesAfterReply(channelKey);
-                }
-            }, this.config.debounceMs);
+            debouncedTask = this.ctx.debounce(
+                (stimulus: AgentStimulus<any>) => this.executeTask(channelKey, stimulus, schedulingStack),
+                this.config.debounceMs
+            );
             this.debouncedReplyTasks.set(channelKey, debouncedTask);
         }
         return debouncedTask;
@@ -83,9 +84,48 @@ export class StimulusScheduler {
         this.deferredTimers.delete(channelKey);
     }
 
+    private async executeTask(channelKey: string, stimulus: AgentStimulus<any>, schedulingStack?: string): Promise<void> {
+        if (this.disposed) return;
+        if (this.runningTasks.has(channelKey)) {
+            if (stimulus.type === "user_message") this.handleBusyChannel(stimulus);
+            return;
+        }
+        this.runningTasks.add(channelKey);
+        this.logger.debug(`[${channelKey}] 锁定频道并开始执行任务`);
+        try {
+            await this.taskCallback(stimulus);
+        } catch (error) {
+            // 创建错误时附加调度堆栈
+            const taskError = new AppError(ErrorDefinitions.TASK.EXECUTION_FAILED, {
+                cause: error as Error,
+                context: {
+                    channelCid: channelKey,
+                    stimulusType: stimulus.type,
+                    schedulingStack: schedulingStack,
+                },
+            });
+            handleError(this.logger, taskError, `调度任务执行失败 (Channel: ${channelKey})`);
+        } finally {
+            this.runningTasks.delete(channelKey);
+            this.logger.debug(`[${channelKey}] 频道锁已释放`);
+            if (!this.disposed) this.handleSkippedMessagesAfterReply(channelKey);
+        }
+    }
+
     public dispose(): void {
+        this.disposed = true;
         this.debouncedReplyTasks.forEach((task) => task.dispose());
         this.deferredTimers.forEach((timer) => clearTimeout(timer));
+        this.debouncedReplyTasks.clear();
+        this.deferredTimers.clear();
+        this.skippedStimulus.clear();
+    }
+
+    /** 所有用户消息都影响安静期，包括未触发回复的消息。 */
+    public noteUserMessage(channelKey: string): void {
+        if (!this.disposed && this.deferredTimers.has(channelKey)) {
+            this.setupDeferredTimer(channelKey);
+        }
     }
 
     private handleBusyChannel(stimulus: AgentStimulus<any>) {
@@ -126,9 +166,8 @@ export class StimulusScheduler {
                 this.deferredTimers.delete(channelKey);
             }
 
-            // 重新获取频道锁
-            this.runningTasks.add(channelKey);
-            this.logger.debug(`[${channelKey}] 立即处理被跳过的段落（重新锁定频道）`);
+            // 防抖期间仍可合并新消息，真正开始执行时才获取频道锁。
+            this.logger.debug(`[${channelKey}] 调度被跳过的段落`);
 
             const debouncedTask = this.debouncedReplyTasks.get(channelKey);
             if (debouncedTask) {
@@ -151,22 +190,16 @@ export class StimulusScheduler {
         }
 
         const timer = setTimeout(() => {
+            this.deferredTimers.delete(channelKey);
+            if (this.disposed || this.runningTasks.has(channelKey)) return;
             this.logger.debug(`[${channelKey}] 延迟处理定时器触发`);
             if (this.skippedStimulus.has(channelKey)) {
                 const stimulus = this.skippedStimulus.get(channelKey);
                 this.skippedStimulus.delete(channelKey);
 
-                this.runningTasks.add(channelKey);
-                this.logger.debug(`[${channelKey}] 处理被跳过的段落（重新锁定频道）`);
-
-                // 获取防抖任务并执行
-                const debouncedTask = this.debouncedReplyTasks.get(channelKey);
-                if (debouncedTask) {
-                    this.logger.debug(`[${channelKey}] 处理被跳过的段落`);
-                    debouncedTask(stimulus);
-                }
+                // 安静期已完成消息合并，直接获取执行锁，避免再次防抖造成覆盖或并发。
+                void this.executeTask(channelKey, stimulus);
             }
-            this.deferredTimers.delete(channelKey);
         }, this.config.deferredProcessingTime || 10000);
 
         this.deferredTimers.set(channelKey, timer);
