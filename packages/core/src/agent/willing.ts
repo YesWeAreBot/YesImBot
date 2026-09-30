@@ -1,3 +1,4 @@
+import type { ReplyCategory } from "./reply-control";
 import { Services } from "@/shared/constants";
 import { Context, Eval, Logger, Session, merge } from "koishi";
 import { WillingnessConfig } from "./config";
@@ -11,6 +12,7 @@ export interface MessageContext {
     isMentioned: boolean;
     isQuote: boolean;
     isDirect: boolean;
+    allowedCategories?: ReplyCategory[];
 }
 
 type ResolveComputed<T> =
@@ -161,12 +163,13 @@ export class WillingnessManager {
         const { base, attribute, interest } = config;
 
         // 1. 确定基础分
-        let score = base.text;
+        const allowed = (category: ReplyCategory) => !context.allowedCategories || context.allowedCategories.includes(category);
+        let score = allowed("text") ? base.text : 0;
 
         // 2. 叠加属性加成
-        if (context.isMentioned) score += attribute.atMention;
-        if (context.isQuote) score += attribute.isQuote;
-        if (context.isDirect) score += attribute.isDirectMessage;
+        if (context.isMentioned && allowed("at")) score += attribute.atMention;
+        if (context.isQuote && allowed("quote")) score += attribute.isQuote;
+        if (context.isDirect && allowed("direct")) score += attribute.isDirectMessage;
 
         // 3. 应用兴趣度乘数
         const hasKeyword = interest.keywords.some((kw) => context.content.includes(kw));
@@ -263,6 +266,12 @@ export class WillingnessManager {
      * 获取指定聊天的当前意愿值（用于调试和监控）。
      * @param chatId 聊天ID
      */
+    public reset(chatId: string): void {
+        this.willingnessScores.delete(chatId);
+        this.lastMessageTimestamps.delete(chatId);
+        this.sessions.delete(chatId);
+    }
+
     public getCurrentWillingness(chatId: string): number {
         return this.willingnessScores.get(chatId) || 0;
     }
@@ -272,15 +281,23 @@ export class WillingnessManager {
      * @param session 消息上下文
      * @returns 一个包含决策结果和概率的对象
      */
-    public shouldReply(session: Session): { decision: boolean; probability: number } {
-        const { cid: chatId } = session;
+    public shouldReply(
+        session: Session,
+        chatId: string = session.cid,
+        allowedCategories?: ReplyCategory[]
+    ): { decision: boolean; probability: number } {
         this.sessions.set(chatId, session);
 
         const context: MessageContext = {
-            chatId: session.cid,
+            chatId,
+            allowedCategories,
             content: session.content,
-            isMentioned: session.stripped.atSelf || session.elements.some((e) => e.type === "at" && e.attrs.id === session.bot.selfId),
-            isQuote: session.quote && session.quote?.user.id === session.bot.selfId,
+            isMentioned: allowedCategories
+                ? session.elements.some((e) => e.type === "at") || session.stripped.atSelf
+                : session.stripped.atSelf || session.elements.some((e) => e.type === "at" && e.attrs.id === session.bot.selfId),
+            isQuote: allowedCategories
+                ? !!session.quote || session.elements.some((e) => e.type === "quote")
+                : session.quote && session.quote?.user.id === session.bot.selfId,
             isDirect: session.isDirect,
         };
 

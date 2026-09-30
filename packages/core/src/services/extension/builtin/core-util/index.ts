@@ -1,3 +1,4 @@
+import { assertReplyDestination, replyTurnSignal } from "@/agent/reply-turn";
 import { Bot, Context, h, Logger, Schema, Session, sleep } from "koishi";
 
 import { AssetService } from "@/services/assets";
@@ -165,6 +166,7 @@ export default class CoreUtilExtension {
 
         try {
             const response = await model.chat({
+                abortSignal: replyTurnSignal(),
                 messages: [
                     {
                         role: "user",
@@ -282,6 +284,7 @@ export default class CoreUtilExtension {
             await sleep(delay);
 
             if (this.disposed) return;
+            assertReplyDestination({ platform: bot.platform, selfId: bot.selfId, channelId });
 
             // --- 发送消息 ---
             const messageIds = await bot.sendMessage(channelId, content);

@@ -160,6 +160,7 @@ export type AgentBehaviorConfig = ArousalConfig &
         userTemplate: string;
         multiModalSystemTemplate: string;
     } & {
+        replySuppression?: { defaultDurationSeconds: number };
         streamAction: boolean;
         heartbeat: number;
 
@@ -186,6 +187,9 @@ export const AgentBehaviorConfigSchema: Schema<AgentBehaviorConfig> = Schema.int
             .description("多模态系统提示词 (用于向模型解释图片占位符)"),
     }).description("提示词模板"),
     Schema.object({
+        replySuppression: Schema.object({
+            defaultDurationSeconds: Schema.number().min(1).default(60).description("回复暂停命令的默认时长（秒），命令参数仅覆盖本次操作"),
+        }).description("回复抑制"),
         streamAction: Schema.boolean().default(false).experimental(),
         heartbeat: Schema.number().min(1).max(10).default(5).role("slider").step(1).description("每轮对话最大心跳次数"),
 

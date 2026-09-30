@@ -173,8 +173,8 @@ export class InteractionManager {
      */
     public async getL1History(platform: string, channelId: string, limit: number): Promise<L1HistoryItem[]> {
         const [messages, systemEvents, agentEvents] = await Promise.all([
-            this.ctx.database.get(TableName.Messages, { channelId }, { limit, sort: { timestamp: "desc" } }),
-            this.ctx.database.get(TableName.SystemEvents, { channelId }, { limit, sort: { timestamp: "desc" } }),
+            this.ctx.database.get(TableName.Messages, { platform, channelId }, { limit, sort: { timestamp: "desc" } }),
+            this.ctx.database.get(TableName.SystemEvents, { platform, channelId }, { limit, sort: { timestamp: "desc" } }),
             this.getAgentHistoryFromFile(platform, channelId, limit),
         ]);
 

@@ -74,6 +74,15 @@ export class StimulusScheduler {
         return debouncedTask;
     }
 
+    public cancel(channelKey: string): void {
+        this.debouncedReplyTasks.get(channelKey)?.dispose();
+        this.debouncedReplyTasks.delete(channelKey);
+        this.skippedStimulus.delete(channelKey);
+        const timer = this.deferredTimers.get(channelKey);
+        if (timer) clearTimeout(timer);
+        this.deferredTimers.delete(channelKey);
+    }
+
     public dispose(): void {
         this.debouncedReplyTasks.forEach((task) => task.dispose());
         this.deferredTimers.forEach((timer) => clearTimeout(timer));

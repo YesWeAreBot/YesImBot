@@ -284,6 +284,7 @@ class RequestExecutor {
         const originalMessages = JSON.parse(JSON.stringify(options.messages));
 
         for (const model of this.candidateModels) {
+            options.abortSignal?.throwIfAborted();
             const breaker = this.circuitBreakers.get(model.id);
             if (breaker?.isOpen()) {
                 this.logger.info(`[跳过] 模型 ${model.id} (断路器开启)`);
@@ -330,6 +331,7 @@ class RequestExecutor {
         const timeoutPolicy = model.config.timeoutPolicy ?? { totalTimeout: 90 };
 
         for (let attempt = 0; attempt <= retryPolicy.maxRetries; attempt++) {
+            options.abortSignal?.throwIfAborted();
             const attemptLogger = this.logger.extend(`[${model.id}] [尝试 ${attempt + 1}/${retryPolicy.maxRetries + 1}]`);
             const controller = new AbortController();
 
@@ -349,7 +351,7 @@ class RequestExecutor {
 
             const options_copy = { ...options };
 
-            options_copy.abortSignal = controller.signal;
+            options_copy.abortSignal = options.abortSignal ? AbortSignal.any([controller.signal, options.abortSignal]) : controller.signal;
 
             options_copy.onStreamStart = () => {
                 clearTimeout(firstTokenTimeoutId);
@@ -363,6 +365,7 @@ class RequestExecutor {
                 return { success: true, data: result };
             } catch (error) {
                 clearTimeout(timeoutId);
+                options.abortSignal?.throwIfAborted();
 
                 // 内容验证失败的特定处理
                 if (error instanceof AppError && error.code === ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED.code) {
@@ -423,6 +426,9 @@ class RequestExecutor {
                 }
 
                 await new Promise((res) => setTimeout(res, 500 * (attempt + 1))); // 退避等待
+            } finally {
+                clearTimeout(firstTokenTimeoutId);
+                clearTimeout(timeoutId);
             }
         }
         return {

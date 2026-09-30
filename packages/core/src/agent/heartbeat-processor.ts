@@ -1,3 +1,4 @@
+import { assertReplyTurn, replyTurnSignal } from "@/agent/reply-turn";
 import { GenerateTextResult } from "@xsai/generate-text";
 import { Message } from "@xsai/shared-chat";
 import { Context, h, Logger, Session } from "koishi";
@@ -44,6 +45,7 @@ export class HeartbeatProcessor {
         let success = false;
 
         while (shouldContinueHeartbeat && heartbeatCount < this.config.heartbeat) {
+            assertReplyTurn();
             heartbeatCount++;
             try {
                 this.logger.info(`Heartbeat | 第 ${heartbeatCount}/${this.config.heartbeat} 轮`);
@@ -164,10 +166,12 @@ export class HeartbeatProcessor {
         // 步骤 1-4: 准备请求
         const { messages } = await this._prepareLlmRequest(stimulus);
 
+        assertReplyTurn();
         // 步骤 5: 调用LLM
         this.logger.info("步骤 5/7: 调用大语言模型...");
         const llmRawResponse = await this.modelSwitcher.chat({
             messages,
+            abortSignal: replyTurnSignal(),
             validation: {
                 format: "json",
                 validator: (text, final) => {
@@ -309,6 +313,10 @@ export class HeartbeatProcessor {
                 promises: [thoughtsPromise, actionsPromise, heartbeatPromise],
                 id,
             };
+            // Observe immediately: a cancelled action may reject before the model finishes.
+            currentBatch.promises.forEach((promise) => {
+                void promise.catch(() => {});
+            });
         };
 
         // 第一次启动消费者
@@ -316,8 +324,10 @@ export class HeartbeatProcessor {
 
         const finalValidatorParser = new JsonParser<any>();
 
+        assertReplyTurn();
         const llmPromise = this.modelSwitcher.chat({
             messages,
+            abortSignal: replyTurnSignal(),
             stream: true,
             validation: {
                 format: "json",
@@ -370,10 +380,25 @@ export class HeartbeatProcessor {
             },
         });
 
-        // 等待 LLM 结束后，再只等待最后的批次
-        await llmPromise;
-        if (currentBatch) {
-            await Promise.all(currentBatch.promises);
+        // Close consumers on cancellation, including when no complete JSON arrived.
+        const closeCancelledBatch = () => {
+            currentBatch?.controller.abort();
+            try {
+                streamParser.processText("", true);
+            } catch {}
+        };
+        const turnSignal = replyTurnSignal();
+        turnSignal?.addEventListener("abort", closeCancelledBatch, { once: true });
+        try {
+            if (turnSignal?.aborted) closeCancelledBatch();
+            await llmPromise;
+            if (currentBatch) await Promise.all(currentBatch.promises);
+        } finally {
+            turnSignal?.removeEventListener("abort", closeCancelledBatch);
+            if (turnSignal?.aborted) {
+                closeCancelledBatch();
+                if (currentBatch) await Promise.allSettled(currentBatch.promises);
+            }
         }
 
         this.logger.success("单次心跳成功完成");
@@ -429,7 +454,9 @@ export class HeartbeatProcessor {
 
         for await (const action of actions) {
             if (!action.function) continue; // FIXME: params is nullable
+            assertReplyTurn();
             const actionId = await this.interactionManager.recordAction(turnId, platform, channelId, action);
+            assertReplyTurn();
             const result = await this.toolService.invoke(action.function, action.params, session);
             await this.interactionManager.recordObservation(actionId, platform, channelId, {
                 turnId,

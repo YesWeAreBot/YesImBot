@@ -1,3 +1,4 @@
+import { assertReplyTurn } from "@/agent/reply-turn";
 import { Context, ForkScope, h, Logger, resolveConfig, Schema, Service, Session } from "koishi";
 
 import { Config } from "@/config";
@@ -468,6 +469,7 @@ export class ToolService extends Service<Config> {
                     await new Promise((resolve) => setTimeout(resolve, this.config.advanced.retryDelay));
                 }
 
+                assertReplyTurn();
                 // 3. 使用验证和处理过后的参数执行工具
                 /* prettier-ignore */
                 lastResult = (await tool.execute({ session, ...validatedParams })) || Failed("Tool call did not execute.");
