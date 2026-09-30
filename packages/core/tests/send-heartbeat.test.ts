@@ -1,6 +1,48 @@
 import { expect, it } from "bun:test";
 import { HeartbeatProcessor } from "../src/agent/heartbeat-processor";
 import { Services } from "../src/shared/constants";
+import { Schema } from "koishi";
+
+for (const scenario of ["success", "error", "query", "legacy"]) {
+    it(`native heartbeat counts confirmed replies: ${scenario}`, async () => {
+        const logger = { debug() {}, info() {}, warn() {}, error() {}, success() {} };
+        const name = scenario === "query" ? "lookup" : "send_message";
+        const definition = { name, description: "test", parameters: Schema.object({ message: Schema.string() }) };
+        const processor = new HeartbeatProcessor(
+            { [Services.Logger]: { getLogger: () => logger } } as any,
+            { heartbeat: 1, nativeToolCalling: true } as any,
+            {
+                chat: async () =>
+                    scenario === "legacy"
+                        ? {
+                              text: JSON.stringify({
+                                  thoughts: {},
+                                  actions: [{ function: "send_message", params: { message: "hello" } }],
+                                  request_heartbeat: false,
+                              }),
+                          }
+                        : { toolCalls: [{ toolCallId: "call", toolName: name, args: '{"message":"hello"}' }] },
+            } as any,
+            {} as any,
+            {
+                getAvailableTools: () => [definition],
+                getTool: () => definition,
+                invoke: async () => ({ status: scenario === "error" ? "error" : "success" }),
+            } as any,
+            {
+                recordThought: async () => {},
+                recordHeartbeat: async () => {},
+                recordAction: async () => "action",
+                recordObservation: async () => {},
+            } as any,
+            {} as any
+        );
+        (processor as any)._prepareLlmRequest = async () => ({ messages: [] });
+        expect(await processor.runCycle({ session: { platform: "qq", channelId: "group", cid: "qq:group" } } as any)).toBe(
+            scenario === "success" || scenario === "legacy"
+        );
+    });
+}
 
 it("waits for an in-flight streaming reply when the model fails and preserves its success", async () => {
     let release!: () => void;

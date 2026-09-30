@@ -38,8 +38,11 @@ import {
 } from "@/dependencies/xsai";
 import type { ProviderConfig, ProviderType } from "./config";
 
+import type { EvaluationRequestOptions } from "./evaluation-client";
+
 // --- 接口定义 ---
 export interface IProviderClient {
+    evaluate?: (model: string) => EvaluationRequestOptions;
     chat?: ChatProvider["chat"];
     embed?: EmbedProvider["embed"];
     image?: ImageProvider["image"];
@@ -314,6 +317,12 @@ class XAIFactory implements IProviderFactory {
     }
 }
 
+class TypeSafeFactory implements IProviderFactory {
+    createClient(config: ProviderConfig): IProviderClient {
+        return { evaluate: model => ({ model, apiKey: config.apiKey, baseURL: config.baseURL || "https://api.typesafe.ai/v1" }) };
+    }
+}
+
 // --- 工厂注册表 ---
 
 class FactoryRegistry {
@@ -324,6 +333,7 @@ class FactoryRegistry {
     }
 
     private registerDefaults(): void {
+        this.register("TypeSafe", new TypeSafeFactory());
         this.register("OpenAI", new OpenAIFactory());
         this.register("OpenAI Compatible", new OpenAIFactory());
         this.register("Ollama", new OllamaFactory());

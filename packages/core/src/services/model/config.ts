@@ -48,6 +48,7 @@ export enum ModelAbility {
     FunctionCalling = "函数调用",
     Embedding = "嵌入",
     Chat = "对话",
+    Evaluation = "评估",
 }
 
 /**
@@ -99,6 +100,7 @@ export const ModelConfigSchema: Schema<ModelConfig> = Schema.object({
             ModelAbility.Reasoning,
             ModelAbility.FunctionCalling,
             ModelAbility.Embedding,
+            ModelAbility.Evaluation,
         ])
     )
         .role("checkbox")
@@ -144,6 +146,7 @@ export const ModelConfigSchema: Schema<ModelConfig> = Schema.object({
     .description("单个模型配置");
 
 const PROVIDERS = {
+    TypeSafe: { baseURL: "https://api.typesafe.ai/v1/", link: "https://typesafe.ai/" },
     OpenAI: { baseURL: "https://api.openai.com/v1/", link: "https://platform.openai.com/account/api-keys" },
     "OpenAI Compatible": { baseURL: "https://api.openai.com/v1/", link: "https://platform.openai.com/account/api-keys" },
     Anthropic: { baseURL: "https://api.anthropic.com/v1/", link: "https://console.anthropic.com/settings/keys" },
