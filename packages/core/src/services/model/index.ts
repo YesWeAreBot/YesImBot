@@ -6,3 +6,6 @@ export * from "./base-model";
 export * from "./chat-model";
 export * from "./embed-model";
 export * from "./provider-instance";
+
+export * from "./evaluation-model";
+export * from "./evaluation-client";

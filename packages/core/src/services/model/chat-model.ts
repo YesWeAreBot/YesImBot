@@ -40,6 +40,7 @@ export interface ValidationOptions {
     validator?: ContentValidator;
 }
 export interface ChatRequestOptions {
+    singleStep?: boolean;
     abortSignal?: AbortSignal;
     onStreamStart?: () => void;
     validation?: ValidationOptions;
@@ -123,7 +124,7 @@ export class ChatModel extends BaseModel implements IChatModel {
         try {
             return useStream
                 ? await this._executeStream(chatOptions, options.onStreamStart, options.validation)
-                : await this._executeNonStream(chatOptions);
+                : await this._executeNonStream(chatOptions, options.singleStep);
         } catch (error) {
             await this._wrapAndThrow(error, chatOptions);
         }
@@ -138,7 +139,7 @@ export class ChatModel extends BaseModel implements IChatModel {
         // 1. 模型配置中的基础参数 (temperature, topP)
         // 2. 模型配置中的自定义参数 (this.customParameters)
         // 3. 运行时传入的参数 (options)
-        const { validation, onStreamStart, abortSignal, ...restOptions } = options;
+        const { validation, onStreamStart, abortSignal, singleStep, ...restOptions } = options;
         return {
             ...this.chatProvider(this.config.modelId),
             fetch: async (url: string, init: RequestInit) => {
@@ -159,9 +160,18 @@ export class ChatModel extends BaseModel implements IChatModel {
     /**
      * 执行非流式请求
      */
-    private async _executeNonStream(chatOptions: ChatOptions): Promise<GenerateTextResult> {
+    private async _executeNonStream(chatOptions: ChatOptions, singleStep = false): Promise<GenerateTextResult> {
         const stime = Date.now();
-        const result = await generateText(chatOptions);
+        let result: GenerateTextResult;
+        try {
+            result = await generateText({
+                ...chatOptions,
+                ...(singleStep ? { onStepFinish: (step: CompletionStep) => { throw new SingleStepComplete(step); } } : {}),
+            });
+        } catch (error) {
+            if (!(error instanceof SingleStepComplete)) throw error;
+            result = { ...error.step, steps: [error.step], messages: [], text: error.step.text ?? "" } as GenerateTextResult;
+        }
         const duration = Date.now() - stime;
 
         const logMessage = result.toolCalls?.length
@@ -198,6 +208,10 @@ export class ChatModel extends BaseModel implements IChatModel {
                 ...chatOptions,
                 streamOptions: { includeUsage: true },
                 onEvent: (event) => {
+                    if (!streamStarted && (event.type === "tool-call-streaming-start" || event.type === "tool-call-delta")) {
+                        onStreamStart?.();
+                        streamStarted = true;
+                    }
                     if (event.type !== "text-delta" || streamFinished) return;
 
                     const textDelta = event.text || "";
@@ -229,6 +243,9 @@ export class ChatModel extends BaseModel implements IChatModel {
                 },
             });
 
+            // SDK 的各个结果 Promise 可能一起拒绝，均附加处理避免未处理异常。
+            for (const promise of [stream.steps, stream.usage, stream.messages]) void promise.catch(() => {});
+
             // 仅等待元数据（如 usage, finishReason）处理完成
             // 文本部分已在 onEvent 中实时处理
             await (async () => {
@@ -252,7 +269,7 @@ export class ChatModel extends BaseModel implements IChatModel {
         const duration = Date.now() - stime;
         const finalText = finalContentParts.join("");
 
-        if (isEmpty(finalText)) {
+        if (isEmpty(finalText) && finalToolCalls.length === 0) {
             this.logger.warn(`💬 [流式] 模型未输出有效内容`);
             throw new AppError(ErrorDefinitions.LLM.OUTPUT_EMPTY_CONTENT, {
                 context: { rawResponse: finalText, details: "模型未输出有效内容" },
@@ -263,7 +280,7 @@ export class ChatModel extends BaseModel implements IChatModel {
         this.logger.debug(`🏁 [流式] 传输完成 | 总耗时: ${duration}ms | 输入: ${finalUsage?.prompt_tokens || "N/A"} | 输出: ${finalUsage?.completion_tokens || `~${finalText.length / 4}`}`);
 
         // 对最终拼接的完整内容进行最后一次验证
-        if (validator) {
+        if (validator && finalToolCalls.length === 0) {
             const finalValidation = validator(finalText, true);
             if (!finalValidation.valid) {
                 const errorMsg = finalValidation.error || "格式不匹配或模型未输出有效内容";
@@ -352,4 +369,9 @@ export class ChatModel extends BaseModel implements IChatModel {
         this.logger.error(`🛑 [错误] 未知或网络错误 | ${error.message}`);
         throw new AppError(ErrorDefinitions.NETWORK.REQUEST_FAILED, { cause: error, context });
     }
+}
+
+/** 单步调用交回框架；真实工具只在模型请求完整成功后执行。 */
+class SingleStepComplete extends Error {
+    constructor(public readonly step: CompletionStep) { super("Single step complete"); }
 }
