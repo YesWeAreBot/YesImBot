@@ -3,6 +3,7 @@ import { Services } from "@/shared/constants";
 import { Context, Eval, Logger, Session, merge } from "koishi";
 import { WillingnessConfig } from "./config";
 import { Config } from "@/config";
+import type { WillingnessCalculation } from "./decision-record";
 
 export interface MessageContext {
     chatId: string;
@@ -166,24 +167,26 @@ export class WillingnessManager {
      * @param context 消息上下文
      * @returns 本次消息产生的意愿增益值
      */
-    private calculateGain(session: Session, context: MessageContext): number {
+    private calculateGain(session: Session, context: MessageContext) {
         const config = this._getResolvedConfig(session);
         const { base, attribute, interest } = config;
 
         // 1. 确定基础分
         const allowed = (category: ReplyCategory) => !context.allowedCategories || context.allowedCategories.includes(category);
         let score = allowed("text") ? base.text : 0;
+        const gains = { text: score, at: 0, quote: 0, direct: 0 };
 
         // 2. 叠加属性加成
-        if (context.isMentioned && allowed("at")) score += attribute.atMention;
-        if (context.isQuote && allowed("quote")) score += attribute.isQuote;
-        if (context.isDirect && allowed("direct")) score += attribute.isDirectMessage;
+        if (context.isMentioned && allowed("at")) score += gains.at = attribute.atMention;
+        if (context.isQuote && allowed("quote")) score += gains.quote = attribute.isQuote;
+        if (context.isDirect && allowed("direct")) score += gains.direct = attribute.isDirectMessage;
 
         // 3. 应用兴趣度乘数
         const hasKeyword = interest.keywords.some((kw) => context.content.includes(kw));
         const multiplier = hasKeyword ? interest.keywordMultiplier : interest.defaultMultiplier;
 
-        const rawGain = score * multiplier * this.getParticipationMultiplier(session, context);
+        const participationMultiplier = this.getParticipationMultiplier(session, context);
+        const rawGain = score * multiplier * participationMultiplier;
 
         // 4. 应用增益的边际递减效应
         const currentWillingness = this.willingnessScores.get(context.chatId) || 0;
@@ -191,7 +194,8 @@ export class WillingnessManager {
         // 当意愿值越高时，新的增益效果越差，防止无限累积
         const gainMultiplier = 1 - Math.pow(currentWillingness / maxWillingness, 2);
 
-        return rawGain * Math.max(0, gainMultiplier);
+        const marginalMultiplier = Math.max(0, gainMultiplier);
+        return { gain: rawGain * marginalMultiplier, gains, baseScore: score, interestMultiplier: multiplier, participationMultiplier, marginalMultiplier };
     }
 
     private getParticipationMultiplier(session: Session, context: MessageContext): number {
@@ -225,7 +229,8 @@ export class WillingnessManager {
      * @param context 消息上下文
      * @returns 回复概率 (0-1)
      */
-    public calculateReplyProbability(session: Session, context: MessageContext, assessmentMultiplier = 1): number {
+    public calculateReplyProbability(session: Session, context: MessageContext, assessmentMultiplier = 1,
+        capture?: (calculation: Omit<WillingnessCalculation, "roll">) => void): number {
         const { chatId } = context;
         const config = this._getResolvedConfig(session);
         const { lifecycle } = config;
@@ -234,12 +239,13 @@ export class WillingnessManager {
         const resolvedProbabilityThreshold = session.resolve(lifecycle.probabilityThreshold);
         const resolvedProbabilityAmplifier = session.resolve(lifecycle.probabilityAmplifier);
 
-        const gain = this.calculateGain(session, context);
+        const details = this.calculateGain(session, context);
         let currentWillingness = this.willingnessScores.get(chatId) || 0;
+        const before = currentWillingness;
 
         // --- 非线性增益 ---
         const gainMultiplier = getDynamicGainMultiplier(currentWillingness, resolvedMaxWillingness);
-        const effectiveGain = gain * gainMultiplier * assessmentMultiplier;
+        const effectiveGain = details.gain * gainMultiplier * assessmentMultiplier;
 
         currentWillingness += effectiveGain;
         // -------------------------
@@ -248,12 +254,13 @@ export class WillingnessManager {
         this.willingnessScores.set(chatId, currentWillingness);
 
         // 转换为概率
-        if (currentWillingness <= resolvedProbabilityThreshold) {
-            return 0;
-        }
-        const probability = (currentWillingness - resolvedProbabilityThreshold) * resolvedProbabilityAmplifier;
-
-        return Math.max(0, Math.min(1, probability));
+        const probability = currentWillingness <= resolvedProbabilityThreshold ? 0
+            : Math.max(0, Math.min(1, (currentWillingness - resolvedProbabilityThreshold) * resolvedProbabilityAmplifier));
+        capture?.({ before, after: currentWillingness, gains: details.gains, baseScore: details.baseScore, interestMultiplier: details.interestMultiplier,
+            marginalMultiplier: details.marginalMultiplier, dynamicMultiplier: gainMultiplier, assessmentMultiplier,
+            participationMultiplier: details.participationMultiplier, effectiveGain, maxWillingness: resolvedMaxWillingness,
+            threshold: resolvedProbabilityThreshold, amplifier: resolvedProbabilityAmplifier, probability });
+        return probability;
     }
 
     /**
@@ -343,7 +350,7 @@ export class WillingnessManager {
         chatId: string = session.cid,
         allowedCategories?: ReplyCategory[],
         assessmentMultiplier = 1
-    ): { decision: boolean; probability: number } {
+    ): { decision: boolean; probability: number; roll: number; calculation: WillingnessCalculation } {
         this.sessions.set(chatId, session);
 
         const context: MessageContext = {
@@ -359,11 +366,13 @@ export class WillingnessManager {
             isDirect: session.isDirect,
         };
 
-        const probability = this.calculateReplyProbability(session, context, assessmentMultiplier);
+        let calculation: Omit<WillingnessCalculation, "roll">;
+        const probability = this.calculateReplyProbability(session, context, assessmentMultiplier, value => { calculation = value; });
 
-        const decision = Math.random() < probability;
+        const roll = Math.random();
+        const decision = roll < probability;
 
-        return { decision, probability };
+        return { decision, probability, roll, calculation: { ...calculation, roll } };
     }
 
     /**

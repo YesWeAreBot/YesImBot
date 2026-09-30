@@ -61,6 +61,12 @@ export class ReplyControl {
         this.get(target);
         return this.token(target) === token;
     }
+    /** 只读状态；查询不能触发到期清理、任务取消或持久写入。 */
+    public peek(target: ReplyTarget): ReplyRule | undefined {
+        const rule = this.rules.get(replyKey(target));
+        if (!rule || (rule.expiresAt !== null && rule.expiresAt <= this.now())) return undefined;
+        return structuredClone(rule);
+    }
     public get(target: ReplyTarget): ReplyRule | undefined {
         const id = replyKey(target);
         const rule = this.rules.get(id);

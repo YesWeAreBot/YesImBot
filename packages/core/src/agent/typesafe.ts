@@ -24,7 +24,8 @@ const questions = {
 export class TypeSafeEvaluator {
     constructor(private readonly ctx: Context, private readonly config: Config) {}
 
-    public async evaluate(session: Session, signal: AbortSignal): Promise<number | null> {
+    public async evaluate(session: Session, signal: AbortSignal,
+        onAnswers?: (answers: { addressed: number; interested: number; others: number }) => void): Promise<number | null> {
         const config = this.config.typesafe;
         const selected = config?.evaluationModel;
         if (!selected?.providerName || !selected.modelId || signal.aborted) return null;
@@ -38,7 +39,7 @@ export class TypeSafeEvaluator {
             controller.signal.addEventListener("abort", cancel, { once: true });
         });
         try {
-            return await Promise.race([this.request(session, controller.signal), cancelled]);
+            return await Promise.race([this.request(session, controller.signal, onAnswers), cancelled]);
         } catch {
             return null;
         } finally {
@@ -48,7 +49,8 @@ export class TypeSafeEvaluator {
         }
     }
 
-    private async request(session: Session, signal: AbortSignal): Promise<number | null> {
+    private async request(session: Session, signal: AbortSignal,
+        onAnswers?: (answers: { addressed: number; interested: number; others: number }) => void): Promise<number | null> {
         const config = this.config.typesafe;
         const selected = config.evaluationModel;
         const model = this.ctx[Services.Model].getEvaluationModel(selected.providerName, selected.modelId);
@@ -79,6 +81,7 @@ export class TypeSafeEvaluator {
         if (signal.aborted) return null;
         const positive = (n: number) => Math.max(0, n * 2 - 1);
         const { addressed, interested, others } = result.answers;
+        onAnswers?.({ addressed: addressed.noul, interested: interested.noul, others: others.noul });
         return 1 + config.influence * (Math.max(positive(addressed.noul), positive(interested.noul)) - positive(others.noul));
     }
 }

@@ -18,12 +18,14 @@ export class StimulusScheduler {
     private readonly debouncedReplyTasks = new Map<string, WithDispose<(stimulus: AgentStimulus<any>) => void>>();
     private readonly skippedStimulus = new Map<string, AgentStimulus<any>>();
     private readonly deferredTimers = new Map<string, NodeJS.Timeout>();
+    private readonly pendingStimuli = new Map<string, AgentStimulus<any>>();
     private disposed = false;
 
     constructor(
         private readonly ctx: Context,
         private readonly config: AgentBehaviorConfig,
-        private readonly taskCallback: TaskCallback
+        private readonly taskCallback: TaskCallback,
+        private readonly observe?: (stimulus: AgentStimulus<any>, stage: string, reason?: string) => void
     ) {
         this.logger = ctx[Services.Logger].getLogger("[刺激调度器]");
     }
@@ -33,20 +35,21 @@ export class StimulusScheduler {
     }
 
     public schedule(stimulus: AgentStimulus<any>): void {
-        if (this.disposed) return;
+        if (this.disposed) { this.observe?.(stimulus, "cancelled", "disposed"); return; }
         const { channelCid: channelKey, type, priority } = stimulus;
 
         if (this.runningTasks.has(channelKey)) {
             this.logger.warn(`[${channelKey}] 频道正忙，将根据策略处理新刺激 [${type}]。`);
             if (type === "user_message") {
                 this.handleBusyChannel(stimulus);
-            }
+            } else this.observe?.(stimulus, "skipped", "busy");
             return;
         }
 
         if (this.deferredTimers.has(channelKey)) {
             if (type === "user_message") {
-                this.skippedStimulus.set(channelKey, stimulus);
+                this.replaceSkipped(stimulus);
+                this.observe?.(stimulus, "deferred", "busy");
                 this.setupDeferredTimer(channelKey);
                 return;
             }
@@ -55,7 +58,11 @@ export class StimulusScheduler {
             this.deferredTimers.delete(channelKey);
         }
 
-        if (type === "user_message") this.skippedStimulus.delete(channelKey);
+        if (type === "user_message") {
+            const skipped = this.skippedStimulus.get(channelKey);
+            if (skipped && skipped !== stimulus) this.observe?.(skipped, "cancelled", "debounce_replaced");
+            this.skippedStimulus.delete(channelKey);
+        }
 
         const schedulingStack = new Error("Scheduling context stack").stack;
 
@@ -72,10 +79,24 @@ export class StimulusScheduler {
             );
             this.debouncedReplyTasks.set(channelKey, debouncedTask);
         }
-        return debouncedTask;
+        // 跟踪防抖替代结果，不改变调度时序。
+        const tracked = ((stimulus: AgentStimulus<any>) => {
+            const old = this.pendingStimuli.get(channelKey);
+            if (old && old !== stimulus) this.observe?.(old, "cancelled", "debounce_replaced");
+            this.pendingStimuli.set(channelKey, stimulus);
+            this.observe?.(stimulus, "debounced");
+            debouncedTask(stimulus);
+        }) as WithDispose<(stimulus: AgentStimulus<any>) => void>;
+        tracked.dispose = () => debouncedTask.dispose();
+        return tracked;
     }
 
     public cancel(channelKey: string): void {
+        const pending = this.pendingStimuli.get(channelKey);
+        const skipped = this.skippedStimulus.get(channelKey);
+        if (pending) this.observe?.(pending, "cancelled", "reply_suppressed");
+        if (skipped) this.observe?.(skipped, "cancelled", "reply_suppressed");
+        this.pendingStimuli.delete(channelKey);
         this.debouncedReplyTasks.get(channelKey)?.dispose();
         this.debouncedReplyTasks.delete(channelKey);
         this.skippedStimulus.delete(channelKey);
@@ -85,16 +106,19 @@ export class StimulusScheduler {
     }
 
     private async executeTask(channelKey: string, stimulus: AgentStimulus<any>, schedulingStack?: string): Promise<void> {
+        if (this.pendingStimuli.get(channelKey) === stimulus) this.pendingStimuli.delete(channelKey);
         if (this.disposed) return;
         if (this.runningTasks.has(channelKey)) {
             if (stimulus.type === "user_message") this.handleBusyChannel(stimulus);
             return;
         }
         this.runningTasks.add(channelKey);
+        this.observe?.(stimulus, "running");
         this.logger.debug(`[${channelKey}] 锁定频道并开始执行任务`);
         try {
             await this.taskCallback(stimulus);
         } catch (error) {
+            this.observe?.(stimulus, "failed", "exception");
             // 创建错误时附加调度堆栈
             const taskError = new AppError(ErrorDefinitions.TASK.EXECUTION_FAILED, {
                 cause: error as Error,
@@ -114,11 +138,14 @@ export class StimulusScheduler {
 
     public dispose(): void {
         this.disposed = true;
+        for (const stimulus of this.pendingStimuli.values()) this.observe?.(stimulus, "cancelled", "disposed");
+        for (const stimulus of this.skippedStimulus.values()) this.observe?.(stimulus, "cancelled", "disposed");
         this.debouncedReplyTasks.forEach((task) => task.dispose());
         this.deferredTimers.forEach((timer) => clearTimeout(timer));
         this.debouncedReplyTasks.clear();
         this.deferredTimers.clear();
         this.skippedStimulus.clear();
+        this.pendingStimuli.clear();
     }
 
     /** 所有用户消息都影响安静期，包括未触发回复的消息。 */
@@ -137,13 +164,15 @@ export class StimulusScheduler {
         switch (strategy) {
             case "immediate":
                 // 策略2：记录被跳过的刺激，待当前任务完成后立即处理
-                this.skippedStimulus.set(channelKey, stimulus);
+                this.replaceSkipped(stimulus);
+                this.observe?.(stimulus, "queued", "busy");
                 this.logger.debug(`[${channelKey}] 消息已记录，将在当前任务完成后立即处理`);
                 break;
 
             case "deferred":
                 // 策略3：记录被跳过的刺激，设置延迟处理定时器
-                this.skippedStimulus.set(channelKey, stimulus);
+                this.replaceSkipped(stimulus);
+                this.observe?.(stimulus, "queued", "busy");
                 this.logger.debug(`[${channelKey}] 消息已记录，将在任务完成后开始延迟计时`);
                 break;
 
@@ -151,8 +180,15 @@ export class StimulusScheduler {
             default:
                 // 策略1：直接跳过（默认行为）
                 this.logger.debug(`[${channelKey}] 跳过处理（策略: skip）`);
+                this.observe?.(stimulus, "skipped", "busy");
                 break;
         }
+    }
+
+    private replaceSkipped(stimulus: AgentStimulus<any>): void {
+        const old = this.skippedStimulus.get(stimulus.channelCid);
+        if (old && old !== stimulus) this.observe?.(old, "cancelled", "debounce_replaced");
+        this.skippedStimulus.set(stimulus.channelCid, stimulus);
     }
 
     private handleSkippedMessagesAfterReply(channelKey: string) {
@@ -169,10 +205,7 @@ export class StimulusScheduler {
             // 防抖期间仍可合并新消息，真正开始执行时才获取频道锁。
             this.logger.debug(`[${channelKey}] 调度被跳过的段落`);
 
-            const debouncedTask = this.debouncedReplyTasks.get(channelKey);
-            if (debouncedTask) {
-                debouncedTask(skippedStimulus);
-            }
+            this.getDebouncedTask(channelKey)(skippedStimulus);
         } else if (this.config.newMessageStrategy === "deferred" && this.skippedStimulus.has(channelKey)) {
             // 任务完成后才启动定时器
             this.setupDeferredTimer(channelKey);
@@ -183,6 +216,8 @@ export class StimulusScheduler {
      * 设置延迟处理定时器（策略3）
      */
     private setupDeferredTimer(channelKey: string) {
+        const waiting = this.skippedStimulus.get(channelKey);
+        if (waiting) this.observe?.(waiting, "deferred", "busy");
         // 清除现有定时器
         if (this.deferredTimers.has(channelKey)) {
             clearTimeout(this.deferredTimers.get(channelKey));
