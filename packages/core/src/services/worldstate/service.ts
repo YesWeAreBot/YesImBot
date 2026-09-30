@@ -94,7 +94,7 @@ export class WorldStateService extends Service<Config> {
         return this.config.allowedChannels.some((c) => {
             return (
                 c.platform === platform &&
-                (c.type === "private" ? isDirect : true) &&
+                c.type === (isDirect ? "private" : "guild") &&
                 (c.id === "*" || c.id === channelId || (guildId && c.id === guildId) || (c.type === "private" && c.id === userId))
             );
         });

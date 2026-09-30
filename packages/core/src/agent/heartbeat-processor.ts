@@ -253,178 +253,115 @@ export class HeartbeatProcessor {
         const stime = Date.now();
 
         interface ConsumerBatch {
+            parser: StreamParser;
             controller: AbortController;
-            promises: Promise<any>[];
-            id: number;
+            promises: Promise<void>[];
         }
+        const batches: ConsumerBatch[] = [];
+        let currentBatch: ConsumerBatch;
 
-        let batchCounter = 0;
-        let currentBatch: ConsumerBatch | null = null;
-
-        let thoughts = { observe: "", analyze_infer: "", plan: "" };
-        let request_heartbeat = false;
-        // 批次切换不能丢失已经开始执行的发送结果。
-        const pendingActions: Promise<boolean>[] = [];
-
-        let streamParser = new StreamParser({
-            thoughts: { observe: "string", analyze_infer: "string", plan: "string" },
-            actions: [{ function: "string", params: "any" }],
-            request_heartbeat: "boolean",
-        });
-
-        // 启动一个批次的消费者
+        const closeBatch = (batch: ConsumerBatch) => {
+            batch.controller.abort();
+            try {
+                batch.parser.processText("", true);
+            } catch {}
+        };
         const startConsumers = () => {
-            // 中断并结束旧批次
-            if (currentBatch) {
-                this.logger.warn(`中断旧批次 #${currentBatch.id}`);
-                currentBatch.controller.abort();
-            }
-
-            const id = ++batchCounter;
+            if (currentBatch) closeBatch(currentBatch);
+            const parser = new StreamParser({
+                thoughts: { observe: "string", analyze_infer: "string", plan: "string" },
+                actions: [{ function: "string", params: "any" }],
+                request_heartbeat: "boolean",
+            });
             const controller = new AbortController();
-            const signal = controller.signal;
-
-            // 重置数据
-            thoughts = { observe: "", analyze_infer: "", plan: "" };
-            request_heartbeat = false;
-
-            this.logger.debug(`启动新批次消费者 #${id}`);
-
+            const id = batches.length + 1;
             const thoughtsPromise = (async () => {
-                this.logger.debug(`[批次 ${id}] thoughts consumer start`);
-                try {
-                    for await (const chunk of streamParser.stream<any>("thoughts")) {
-                        if (signal.aborted) break;
-                        const [key, value] = Object.entries(chunk)[0];
-                        thoughts = { ...thoughts, [key]: value };
-                        this.logger.debug(`[流式思考 #${id}] 🤔 ${key}: ${value}`);
-                    }
-                } finally {
-                    this.logger.debug(`[批次 ${id}] thoughts consumer end`);
-                    await this.interactionManager.recordThought(turnId, platform, channelId, thoughts);
+                for await (const chunk of parser.stream<any>("thoughts")) {
+                    if (controller.signal.aborted) break;
+                    const [key, value] = Object.entries(chunk)[0];
+                    this.logger.debug(`[流式思考 #${id}] 🤔 ${key}: ${value}`);
                 }
             })();
-
             const actionsPromise = (async () => {
-                this.logger.debug(`[批次 ${id}] actions consumer start`);
                 let count = 1;
-                for await (const action of streamParser.stream<any>("actions")) {
-                    if (signal.aborted) break;
-                    this.logger.info(`[流式执行 #${id}] ⚡️ 动作 #${count++}: ${action.function} (耗时: ${Date.now() - stime}ms)`);
-                    const pending = this.executeActions(turnId, session, [action], onReplySent);
-                    pendingActions.push(pending);
-                    await pending;
+                for await (const action of parser.stream<any>("actions")) {
+                    if (controller.signal.aborted) break;
+                    // 解析期间只展示动作，最终响应通过校验后才执行。
+                    this.logger.debug(`[流式解析 #${id}] 动作 #${count++}: ${action?.function} (耗时: ${Date.now() - stime}ms)`);
                 }
-                this.logger.debug(`[批次 ${id}] actions consumer end`);
             })();
-
             const heartbeatPromise = (async () => {
-                this.logger.debug(`[批次 ${id}] heartbeat consumer start`);
-                for await (const chunk of streamParser.stream<boolean>("request_heartbeat")) {
-                    if (signal.aborted) break;
-                    request_heartbeat = Boolean(chunk);
-                    this.logger.debug(`[流式心跳 #${id}] ❤️ request_heartbeat: ${request_heartbeat}`);
+                for await (const chunk of parser.stream<boolean>("request_heartbeat")) {
+                    if (controller.signal.aborted) break;
+                    this.logger.debug(`[流式心跳 #${id}] ❤️ request_heartbeat: ${Boolean(chunk)}`);
                 }
-                this.logger.debug(`[批次 ${id}] heartbeat consumer end`);
             })();
-
-            currentBatch = {
-                controller,
-                promises: [thoughtsPromise, actionsPromise, heartbeatPromise],
-                id,
-            };
-            // 动作可能在模型结束之前失败，立即观察以避免未处理的拒绝。
+            currentBatch = { parser, controller, promises: [thoughtsPromise, actionsPromise, heartbeatPromise] };
+            batches.push(currentBatch);
             currentBatch.promises.forEach((promise) => {
                 void promise.catch(() => {});
             });
         };
-
-        // 第一次启动消费者
         startConsumers();
-
         const finalValidatorParser = new JsonParser<any>();
-
-        assertReplyTurn();
-        const llmPromise = this.modelSwitcher.chat({
-            messages,
-            abortSignal: replyTurnSignal(),
-            stream: true,
-            validation: {
-                format: "json",
-                validator: (text, final) => {
-                    if (!final) {
-                        try {
-                            streamParser.processText(text, false);
-                        } catch (e) {
-                            if (!e.message.includes("Cannot read properties of null")) {
-                                this.logger.warn(`流式解析器错误: ${e.message}`);
-                            }
-                        }
-                        return { valid: true, earlyExit: false };
-                    }
-
-                    const { data, error } = finalValidatorParser.parse(text);
-
-                    if (error) {
-                        this.logger.warn("最终JSON解析失败，即将触发重试...");
-                        // 用新的 parser 启动新的批次
-                        streamParser = new StreamParser({
-                            thoughts: { observe: "string", analyze_infer: "string", plan: "string" },
-                            actions: [{ function: "string", params: "any" }],
-                            request_heartbeat: "boolean",
-                        });
-                        startConsumers();
-                        return { valid: false, earlyExit: false, error };
-                    }
-
-                    try {
-                        streamParser.processText(text, true);
-                    } catch (e) {
-                        /* 忽略完成阶段错误 */
-                    }
-
-                    let finalData = data;
-                    if (finalData.thoughts && typeof finalData.thoughts.request_heartbeat === "boolean") {
-                        finalData.request_heartbeat = finalData.request_heartbeat ?? finalData.thoughts.request_heartbeat;
-                    }
-
-                    const isComplete =
-                        finalData.thoughts && Array.isArray(finalData.actions) && typeof finalData.request_heartbeat === "boolean";
-
-                    if (isComplete) {
-                        return { valid: true, earlyExit: true, parsedData: finalData };
-                    }
-
-                    return { valid: true, earlyExit: false, parsedData: finalData };
-                },
-            },
-        });
-
-        // 取消时关闭消费者，即使尚未收到完整 JSON。
-        const closeCancelledBatch = () => {
-            currentBatch?.controller.abort();
-            try {
-                streamParser.processText("", true);
-            } catch {}
-        };
+        const closeCancelledBatch = () => closeBatch(currentBatch);
         const turnSignal = replyTurnSignal();
         turnSignal?.addEventListener("abort", closeCancelledBatch, { once: true });
+        let llmRawResponse: GenerateTextResult;
         try {
-            if (turnSignal?.aborted) closeCancelledBatch();
-            await llmPromise;
-            if (currentBatch) await Promise.all(currentBatch.promises);
+            assertReplyTurn();
+            llmRawResponse = await this.modelSwitcher.chat({
+                messages,
+                abortSignal: turnSignal,
+                stream: true,
+                validation: {
+                    format: "json",
+                    validator: (text, final) => {
+                        if (!final) {
+                            try {
+                                currentBatch.parser.processText(text, false);
+                            } catch (error) {
+                                this.logger.debug(`流式解析器错误: ${error.message}`);
+                            }
+                            return { valid: true, earlyExit: false };
+                        }
+                        const { data, error } = finalValidatorParser.parse(text);
+                        const isComplete =
+                            data &&
+                            data.thoughts &&
+                            typeof data.thoughts === "object" &&
+                            !Array.isArray(data.thoughts) &&
+                            Array.isArray(data.actions);
+                        if (error || !isComplete) {
+                            this.logger.warn("最终JSON解析或结构校验失败，即将触发重试...");
+                            startConsumers();
+                            return { valid: false, earlyExit: false, error: error || "Missing 'thoughts' or 'actions' field." };
+                        }
+                        if (typeof data.thoughts.request_heartbeat === "boolean") {
+                            data.request_heartbeat = data.request_heartbeat ?? data.thoughts.request_heartbeat;
+                        }
+                        try {
+                            currentBatch.parser.processText(text, true);
+                        } catch {}
+                        return { valid: true, earlyExit: true, parsedData: data };
+                    },
+                },
+            });
         } finally {
             turnSignal?.removeEventListener("abort", closeCancelledBatch);
-            closeCancelledBatch();
-            // 模型失败或取消时，也要等已开始的动作结束后再释放频道锁。
-            await Promise.allSettled(pendingActions);
-            if (turnSignal?.aborted && currentBatch) await Promise.allSettled(currentBatch.promises);
+            batches.forEach(closeBatch);
+            await Promise.allSettled(batches.flatMap((batch) => batch.promises));
         }
 
-        const replySent = (await Promise.all(pendingActions)).some(Boolean);
+        // 模型重试和切换结束后，以最终响应为唯一动作来源。
+        assertReplyTurn();
+        const response = this.parseAndValidateResponse(llmRawResponse, session.cid);
+        if (!response) return null;
+        await this.interactionManager.recordThought(turnId, platform, channelId, response.thoughts);
+        const replySent = await this.executeActions(turnId, session, response.actions, onReplySent);
         if (replySent) this.logger.success("单次心跳成功完成");
         else this.logger.debug("单次心跳完成，未成功发送回复");
-        return { continue: request_heartbeat, replySent };
+        return { continue: response.request_heartbeat, replySent };
     }
 
     /**
@@ -446,13 +383,14 @@ export class HeartbeatProcessor {
             return null;
         }
 
-        if (!data.thoughts || typeof data.thoughts !== "object" || !Array.isArray(data.actions)) {
+        if (!data.thoughts || typeof data.thoughts !== "object" || Array.isArray(data.thoughts) || !Array.isArray(data.actions)) {
             const formatError = new AppError(ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED, { context: errorContext });
             handleError(this.logger, formatError, `验证LLM响应格式时 (CID: ${cid})`);
             return null;
         }
 
-        data.request_heartbeat = typeof data.request_heartbeat === "boolean" ? data.request_heartbeat : false;
+        const nestedHeartbeat = (data.thoughts as AgentResponse["thoughts"] & { request_heartbeat?: boolean }).request_heartbeat;
+        data.request_heartbeat = typeof data.request_heartbeat === "boolean" ? data.request_heartbeat : nestedHeartbeat === true;
 
         return data as Omit<AgentResponse, "observations">;
     }

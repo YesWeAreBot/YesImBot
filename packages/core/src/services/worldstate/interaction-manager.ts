@@ -179,26 +179,22 @@ export class InteractionManager {
         ]);
 
         const combinedEvents: L1HistoryItem[] = [
-            ...messages.map(
-                (m): L1HistoryItem => ({
-                    type: "message",
-                    id: m.id,
-                    sender: m.sender,
-                    content: m.content,
-                    elements: h.parse(m.content),
-                    timestamp: m.timestamp,
-                    quoteId: m.quoteId,
-                })
-            ),
-            ...systemEvents.map(
-                (s): L1HistoryItem => ({
-                    type: "system_event",
-                    id: s.id,
-                    eventType: s.type,
-                    message: s.message,
-                    timestamp: s.timestamp,
-                })
-            ),
+            ...messages.map((m): L1HistoryItem => ({
+                type: "message",
+                id: m.id,
+                sender: m.sender,
+                content: m.content,
+                elements: h.parse(m.content),
+                timestamp: m.timestamp,
+                quoteId: m.quoteId,
+            })),
+            ...systemEvents.map((s): L1HistoryItem => ({
+                type: "system_event",
+                id: s.id,
+                eventType: s.type,
+                message: s.message,
+                timestamp: s.timestamp,
+            })),
             ...agentEvents,
         ];
 
@@ -273,7 +269,41 @@ export class InteractionManager {
         }
     }
 
-    public async clearAgentHistory(platform?: string, channelId?: string): Promise<void> {
+    public async clearAgentHistory(platform?: string, channelId?: string, channelType?: "private" | "guild" | "all"): Promise<void> {
+        if (channelType !== undefined && !["private", "guild", "all"].includes(channelType)) {
+            throw new Error("频道类型必须是 private、guild 或 all");
+        }
+        if (channelType && channelType !== "all" && !channelId) {
+            // 与数据库沿用相同的 private: 分类，日志路径会将冒号替换为下划线。
+            let directories: string[];
+            try {
+                directories = platform
+                    ? [path.join(this.basePath, platform)]
+                    : (await fs.readdir(this.basePath, { withFileTypes: true }))
+                          .filter((entry) => entry.isDirectory())
+                          .map((entry) => path.join(this.basePath, entry.name));
+            } catch (error) {
+                if (error.code === "ENOENT") return;
+                throw error;
+            }
+            for (const directory of directories) {
+                let files;
+                try {
+                    files = await fs.readdir(directory, { withFileTypes: true });
+                } catch (error) {
+                    if (error.code === "ENOENT") continue;
+                    throw error;
+                }
+                for (const file of files) {
+                    if (!file.isFile() || !file.name.endsWith(".agent.jsonl")) continue;
+                    const isPrivate = file.name.startsWith("private_");
+                    if (isPrivate !== (channelType === "private")) continue;
+                    await fs.rm(path.join(directory, file.name), { force: true });
+                }
+            }
+            this.logger.info(`已删除指定类型的Agent日志: ${channelType}`);
+            return;
+        }
         let targetPath: string;
         let targetType: "file" | "dir" = "dir";
         if (!platform && !channelId) {
