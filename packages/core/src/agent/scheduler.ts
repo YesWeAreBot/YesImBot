@@ -75,6 +75,15 @@ export class StimulusScheduler {
         return debouncedTask;
     }
 
+    public cancel(channelKey: string): void {
+        this.debouncedReplyTasks.get(channelKey)?.dispose();
+        this.debouncedReplyTasks.delete(channelKey);
+        this.skippedStimulus.delete(channelKey);
+        const timer = this.deferredTimers.get(channelKey);
+        if (timer) clearTimeout(timer);
+        this.deferredTimers.delete(channelKey);
+    }
+
     private async executeTask(channelKey: string, stimulus: AgentStimulus<any>, schedulingStack?: string): Promise<void> {
         if (this.disposed) return;
         if (this.runningTasks.has(channelKey)) {

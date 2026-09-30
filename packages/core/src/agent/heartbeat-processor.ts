@@ -1,3 +1,4 @@
+import { assertReplyTurn, replyTurnSignal } from "@/agent/reply-turn";
 import type { Tool } from "@xsai/shared-chat";
 import { toolJSONSchema } from "@/services/extension/json-schema";
 import { GenerateTextResult } from "@xsai/generate-text";
@@ -37,7 +38,7 @@ export class HeartbeatProcessor {
 
     /**
      * 运行完整的 Agent 思考-行动周期
-     * @returns 返回 true 如果至少有一次心跳成功
+     * @returns 返回 true 如果至少有一次 send_message 成功
      */
     public async runCycle(stimulus: AgentStimulus<any>): Promise<boolean> {
         const turnId = uuidv4();
@@ -46,18 +47,22 @@ export class HeartbeatProcessor {
         let success = false;
 
         while (shouldContinueHeartbeat && heartbeatCount < this.config.heartbeat) {
+            assertReplyTurn();
             heartbeatCount++;
             try {
                 this.logger.info(`Heartbeat | 第 ${heartbeatCount}/${this.config.heartbeat} 轮`);
+                const onReplySent = () => {
+                    success = true;
+                };
                 const result = this.config.nativeToolCalling
-                    ? await this.performNativeHeartbeat(turnId, stimulus)
+                    ? await this.performNativeHeartbeat(turnId, stimulus, onReplySent)
                     : this.config.streamAction
-                    ? await this.performSingleHeartbeatWithStreaming(turnId, stimulus)
-                    : await this.performSingleHeartbeat(turnId, stimulus);
+                      ? await this.performSingleHeartbeatWithStreaming(turnId, stimulus, onReplySent)
+                      : await this.performSingleHeartbeat(turnId, stimulus, onReplySent);
 
                 if (result) {
                     shouldContinueHeartbeat = result.continue;
-                    success = true; // 至少成功一次心跳
+                    success = success || result.replySent;
                 } else {
                     shouldContinueHeartbeat = false;
                 }
@@ -160,7 +165,11 @@ export class HeartbeatProcessor {
     /**
      * 执行单次心跳的完整逻辑（非流式）
      */
-    private async performSingleHeartbeat(turnId: string, stimulus: AgentStimulus<any>): Promise<{ continue: boolean } | null> {
+    private async performSingleHeartbeat(
+        turnId: string,
+        stimulus: AgentStimulus<any>,
+        onReplySent: () => void
+    ): Promise<{ continue: boolean; replySent: boolean } | null> {
         const { session } = stimulus;
         const { platform, channelId } = session;
         const parser = new JsonParser<AgentResponse>();
@@ -170,8 +179,10 @@ export class HeartbeatProcessor {
 
         // 步骤 5: 调用LLM
         this.logger.info("步骤 5/7: 调用大语言模型...");
+        assertReplyTurn();
         const llmRawResponse = await this.modelSwitcher.chat({
             messages,
+            abortSignal: replyTurnSignal(),
             validation: {
                 format: "json",
                 validator: (text, final) => {
@@ -217,16 +228,21 @@ export class HeartbeatProcessor {
 
         // 步骤 7: 执行动作
         this.logger.debug(`步骤 7/7: 执行 ${agentResponseData.actions.length} 个动作...`);
-        await this.executeActions(turnId, session, agentResponseData.actions);
+        const replySent = await this.executeActions(turnId, session, agentResponseData.actions, onReplySent);
 
-        this.logger.success("单次心跳成功完成");
-        return { continue: agentResponseData.request_heartbeat };
+        if (replySent) this.logger.success("单次心跳成功完成");
+        else this.logger.debug("单次心跳完成，未成功发送回复");
+        return { continue: agentResponseData.request_heartbeat, replySent };
     }
 
     /**
      * 执行单次心跳的完整逻辑（流式，支持重试批次切换）
      */
-    private async performSingleHeartbeatWithStreaming(turnId: string, stimulus: AgentStimulus<any>): Promise<{ continue: boolean } | null> {
+    private async performSingleHeartbeatWithStreaming(
+        turnId: string,
+        stimulus: AgentStimulus<any>,
+        onReplySent: () => void
+    ): Promise<{ continue: boolean; replySent: boolean } | null> {
         const { session } = stimulus;
         const { platform, channelId } = session;
 
@@ -247,6 +263,8 @@ export class HeartbeatProcessor {
 
         let thoughts = { observe: "", analyze_infer: "", plan: "" };
         let request_heartbeat = false;
+        // 批次切换不能丢失已经开始执行的发送结果。
+        const pendingActions: Promise<boolean>[] = [];
 
         let streamParser = new StreamParser({
             thoughts: { observe: "string", analyze_infer: "string", plan: "string" },
@@ -293,7 +311,9 @@ export class HeartbeatProcessor {
                 for await (const action of streamParser.stream<any>("actions")) {
                     if (signal.aborted) break;
                     this.logger.info(`[流式执行 #${id}] ⚡️ 动作 #${count++}: ${action.function} (耗时: ${Date.now() - stime}ms)`);
-                    await this.executeActions(turnId, session, [action]);
+                    const pending = this.executeActions(turnId, session, [action], onReplySent);
+                    pendingActions.push(pending);
+                    await pending;
                 }
                 this.logger.debug(`[批次 ${id}] actions consumer end`);
             })();
@@ -313,6 +333,10 @@ export class HeartbeatProcessor {
                 promises: [thoughtsPromise, actionsPromise, heartbeatPromise],
                 id,
             };
+            // 动作可能在模型结束之前失败，立即观察以避免未处理的拒绝。
+            currentBatch.promises.forEach((promise) => {
+                void promise.catch(() => {});
+            });
         };
 
         // 第一次启动消费者
@@ -320,8 +344,10 @@ export class HeartbeatProcessor {
 
         const finalValidatorParser = new JsonParser<any>();
 
+        assertReplyTurn();
         const llmPromise = this.modelSwitcher.chat({
             messages,
+            abortSignal: replyTurnSignal(),
             stream: true,
             validation: {
                 format: "json",
@@ -374,14 +400,31 @@ export class HeartbeatProcessor {
             },
         });
 
-        // 等待 LLM 结束后，再只等待最后的批次
-        await llmPromise;
-        if (currentBatch) {
-            await Promise.all(currentBatch.promises);
+        // 取消时关闭消费者，即使尚未收到完整 JSON。
+        const closeCancelledBatch = () => {
+            currentBatch?.controller.abort();
+            try {
+                streamParser.processText("", true);
+            } catch {}
+        };
+        const turnSignal = replyTurnSignal();
+        turnSignal?.addEventListener("abort", closeCancelledBatch, { once: true });
+        try {
+            if (turnSignal?.aborted) closeCancelledBatch();
+            await llmPromise;
+            if (currentBatch) await Promise.all(currentBatch.promises);
+        } finally {
+            turnSignal?.removeEventListener("abort", closeCancelledBatch);
+            closeCancelledBatch();
+            // 模型失败或取消时，也要等已开始的动作结束后再释放频道锁。
+            await Promise.allSettled(pendingActions);
+            if (turnSignal?.aborted && currentBatch) await Promise.allSettled(currentBatch.promises);
         }
 
-        this.logger.success("单次心跳成功完成");
-        return { continue: request_heartbeat };
+        const replySent = (await Promise.all(pendingActions)).some(Boolean);
+        if (replySent) this.logger.success("单次心跳成功完成");
+        else this.logger.debug("单次心跳完成，未成功发送回复");
+        return { continue: request_heartbeat, replySent };
     }
 
     /**
@@ -414,24 +457,41 @@ export class HeartbeatProcessor {
         return data as Omit<AgentResponse, "observations">;
     }
 
-    private async performNativeHeartbeat(turnId: string, stimulus: AgentStimulus<any>): Promise<{ continue: boolean }> {
+    private async performNativeHeartbeat(
+        turnId: string,
+        stimulus: AgentStimulus<any>,
+        onReplySent: () => void
+    ): Promise<{ continue: boolean; replySent: boolean }> {
         const session = stimulus.session;
         const { messages } = await this._prepareLlmRequest(stimulus);
-        messages.push({ role: "system", content: "本轮启用原生工具调用。请通过工具接口执行动作，不要输出 JSON actions；需要先查询时，先调用查询工具，获得结果后下一轮再决策。使用 send_message 发送回复。" });
+        messages.push({
+            role: "system",
+            content:
+                "本轮启用原生工具调用。请通过工具接口执行动作，不要输出 JSON actions；需要先查询时，先调用查询工具，获得结果后下一轮再决策。使用 send_message 发送回复。",
+        });
         const definitions = this.toolService.getAvailableTools(session);
         if (!definitions.length) throw new Error("当前会话没有可用工具");
-        const tools: Tool[] = definitions.map(definition => ({
+        const tools: Tool[] = definitions.map((definition) => ({
             type: "function",
             function: { name: definition.name, description: definition.description, parameters: toolJSONSchema(definition.parameters) },
             // SDK 阶段不执行任何真实工具，失败重试不会重放消息。
             execute: () => ({}),
         }));
-        const response = await this.modelSwitcher.chat({ messages, tools, toolChoice: "required", maxSteps: 1, singleStep: true });
+        assertReplyTurn();
+        const response = await this.modelSwitcher.chat({
+            messages,
+            tools,
+            toolChoice: "required",
+            maxSteps: 1,
+            singleStep: true,
+            abortSignal: replyTurnSignal(),
+        });
+        assertReplyTurn();
         if (!response.toolCalls?.length) {
             const legacy = this.parseAndValidateResponse(response, session.cid);
             if (!legacy) throw new Error("模型没有返回有效工具调用");
-            await this.executeActions(turnId, session, legacy.actions);
-            return { continue: legacy.request_heartbeat };
+            const replySent = await this.executeActions(turnId, session, legacy.actions, onReplySent);
+            return { continue: legacy.request_heartbeat, replySent };
         }
         const seen = new Map<string, string>();
         const actions: Array<{ function: string; params: Record<string, unknown> }> = [];
@@ -450,13 +510,26 @@ export class HeartbeatProcessor {
             seen.set(call.toolCallId, signature);
             actions.push({ function: call.toolName, params });
         }
+        let replySent = false;
         for (const action of actions) {
+            assertReplyTurn();
             const actionId = await this.interactionManager.recordAction(turnId, session.platform, session.channelId, action);
+            assertReplyTurn();
             const result = await this.toolService.invoke(action.function, action.params, session);
-            await this.interactionManager.recordObservation(actionId, session.platform, session.channelId, { turnId, ...action, status: result.status, result: result.result, error: result.error });
+            if (action.function === "send_message" && result.status === "success") {
+                replySent = true;
+                onReplySent();
+            }
+            await this.interactionManager.recordObservation(actionId, session.platform, session.channelId, {
+                turnId,
+                ...action,
+                status: result.status,
+                result: result.result,
+                error: result.error,
+            });
             if (result.status !== "success") throw new Error(`工具 ${action.function} 执行失败: ${result.error?.message ?? "未知错误"}`);
         }
-        return { continue: !actions.some(action => action.function === "send_message") };
+        return { continue: !actions.some((action) => action.function === "send_message"), replySent };
     }
 
     private displayThoughts(thoughts: AgentResponse["thoughts"]) {
@@ -468,18 +541,30 @@ export class HeartbeatProcessor {
   - 计划: ${plan || "N/A"}`);
     }
 
-    private async executeActions(turnId: string, session: Session, actions: AgentResponse["actions"]): Promise<void> {
+    private async executeActions(
+        turnId: string,
+        session: Session,
+        actions: AgentResponse["actions"],
+        onReplySent: () => void
+    ): Promise<boolean> {
         if (actions.length === 0) {
             this.logger.info("无动作需要执行");
-            return;
+            return false;
         }
 
         const { platform, channelId } = session;
+        let replySent = false;
 
         for await (const action of actions) {
             if (!action.function) continue; // FIXME: params is nullable
+            assertReplyTurn();
             const actionId = await this.interactionManager.recordAction(turnId, platform, channelId, action);
+            assertReplyTurn();
             const result = await this.toolService.invoke(action.function, action.params, session);
+            if (action.function === "send_message" && result.status === "success") {
+                replySent = true;
+                onReplySent();
+            }
             await this.interactionManager.recordObservation(actionId, platform, channelId, {
                 turnId,
                 function: action.function,
@@ -488,6 +573,7 @@ export class HeartbeatProcessor {
                 error: result.error,
             });
         }
+        return replySent;
     }
 }
 

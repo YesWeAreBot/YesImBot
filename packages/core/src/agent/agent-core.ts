@@ -1,4 +1,4 @@
-import { Context, Service, Session } from "koishi";
+import { Context, Service, Session, Random } from "koishi";
 
 import { Config } from "@/config";
 import { ChatModelSwitcher, ModelService, TaskType } from "@/services/model";
@@ -11,10 +11,16 @@ import { ErrorDefinitions } from "@/shared/errors/definitions";
 import { PromptContextBuilder } from "./context-builder";
 import { HeartbeatProcessor } from "./heartbeat-processor";
 import { StimulusScheduler } from "./scheduler";
+import { ReplyControl, ReplyCategory, ReplyTarget, messageCategories, replyKey } from "./reply-control";
+import { registerReplyCommands } from "./reply-commands";
+import { guardReplySession, withReplyTurn } from "./reply-turn";
 import { TypeSafeEvaluator } from "./typesafe";
 import { WillingnessManager } from "./willing";
 
 declare module "koishi" {
+    interface Tables {
+        "yesimbot.reply_rules": import("./reply-control").ReplyRule;
+    }
     interface Events {
         "after-send": (session: Session) => void;
     }
@@ -42,8 +48,10 @@ export class AgentCore extends Service<Config> {
     private contextBuilder: PromptContextBuilder;
     private processor: HeartbeatProcessor;
 
+    private activeTurns = new Map<string, AbortController>();
+    private replyControl: ReplyControl;
     private modelSwitcher: ChatModelSwitcher;
-    private readonly pendingAssessments = new Map<string, { controller: AbortController; stimulus: AgentStimulus<any> }>();
+    private readonly pendingAssessments = new Map<string, { controller: AbortController; stimulus: AgentStimulus<any>; token: number }>();
     private stopped = false;
 
     private cancelAssessment(channelCid: string, settle = true): void {
@@ -51,30 +59,45 @@ export class AgentCore extends Service<Config> {
         if (!pending) return;
         this.pendingAssessments.delete(channelCid);
         pending.controller.abort();
-        if (settle) this.processStimulus(pending.stimulus, 1, false);
+        if (settle && this.replyControl.valid(this.replyTarget(pending.stimulus.session), pending.token)) {
+            this.processStimulus(pending.stimulus, 1, false);
+        }
     }
 
     private receiveStimulus(stimulus: AgentStimulus<any>): void {
         if (this.stopped) return;
-        const { channelCid, session, type } = stimulus;
+        const { session, type } = stimulus;
+        const channelCid = replyKey(this.replyTarget(session));
+        stimulus = { ...stimulus, channelCid };
+        if (!this.allowedCategories(stimulus).length) return;
         if (type === "user_message") this.scheduler.noteUserMessage(channelCid);
         this.cancelAssessment(channelCid);
         const config = this.config.typesafe;
-        const addressed = session?.isDirect || session?.stripped?.atSelf
-            || session?.elements?.some(e => e.type === "at" && e.attrs.id === session.bot.selfId);
-        if (type !== "user_message" || !config || config.mode === "off" || addressed
-            || this.scheduler.isBusy(channelCid)
-            || !config.evaluationModel?.providerName || !config.evaluationModel.modelId) {
+        const addressed =
+            session?.isDirect ||
+            session?.stripped?.atSelf ||
+            session?.elements?.some((e) => e.type === "at" && e.attrs.id === session.bot.selfId);
+        if (
+            type !== "user_message" ||
+            !config ||
+            config.mode === "off" ||
+            addressed ||
+            this.scheduler.isBusy(channelCid) ||
+            !config.evaluationModel?.providerName ||
+            !config.evaluationModel.modelId
+        ) {
             this.processStimulus(stimulus);
             return;
         }
-        const pending = { controller: new AbortController(), stimulus };
+        const target = this.replyTarget(session);
+        const pending = { controller: new AbortController(), stimulus, token: this.replyControl.token(target) };
         this.pendingAssessments.set(channelCid, pending);
         const finish = (multiplier: number | null) => {
             if (this.stopped || this.pendingAssessments.get(channelCid) !== pending) return;
+            if (!this.replyControl.valid(target, pending.token)) return;
             this.pendingAssessments.delete(channelCid);
             this.logger.debug(`[${channelCid}] TypeSafe 增益乘数: ${multiplier ?? "不可用，沿用原计算"}`);
-            this.processStimulus(stimulus, config.mode === "adjust" ? multiplier ?? 1 : 1);
+            this.processStimulus(stimulus, config.mode === "adjust" ? (multiplier ?? 1) : 1);
         };
         void new TypeSafeEvaluator(this.ctx, this.config).evaluate(session, pending.controller.signal).then(finish, () => finish(null));
     }
@@ -109,15 +132,71 @@ export class AgentCore extends Service<Config> {
             this.contextBuilder
         );
 
-        this.scheduler = new StimulusScheduler(ctx, config, async (stimulus) => {
-            const { channelCid } = stimulus;
+        this.replyControl = new ReplyControl(
+            {
+                load: () => ctx.database.get("yesimbot.reply_rules", {}),
+                save: async (rule) => {
+                    await ctx.database.upsert("yesimbot.reply_rules", [rule]);
+                },
+                remove: async (id) => {
+                    await ctx.database.remove("yesimbot.reply_rules", { id });
+                },
+            },
+            (target) => {
+                const key = replyKey(target);
+                this.cancelAssessment(key, false);
+                this.activeTurns.get(key)?.abort(new Error("聊天任务已取消"));
+                this.willing.reset(key);
+                this.scheduler?.cancel(key);
+            },
+            async (target, reason, rule) => {
+                const names = { pause: "暂停", replace: "替换暂停规则", resume: "解除暂停", expired: "暂停到期自动解除" };
+                await this.worldState.recordSystemEvent({
+                    id: `reply_control_${Random.id()}`,
+                    platform: target.platform,
+                    channelId: target.channelId,
+                    type: "reply-control",
+                    timestamp: new Date(),
+                    payload: { selfId: target.selfId, reason, rule },
+                    message: `系统提示：机器人 ${target.selfId} ${names[reason]}。${rule ? `抑制类别：${rule.blocked.join(", ")}；截止：${rule.expiresAt === null ? "永久" : new Date(rule.expiresAt).toISOString()}。` : ""}意愿归零，消息和事件继续记录，不补发旧回复。`,
+                });
+            },
+            Date.now,
+            (error) => this.logger.warn("回复规则到期清理失败", error)
+        );
 
+        this.scheduler = new StimulusScheduler(ctx, config, async (stimulus) => {
+            const target = this.replyTarget(stimulus.session);
+            const token = this.replyControl.token(target);
+            await this.replyControl.flush();
+            if (!this.replyControl.valid(target, token) || !this.allowedCategories(stimulus).length) return;
+            const channelCid = replyKey(target);
             this.cancelAssessment(channelCid);
             this.willing.handlePreReply(channelCid);
 
-            const success = await this.processor.runCycle(stimulus);
+            const controller = new AbortController();
+            this.activeTurns.set(channelCid, controller);
+            let success = false;
+            try {
+                success = await withReplyTurn(
+                    () => !controller.signal.aborted && this.replyControl.valid(target, token),
+                    async () => {
+                        const session = guardReplySession(stimulus.session);
+                        return this.processor.runCycle({ ...stimulus, session });
+                    },
+                    controller.signal,
+                    (destination) => {
+                        if (replyKey(destination) === channelCid) return true;
+                        const rule = this.replyControl.get(destination);
+                        const categories: ReplyCategory[] = destination.isDirect || rule?.isDirect ? ["text", "direct"] : ["text"];
+                        return this.replyControl.allowed(destination, categories).length > 0;
+                    }
+                );
+            } finally {
+                if (this.activeTurns.get(channelCid) === controller) this.activeTurns.delete(channelCid);
+            }
 
-            if (success) {
+            if (success && this.replyControl.valid(target, token)) {
                 const willingnessBeforeReply = this.willing.getCurrentWillingness(channelCid);
                 this.willing.handlePostReply(stimulus.session, channelCid);
                 const willingnessAfterReply = this.willing.getCurrentWillingness(channelCid);
@@ -129,60 +208,105 @@ export class AgentCore extends Service<Config> {
     }
 
     protected async start(): Promise<void> {
+        this.ctx.model.extend(
+            "yesimbot.reply_rules",
+            {
+                id: "string",
+                platform: "string",
+                selfId: "string",
+                channelId: "string",
+                isDirect: "boolean",
+                blocked: "json",
+                expiresAt: { type: "double", nullable: true, initial: null },
+            },
+            { primary: "id" }
+        );
+        await this.replyControl.initialize();
+        this.ctx.setInterval(() => this.replyControl.expire(), 1000);
+        registerReplyCommands(this.ctx, this.replyControl, (this.config.replySuppression?.defaultDurationSeconds ?? 60) * 1000);
         this._registerPromptTemplates();
 
-        this.ctx.on("agent/stimulus", stimulus => this.receiveStimulus(stimulus));
+        this.ctx.on("agent/stimulus", (stimulus) => this.receiveStimulus(stimulus));
 
         this.willing.startDecayCycle();
     }
 
     private processStimulus(stimulus: AgentStimulus<any>, assessmentMultiplier = 1, allowSchedule = true): void {
-            const { type, channelCid, session } = stimulus;
+        const { type, session } = stimulus;
+        const allowed = this.allowedCategories(stimulus);
+        if (!allowed.length) return;
+        const channelCid = replyKey(this.replyTarget(session));
 
-            let decision = false;
+        let decision = false;
 
-            if (type === "user_message") {
-                try {
-                    const willingnessBefore = this.willing.getCurrentWillingness(channelCid);
-                    const result = this.willing.shouldReply(session, assessmentMultiplier);
-                    const willingnessAfter = this.willing.getCurrentWillingness(channelCid); // 获取衰减后的值
-                    decision = result.decision;
+        if (type === "user_message") {
+            try {
+                const willingnessBefore = this.willing.getCurrentWillingness(channelCid);
+                const result = this.willing.shouldReply(
+                    session,
+                    channelCid,
+                    this.replyControl.get(this.replyTarget(session)) ? allowed : undefined,
+                    assessmentMultiplier
+                );
+                const willingnessAfter = this.willing.getCurrentWillingness(channelCid); // 获取衰减后的值
+                decision = result.decision;
 
-                    /* prettier-ignore */
-                    this.logger.debug(`[${channelCid}] 意愿计算: ${willingnessBefore.toFixed(2)} -> ${willingnessAfter.toFixed(2)} | 回复概率: ${(result.probability * 100).toFixed(1)}% | 初步决策: ${decision}`);
-                } catch (error) {
-                    handleError(
-                        this.logger,
-                        new AppError(ErrorDefinitions.WILLINGNESS.CALCULATION_FAILED, {
-                            cause: error as Error,
-                            context: { channelCid },
-                        }),
-                        `Willingness calculation (Channel: ${channelCid})`
-                    );
-                    return;
-                }
-            } else {
-                decision = true;
-                this.logger.info(`[${channelCid}] 接收到系统刺激 [${type}]，自动触发响应。`);
-            }
-
-            if (!decision || !allowSchedule) {
+                /* prettier-ignore */
+                this.logger.debug(`[${channelCid}] 意愿计算: ${willingnessBefore.toFixed(2)} -> ${willingnessAfter.toFixed(2)} | 回复概率: ${(result.probability * 100).toFixed(1)}% | 初步决策: ${decision}`);
+            } catch (error) {
+                handleError(
+                    this.logger,
+                    new AppError(ErrorDefinitions.WILLINGNESS.CALCULATION_FAILED, {
+                        cause: error as Error,
+                        context: { channelCid },
+                    }),
+                    `Willingness calculation (Channel: ${channelCid})`
+                );
                 return;
             }
+        } else {
+            decision = true;
+            this.logger.info(`[${channelCid}] 接收到系统刺激 [${type}]，自动触发响应。`);
+        }
 
-            if (this.worldState.isBotMuted(channelCid)) {
-                this.logger.warn(`[${channelCid}] 机器人已被禁言，响应终止。`);
-                return;
-            }
+        if (!decision || !allowSchedule) {
+            return;
+        }
 
-            this.scheduler.schedule(stimulus);
+        if (this.worldState.isBotMuted(session.cid)) {
+            this.logger.warn(`[${channelCid}] 机器人已被禁言，响应终止。`);
+            return;
+        }
+
+        this.scheduler.schedule({ ...stimulus, channelCid });
     }
 
-    protected stop(): void {
+    protected async stop(): Promise<void> {
         this.stopped = true;
         for (const channelCid of this.pendingAssessments.keys()) this.cancelAssessment(channelCid, false);
+        this.activeTurns.forEach((controller) => controller.abort(new Error("插件已停止")));
+        this.activeTurns.clear();
         this.scheduler.dispose();
         this.willing.stopDecayCycle();
+        await this.replyControl.flush();
+    }
+
+    private replyTarget(session: Session): ReplyTarget {
+        return { platform: session.platform, selfId: session.selfId, channelId: session.channelId, isDirect: session.isDirect };
+    }
+
+    private allowedCategories(stimulus: AgentStimulus<any>): ReplyCategory[] {
+        const categories: ReplyCategory[] =
+            stimulus.type === "user_message"
+                ? messageCategories(stimulus.session)
+                : [
+                      stimulus.type === "scheduled_task"
+                          ? "scheduled"
+                          : stimulus.type === "background_task_completion"
+                            ? "background"
+                            : "system",
+                  ];
+        return this.replyControl.allowed(this.replyTarget(stimulus.session), categories);
     }
 
     private _registerPromptTemplates(): void {
