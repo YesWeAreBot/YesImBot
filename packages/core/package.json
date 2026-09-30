@@ -8,7 +8,8 @@
   "files": [
     "lib",
     "dist",
-    "resources"
+    "resources",
+    "scripts/replay-decisions.cjs"
   ],
   "contributors": [
     "HydroGest <2445691453@qq.com>",

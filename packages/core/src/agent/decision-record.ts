@@ -144,6 +144,10 @@ const reasons: Record<string, string> = {
     invalid_generation: "会话状态已变化",
 };
 
+export function describeDecisionStage(stage: string): string {
+    return stages[stage] || stage;
+}
+
 export function formatDecision(record: DecisionRecord | undefined, state: DecisionState): string {
     const lines = [
         `当前意愿：${state.score.toFixed(2)}；回复任务：${state.busy ? "忙" : "空闲"}；语义判断：${state.assessing ? "进行中" : "无"}；禁言：${state.muted ? "是" : "否"}`,
