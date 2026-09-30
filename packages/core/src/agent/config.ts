@@ -52,6 +52,11 @@ export interface TypeSafeConfig {
 }
 
 export interface WillingnessConfig {
+    participation?: {
+        enabled: boolean;
+        durationSeconds: number;
+        influence: number;
+    };
     typesafe?: TypeSafeConfig;
     base: {
         /** 收到普通文本消息的基础分。这是对话的基石 */
@@ -95,6 +100,11 @@ export interface WillingnessConfig {
 }
 
 const WillingnessConfigSchema: Schema<WillingnessConfig> = Schema.object({
+    participation: Schema.object({
+        enabled: Schema.boolean().default(false).description("成功回复后短暂保持对话参与，默认关闭"),
+        durationSeconds: Schema.number().min(1).max(86400).default(60).description("参与保持的持续时间（秒，最多一天），仅成功回复会刷新"),
+        influence: Schema.number().min(0).max(1).default(0.5).description("参与保持对本条消息意愿增益的影响强度"),
+    }).description("对话参与保持（不强制回复，沿用回复控制规则）"),
     typesafe: Schema.object({
         mode: Schema.union(["off", "observe", "adjust"]).default("off").description("TypeSafe 接话判断：关闭 / 仅记录 / 调整意愿"),
         evaluationModel: Schema.dynamic("modelService.evaluationModels").description("判断模型，请在模型服务中配置 TypeSafe 提供商和评估能力"),
