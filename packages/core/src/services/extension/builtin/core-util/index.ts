@@ -1,4 +1,4 @@
-import { assertReplyDestination, replyTurnSignal } from "@/agent/reply-turn";
+import { assertReplyDestination, guardReplyBot, replyTurnSignal } from "@/agent/reply-turn";
 import { Bot, Context, h, Logger, Schema, Session, sleep } from "koishi";
 
 import { AssetService } from "@/services/assets";
@@ -257,7 +257,7 @@ export default class CoreUtilExtension {
             const platform = parts[0];
             const channelId = parts.slice(1).join(":");
             const bot = this.ctx.bots.find((b) => b.platform === platform);
-            return { bot, channelId, finalTarget: target };
+            return { bot: bot && guardReplyBot(bot), channelId, finalTarget: target };
         }
     }
 

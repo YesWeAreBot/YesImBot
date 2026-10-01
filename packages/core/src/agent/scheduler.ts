@@ -91,11 +91,11 @@ export class StimulusScheduler {
         return tracked;
     }
 
-    public cancel(channelKey: string): void {
+    public cancel(channelKey: string, reason = "reply_suppressed"): void {
         const pending = this.pendingStimuli.get(channelKey);
         const skipped = this.skippedStimulus.get(channelKey);
-        if (pending) this.observe?.(pending, "cancelled", "reply_suppressed");
-        if (skipped) this.observe?.(skipped, "cancelled", "reply_suppressed");
+        if (pending) this.observe?.(pending, "cancelled", reason);
+        if (skipped) this.observe?.(skipped, "cancelled", reason);
         this.pendingStimuli.delete(channelKey);
         this.debouncedReplyTasks.get(channelKey)?.dispose();
         this.debouncedReplyTasks.delete(channelKey);

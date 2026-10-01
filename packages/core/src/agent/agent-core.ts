@@ -72,7 +72,7 @@ export class AgentCore extends Service<Config> {
         const key = replyKey(target);
         return formatDecision(this.decisions.latest(target), {
             score: this.willing.getCurrentWillingness(key), busy: this.scheduler.isBusy(key),
-            assessing: this.pendingAssessments.has(key), muted: this.worldState.peekBotMuted(session.cid),
+            assessing: this.pendingAssessments.has(key), muted: this.worldState.peekBotMuted(session.cid, session.selfId),
             participation: this.willing.getParticipation(key), suppression: this.replyControl.peek(target),
         });
     }
@@ -86,7 +86,7 @@ export class AgentCore extends Service<Config> {
         return lines.length ? lines.join("\n") : "所选时间范围没有该会话的记录。";
     }
 
-    private cancelAssessment(channelCid: string, settle = true): void {
+    private cancelAssessment(channelCid: string, settle = true, reason = "reply_suppressed"): void {
         const pending = this.pendingAssessments.get(channelCid);
         if (!pending) return;
         this.pendingAssessments.delete(channelCid);
@@ -94,7 +94,7 @@ export class AgentCore extends Service<Config> {
         this.recordDecision(pending.stimulus, { assessment: { mode: this.config.typesafe?.mode ?? "off", multiplier: null, status: "cancelled" } });
         if (settle && this.replyControl.valid(this.replyTarget(pending.stimulus.session), pending.token)) {
             this.processStimulus(pending.stimulus, 1, false);
-        } else this.recordDecision(pending.stimulus, { stage: "cancelled", reason: "reply_suppressed" });
+        } else this.recordDecision(pending.stimulus, { stage: "cancelled", reason });
     }
 
     private receiveStimulus(stimulus: TracedStimulus): void {
@@ -104,6 +104,10 @@ export class AgentCore extends Service<Config> {
         stimulus = { ...stimulus, channelCid, decisionId: this.decisions?.begin(this.replyTarget(session), type) };
         if (!this.allowedCategories(stimulus).length) {
             this.recordDecision(stimulus, { stage: "blocked", reason: "reply_suppressed", allowed: [] });
+            return;
+        }
+        if (this.worldState.isBotMuted(session.cid, session.selfId)) {
+            this.recordDecision(stimulus, { stage: "blocked", reason: "muted" });
             return;
         }
         if (type === "user_message") this.scheduler.noteUserMessage(channelCid);
@@ -216,28 +220,37 @@ export class AgentCore extends Service<Config> {
         this.scheduler = new StimulusScheduler(ctx, config, async (stimulus) => {
             const target = this.replyTarget(stimulus.session);
             const token = this.replyControl.token(target);
-            await this.replyControl.flush();
-            if (!this.replyControl.valid(target, token) || !this.allowedCategories(stimulus).length) {
-                this.recordDecision(stimulus, { stage: "cancelled", reason: "invalid_generation", success: false });
-                return;
-            }
             const channelCid = replyKey(target);
-            this.cancelAssessment(channelCid);
-            this.willing.handlePreReply(channelCid);
-
+            // 在首个异步等待前登记，禁言后立即解禁也不能恢复旧任务。
             const controller = new AbortController();
             this.activeTurns.set(channelCid, controller);
             this.activeDecisionIds.set(channelCid, (stimulus as TracedStimulus).decisionId);
             let success = false;
+            const valid = () =>
+                !controller.signal.aborted &&
+                this.replyControl.valid(target, token) &&
+                !this.worldState.isBotMuted(stimulus.session.cid, target.selfId);
             try {
+                await this.replyControl.flush();
+                if (controller.signal.aborted || !this.replyControl.valid(target, token) || !this.allowedCategories(stimulus).length) {
+                    this.recordDecision(stimulus, { stage: "cancelled", reason: "invalid_generation", success: false });
+                    return;
+                }
+                if (this.worldState.isBotMuted(stimulus.session.cid, target.selfId)) {
+                    this.recordDecision(stimulus, { stage: "blocked", reason: "muted", success: false });
+                    return;
+                }
+                this.cancelAssessment(channelCid);
+                this.willing.handlePreReply(channelCid);
                 success = await withReplyTurn(
-                    () => !controller.signal.aborted && this.replyControl.valid(target, token),
+                    valid,
                     async () => {
                         const session = guardReplySession(stimulus.session);
                         return this.processor.runCycle({ ...stimulus, session });
                     },
                     controller.signal,
                     (destination) => {
+                        if (this.worldState.isBotMuted(`${destination.platform}:${destination.channelId}`, destination.selfId)) return false;
                         if (replyKey(destination) === channelCid) return true;
                         const rule = this.replyControl.get(destination);
                         const categories: ReplyCategory[] = destination.isDirect || rule?.isDirect ? ["text", "direct"] : ["text"];
@@ -252,7 +265,7 @@ export class AgentCore extends Service<Config> {
                 this.activeDecisionIds.delete(channelCid);
             }
 
-            if (success && this.replyControl.valid(target, token)) {
+            if (success && valid()) {
                 const willingnessBeforeReply = this.willing.getCurrentWillingness(channelCid);
                 this.willing.handlePostReply(stimulus.session, channelCid);
                 const willingnessAfterReply = this.willing.getCurrentWillingness(channelCid);
@@ -260,10 +273,19 @@ export class AgentCore extends Service<Config> {
                 /* prettier-ignore */
                 this.logger.debug(`[${channelCid}] 回复成功，意愿值已更新: ${willingnessBeforeReply.toFixed(2)} -> ${willingnessAfterReply.toFixed(2)}`);
             }
-            const valid = !controller.signal.aborted && this.replyControl.valid(target, token);
-            this.recordDecision(stimulus, { stage: valid ? "completed" : "cancelled", reason: !valid ? "invalid_generation" : success ? undefined : "no_reply", success: success && valid,
+            const completed = valid();
+            this.recordDecision(stimulus, { stage: completed ? "completed" : "cancelled", reason: !completed ? "invalid_generation" : success ? undefined : "no_reply", success: success && completed,
                 score: this.willing.getCurrentWillingness(channelCid), participation: this.willing.getParticipation(channelCid) });
         }, (stimulus, stage, reason) => this.recordDecision(stimulus, { stage, reason }));
+
+        this.ctx.on("agent/bot-muted", (target) => {
+            const key = replyKey(target);
+            this.cancelAssessment(key, false, "muted");
+            this.activeTurns.get(key)?.abort(new Error("机器人已被禁言"));
+            this.decisions.update(this.activeDecisionIds.get(key), { stage: "cancelled", reason: "muted", success: false });
+            this.willing.reset(key);
+            this.scheduler.cancel(key, "muted");
+        });
     }
 
     protected async start(): Promise<void> {
@@ -296,6 +318,12 @@ export class AgentCore extends Service<Config> {
         const allowed = this.allowedCategories(stimulus);
         if (!allowed.length) { this.recordDecision(stimulus, { stage: "blocked", reason: "reply_suppressed", allowed: [] }); return; }
         const channelCid = replyKey(this.replyTarget(session));
+
+        if (this.worldState.isBotMuted(session.cid, session.selfId)) {
+            this.recordDecision(stimulus, { stage: "blocked", reason: "muted" });
+            this.logger.warn(`[${channelCid}] 机器人已被禁言，响应终止。`);
+            return;
+        }
 
         let decision = false;
 
@@ -336,12 +364,6 @@ export class AgentCore extends Service<Config> {
 
         if (!decision || !allowSchedule) {
             this.recordDecision(stimulus, !allowSchedule ? { stage: "skipped", reason: "not_scheduled" } : { stage: "skipped" });
-            return;
-        }
-
-        if (this.worldState.isBotMuted(session.cid)) {
-            this.recordDecision(stimulus, { stage: "blocked", reason: "muted" });
-            this.logger.warn(`[${channelCid}] 机器人已被禁言，响应终止。`);
             return;
         }
 

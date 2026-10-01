@@ -143,78 +143,66 @@ export class EventListenerManager {
     }
 
     private async handleGuildMember(session: Session): Promise<void> {
-        switch (session.subtype) {
-            case "ban":
-                const duration = session.event._data?.duration * 1000; // ms
-                const isTargetingBot = session.event.user?.id === session.bot.selfId;
+        if (session.subtype !== "ban") return;
+        const raw = session.event._data;
+        if (typeof raw?.duration !== "number" && typeof raw?.duration !== "string") return;
+        if (typeof raw.duration === "string" && !raw.duration.trim()) return;
+        const seconds = Number(raw?.duration);
+        if (!Number.isFinite(seconds)) return;
+        const duration = seconds * 1000;
+        if (!Number.isFinite(duration)) return;
+        const selfId = session.selfId || session.bot.selfId;
+        const userId = session.event.user?.id ?? (raw?.user_id === undefined ? undefined : String(raw.user_id));
+        const allMembers = String(raw?.user_id) === "0" || (duration < 0 && userId === undefined);
+        if (!allMembers && (!userId || duration < 0)) return;
+        const released = raw?.sub_type === "lift_ban" || duration === 0;
+        const timestamp = new Date();
+        const isTargetingBot = userId === selfId;
+        const type = allMembers
+            ? released
+                ? "guild-all-member-unban"
+                : "guild-all-member-ban"
+            : released
+              ? "guild-member-unban"
+              : "guild-member-ban";
+        const payload: Partial<SystemEventData> = {
+            type,
+            payload: {
+                details: {
+                    user: userId === undefined ? undefined : { ...session.event.user, id: userId },
+                    operator: session.event.operator,
+                    duration,
+                    selfId,
+                },
+            },
+            message: allMembers
+                ? `系统提示：管理员 "${session.event.operator?.id}" ${released ? "解除了" : "开启了"}全体禁言`
+                : released
+                  ? `系统提示：管理员 "${session.event.operator?.id}" 已解除用户 "${userId}" 的禁言`
+                  : `系统提示：管理员 "${session.event.operator?.id}" 已将用户 "${userId}" 禁言，时长为 ${duration}ms`,
+        };
 
-                if (duration < 0) {
-                    // 全体禁言
-                    const payload: Partial<SystemEventData> = {
-                        type: "guild-all-member-ban",
-                        payload: { details: { operator: session.event.operator, duration } },
-                        message: `系统提示：管理员 "${session.event.operator?.id}" 开启了全体禁言`,
-                    };
-                    this.service.updateMuteStatus(session.cid, Number.POSITIVE_INFINITY);
-                    this.service.recordSystemEvent({
-                        id: `sysevt_ban_${Random.id()}`,
-                        platform: session.platform,
-                        channelId: session.channelId,
-                        timestamp: new Date(),
-                        ...payload,
-                    } as SystemEventData);
-                    return;
-                }
-
-                if (duration === 0) {
-                    // 解除禁言
-                    const payload: Partial<SystemEventData> = {
-                        type: "guild-member-unban",
-                        payload: { details: { user: session.event.user, operator: session.event.operator } },
-                        message: `系统提示：管理员 "${session.event.operator?.id}" 已解除用户 "${session.event.user?.id}" 的禁言`,
-                    };
-
-                    if (isTargetingBot) {
-                        this.service.updateMuteStatus(session.cid, 0);
-                        const stimulus: AgentStimulus<SystemEventPayload> = {
-                            type: "system_event",
-                            channelCid: session.cid,
-                            session,
-                            priority: 8,
-                            payload: payload as SystemEventPayload,
-                        };
-                        this.ctx.emit("agent/stimulus", stimulus);
-                    }
-                    this.service.recordSystemEvent({
-                        id: `sysevt_unban_${Random.id()}`,
-                        platform: session.platform,
-                        channelId: session.channelId,
-                        timestamp: new Date(),
-                        ...payload,
-                    } as SystemEventData);
-                    return;
-                }
-
-                const payload: Partial<SystemEventData> = {
-                    type: "guild-member-ban",
-                    payload: { details: { user: session.event.user, operator: session.event.operator, duration } },
-                    message: `系统提示：管理员 "${session.event.operator?.id}" 已将用户 "${session.event.user?.id}" 禁言，时长为 ${duration}ms`,
-                };
-
-                this.service.recordSystemEvent({
-                    id: `sysevt_ban_${Random.id()}`,
-                    platform: session.platform,
-                    channelId: session.channelId,
-                    timestamp: new Date(),
-                    ...payload,
-                } as SystemEventData);
-
-                if (isTargetingBot) {
-                    const expiresAt = duration > 0 ? Date.now() + duration : 0;
-                    this.service.updateMuteStatus(session.cid, expiresAt);
-                }
-
-                break;
+        if (allMembers) {
+            this.service.updateMuteStatus(session.cid, released ? 0 : Infinity, selfId, "all");
+        } else if (isTargetingBot || this.ctx.bots.some(bot => bot.platform === session.platform && bot.selfId === userId)) {
+            this.service.updateMuteStatus(session.cid, released ? 0 : timestamp.getTime() + duration, userId);
+        }
+        await this.service.recordSystemEvent({
+            id: `sysevt_${released ? "unban" : "ban"}_${Random.id()}`,
+            platform: session.platform,
+            channelId: session.channelId,
+            timestamp,
+            ...payload,
+        } as SystemEventData);
+        if (!allMembers && released && isTargetingBot && !this.service.isBotMuted(session.cid, selfId)) {
+            const stimulus: AgentStimulus<SystemEventPayload> = {
+                type: "system_event",
+                channelCid: session.cid,
+                session,
+                priority: 8,
+                payload: payload as SystemEventPayload,
+            };
+            this.ctx.emit("agent/stimulus", stimulus);
         }
     }
 
