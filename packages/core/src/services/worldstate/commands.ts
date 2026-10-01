@@ -88,7 +88,8 @@ export class HistoryCommandManager {
                 const performClear = async (
                     query: Query.Expr<MessageData>,
                     description: string,
-                    target?: { platform: string; channelId: string }
+                    target?: { platform: string; channelId: string },
+                    channelType?: "private" | "guild" | "all"
                 ) => {
                     try {
                         const { removed: messagesRemoved } = await this.ctx.database.remove(TableName.Messages, query);
@@ -98,7 +99,7 @@ export class HistoryCommandManager {
                         let agentLogRemoved = false;
                         if (target || options.all) {
                             try {
-                                await this.service.l1_manager.clearAgentHistory(target?.platform, target?.channelId);
+                                await this.service.l1_manager.clearAgentHistory(target?.platform, target?.channelId, channelType);
                                 agentLogRemoved = true;
                             } catch (e) {
                                 // ignore if file not found
@@ -116,8 +117,9 @@ export class HistoryCommandManager {
                     }
                 };
 
-                if (options.all) {
-                    if (options.all === undefined) return "错误：-a 的参数必须是 'private', 'guild', 或 'all'";
+                if (options.all !== undefined) {
+                    if (options.all !== "private" && options.all !== "guild" && options.all !== "all")
+                        return "错误：-a 的参数必须是 'private', 'guild', 或 'all'";
                     let query: Query.Expr<MessageData> = {};
                     let description = "";
                     switch (options.all) {
@@ -134,7 +136,7 @@ export class HistoryCommandManager {
                             description = "所有频道";
                             break;
                     }
-                    await performClear(query, description);
+                    await performClear(query, description, undefined, options.all);
                     return results.join("\n");
                 }
 
