@@ -113,7 +113,11 @@ export interface AgentHeartbeatLog {
     max: number;
 }
 
-export type AgentLogEntry = AgentThoughtLog | AgentActionLog | AgentObservationLog | AgentHeartbeatLog;
+export type AgentLogEntry = (AgentThoughtLog | AgentActionLog | AgentObservationLog | AgentHeartbeatLog) & {
+    /** 新日志保留原始会话编号；旧日志仍可按已有文件路径读取。 */
+    platform?: string;
+    channelId?: string;
+};
 
 /** 交互日志中消息事件的结构 */
 export interface MessageLog {

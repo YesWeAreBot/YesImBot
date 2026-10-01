@@ -69,7 +69,7 @@ export class HistoryCommandManager {
             .option("target", "-t <target:string> 指定目标 'platform:channelId' (多个用逗号分隔)")
             .usage(
                 `清除历史记录上下文
-从数据库中永久移除相关对话、消息和系统事件，此操作不可恢复
+永久移除所选范围内的消息、系统事件、L2记忆、L3日记和Agent日志，此操作不可恢复
 
 当单独使用 -c 指定的频道ID存在于多个平台时，指令会要求您使用 -p 或 -t 来明确指定平台`
             )
@@ -92,28 +92,29 @@ export class HistoryCommandManager {
                     channelType?: "private" | "guild" | "all"
                 ) => {
                     try {
-                        const { messagesRemoved, eventsRemoved, l2ChunksRemoved } = await this.service.l2_manager.clearHistory(
+                        const { messagesRemoved, eventsRemoved, l2ChunksRemoved, diariesRemoved, agentLogRemoved } = await this.service.l2_manager.clearHistory(
                             target || { type: options.all as "private" | "guild" | "all" },
                             async () => {
                                 const { removed: messagesRemoved } = await this.ctx.database.remove(TableName.Messages, query);
                                 const { removed: eventsRemoved } = await this.ctx.database.remove(TableName.SystemEvents, query);
                                 const { removed: l2ChunksRemoved } = await this.ctx.database.remove(TableName.L2Chunks, query);
-                                return { messagesRemoved, eventsRemoved, l2ChunksRemoved };
+                                const { removed: diariesRemoved } = await this.ctx.database.remove(TableName.L3Diaries, query);
+                                let agentLogRemoved = false;
+                                if (target || options.all) {
+                                    try {
+                                        await this.service.l1_manager.clearAgentHistory(target?.platform, target?.channelId, channelType);
+                                        agentLogRemoved = true;
+                                    } catch (error) {
+                                        // 日记的新任务仍需等本次日志清理结束，再读取原始交互。
+                                        if (error.code !== "ENOENT") throw error;
+                                    }
+                                }
+                                return { messagesRemoved, eventsRemoved, l2ChunksRemoved, diariesRemoved, agentLogRemoved };
                             }
                         );
 
-                        let agentLogRemoved = false;
-                        if (target || options.all) {
-                            try {
-                                await this.service.l1_manager.clearAgentHistory(target?.platform, target?.channelId, channelType);
-                                agentLogRemoved = true;
-                            } catch (e) {
-                                // ignore if file not found
-                            }
-                        }
-
                         results.push(
-                            `✅ ${description} - 操作成功，共删除了 ${messagesRemoved} 条消息, ${eventsRemoved} 个系统事件, ${l2ChunksRemoved} 个L2记忆片段。${
+                            `✅ ${description} - 操作成功，共删除了 ${messagesRemoved} 条消息, ${eventsRemoved} 个系统事件, ${l2ChunksRemoved} 个L2记忆片段, ${diariesRemoved} 篇L3日记。${
                                 agentLogRemoved ? "Agent日志文件已删除。" : ""
                             }`
                         );
