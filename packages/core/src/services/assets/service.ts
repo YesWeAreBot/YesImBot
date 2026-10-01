@@ -59,11 +59,12 @@ export class AssetService extends Service<Config> {
     private cacheStorage: StorageDriver;
 
     private assetEndpoint: string;
+    private readonly maxFileSizeBytes: number;
 
     constructor(ctx: Context, config: Config) {
         super(ctx, Services.Asset, true);
         this.config = config;
-        this.config.maxFileSize *= 1024 * 1024; // 转换为字节
+        this.maxFileSizeBytes = config.maxFileSize * 1024 * 1024;
         this.logger = ctx[Services.Logger].getLogger("[资源服务]");
         this.assetEndpoint = this.config.assetEndpoint;
     }
@@ -371,8 +372,8 @@ export class AssetService extends Service<Config> {
         try {
             const head = await this.ctx.http.head(url, { timeout: this.config.downloadTimeout / 2 });
             const contentLength = head.get("content-length");
-            if (contentLength && Number(contentLength) > this.config.maxFileSize) {
-                throw new Error(`文件大小 (${formatSize(Number(contentLength))}) 超出限制 (${formatSize(this.config.maxFileSize)})`);
+            if (contentLength && Number(contentLength) > this.maxFileSizeBytes) {
+                throw new Error(`文件大小 (${formatSize(Number(contentLength))}) 超出限制 (${formatSize(this.maxFileSizeBytes)})`);
             }
         } catch (error) {
             if (error.message.includes("超出限制")) throw error;

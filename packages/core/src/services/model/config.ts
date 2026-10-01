@@ -108,8 +108,8 @@ export const ModelConfigSchema: Schema<ModelConfig> = Schema.object({
         .description("模型支持的能力"),
 
     parameters: Schema.object({
-        temperature: Schema.number().default(0.85),
-        topP: Schema.number().default(0.95),
+        temperature: Schema.number().default(0.85).description("采样温度"),
+        topP: Schema.number().default(0.95).description("核采样概率"),
         stream: Schema.boolean().default(true).description("流式传输"),
         custom: Schema.array(
             Schema.object({
@@ -120,12 +120,16 @@ export const ModelConfigSchema: Schema<ModelConfig> = Schema.object({
         )
             .role("table")
             .description("自定义参数"),
-    }),
+    })
+        .collapse()
+        .description("生成参数"),
 
     timeoutPolicy: Schema.object({
         firstTokenTimeout: Schema.number().default(15).description("首字响应超时 (秒)"),
         totalTimeout: Schema.number().default(60).description("总请求超时 (秒)"),
-    }).description("超时策略"),
+    })
+        .collapse()
+        .description("超时策略"),
 
     retryPolicy: Schema.object({
         maxRetries: Schema.number().default(1).description("在切换到下一个模型前，在当前模型上的最大重试次数"),
@@ -135,15 +139,17 @@ export const ModelConfigSchema: Schema<ModelConfig> = Schema.object({
         ])
             .default(ContentFailureAction.AugmentAndRetry)
             .description("响应内容无效时的处理方式"),
-    }).description("重试策略"),
+    })
+        .collapse()
+        .description("重试策略"),
 
     circuitBreakerPolicy: Schema.object({
         failureThreshold: Schema.number().default(3).description("连续失败多少次后开启断路器"),
         cooldownSeconds: Schema.number().default(300).description("断路器开启后，模型被禁用的时长(秒)"),
-    }).description("断路器策略"),
-})
-    .collapse()
-    .description("单个模型配置");
+    })
+        .collapse()
+        .description("断路器策略"),
+}).description("单个模型配置");
 
 const PROVIDERS = {
     TypeSafe: { baseURL: "https://api.typesafe.ai/v1/", link: "https://typesafe.ai/" },
@@ -228,7 +234,7 @@ export interface ModelServiceConfig {
 }
 
 export const ModelServiceConfigSchema: Schema<ModelServiceConfig> = Schema.object({
-    providers: Schema.array(ProviderConfigSchema).role("table").description("配置你的 AI 模型提供商，如 OpenAI, Anthropic 等"),
+    providers: Schema.array(ProviderConfigSchema).description("模型提供商，配置 API 地址、密钥和可用模型"),
     modelGroups: Schema.array(
         Schema.object({
             name: Schema.string().required().description("模型组名称"),
@@ -238,20 +244,13 @@ export const ModelServiceConfigSchema: Schema<ModelServiceConfig> = Schema.objec
             ])
                 .default(ModelSwitchingStrategy.Failover)
                 .description("模型切换策略"),
-            models: Schema.array(Schema.dynamic("modelService.selectableModels"))
-                .required()
-                .role("table")
-                .description("此模型组包含的模型"),
-        }).collapse()
-    )
-        .role("table")
-        .description("**［必填］** 创建**模型组**，用于故障转移或分类。每次修改模型配置后，需要先启动/重载一次插件来修改此处的值"),
+            models: Schema.array(Schema.dynamic("modelService.selectableModels")).required().description("此模型组包含的模型"),
+        })
+            .collapse()
+            .description("模型组")
+    ).description("模型组，用于故障转移或分类。修改提供商或模型后，先启动/重载插件以更新可选模型"),
     task: Schema.object({
-        [TaskType.Chat]: Schema.dynamic("modelService.availableGroups").description(
-            "主要聊天功能使用的模型**组**<br/>如 `gpt-4` `claude-3` `gemini-2.5` 等对话模型"
-        ),
-        [TaskType.Embedding]: Schema.dynamic("modelService.availableGroups").description(
-            "生成文本嵌入(Embedding)时使用的模型**组**<br/>如 `bge-m3` `text-embedding-3-small` 等嵌入模型"
-        ),
-    }).description("模型组配置"),
+        [TaskType.Chat]: Schema.dynamic("modelService.availableGroups").description("聊天任务使用的模型组"),
+        [TaskType.Embedding]: Schema.dynamic("modelService.availableGroups").description("语义记忆生成文本嵌入（Embedding）时使用的模型组"),
+    }).description("任务与模型组映射"),
 });

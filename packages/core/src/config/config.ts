@@ -19,8 +19,8 @@ export interface SystemConfig {
 }
 
 export const SystemConfigSchema: Schema<SystemConfig> = Schema.object({
-    logging: LoggingConfigSchema,
-    errorReporting: ErrorReporterConfigSchema,
+    logging: LoggingConfigSchema.description("日志设置"),
+    errorReporting: ErrorReporterConfigSchema.collapse().description("错误上报"),
 });
 
 export type Config = ModelServiceConfig &
@@ -42,13 +42,13 @@ export const Config: Schema<Config> = Schema.intersect([
 
     ModelServiceConfigSchema.description("模型服务"),
     AgentBehaviorConfigSchema,
+    PromptServiceConfigSchema,
 
     MemoryConfigSchema.description("记忆能力配置"),
-    HistoryConfigSchema.description("历史记录管理"),
+    HistoryConfigSchema,
     ToolServiceConfigSchema.description("工具能力配置"),
 
-    AssetServiceConfigSchema.description("资源服务配置"),
-    PromptServiceConfigSchema,
+    AssetServiceConfigSchema.collapse().description("资源存储与处理"),
     //TelemetryConfigSchema,
-    SystemConfigSchema.description("系统设置"),
+    SystemConfigSchema.collapse().description("系统设置"),
 ]);
