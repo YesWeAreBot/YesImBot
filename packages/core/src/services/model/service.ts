@@ -23,6 +23,8 @@ class CircuitBreaker {
     private state = CircuitBreakerState.CLOSED;
     private failureCount = 0;
     private lastFailureTime: number = 0;
+    private generation = 0;
+    private probeInFlight = false;
     private readonly logger: Logger;
 
     constructor(
@@ -33,40 +35,56 @@ class CircuitBreaker {
         this.logger = parentLogger.extend(`[断路器][${modelId}]`);
     }
 
-    /** 检查断路器是否处于“打开”状态（即阻止请求） */
-    public isOpen(): boolean {
+    /** 同步申请请求资格，半开时最多允许一个探测请求 */
+    public tryAcquire(): number | undefined {
         if (this.state === CircuitBreakerState.OPEN) {
             const now = Date.now();
             if (now - this.lastFailureTime > this.policy.cooldownSeconds * 1000) {
                 this.state = CircuitBreakerState.HALF_OPEN;
                 this.logger.info(`状态变更: OPEN -> HALF_OPEN (冷却期结束，准备探测)`);
-                return false; // 允许一次探测请求
+            } else {
+                return undefined; // 仍然在冷却期，保持打开
             }
-            return true; // 仍然在冷却期，保持打开
         }
-        return false;
+        if (this.state === CircuitBreakerState.HALF_OPEN) {
+            if (this.probeInFlight) return undefined;
+            this.probeInFlight = true;
+        }
+        return this.generation;
+    }
+
+    /** 取消等异常退出时释放探测资格，不记为提供商失败 */
+    public release(generation: number): void {
+        if (generation === this.generation) this.probeInFlight = false;
     }
 
     /** 记录一次成功调用 */
-    public recordSuccess(): void {
+    public recordSuccess(generation: number): void {
+        if (generation !== this.generation) return;
         if (this.state !== CircuitBreakerState.CLOSED) {
             this.logger.success(`状态变更: -> CLOSED (探测成功，恢复服务)`);
+            this.generation++;
         }
         this.state = CircuitBreakerState.CLOSED;
         this.failureCount = 0;
+        this.probeInFlight = false;
     }
 
     /** 记录一次失败调用 */
-    public recordFailure(): void {
+    public recordFailure(generation: number): void {
+        if (generation !== this.generation) return;
         this.failureCount++;
         this.lastFailureTime = Date.now();
 
         if (this.state === CircuitBreakerState.HALF_OPEN) {
             this.state = CircuitBreakerState.OPEN;
+            this.generation++;
+            this.probeInFlight = false;
             this.logger.warn(`状态变更: HALF_OPEN -> OPEN (探测失败，重新开启断路器)`);
         } else if (this.failureCount >= this.policy.failureThreshold) {
             if (this.state !== CircuitBreakerState.OPEN) {
                 this.state = CircuitBreakerState.OPEN;
+                this.generation++;
                 this.logger.warn(`状态变更: -> OPEN (达到失败阈值 ${this.policy.failureThreshold})`);
             }
         }
@@ -285,7 +303,7 @@ class RequestExecutor {
         ctx: Context,
         private readonly groupName: string,
         private readonly candidateModels: IChatModel[],
-        private readonly circuitBreakers: Map<string, CircuitBreaker>
+        private readonly circuitBreakers: Map<BaseModel, CircuitBreaker>
     ) {
         this.logger = ctx[Services.Logger].getLogger(`[请求执行器][${groupName}]`);
     }
@@ -295,22 +313,26 @@ class RequestExecutor {
 
         for (const model of this.candidateModels) {
             options.abortSignal?.throwIfAborted();
-            const breaker = this.circuitBreakers.get(model.id);
-            if (breaker?.isOpen()) {
+            const breaker = this.circuitBreakers.get(model);
+            const generation = breaker?.tryAcquire();
+            if (breaker && generation === undefined) {
                 this.logger.info(`[跳过] 模型 ${model.id} (断路器开启)`);
                 continue;
             }
 
             // 执行单个模型的请求尝试（包含内部重试）
-            const result = await this.tryRequestWithModel(model, options, originalMessages);
+            const result = await this.tryRequestWithModel(model, options, originalMessages).catch((error) => {
+                breaker?.release(generation);
+                throw error;
+            });
 
             // 如果成功，立即返回
             if (result.success) {
-                breaker?.recordSuccess();
+                breaker?.recordSuccess(generation);
                 return result.data;
             } else {
                 // 如果失败，记录错误并继续尝试下一个模型（故障转移）
-                breaker?.recordFailure();
+                breaker?.recordFailure(generation);
                 this.accumulatedErrors.push({ modelId: model.id, error: (result as any).error });
             }
         }
@@ -455,7 +477,7 @@ class RequestExecutor {
 export class ModelSwitcher<T extends BaseModel> {
     protected readonly logger: Logger;
     protected readonly _models: T[];
-    private readonly circuitBreakers = new Map<string, CircuitBreaker>();
+    private readonly circuitBreakers = new Map<BaseModel, CircuitBreaker>();
 
     constructor(
         protected readonly ctx: Context,
@@ -464,8 +486,25 @@ export class ModelSwitcher<T extends BaseModel> {
     ) {
         this.logger = ctx[Services.Logger].getLogger(`[模型组][${groupConfig.name}]`);
 
+        const breakersByIdentity = new Map<string, CircuitBreaker>();
         this._models = groupConfig.models
-            .map((desc) => modelGetter(desc.providerName, desc.modelId))
+            .map((desc) => {
+                const model = modelGetter(desc.providerName, desc.modelId);
+                if (model?.config.circuitBreakerPolicy) {
+                    const identity = JSON.stringify([desc.providerName, desc.modelId]);
+                    let breaker = breakersByIdentity.get(identity);
+                    if (!breaker) {
+                        breaker = new CircuitBreaker(
+                            model.config.circuitBreakerPolicy,
+                            this.logger,
+                            `${desc.providerName} / ${desc.modelId}`
+                        );
+                        breakersByIdentity.set(identity, breaker);
+                    }
+                    this.circuitBreakers.set(model, breaker);
+                }
+                return model;
+            })
             .filter((model): model is T => {
                 //if (!model) this.logger.warn(`模型加载失败，将从组中移除`);
                 return model !== null;
@@ -478,13 +517,6 @@ export class ModelSwitcher<T extends BaseModel> {
             throw new AppError(ErrorDefinitions.MODEL.GROUP_INIT_FAILED, { args: [groupConfig.name] });
         }
 
-        // 初始化断路器
-        this._models.forEach((model) => {
-            if (model.config.circuitBreakerPolicy) {
-                this.circuitBreakers.set(model.id, new CircuitBreaker(model.config.circuitBreakerPolicy, this.logger, model.id));
-            }
-        });
-
         //this.logger.debug(`✅ 加载成功 | 可用模型数: ${this._models.length}`);
     }
 
@@ -492,7 +524,7 @@ export class ModelSwitcher<T extends BaseModel> {
         return this._models;
     }
 
-    protected getCircuitBreakers(): Map<string, CircuitBreaker> {
+    protected getCircuitBreakers(): Map<BaseModel, CircuitBreaker> {
         return this.circuitBreakers;
     }
 }
