@@ -7,6 +7,9 @@ import { cosineSimilarity } from "@/shared/utils";
 import { HistoryConfig } from "./config";
 import { ContextualMessage, MemoryChunkData, MessageData } from "./types";
 
+export type SemanticMemoryScope = { platform: string; channelId: string } | { type: "private" | "guild" | "all" };
+type MemoryTarget = { platform: string; channelId: string };
+
 export class SemanticMemoryManager {
     private ctx: Context;
     private config: HistoryConfig;
@@ -14,6 +17,9 @@ export class SemanticMemoryManager {
     private embedModel: IEmbedModel;
     private messageBuffer: Map<string, MessageData[]> = new Map();
     private isRebuilding: boolean = false;
+    private generations = new Map<string, number>();
+    private activeClears = new Set<{ scope: SemanticMemoryScope; done: Promise<void> }>();
+    private pendingWrites = new Set<{ target: MemoryTarget; done: Promise<unknown> }>();
 
     constructor(ctx: Context, config: HistoryConfig) {
         this.ctx = ctx;
@@ -34,15 +40,78 @@ export class SemanticMemoryManager {
         this.flushAllBuffers();
     }
 
-    public async addMessageToBuffer(message: MessageData): Promise<void> {
-        if (!this.config.l2_memory.enabled) return;
+    private targetKey(target: MemoryTarget): string {
+        return JSON.stringify([target.platform, target.channelId]);
+    }
 
-        const { channelId } = message;
-        if (!this.messageBuffer.has(channelId)) {
-            this.messageBuffer.set(channelId, []);
+    private matchesScope(target: MemoryTarget, scope: SemanticMemoryScope): boolean {
+        if (!("type" in scope)) return target.platform === scope.platform && target.channelId === scope.channelId;
+        return scope.type === "all" || (target.channelId.startsWith("private:") ? scope.type === "private" : scope.type === "guild");
+    }
+
+    private generation(target: MemoryTarget, generations = this.generations): number {
+        const type = target.channelId.startsWith("private:") ? "private" : "guild";
+        return (generations.get("all") || 0) + (generations.get(type) || 0) + (generations.get(this.targetKey(target)) || 0);
+    }
+
+    /** 使旧任务失效，等待已发出的写入完成，并阻止新写入直到删除结束。 */
+    public async clearHistory<T>(scope: SemanticMemoryScope, clear: () => Promise<T>): Promise<T> {
+        const key = "type" in scope ? scope.type : this.targetKey(scope);
+        this.generations.set(key, (this.generations.get(key) || 0) + 1);
+        for (const [bufferKey, buffer] of this.messageBuffer) {
+            if (buffer.length && this.matchesScope(buffer[0], scope)) this.messageBuffer.delete(bufferKey);
         }
 
-        const buffer = this.messageBuffer.get(channelId);
+        // 重叠范围按顺序清理；无关频道可独立执行。
+        const previousClears = [...this.activeClears].filter(({ scope: other }) => {
+            if (!("type" in scope)) return this.matchesScope(scope, other);
+            if (!("type" in other)) return this.matchesScope(other, scope);
+            return scope.type === "all" || other.type === "all" || scope.type === other.type;
+        });
+        let release!: () => void;
+        const barrier = {
+            scope,
+            done: new Promise<void>((resolve) => {
+                release = resolve;
+            }),
+        };
+        this.activeClears.add(barrier);
+        try {
+            await Promise.all(previousClears.map((entry) => entry.done));
+            await Promise.allSettled(
+                [...this.pendingWrites].filter((entry) => this.matchesScope(entry.target, scope)).map((entry) => entry.done)
+            );
+            return await clear();
+        } finally {
+            this.activeClears.delete(barrier);
+            release();
+        }
+    }
+
+    private async writeChunk(target: MemoryTarget, generation: number, write: () => Promise<unknown>): Promise<boolean> {
+        if (this.generation(target) !== generation) return false;
+        let barriers = [...this.activeClears].filter((entry) => this.matchesScope(target, entry.scope));
+        while (barriers.length) {
+            await Promise.all(barriers.map((entry) => entry.done));
+            if (this.generation(target) !== generation) return false;
+            barriers = [...this.activeClears].filter((entry) => this.matchesScope(target, entry.scope));
+        }
+        // 版本检查与数据库写入登记之间不能 await，避免清理漏掉已发出的写入。
+        const entry = { target, done: write() };
+        this.pendingWrites.add(entry);
+        try {
+            await entry.done;
+            return true;
+        } finally {
+            this.pendingWrites.delete(entry);
+        }
+    }
+
+    public async addMessageToBuffer(message: MessageData): Promise<void> {
+        if (!this.config.l2_memory.enabled) return;
+        const key = this.targetKey(message);
+        if (!this.messageBuffer.has(key)) this.messageBuffer.set(key, []);
+        const buffer = this.messageBuffer.get(key);
         buffer.push(message);
 
         if (buffer.length >= this.config.l2_memory.messagesPerChunk) {
@@ -51,20 +120,24 @@ export class SemanticMemoryManager {
         }
     }
 
-    public async flushBuffer(channelId: string): Promise<void> {
-        if (this.messageBuffer.has(channelId)) {
-            const buffer = this.messageBuffer.get(channelId);
-            if (buffer.length > 0) {
-                await this.processMessageBatch(buffer);
-                this.messageBuffer.set(channelId, []);
-            }
-        }
+    // 保持仅传频道 ID 的公用 API：未指定平台时，分别处理各平台的缓冲。
+    public async flushBuffer(channelId: string, platform?: string): Promise<void> {
+        const keys = [...this.messageBuffer]
+            .filter(([, buffer]) => buffer.length && buffer[0].channelId === channelId && (!platform || buffer[0].platform === platform))
+            .map(([key]) => key);
+        for (const key of keys) await this.flushBufferKey(key);
+    }
+
+    private async flushBufferKey(key: string): Promise<void> {
+        const buffer = this.messageBuffer.get(key);
+        if (!buffer?.length) return;
+        // 嵌入前先取走缓冲，避免 await 期间新消息被后续清空。
+        this.messageBuffer.delete(key);
+        await this.processMessageBatch(buffer);
     }
 
     private async flushAllBuffers(): Promise<void> {
-        for (const channelId of this.messageBuffer.keys()) {
-            await this.flushBuffer(channelId);
-        }
+        for (const key of [...this.messageBuffer.keys()]) await this.flushBufferKey(key);
     }
 
     private async processMessageBatch(messages: MessageData[]): Promise<void> {
@@ -73,6 +146,7 @@ export class SemanticMemoryManager {
         const firstEvent = messages[0];
         const lastEvent = messages[messages.length - 1];
         const { platform, channelId } = firstEvent;
+        const generation = this.generation(firstEvent);
 
         const participantIds = [...new Set(messages.map((m) => m.sender.id))];
 
@@ -90,8 +164,9 @@ export class SemanticMemoryManager {
                 startTimestamp: firstEvent.timestamp,
                 endTimestamp: lastEvent.timestamp,
             };
-            await this.ctx.database.create(TableName.L2Chunks, memoryChunk);
-            this.logger.debug(`已为 ${messages.length} 条消息建立索引`);
+            if (await this.writeChunk(firstEvent, generation, () => this.ctx.database.create(TableName.L2Chunks, memoryChunk))) {
+                this.logger.debug(`已为 ${messages.length} 条消息建立索引`);
+            }
         } catch (error) {
             this.logger.error(`消息索引创建失败 | ${error.message}`);
             this.logger.debug(error);
@@ -288,15 +363,25 @@ export class SemanticMemoryManager {
         this.logger.info("开始重建 L2 记忆索引...");
 
         try {
+            // 等待正在执行的删除，再保留读取前的版本快照，覆盖查询跨越清理的情况。
+            while (this.activeClears.size) await Promise.all([...this.activeClears].map((entry) => entry.done));
+            const generations = new Map(this.generations);
             const allChunks = await this.ctx.database.get(TableName.L2Chunks, {});
             let successCount = 0;
             let failCount = 0;
 
             for (const chunk of allChunks) {
                 try {
+                    const generation = this.generation(chunk, generations);
+                    if (this.generation(chunk) !== generation) continue;
                     const result = await this.embedModel.embed(chunk.content);
-                    await this.ctx.database.set(TableName.L2Chunks, { id: chunk.id }, { embedding: result.embedding });
-                    successCount++;
+                    if (
+                        await this.writeChunk(chunk, generation, () =>
+                            this.ctx.database.set(TableName.L2Chunks, { id: chunk.id }, { embedding: result.embedding })
+                        )
+                    ) {
+                        successCount++;
+                    }
                 } catch (error) {
                     failCount++;
                     this.logger.error(`重建块 ${chunk.id} 的索引失败 | ${error.message}`);
