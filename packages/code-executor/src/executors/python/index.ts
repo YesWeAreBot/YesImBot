@@ -353,10 +353,42 @@ if os.path.exists(workspace):
             engine.globals.set("__create_artifact__", createArtifact);
             engine.FS.mkdirTree("/workspace");
 
-            const stdout: string[] = [];
-            const stderr: string[] = [];
-            engine.setStdout({ batched: (msg) => stdout.push(msg) });
-            engine.setStderr({ batched: (msg) => stderr.push(msg) });
+            const maxOutputSize = Number.isFinite(this.sharedConfig.maxOutputSize)
+                ? Math.max(0, Math.floor(this.sharedConfig.maxOutputSize))
+                : 10240;
+            const collectOutput = (skipEmpty: boolean) => {
+                let content = "";
+                let length = 0;
+                let hasChunk = false;
+                let truncated = false;
+                const appendText = (value: string) => {
+                    // Iterate code points so an emoji is one character and cannot
+                    // be cut in half. Retain only the bounded prefix of each chunk.
+                    for (const character of value) {
+                        if (length >= maxOutputSize) {
+                            truncated = true;
+                            return;
+                        }
+                        content += character;
+                        length++;
+                    }
+                };
+                return {
+                    append(value: string) {
+                        if (truncated || (skipEmpty && !value)) return;
+                        if (hasChunk) appendText("\n");
+                        if (!truncated) appendText(value);
+                        hasChunk = true;
+                    },
+                    value() {
+                        return truncated ? `${content}\n[Output truncated after ${maxOutputSize} characters]` : content;
+                    },
+                };
+            };
+            const stdout = collectOutput(true);
+            const stderr = collectOutput(false);
+            engine.setStdout({ batched: (msg) => stdout.append(msg) });
+            engine.setStderr({ batched: (msg) => stderr.append(msg) });
 
             let finalCode = code;
             if (code.includes("matplotlib")) {
@@ -393,13 +425,14 @@ if plt.get_fignums():
             if (result !== undefined && result !== null) {
                 resultString = String(result);
             }
+            stdout.append(resultString);
 
             this.logger.info("[执行] 代码执行成功");
             return {
                 status: "success",
                 result: {
-                    stdout: [...stdout, resultString].filter(Boolean).join("\n"),
-                    stderr: stderr.join("\n"),
+                    stdout: stdout.value(),
+                    stderr: stderr.value(),
                     artifacts: artifacts,
                 },
             };
