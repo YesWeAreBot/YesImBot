@@ -104,6 +104,12 @@ export class WorldStateService extends Service<Config> {
         await this.l1_manager.recordSystemEvent(event);
     }
 
+    /** 查询使用纯读取，不清除到期状态。 */
+    public peekBotMuted(channelCid: string): boolean {
+        const expiresAt = this.mutedChannels.get(channelCid);
+        return !!expiresAt && Date.now() <= expiresAt;
+    }
+
     public isBotMuted(channelCid: string): boolean {
         const expiresAt = this.mutedChannels.get(channelCid);
         if (!expiresAt) return false;

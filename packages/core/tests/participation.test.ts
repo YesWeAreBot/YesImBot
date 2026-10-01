@@ -184,7 +184,9 @@ test("direct conversations use isDirect and receive participation gain", () => {
 test("participation never creates a gain for blocked categories or forces a reply", () => {
     withClock(() => {
         const manager = activeManager();
-        assert.deepEqual(manager.shouldReply(session({ elements: at("bot") }), CHAT, []), { decision: false, probability: 0 });
+        const result = manager.shouldReply(session({ elements: at("bot") }), CHAT, []);
+        assert.equal(result.decision, false);
+        assert.equal(result.probability, 0);
         assert.equal(manager.getCurrentWillingness(CHAT), 0);
         const textOnly = activeManager();
         textOnly.shouldReply(session({ userId: "bob", elements: at("bot"), isDirect: false }), CHAT, ["text"]);
