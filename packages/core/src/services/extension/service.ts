@@ -472,7 +472,7 @@ export class ToolService extends Service<Config> {
                 assertReplyTurn();
                 // 3. 使用验证和处理过后的参数执行工具
                 /* prettier-ignore */
-                lastResult = (await tool.execute({ session, ...validatedParams })) || Failed("Tool call did not execute.");
+                lastResult = (await tool.execute({ ...validatedParams, session })) || Failed("Tool call did not execute.");
                 const resultString = truncate(stringify(lastResult), 120);
 
                 if (lastResult.status === "success") {

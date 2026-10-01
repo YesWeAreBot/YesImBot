@@ -65,14 +65,19 @@ export class PromptService extends Service<Config> {
      * @param priority - 优先级，数字越小越靠前。
      * @param renderFn - 渲染函数，返回一个字符串。其返回值可以包含其他占位符，将进行二次渲染。
      */
-    public inject(name: string, priority: number, renderFn: Snippet): void {
+    public inject(name: string, priority: number, renderFn: Snippet): () => void {
+        const registration = { name, priority, renderFn };
         const existingIndex = this.injections.findIndex((i) => i.name === name);
         if (existingIndex > -1) {
             this._logger.warn(`覆盖已存在的注入 "${name}"`);
-            this.injections[existingIndex] = { name, priority, renderFn };
+            this.injections[existingIndex] = registration;
         } else {
-            this.injections.push({ name, priority, renderFn });
+            this.injections.push(registration);
         }
+        return () => {
+            const index = this.injections.indexOf(registration);
+            if (index !== -1) this.injections.splice(index, 1);
+        };
     }
 
     /**
