@@ -37,6 +37,7 @@ it("queries only the current conversation with administrator authority", async (
 it("reads an expired bot mute without removing live state", () => {
     const world: any = Object.create(WorldStateService.prototype);
     world.mutedChannels = new Map([["qq:g", Date.now() - 1]]);
+    world.allMutedChannels = new Map();
     expect(world.peekBotMuted("qq:g")).toBe(false);
     expect(world.mutedChannels.has("qq:g")).toBe(true);
 });

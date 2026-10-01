@@ -16,6 +16,7 @@ declare module "koishi" {
     }
     interface Events {
         "agent/stimulus": (stimulus: AgentStimulus<any>) => void;
+        "agent/bot-muted": (target: { platform: string; selfId: string; channelId: string }) => void;
     }
     interface Tables {
         [TableName.Members]: MemberData;
@@ -37,6 +38,7 @@ export class WorldStateService extends Service<Config> {
     private eventListenerManager: EventListenerManager;
     private commandManager: HistoryCommandManager;
     private readonly mutedChannels = new Map<string, number>();
+    private readonly allMutedChannels = new Map<string, number>();
 
     private clearTimer: ReturnType<Context["setInterval"]> | null = null;
 
@@ -105,64 +107,71 @@ export class WorldStateService extends Service<Config> {
     }
 
     /** 查询使用纯读取，不清除到期状态。 */
-    public peekBotMuted(channelCid: string): boolean {
-        const expiresAt = this.mutedChannels.get(channelCid);
-        return !!expiresAt && Date.now() <= expiresAt;
+    public peekBotMuted(channelCid: string, selfId?: string): boolean {
+        const now = Date.now();
+        return this.muteKeys(channelCid, selfId).some(key =>
+            (this.mutedChannels.get(key) || 0) > now || (this.allMutedChannels.get(key) || 0) > now
+        );
     }
 
-    public isBotMuted(channelCid: string): boolean {
-        const expiresAt = this.mutedChannels.get(channelCid);
-        if (!expiresAt) return false;
-
-        if (Date.now() > expiresAt) {
-            this.mutedChannels.delete(channelCid);
-            return false;
+    public isBotMuted(channelCid: string, selfId?: string): boolean {
+        const now = Date.now();
+        for (const key of this.muteKeys(channelCid, selfId)) {
+            for (const states of [this.mutedChannels, this.allMutedChannels]) {
+                const expiresAt = states.get(key);
+                if (expiresAt !== undefined && expiresAt <= now) states.delete(key);
+            }
         }
-
-        return true;
+        return this.peekBotMuted(channelCid, selfId);
     }
 
-    public updateMuteStatus(cid: string, expiresAt: number): void {
+    private muteKeys(cid: string, selfId?: string): string[] {
+        if (selfId !== undefined) return [JSON.stringify([cid, selfId]), cid];
+        // 保留旧 API 的频道级查询；内部回复路径始终传入机器人身份。
+        const prefix = JSON.stringify([cid]).slice(0, -1) + ",";
+        return [cid, ...new Set([...this.mutedChannels.keys(), ...this.allMutedChannels.keys()].filter(key => key.startsWith(prefix)))];
+    }
+
+    public updateMuteStatus(cid: string, expiresAt: number, selfId?: string, kind: "individual" | "all" = "individual"): void {
+        const key = selfId === undefined ? cid : JSON.stringify([cid, selfId]);
+        const states = kind === "all" ? this.allMutedChannels : this.mutedChannels;
         if (expiresAt > Date.now()) {
-            this.mutedChannels.set(cid, expiresAt);
-            this.logger.debug(`[${cid}] | 已被禁言 | 解封时间: ${new Date(expiresAt).toLocaleString()}`);
+            states.set(key, expiresAt);
+            this.logger.debug(`[${cid}] Bot[${selfId ?? "*"}] | 已被禁言 | 解封时间: ${expiresAt === Infinity ? "永久" : new Date(expiresAt).toLocaleString()}`);
+            const separator = cid.indexOf(":");
+            const platform = cid.slice(0, separator);
+            const channelId = cid.slice(separator + 1);
+            const ids = selfId === undefined ? this.ctx.bots.filter(bot => bot.platform === platform).map(bot => bot.selfId) : [selfId];
+            for (const id of ids) this.ctx.emit("agent/bot-muted", { platform, selfId: id, channelId });
         } else {
-            this.mutedChannels.delete(cid);
-            this.logger.debug(`[${cid}] | 禁言状态已解除`);
+            states.delete(key);
+            this.logger.debug(`[${cid}] Bot[${selfId ?? "*"}] | ${kind === "all" ? "全体" : "单独"}禁言状态已解除`);
         }
     }
 
     private async initializeMuteStatus(): Promise<void> {
         this.logger.info("正在从历史记录初始化机器人禁言状态...");
-        const allBanEvents = await this.ctx.database.get(TableName.SystemEvents, {
-            type: "guild-member-ban",
+        const events = await this.ctx.database.get(TableName.SystemEvents, {
+            type: { $in: ["guild-member-ban", "guild-member-unban", "guild-all-member-ban", "guild-all-member-unban"] },
         });
-
-        const botIds = new Set(this.ctx.bots.map((b) => b.selfId));
-        const relevantEvents = allBanEvents.filter((event) => {
-            const payload = event.payload as any;
-            return botIds.has(payload.details?.user?.id);
-        });
-
-        const now = Date.now();
-        for (const event of relevantEvents) {
-            const payload = event.payload as any;
-            const duration = payload.details?.duration as number;
-            if (duration > 0) {
-                const expiresAt = event.timestamp.getTime() + duration;
-                if (expiresAt > now) {
-                    // 如果在禁言时间段内没有被解封的话
-                    const unbanEvents = await this.ctx.database.get(TableName.SystemEvents, {
-                        platform: event.platform,
-                        channelId: event.channelId,
-                        type: "guild-member-unban",
-                        timestamp: { $gte: event.timestamp, $lte: new Date(expiresAt) },
-                    });
-                    if (unbanEvents.length === 0) {
-                        const channelCid = `${event.platform}:${event.channelId}`;
-                        this.updateMuteStatus(channelCid, expiresAt);
-                    }
-                }
+        events.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+        for (const event of events) {
+            const details = (event.payload as any)?.details;
+            if (!details) continue;
+            const cid = `${event.platform}:${event.channelId}`;
+            const userId = details.user?.id === undefined ? undefined : String(details.user.id);
+            const allMembers = event.type.startsWith("guild-all-member-") ||
+                (event.type === "guild-member-unban" && (userId === undefined || userId === "0"));
+            if (allMembers) {
+                // 旧全体记录没有接收账号，按该平台的在用机器人恢复；新记录保留账号。
+                const bots = this.ctx.bots.filter(bot => bot.platform === event.platform &&
+                    (details.selfId === undefined || bot.selfId === String(details.selfId)));
+                const until = event.type.endsWith("-unban") ? 0 : Infinity;
+                for (const bot of bots) this.updateMuteStatus(cid, until, bot.selfId, "all");
+            } else if (this.ctx.bots.some(bot => bot.platform === event.platform && bot.selfId === userId)) {
+                if (event.type === "guild-member-unban") this.updateMuteStatus(cid, 0, userId);
+                else if (Number.isFinite(details.duration) && details.duration > 0)
+                    this.updateMuteStatus(cid, event.timestamp.getTime() + details.duration, userId);
             }
         }
         this.logger.info("机器人禁言状态初始化完成");
