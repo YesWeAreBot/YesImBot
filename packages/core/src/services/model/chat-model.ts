@@ -8,6 +8,7 @@ import { AppError, ErrorDefinitions } from "@/shared/errors";
 import { isEmpty, isNotEmpty, JsonParser, toBoolean } from "@/shared/utils";
 import { BaseModel } from "./base-model";
 import { ModelAbility, ModelConfig } from "./config";
+import { StreamDiagnostics } from "./stream-diagnostics";
 
 /**
  * 验证器函数的返回值
@@ -60,6 +61,7 @@ export interface IChatModel extends BaseModel {
  * 它封装了流式与非流式请求、参数合并、内容验证以及统一的错误处理逻辑
  */
 export class ChatModel extends BaseModel implements IChatModel {
+    private static requestSequence = 0;
     private readonly customParameters: Record<string, unknown> = {};
 
     constructor(
@@ -117,15 +119,17 @@ export class ChatModel extends BaseModel implements IChatModel {
     public async chat(options: ChatRequestOptions): Promise<GenerateTextResult> {
         // 优先级: 运行时参数 > 模型配置 > 默认值 (true)
         const useStream = options.stream ?? this.config.parameters.stream ?? true;
+        const requestId = `chat-${++ChatModel.requestSequence}`;
         const chatOptions = this.buildChatOptions(options);
 
-        this.logger.info(`🚀 [请求开始] [${useStream ? "流式" : "非流式"}] 模型: ${this.id}`);
+        this.logger.info(`🚀 [请求开始] [${requestId}] [${useStream ? "流式" : "非流式"}] 模型: ${this.id}`);
 
         try {
             return useStream
-                ? await this._executeStream(chatOptions, options.onStreamStart, options.validation)
+                ? await this._executeStream(chatOptions, options.onStreamStart, options.validation, requestId)
                 : await this._executeNonStream(chatOptions, options.singleStep);
         } catch (error) {
+            this.logger.debug(`[${requestId}] 请求异常 | 类型: ${error.name} | 错误码: ${error.code ?? "未知"} | 已取消: ${options.abortSignal?.aborted ?? false}`);
             await this._wrapAndThrow(error, chatOptions);
         }
     }
@@ -187,7 +191,8 @@ export class ChatModel extends BaseModel implements IChatModel {
     private async _executeStream(
         chatOptions: ChatOptions,
         onStreamStart?: () => void,
-        validation?: ValidationOptions
+        validation?: ValidationOptions,
+        requestId = "stream"
     ): Promise<GenerateTextResult> {
         const stime = Date.now();
         let streamStarted = false;
@@ -201,11 +206,34 @@ export class ChatModel extends BaseModel implements IChatModel {
         let finalFinishReason: GenerateTextResult["finishReason"] = "unknown";
 
         let streamFinished = false;
+        const diagnostics = new StreamDiagnostics(stime);
+        const originalFetch = chatOptions.fetch;
+        const streamOptions = {
+            ...chatOptions,
+            fetch: async (url: URL, init: RequestInit) => {
+                const response = await originalFetch(url, init);
+                diagnostics.recordResponse(response);
+                this.logger.debug(`[${requestId}] HTTP 响应 | ${JSON.stringify(diagnostics.summary())}`);
+                if (response.ok) {
+                    const contentType = response.headers.get("content-type");
+                    // 缺少类型头时保留原有兼容行为；明确返回其他格式时不能静默判空。
+                    if (contentType && contentType.split(";")[0].trim().toLowerCase() !== "text/event-stream") {
+                        await response.body?.cancel();
+                        throw new AppError(ErrorDefinitions.LLM.REQUEST_FAILED, {
+                            args: [`流式请求需要 SSE，收到 Content-Type: ${contentType}`],
+                            context: { httpStatus: response.status, contentType },
+                        });
+                    }
+                    return diagnostics.observe(response);
+                }
+                return response;
+            },
+        };
 
         try {
             const buffer: string[] = [];
             const stream = await streamText({
-                ...chatOptions,
+                ...streamOptions,
                 streamOptions: { includeUsage: true },
                 onEvent: (event) => {
                     if (!streamStarted && (event.type === "tool-call-streaming-start" || event.type === "tool-call-delta")) {
@@ -246,6 +274,24 @@ export class ChatModel extends BaseModel implements IChatModel {
             // SDK 的各个结果 Promise 可能一起拒绝，均附加处理避免未处理异常。
             for (const promise of [stream.steps, stream.usage, stream.messages]) void promise.catch(() => {});
 
+            // xsai 0.3.5 的结果 Promise 可能丢失异常，fullStream 仍保留原始错误。
+            // 文本继续由 onEvent 实时处理，此处只确认整条流成功完成。
+            const reader = stream.fullStream.getReader();
+            try {
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    if (value.type === "error") {
+                        throw new AppError(ErrorDefinitions.LLM.REQUEST_FAILED, {
+                            args: [String(value.error)],
+                            cause: value.error instanceof Error ? value.error : undefined,
+                        });
+                    }
+                }
+            } finally {
+                reader.releaseLock();
+            }
+
             // 仅等待元数据（如 usage, finishReason）处理完成
             // 文本部分已在 onEvent 中实时处理
             await (async () => {
@@ -262,17 +308,33 @@ export class ChatModel extends BaseModel implements IChatModel {
             if (error.name === "AbortError" && error.message === "early_exit") {
                 this.logger.debug(`🟢 [流式] 捕获到预期的 AbortError，流程正常结束。`);
             } else {
+                this.logger.debug(`[${requestId}] 流式异常 | 类型: ${error.name} | ${JSON.stringify(diagnostics.summary())}`);
+                const summary = diagnostics.summary();
+                if (!(error instanceof AppError) && (summary.errorFrames || summary.malformedFrames)) {
+                    throw new AppError(ErrorDefinitions.LLM.REQUEST_FAILED, {
+                        args: [error.message], cause: error, context: { streamDiagnostics: summary },
+                    });
+                }
                 throw error; // 重新抛出其他未预料的错误
             }
+        } finally {
+            this.logger.debug(`[${requestId}] 流式汇总 | ${JSON.stringify(diagnostics.summary())}`);
         }
 
         const duration = Date.now() - stime;
         const finalText = finalContentParts.join("");
 
+        if (diagnostics.hasUnterminatedData()) {
+            throw new AppError(ErrorDefinitions.LLM.REQUEST_FAILED, {
+                args: ["SSE 数据行未完整结束，响应可能被截断"],
+                context: { streamDiagnostics: diagnostics.summary() },
+            });
+        }
+
         if (isEmpty(finalText) && finalToolCalls.length === 0) {
             this.logger.warn(`💬 [流式] 模型未输出有效内容`);
             throw new AppError(ErrorDefinitions.LLM.OUTPUT_EMPTY_CONTENT, {
-                context: { rawResponse: finalText, details: "模型未输出有效内容" },
+                context: { rawResponse: finalText, details: "模型未输出有效内容", streamDiagnostics: diagnostics.summary() },
             });
         }
 
@@ -350,6 +412,12 @@ export class ChatModel extends BaseModel implements IChatModel {
             const { status, url } = error.response;
             context["url"] = url;
             context["httpStatus"] = status;
+            const retryAfter = error.response.headers?.get("retry-after");
+            if (retryAfter) {
+                const seconds = Number(retryAfter);
+                const delay = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(retryAfter) - Date.now();
+                if (Number.isFinite(delay) && delay >= 0) context["retryAfterMs"] = delay;
+            }
 
             let definition;
             if (status === 401) definition = ErrorDefinitions.LLM.INVALID_API_KEY;
