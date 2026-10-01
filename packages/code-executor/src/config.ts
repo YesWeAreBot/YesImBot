@@ -26,7 +26,9 @@ export const SharedConfig: Schema<SharedConfig> = Schema.object({
     //     .default("data/code-executor/artifacts")
     //     .description("执行结果（如图片、文件）的存放路径"),
     // artifactsUrlBase: Schema.string().description("产物文件的公开访问URL前缀例如: https://my.domain/artifacts"),
-    maxOutputSize: Schema.number().default(10240).description("输出内容（stdout/stderr）的最大字符数，超出部分将被截断"),
+    maxOutputSize: Schema.number()
+        .default(10240)
+        .description("输出内容（stdout/stderr）每路的最大 Unicode 字符数，超出部分将被截断；截断提示不计入"),
 });
 
 // 组合成总配置
