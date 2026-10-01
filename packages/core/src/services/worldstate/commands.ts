@@ -91,9 +91,15 @@ export class HistoryCommandManager {
                     target?: { platform: string; channelId: string }
                 ) => {
                     try {
-                        const { removed: messagesRemoved } = await this.ctx.database.remove(TableName.Messages, query);
-                        const { removed: eventsRemoved } = await this.ctx.database.remove(TableName.SystemEvents, query);
-                        const { removed: l2ChunksRemoved } = await this.ctx.database.remove(TableName.L2Chunks, query);
+                        const { messagesRemoved, eventsRemoved, l2ChunksRemoved } = await this.service.l2_manager.clearHistory(
+                            target || { type: options.all as "private" | "guild" | "all" },
+                            async () => {
+                                const { removed: messagesRemoved } = await this.ctx.database.remove(TableName.Messages, query);
+                                const { removed: eventsRemoved } = await this.ctx.database.remove(TableName.SystemEvents, query);
+                                const { removed: l2ChunksRemoved } = await this.ctx.database.remove(TableName.L2Chunks, query);
+                                return { messagesRemoved, eventsRemoved, l2ChunksRemoved };
+                            }
+                        );
 
                         let agentLogRemoved = false;
                         if (target || options.all) {
