@@ -169,10 +169,7 @@ export class StimulusScheduler {
             // 防抖期间仍可合并新消息，真正开始执行时才获取频道锁。
             this.logger.debug(`[${channelKey}] 调度被跳过的段落`);
 
-            const debouncedTask = this.debouncedReplyTasks.get(channelKey);
-            if (debouncedTask) {
-                debouncedTask(skippedStimulus);
-            }
+            this.getDebouncedTask(channelKey)(skippedStimulus);
         } else if (this.config.newMessageStrategy === "deferred" && this.skippedStimulus.has(channelKey)) {
             // 任务完成后才启动定时器
             this.setupDeferredTimer(channelKey);
