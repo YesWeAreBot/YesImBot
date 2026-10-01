@@ -43,6 +43,13 @@ export interface ReplyDecision {
     reason: "probability_roll" | "refractory_period" | "forced_reply_by_mention" | "below_threshold";
 }
 
+export interface ParticipationSnapshot {
+    active: boolean;
+    lastReplyAt: number | null;
+    expiresAt: number | null;
+    participantId: string | null;
+}
+
 export class WillingnessManager {
     private readonly ctx: Context;
     private readonly baseConfig: Config;
@@ -52,6 +59,7 @@ export class WillingnessManager {
     private willingnessScores: Map<string, number> = new Map();
     private lastMessageTimestamps: Map<string, number> = new Map(); // 记录每个对话的最后消息时间，用于计算热度
     private sessions = new Map<string, Session>();
+    private participation = new Map<string, Omit<ParticipationSnapshot, "active">>();
 
     private decayInterval: NodeJS.Timeout | null = null;
 
@@ -175,7 +183,7 @@ export class WillingnessManager {
         const hasKeyword = interest.keywords.some((kw) => context.content.includes(kw));
         const multiplier = hasKeyword ? interest.keywordMultiplier : interest.defaultMultiplier;
 
-        const rawGain = score * multiplier;
+        const rawGain = score * multiplier * this.getParticipationMultiplier(session, context);
 
         // 4. 应用增益的边际递减效应
         const currentWillingness = this.willingnessScores.get(context.chatId) || 0;
@@ -184,6 +192,32 @@ export class WillingnessManager {
         const gainMultiplier = 1 - Math.pow(currentWillingness / maxWillingness, 2);
 
         return rawGain * Math.max(0, gainMultiplier);
+    }
+
+    private getParticipationMultiplier(session: Session, context: MessageContext): number {
+        const state = this.getParticipation(context.chatId);
+        if (!state.active) return 1;
+
+        const allowed = (category: ReplyCategory) => !context.allowedCategories || context.allowedCategories.includes(category);
+        const selfId = session.selfId || session.bot?.selfId;
+        const mentions = session.elements.filter((element) => element.type === "at");
+        const mentionsSelf = !!session.stripped.atSelf || (!!selfId && mentions.some((element) => element.attrs.id === selfId));
+        const quoteUserId = session.quote?.user?.id;
+        const quotesSelf = !!selfId && quoteUserId === selfId;
+        const invited = (mentionsSelf && allowed("at")) || (quotesSelf && allowed("quote"));
+        const addressesOthers =
+            mentions.some((element) => element.attrs.id && element.attrs.id !== selfId) || (!!quoteUserId && quoteUserId !== selfId);
+
+        // 任意 @/引用可能属于允许的回复类别，但只有明确邀请自身才是参与信号。
+        if (!invited && addressesOthers) return 1;
+        const sameParticipant = !!state.participantId && state.participantId === session.userId;
+        if (!invited && !(context.isDirect && allowed("direct")) && !(sameParticipant && allowed("text"))) return 1;
+
+        const duration = state.expiresAt - state.lastReplyAt;
+        const remainingRatio = Math.max(0, Math.min(1, (state.expiresAt - Date.now()) / duration));
+        const configuredInfluence = this.baseConfig.participation?.influence ?? 0.5;
+        const influence = Number.isFinite(configuredInfluence) ? Math.max(0, Math.min(1, configuredInfluence)) : 0.5;
+        return 1 + influence * remainingRatio;
     }
 
     /**
@@ -250,6 +284,18 @@ export class WillingnessManager {
         currentWillingness -= resolvedReplyCost; // 基础成本
         this.willingnessScores.set(chatId, Math.max(0, currentWillingness));
 
+        if (this.baseConfig.participation?.enabled) {
+            const durationSeconds = this.baseConfig.participation.durationSeconds ?? 60;
+            if (Number.isFinite(durationSeconds) && durationSeconds >= 1 && durationSeconds <= 86400) {
+                const now = Date.now();
+                this.participation.set(chatId, {
+                    lastReplyAt: now,
+                    expiresAt: now + durationSeconds * 1000,
+                    participantId: session.userId || null,
+                });
+            }
+        }
+
         // 策略2：更狠一点，直接清零或设置为一个很低的基础值
         // 这种做法可以有效防止AI在一次回复后，因为意愿值依然很高而立即对下一条消息做出反应，从而避免"连麦"
         //this.willingnessScores.set(chatId, 0); // 直接清零，等待新刺激
@@ -270,10 +316,21 @@ export class WillingnessManager {
         this.willingnessScores.delete(chatId);
         this.lastMessageTimestamps.delete(chatId);
         this.sessions.delete(chatId);
+        this.participation.delete(chatId);
     }
 
     public getCurrentWillingness(chatId: string): number {
         return this.willingnessScores.get(chatId) || 0;
+    }
+
+    /** 返回参与状态的副本；到期查询不会清除或刷新状态。 */
+    public getParticipation(chatId: string, now = Date.now()): ParticipationSnapshot {
+        const state = this.participation.get(chatId);
+        if (!state) return { active: false, lastReplyAt: null, expiresAt: null, participantId: null };
+        return {
+            ...state,
+            active: !!this.baseConfig.participation?.enabled && now >= state.lastReplyAt && now < state.expiresAt,
+        };
     }
 
     /**
