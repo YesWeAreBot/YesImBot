@@ -349,13 +349,15 @@ class RequestExecutor {
     private async tryRequestWithModel(
         model: IChatModel,
         options: ChatRequestOptions,
-        originalMessages: any[]
+        originalMessages: ChatRequestOptions["messages"]
     ): Promise<{ success: true; data: GenerateTextResult } | { success: false; error: Error }> {
         const retryPolicy = model.config.retryPolicy ?? {
             maxRetries: 0,
             onContentFailure: ContentFailureAction.FailoverToNext,
         };
         const timeoutPolicy = model.config.timeoutPolicy ?? { totalTimeout: 90 };
+        // 每个模型使用独立的请求副本，修复消息仅用于当前模型，不修改调用方选项。
+        options = { ...options, messages: originalMessages };
 
         for (let attempt = 0; attempt <= retryPolicy.maxRetries; attempt++) {
             options.abortSignal?.throwIfAborted();
