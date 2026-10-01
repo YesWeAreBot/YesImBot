@@ -16,8 +16,10 @@ import { registerReplyCommands } from "./reply-commands";
 import { guardReplySession, withReplyTurn } from "./reply-turn";
 import { TypeSafeEvaluator } from "./typesafe";
 import { WillingnessManager } from "./willing";
-import { DecisionRecord, DecisionRecords, formatDecision } from "./decision-record";
+import { DecisionRecord, DecisionRecords, formatDecision, describeDecisionStage } from "./decision-record";
 import { registerDecisionCommands } from "./decision-commands";
+import { DecisionJournal } from "./decision-journal";
+import path from "node:path";
 
 type TracedStimulus = AgentStimulus<any> & { decisionId?: string };
 
@@ -57,7 +59,8 @@ export class AgentCore extends Service<Config> {
     private modelSwitcher: ChatModelSwitcher;
     private readonly pendingAssessments = new Map<string, { controller: AbortController; stimulus: AgentStimulus<any>; token: number }>();
     private stopped = false;
-    private readonly decisions = new DecisionRecords();
+    private decisionJournal?: DecisionJournal;
+    private readonly decisions = new DecisionRecords(1000, Date.now, record => { void this.decisionJournal?.append(record); });
     private readonly activeDecisionIds = new Map<string, string>();
 
     private recordDecision(stimulus: AgentStimulus<any>, update: Partial<DecisionRecord>): void {
@@ -72,6 +75,15 @@ export class AgentCore extends Service<Config> {
             assessing: this.pendingAssessments.has(key), muted: this.worldState.peekBotMuted(session.cid),
             participation: this.willing.getParticipation(key), suppression: this.replyControl.peek(target),
         });
+    }
+
+    public async queryDecisionRecords(session: Session, filter: { limit: number; from?: number; to?: number }): Promise<string> {
+        if (!this.decisionJournal) return "尚未启用本地决策记录，请先开启配置中的“决策记录与回放”。";
+        const records = await this.decisionJournal.list({ ...filter, key: replyKey(this.replyTarget(session)) });
+        const lines = records.map(record => `${new Date(record.time).toISOString()} ${record.id}\n${describeDecisionStage(record.stage)}${record.probability === undefined ? "" : `；概率 ${(record.probability * 100).toFixed(1)}%`}${record.roll === undefined ? "" : `；随机数 ${record.roll}`}`);
+        const diagnostics = this.decisionJournal.diagnostics;
+        if (diagnostics.droppedRecords) lines.push(`本次运行已裁剪或丢弃 ${diagnostics.droppedRecords} 条快照，历史可能不完整。`);
+        return lines.length ? lines.join("\n") : "所选时间范围没有该会话的记录。";
     }
 
     private cancelAssessment(channelCid: string, settle = true): void {
@@ -134,6 +146,13 @@ export class AgentCore extends Service<Config> {
         super(ctx, Services.Agent, true);
         this.config = config;
         this.logger = ctx[Services.Logger].getLogger("[智能体核心]");
+        if (config.decisionRecording?.enabled) {
+            this.decisionJournal = new DecisionJournal(
+                path.resolve(ctx.baseDir, config.decisionRecording.directory || "data/yesimbot/decisions"),
+                config.decisionRecording,
+                message => this.logger.warn(message)
+            );
+        }
 
         this.worldState = this.ctx[Services.WorldState];
         this.modelService = this.ctx[Services.Model];
@@ -264,7 +283,7 @@ export class AgentCore extends Service<Config> {
         await this.replyControl.initialize();
         this.ctx.setInterval(() => this.replyControl.expire(), 1000);
         registerReplyCommands(this.ctx, this.replyControl, (this.config.replySuppression?.defaultDurationSeconds ?? 60) * 1000);
-        registerDecisionCommands(this.ctx, session => this.queryDecision(session));
+        registerDecisionCommands(this.ctx, session => this.queryDecision(session), (session, filter) => this.queryDecisionRecords(session, filter));
         this._registerPromptTemplates();
 
         this.ctx.on("agent/stimulus", (stimulus) => this.receiveStimulus(stimulus));
@@ -340,6 +359,7 @@ export class AgentCore extends Service<Config> {
         this.scheduler.dispose();
         this.willing.stopDecayCycle();
         await this.replyControl.flush();
+        await this.decisionJournal?.close();
     }
 
     private replyTarget(session: Session): ReplyTarget {

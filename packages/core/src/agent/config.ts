@@ -189,6 +189,7 @@ export type AgentBehaviorConfig = ArousalConfig &
         multiModalSystemTemplate: string;
     } & {
         replySuppression?: { defaultDurationSeconds: number };
+        decisionRecording?: { enabled: boolean; directory: string; maxEntries: number; maxBytes: number; retentionHours: number };
         streamAction: boolean;
         nativeToolCalling?: boolean;
         heartbeat: number;
@@ -216,6 +217,13 @@ export const AgentBehaviorConfigSchema: Schema<AgentBehaviorConfig> = Schema.int
             .description("多模态系统提示词 (用于向模型解释图片占位符)"),
     }).description("提示词模板"),
     Schema.object({
+        decisionRecording: Schema.object({
+            enabled: Schema.boolean().default(false).description("保存本地决策记录以供离线回放，默认关闭"),
+            directory: Schema.string().default("data/yesimbot/decisions").description("记录目录，相对 Koishi 工作目录，也可使用绝对路径"),
+            maxEntries: Schema.natural().min(1).max(100000).default(10000).description("最多保留的决策快照条数"),
+            maxBytes: Schema.natural().min(1024).max(104857600).default(10485760).description("记录容量上限（字节），默认 10 MiB"),
+            retentionHours: Schema.number().min(1).max(720).default(72).description("记录保留时长（小时）"),
+        }).description("决策记录与回放"),
         replySuppression: Schema.object({
             defaultDurationSeconds: Schema.number().min(1).default(60).description("回复暂停命令的默认时长（秒），命令参数仅覆盖本次操作"),
         }).description("回复抑制"),

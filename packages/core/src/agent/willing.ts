@@ -224,32 +224,6 @@ export class WillingnessManager {
         return 1 + influence * remainingRatio;
     }
 
-    private getParticipationMultiplier(session: Session, context: MessageContext): number {
-        const state = this.getParticipation(context.chatId);
-        if (!state.active) return 1;
-
-        const allowed = (category: ReplyCategory) => !context.allowedCategories || context.allowedCategories.includes(category);
-        const selfId = session.selfId || session.bot?.selfId;
-        const mentions = session.elements.filter((element) => element.type === "at");
-        const mentionsSelf = !!session.stripped.atSelf || (!!selfId && mentions.some((element) => element.attrs.id === selfId));
-        const quoteUserId = session.quote?.user?.id;
-        const quotesSelf = !!selfId && quoteUserId === selfId;
-        const invited = (mentionsSelf && allowed("at")) || (quotesSelf && allowed("quote"));
-        const addressesOthers =
-            mentions.some((element) => element.attrs.id && element.attrs.id !== selfId) || (!!quoteUserId && quoteUserId !== selfId);
-
-        // 任意 @/引用可能属于允许的回复类别，但只有明确邀请自身才是参与信号。
-        if (!invited && addressesOthers) return 1;
-        const sameParticipant = !!state.participantId && state.participantId === session.userId;
-        if (!invited && !(context.isDirect && allowed("direct")) && !(sameParticipant && allowed("text"))) return 1;
-
-        const duration = state.expiresAt - state.lastReplyAt;
-        const remainingRatio = Math.max(0, Math.min(1, (state.expiresAt - Date.now()) / duration));
-        const configuredInfluence = this.baseConfig.participation?.influence ?? 0.5;
-        const influence = Number.isFinite(configuredInfluence) ? Math.max(0, Math.min(1, configuredInfluence)) : 0.5;
-        return 1 + influence * remainingRatio;
-    }
-
     /**
      * 公开接口：更新意愿值并返回回复概率
      * @param context 消息上下文
