@@ -17,6 +17,8 @@ import {
     SystemEventData,
 } from "./types";
 
+const logMutations = new Map<string, Promise<void>>();
+
 /**
  * L1 工作记忆管理器 (混合模式)
  * 负责将核心事件（消息、系统事件）持久化到数据库，
@@ -54,16 +56,30 @@ export class InteractionManager {
         }
     }
 
-    private async appendToLog(platform: string, channelId: string, entry: AgentLogEntry): Promise<void> {
-        const filePath = this.getLogFilePath(platform, channelId);
-        await this.ensureDirExists(path.dirname(filePath));
-        const line = JSON.stringify(entry) + "\n";
+    private async mutateLogs<T>(operation: () => Promise<T>): Promise<T> {
+        // 追加、截断和清理共享同一屏障，避免重写覆盖刚追加的记录。
+        const result = (logMutations.get(this.basePath) || Promise.resolve()).then(operation);
+        const settled = result.then(() => undefined, () => undefined);
+        logMutations.set(this.basePath, settled);
         try {
-            await fs.appendFile(filePath, line);
-        } catch (error) {
-            this.logger.error(`写入Agent日志失败 | 文件: ${filePath} | ID: ${entry.id}`);
-            this.logger.debug(error);
+            return await result;
+        } finally {
+            if (logMutations.get(this.basePath) === settled) logMutations.delete(this.basePath);
         }
+    }
+
+    private async appendToLog(platform: string, channelId: string, entry: AgentLogEntry): Promise<void> {
+        await this.mutateLogs(async () => {
+            const filePath = this.getLogFilePath(platform, channelId);
+            await this.ensureDirExists(path.dirname(filePath));
+            const line = JSON.stringify({ ...entry, platform, channelId }) + "\n";
+            try {
+                await fs.appendFile(filePath, line);
+            } catch (error) {
+                this.logger.error(`写入Agent日志失败 | 文件: ${filePath} | ID: ${entry.id}`);
+                this.logger.debug(error);
+            }
+        });
     }
 
     public async recordThought(turnId: string, platform: string, channelId: string, thoughts: AgentThoughtLog["thoughts"]): Promise<void> {
@@ -249,43 +265,55 @@ export class InteractionManager {
     }
 
     public async pruneOldData(): Promise<void> {
-        for (const dir of await fs.readdir(this.basePath)) {
-            const dirPath = path.join(this.basePath, dir);
-            const stat = await fs.stat(dirPath);
-            if (!stat.isDirectory()) continue;
-
-            for (const file of await fs.readdir(dirPath)) {
-                const filePath = path.join(dirPath, file);
-                try {
-                    const content = await fs.readFile(filePath, "utf-8");
-                    const lines = content.trim().split("\n").filter(Boolean);
-                    const linesToKeep = this.config.logLengthLimit ? lines.slice(-this.config.logLengthLimit) : lines;
-
-                    await fs.writeFile(filePath, linesToKeep.join("\n") + "\n");
-                } catch (error) {
-                    this.logger.error(`清理日志文件失败: ${filePath}`, error);
-                }
-            }
-        }
-    }
-
-    public async clearAgentHistory(platform?: string, channelId?: string, channelType?: "private" | "guild" | "all"): Promise<void> {
-        if (channelType !== undefined && !["private", "guild", "all"].includes(channelType)) {
-            throw new Error("频道类型必须是 private、guild 或 all");
-        }
-        if (channelType && channelType !== "all" && !channelId) {
-            // 与数据库沿用相同的 private: 分类，日志路径会将冒号替换为下划线。
+        await this.mutateLogs(async () => {
             let directories: string[];
-            try {
-                directories = platform
-                    ? [path.join(this.basePath, platform)]
-                    : (await fs.readdir(this.basePath, { withFileTypes: true }))
-                          .filter((entry) => entry.isDirectory())
-                          .map((entry) => path.join(this.basePath, entry.name));
-            } catch (error) {
+            try { directories = await fs.readdir(this.basePath); } catch (error) {
                 if (error.code === "ENOENT") return;
                 throw error;
             }
+            for (const dir of directories) {
+                const dirPath = path.join(this.basePath, dir);
+                const stat = await fs.stat(dirPath);
+                if (!stat.isDirectory()) continue;
+
+                for (const file of await fs.readdir(dirPath)) {
+                    const filePath = path.join(dirPath, file);
+                    try {
+                        const content = await fs.readFile(filePath, "utf-8");
+                        const lines = content.trim().split("\n").filter(Boolean);
+                        const linesToKeep = this.config.logLengthLimit ? lines.slice(-this.config.logLengthLimit) : lines;
+
+                        await fs.writeFile(filePath, linesToKeep.join("\n") + "\n");
+                    } catch (error) {
+                        this.logger.error(`清理日志文件失败: ${filePath}`, error);
+                    }
+                }
+            }
+        });
+    }
+
+    public async clearAgentHistory(platform?: string, channelId?: string, channelType?: "private" | "guild" | "all"): Promise<number> {
+        if (channelType !== undefined && !["private", "guild", "all"].includes(channelType)) {
+            throw new Error("频道类型必须是 private、guild 或 all");
+        }
+        if (channelId && !platform) throw new Error("必须同时指定 platform 和 channelId");
+        return this.mutateLogs(async () => {
+            if (!platform && !channelId && (!channelType || channelType === "all")) {
+                await fs.rm(this.basePath, { recursive: true, force: true });
+                return 0;
+            }
+            let directories: string[];
+            try {
+                directories = platform
+                    ? [path.dirname(this.getLogFilePath(platform, ""))]
+                    : (await fs.readdir(this.basePath, { withFileTypes: true }))
+                          .filter(entry => entry.isDirectory())
+                          .map(entry => path.join(this.basePath, entry.name));
+            } catch (error) {
+                if (error.code === "ENOENT") return 0;
+                throw error;
+            }
+            let preserved = 0;
             for (const directory of directories) {
                 let files;
                 try {
@@ -296,37 +324,56 @@ export class InteractionManager {
                 }
                 for (const file of files) {
                     if (!file.isFile() || !file.name.endsWith(".agent.jsonl")) continue;
-                    const isPrivate = file.name.startsWith("private_");
-                    if (isPrivate !== (channelType === "private")) continue;
-                    await fs.rm(path.join(directory, file.name), { force: true });
+                    const filePath = path.join(directory, file.name);
+                    if (channelId && filePath !== this.getLogFilePath(platform!, channelId)) continue;
+                    const legacyId = path.basename(file.name, ".agent.jsonl");
+                    // 含下划线的旧名称不能区分原始冒号、斜线与下划线，部分清理时保留无归属记录。
+                    const legacyAllowed = !path.basename(directory).includes("_") &&
+                        (!channelId || !legacyId.includes("_")) &&
+                        (!channelType || channelType === "all" || (channelType === "guild" && !legacyId.includes("_")));
+                    let content: string;
+                    try {
+                        content = await fs.readFile(filePath, "utf8");
+                    } catch (error) {
+                        if (error.code === "ENOENT") continue;
+                        throw error;
+                    }
+                    let unknown = 0;
+                    const keep = content.split(/(?<=\n)/).filter(line => {
+                        if (!line.trim()) return true;
+                        let entry: { platform?: unknown; channelId?: unknown } = {};
+                        try { entry = JSON.parse(line) || {}; } catch { /* 无法解析的旧记录沿用同一归属保护。 */ }
+                        if (typeof entry.platform === "string" && platform && entry.platform !== platform) return true;
+                        if (typeof entry.channelId === "string" && channelId && entry.channelId !== channelId) return true;
+                        if (typeof entry.platform !== "string" || typeof entry.channelId !== "string") {
+                            if (!legacyAllowed) unknown++;
+                            return !legacyAllowed;
+                        }
+                        return !((!platform || entry.platform === platform) &&
+                            (!channelId || entry.channelId === channelId) &&
+                            (!channelType || channelType === "all" || entry.channelId.startsWith("private:") === (channelType === "private")));
+                    }).join("");
+                    if (unknown) {
+                        preserved += unknown;
+                        this.logger.warn(`旧Agent日志归属不明，保留 ${unknown} 条记录: ${filePath}`);
+                    }
+                    if (keep === content) continue;
+                    if (!keep.trim()) {
+                        await fs.rm(filePath, { force: true });
+                    } else {
+                        const temporary = `${filePath}.${uuidv4()}.tmp`;
+                        try {
+                            await fs.writeFile(temporary, keep);
+                            await fs.rename(temporary, filePath);
+                        } finally {
+                            await fs.rm(temporary, { force: true });
+                        }
+                    }
                 }
             }
-            this.logger.info(`已删除指定类型的Agent日志: ${channelType}`);
-            return;
-        }
-        let targetPath: string;
-        let targetType: "file" | "dir" = "dir";
-        if (!platform && !channelId) {
-            // 删除所有记录
-            targetPath = this.basePath;
-        } else if (platform && !channelId) {
-            // 删除整个平台的记录
-            targetPath = path.join(this.basePath, platform);
-        } else if (platform && channelId) {
-            // 删除具体频道的记录文件
-            targetPath = this.getLogFilePath(platform, channelId);
-            targetType = "file";
-        } else {
-            throw new Error("必须同时指定 platform 和 channelId");
-        }
-        try {
-            await fs.rm(targetPath, { recursive: true, force: true });
-            this.logger.info(`已删除Agent日志${targetType === "dir" ? "目录" : "文件"}: ${targetPath}`);
-        } catch (error: any) {
-            // force: true 已经避免 ENOENT 报错，这里主要处理其他异常
-            this.logger.error(`删除Agent日志${targetType === "dir" ? "目录" : "文件"}失败: ${targetPath}`, error);
-            throw error;
-        }
+            this.logger.info("已清理指定范围的Agent日志");
+            return preserved;
+        });
     }
 
     public async getAgentHistoryForDateRange(

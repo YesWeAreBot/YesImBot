@@ -103,9 +103,10 @@ export class HistoryCommandManager {
                         );
 
                         let agentLogRemoved = false;
+                        let agentLogPreserved = 0;
                         if (target || options.all) {
                             try {
-                                await this.service.l1_manager.clearAgentHistory(target?.platform, target?.channelId, channelType);
+                                agentLogPreserved = (await this.service.l1_manager.clearAgentHistory(target?.platform, target?.channelId, channelType)) || 0;
                                 agentLogRemoved = true;
                             } catch (e) {
                                 // ignore if file not found
@@ -114,7 +115,7 @@ export class HistoryCommandManager {
 
                         results.push(
                             `✅ ${description} - 操作成功，共删除了 ${messagesRemoved} 条消息, ${eventsRemoved} 个系统事件, ${l2ChunksRemoved} 个L2记忆片段。${
-                                agentLogRemoved ? "Agent日志文件已删除。" : ""
+                                agentLogRemoved ? `匹配的Agent日志已清理。${agentLogPreserved ? `有 ${agentLogPreserved} 条归属不明的旧记录已保留，请查看日志。` : ""}` : ""
                             }`
                         );
                     } catch (error) {
