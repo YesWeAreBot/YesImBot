@@ -15,6 +15,7 @@ declare module "koishi" {
         [Services.WorldState]: WorldStateService;
     }
     interface Events {
+        "yesimbot/before-user-stimulus": (session: Session) => void | Promise<void>;
         "agent/stimulus": (stimulus: AgentStimulus<any>) => void;
         "agent/bot-muted": (target: { platform: string; selfId: string; channelId: string }) => void;
     }

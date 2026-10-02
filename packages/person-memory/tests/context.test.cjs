@@ -31,3 +31,15 @@ test('no session gives no injection; current sender included even absent from L1
     assert.match(result,/人物1/);
     assert.ok((result.match(/<person /g)||[]).length<=6);
 });
+
+test('identity warning survives cleared stale state and related link candidates render for source and target only',async t=>{
+    const ctx=await fixture(t,registerModels),store=new PersonStore(ctx.database,'review'),scope=sceneKey(session);
+    const source=await store.recognize(scope,'u1','来源'),target=await store.recognize(scope,'u2','目标');
+    await store.bind(scope,'u1','u2',0.8,'admin');await store.setProfile(scope,'u2','最新画像','admin');
+    let result=await renderPeople(store,{session});assert.match(result,/identity_changed="true"/);assert.match(result,/身份关联曾改变/);assert.match(result,/最新画像/);
+    await store.unbind(scope,'u1','admin');await store.capture(scope,{id:'e',userId:'u1',name:'来源',text:'关联依据',timestamp:Date.now()});
+    const a=await store.find(scope,'u1'),b=await store.find(scope,'u2');
+    const proposed=await store.proposeLink(scope,'u1',b.person.id,0.7,'关联依据',['e'],'model',{personId:a.person.id,personRevision:a.person.revision,accountRevision:a.accounts[0].revision,targetRevision:b.person.revision});
+    for(const userId of ['u1','u2'])assert.match(await renderPeople(store,{session:{...session,userId}}),new RegExp(proposed.id));
+    await store.recognize(scope,'u3','无关人物');assert.equal((await renderPeople(store,{session:{...session,userId:'u3'}})).includes(proposed.id),false);
+});
