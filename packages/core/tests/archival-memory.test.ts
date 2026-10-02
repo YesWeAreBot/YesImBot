@@ -254,6 +254,33 @@ for (const ambiguous of [false, true])
         for (const prompt of f.prompts) expect(prompt.messages[0].content.includes("PRIVATE_ONLY_SECRET")).toBe(!ambiguous);
     });
 
+it("rejects legacy logs when an agent-only channel shares the sanitized filename", async () => {
+    const f = await fixture();
+    setSystemTime(day());
+    f.seedMessages("onebot", "private:u");
+    const directory = path.join(f.ctx.baseDir, "data", "yesimbot", "interactions", "onebot");
+    await fs.mkdir(directory, { recursive: true });
+    const legacy = {
+        type: "agent_action",
+        id: "old",
+        turnId: "turn",
+        timestamp: day().toISOString(),
+        function: "AMBIGUOUS_LEGACY_SECRET",
+        params: {},
+    };
+    await fs.writeFile(path.join(directory, "private_u.agent.jsonl"), JSON.stringify(legacy) + "\n");
+    for (let i = 0; i < 5; i++)
+        await f.interaction.recordAction("turn", "onebot", "private_u", { function: "GUILD_ONLY_SECRET", params: {} });
+
+    await f.memory.generateDiariesForAllChannels(day());
+
+    expect(f.diaries().map((row) => row.channelId)).toEqual(["private:u", "private_u"]);
+    expect(f.prompts).toHaveLength(2);
+    for (const prompt of f.prompts) expect(prompt.messages[0].content).not.toContain("AMBIGUOUS_LEGACY_SECRET");
+    expect(f.prompts[0].messages[0].content).not.toContain("GUILD_ONLY_SECRET");
+    expect(f.prompts[1].messages[0].content).toContain("GUILD_ONLY_SECRET");
+});
+
 it("filters source identities when new log records share the same sanitized filename", async () => {
     const f = await fixture();
     setSystemTime(day());

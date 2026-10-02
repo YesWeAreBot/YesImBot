@@ -114,7 +114,7 @@ export class ArchivalMemoryManager {
 
         for (const channel of uniqueChannels) {
             if (this.stopped || this.lifecycle !== lifecycle) return;
-            await this.generateDiaryForChannel(channel.platform, channel.channelId, diaryDate, knownChannels);
+            await this.generateDiaryForChannel(channel.platform, channel.channelId, diaryDate, uniqueChannels);
         }
         this.logger.info("每日日记生成任务完成。");
     }

@@ -92,7 +92,7 @@ export class HistoryCommandManager {
                     channelType?: "private" | "guild" | "all"
                 ) => {
                     try {
-                        const { messagesRemoved, eventsRemoved, l2ChunksRemoved, diariesRemoved, agentLogRemoved } = await this.service.l2_manager.clearHistory(
+                        const { messagesRemoved, eventsRemoved, l2ChunksRemoved, diariesRemoved, agentLogRemoved, agentLogPreserved } = await this.service.l2_manager.clearHistory(
                             target || { type: options.all as "private" | "guild" | "all" },
                             async () => {
                                 const { removed: messagesRemoved } = await this.ctx.database.remove(TableName.Messages, query);
@@ -100,22 +100,24 @@ export class HistoryCommandManager {
                                 const { removed: l2ChunksRemoved } = await this.ctx.database.remove(TableName.L2Chunks, query);
                                 const { removed: diariesRemoved } = await this.ctx.database.remove(TableName.L3Diaries, query);
                                 let agentLogRemoved = false;
+                                let agentLogPreserved = 0;
                                 if (target || options.all) {
                                     try {
-                                        await this.service.l1_manager.clearAgentHistory(target?.platform, target?.channelId, channelType);
+                                        const preserved = await this.service.l1_manager.clearAgentHistory(target?.platform, target?.channelId, channelType);
+                                        agentLogPreserved = typeof preserved === "number" ? preserved : 0;
                                         agentLogRemoved = true;
                                     } catch (error) {
                                         // 日记的新任务仍需等本次日志清理结束，再读取原始交互。
                                         if (error.code !== "ENOENT") throw error;
                                     }
                                 }
-                                return { messagesRemoved, eventsRemoved, l2ChunksRemoved, diariesRemoved, agentLogRemoved };
+                                return { messagesRemoved, eventsRemoved, l2ChunksRemoved, diariesRemoved, agentLogRemoved, agentLogPreserved };
                             }
                         );
 
                         results.push(
                             `✅ ${description} - 操作成功，共删除了 ${messagesRemoved} 条消息, ${eventsRemoved} 个系统事件, ${l2ChunksRemoved} 个L2记忆片段, ${diariesRemoved} 篇L3日记。${
-                                agentLogRemoved ? "Agent日志文件已删除。" : ""
+                                agentLogRemoved ? `匹配的Agent日志已清理。${agentLogPreserved ? `有 ${agentLogPreserved} 条归属不明的旧记录已保留，请查看日志。` : ""}` : ""
                             }`
                         );
                     } catch (error) {
