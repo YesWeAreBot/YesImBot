@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { HistoryCommandManager } from "../src/services/worldstate/commands";
 import { InteractionManager } from "../src/services/worldstate/interaction-manager";
+import { SemanticMemoryManager } from "../src/services/worldstate/l2-semantic-memory";
 import { Services } from "../src/shared/constants";
 
 const roots: string[] = [];
@@ -49,8 +50,10 @@ async function fixture() {
             },
         },
     };
-    const manager = new InteractionManager(ctx, {} as any);
-    new HistoryCommandManager(ctx, { l1_manager: manager } as any, {} as any).register();
+    const config = {} as any;
+    const manager = new InteractionManager(ctx, config);
+    const semanticMemory = new SemanticMemoryManager(ctx, config);
+    new HistoryCommandManager(ctx, { l1_manager: manager, l2_manager: semanticMemory } as any, config).register();
     const invoke = (options: any = {}) => actions.get("history.clear")!({ session: { platform: "qq", channelId: "group" }, options });
     const exists = async (file: string) =>
         fs.access(path.join(logRoot, file)).then(
