@@ -43,3 +43,18 @@ test('identity warning survives cleared stale state and related link candidates 
     for(const userId of ['u1','u2'])assert.match(await renderPeople(store,{session:{...session,userId}}),new RegExp(proposed.id));
     await store.recognize(scope,'u3','无关人物');assert.equal((await renderPeople(store,{session:{...session,userId:'u3'}})).includes(proposed.id),false);
 });
+
+test('maximum escaped fields retain the current person and a valid bounded context',async t=>{
+    const {h}=require('koishi');
+    const ctx=await fixture(t,registerModels),store=new PersonStore(ctx.database,'review');
+    const current={...session,userId:'"'.repeat(256)},scope=sceneKey(current);
+    const recognized=await store.recognize(scope,current.userId,'"'.repeat(80));
+    await store.setProfile(scope,current.userId,'"'.repeat(600),'admin');
+    const result=await renderPeople(store,{session:current});
+    assert.ok(result.length<=6000);
+    const person=h.parse(result).find(element=>element.type==='person');
+    assert.ok(person,'current person must not be dropped');
+    assert.equal(person.attrs.id,recognized.person.id);
+    assert.equal(person.attrs.account,current.userId);
+    assert.equal(person.attrs.name,'"'.repeat(80));
+});

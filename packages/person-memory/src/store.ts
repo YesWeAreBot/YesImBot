@@ -291,7 +291,7 @@ export class PersonStore {
             const a = account(state, userId), p = state.people[a.personId];
             if (p.locked) throw new Error("画像已被管理员锁定");
             if (expected && (p.id !== expected.personId || p.revision !== expected.personRevision || a.revision !== expected.accountRevision)) throw new Error("总结期间发生人工修改或身份变更，候选已过期");
-            if (Object.keys(state.proposals).length + Object.keys(state.linkProposals).length >= 50) throw new Error("待审核候选已达 50 个，请先处理");
+            if (state.settings.mode !== "auto" && Object.keys(state.proposals).length + Object.keys(state.linkProposals).length >= 50) throw new Error("待审核候选已达 50 个，请先处理");
             const combined = [...sources, ...(p.stale ? [] : p.evidence)];
             const evidence = [...new Map(combined.map(e => [JSON.stringify([e.userId, e.id]), e])).values()].slice(0, 20);
             const proposal: Proposal = { id: randomUUID(), userId, personId: p.id, personRevision: p.revision, accountRevision: a.revision, profile, evidence, createdAt: Date.now() };

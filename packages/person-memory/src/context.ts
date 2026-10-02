@@ -5,6 +5,15 @@ export const identityWarning = "身份关联曾改变；旧 L2/L3 摘要可能�
 export function escapeContext(value: string) {
     return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;").replace(/{/g, "&#123;").replace(/}/g, "&#125;");
 }
+function boundedProfile(value: string, budget: number) {
+    let result = "";
+    for (const char of value.slice(0, 600)) {
+        const escaped = escapeContext(char);
+        if (result.length + escaped.length > budget) break;
+        result += escaped;
+    }
+    return result;
+}
 export async function renderPeople(store: PersonStore, view: Record<string, any>) {
     if (!view.session) return "";
     const scope = sceneKey(view.session), state = await store.read(scope);
@@ -20,7 +29,10 @@ export async function renderPeople(store: PersonStore, view: Record<string, any>
         else {
             const pending = Object.values(state.proposals).filter(v => v.personId === p.id).map(v => v.id).slice(0, 3);
             const linkPending = Object.values(state.linkProposals).filter(v => v.sourcePersonId === p.id || v.targetPersonId === p.id).map(v => v.id).slice(0, 3);
-            entry = `<person id="${p.id}" account="${escapeContext(a.userId)}" person_revision="${p.revision}" account_revision="${a.revision}" seen="${escapeContext(a.name)}" name="${escapeContext(p.name)}" confidence="${a.confidence}" provisional="${p.provisional}" locked="${p.locked}" stale="${p.stale}" identity_changed="${!!p.identityChanged}">\n${p.identityChanged ? `${identityWarning}\n` : ""}${p.stale ? "旧画像需复核，暂不作为记忆使用。" : escapeContext(p.profile.slice(0, 600))}\n${pending.length ? `待审核画像候选：${pending.join("，")}` : ""}\n${linkPending.length ? `待审核账号关联候选：${linkPending.join("，")}` : ""}\n</person>`;
+            const prefix = `<person id="${p.id}" account="${escapeContext(a.userId)}" person_revision="${p.revision}" account_revision="${a.revision}" seen="${escapeContext(a.name)}" name="${escapeContext(p.name)}" confidence="${a.confidence}" provisional="${p.provisional}" locked="${p.locked}" stale="${p.stale}" identity_changed="${!!p.identityChanged}">\n${p.identityChanged ? `${identityWarning}\n` : ""}`;
+            const suffix = `\n${pending.length ? `待审核画像候选：${pending.join("，")}` : ""}\n${linkPending.length ? `待审核账号关联候选：${linkPending.join("，")}` : ""}\n</person>`;
+            const budget = 6000 - parts.join("\n").length - prefix.length - suffix.length - 1;
+            entry = prefix + (p.stale ? "旧画像需复核，暂不作为记忆使用。" : boundedProfile(p.profile, budget)) + suffix;
         }
         if (parts.join("\n").length + entry.length + 1 > 6000) break;
         parts.push(entry);

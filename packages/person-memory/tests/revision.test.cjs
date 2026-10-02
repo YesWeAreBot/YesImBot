@@ -173,3 +173,22 @@ test('unload guards roll back recognition and source capture during awaited data
     assert.equal(await store.find('s', 'cancelled'), undefined);
     assert.equal((await store.sources('s', 'existing')).length, 0);
 });
+
+test('a full pending queue permits automatic profiles but still rejects new pending candidates', async t => {
+    const { store } = await setup(t);
+    const { target } = await accounts(store);
+    for (let i = 0; i < 50; i++) {
+        if (i % 2) {
+            const source = await store.find('s', 'a');
+            await store.proposeLink('s', 'a', target.person.id, 0.8, '等待人工核对', ['m'], 'model', versions(source, target));
+        } else await store.propose('s', 'a', `待审画像${i}`, ['m'], 'model');
+    }
+    await assert.rejects(store.propose('s', 'a', '仍需审核的画像', ['m'], 'model'), /50/);
+    await store.settings('s', { mode: 'auto' }, actor);
+    const accepted = await store.propose('s', 'a', '自动接受的画像', ['m'], 'model');
+    assert.equal(accepted.state, 'accepted');
+    assert.equal((await store.find('s', 'a')).person.profile, '自动接受的画像');
+    const state = await store.read('s');
+    assert.equal(Object.keys(state.proposals).length + Object.keys(state.linkProposals).length, 50);
+    await assert.rejects(store.proposeLink('s', 'a', target.person.id, 0.8, '仍需人工审核的关联', ['m'], 'model', versions(await store.find('s', 'a'), target)), /50/);
+});
