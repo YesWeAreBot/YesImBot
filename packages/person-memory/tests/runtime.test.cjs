@@ -19,9 +19,9 @@ test('real Koishi lifecycle, command parser and authority gate operate with SQLi
     const tools=new Map();let injection,mockFork;
     const app=await fixture(t,ctx=>{
         mockFork=ctx.plugin(mock);
-        ctx.set('yesimbot.tool',{registerTool:tool=>tools.set(tool.name,tool),unregisterTool:name=>tools.delete(name)});
+        ctx.set('yesimbot.tool',{capabilities:{trustedToolSession:1},registerTool:tool=>tools.set(tool.name,tool),unregisterTool:name=>tools.delete(name)});
         ctx.set('yesimbot.prompt',{inject:(_name,_priority,fn)=>{injection=fn;return()=>{injection=undefined}}});
-        ctx.set('yesimbot.world-state',{isChannelAllowed:()=>true});
+        ctx.set('yesimbot.world-state',{capabilities:{beforeUserStimulus:1},isChannelAllowed:()=>true});
         // Equivalent to core's command handling marker; command dispatch itself is real Koishi.
         ctx.on('command/before-execute',argv=>{argv.session.__commandHandled=true});
         ctx.plugin(plugin,{enabled:true,mode:'review',modelGroup:'',summaryThreshold:6,cooldownSeconds:600,timeoutSeconds:30,maxQueue:32});
@@ -46,9 +46,9 @@ for(const registration of ['before','after'])test(`real core stimulus sees first
         t.after(()=>{manager?.stop();personFork?.dispose();mockFork.dispose()});
         registerModels(ctx);
         ctx.model.extend('worldstate.system_events',{id:'string',payload:'json'},{primary:'id'});
-        ctx.set('yesimbot.tool',{registerTool:tool=>tools.set(tool.name,tool),unregisterTool:name=>tools.delete(name)});
+        ctx.set('yesimbot.tool',{capabilities:{trustedToolSession:1},registerTool:tool=>tools.set(tool.name,tool),unregisterTool:name=>tools.delete(name)});
         ctx.set('yesimbot.prompt',{inject:(_name,_priority,fn)=>{injection=fn;return()=>{injection=undefined}}});
-        world={isChannelAllowed:s=>s.channelId!=='blocked',recordMessage:async()=>{},recordSystemEvent:async()=>{}};
+        world={capabilities:{beforeUserStimulus:1},isChannelAllowed:s=>s.channelId!=='blocked',recordMessage:async()=>{},recordSystemEvent:async()=>{}};
         ctx.set('yesimbot.world-state',world);
         ctx.set('yesimbot.logger',{getLogger:()=>({debug(){},info(){},error(){}})});
         ctx.set('yesimbot.asset',{transform:async content=>content});
@@ -78,9 +78,9 @@ test('real Koishi parses history page filters and archive revision without consu
     const tools=new Map();let adminSession,mockFork;
     const app=await fixture(t,ctx=>{
         mockFork=ctx.plugin(mock);t.after(()=>mockFork.dispose());
-        ctx.set('yesimbot.tool',{registerTool:tool=>tools.set(tool.name,tool),unregisterTool:name=>tools.delete(name)});
+        ctx.set('yesimbot.tool',{capabilities:{trustedToolSession:1},registerTool:tool=>tools.set(tool.name,tool),unregisterTool:name=>tools.delete(name)});
         ctx.set('yesimbot.prompt',{inject:()=>()=>{}});
-        ctx.set('yesimbot.world-state',{isChannelAllowed:()=>true});
+        ctx.set('yesimbot.world-state',{capabilities:{beforeUserStimulus:1},isChannelAllowed:()=>true});
         ctx.on('command/before-execute',argv=>{adminSession=argv.session;argv.session.__commandHandled=true});
         ctx.plugin(plugin,defaults);
     });

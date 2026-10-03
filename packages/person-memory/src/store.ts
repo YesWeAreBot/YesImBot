@@ -20,7 +20,7 @@ export interface HistoryFilter { offset?: number; userId?: string; personId?: st
 interface StateRow { scope: string; revision: number; state: State }
 interface SourceRow { key: string; scope: string; userId: string; timestamp: number; source: Evidence }
 export interface Change { collection: keyof State; key: string; before: unknown; after: unknown }
-export interface Audit { id: string; scope: string; timestamp: number; revision: number; actor: string; action: string; changes: Change[] }
+export interface Audit { baseline?: { revision: number; state: State }; format?: number; id: string; scope: string; timestamp: number; revision: number; actor: string; action: string; changes: Change[] }
 declare module "koishi" {
     interface Tables { "person_memory.state": StateRow; "person_memory.sources": SourceRow; "person_memory.audit": Audit }
 }
@@ -28,7 +28,7 @@ const STATE = "person_memory.state", SOURCE = "person_memory.sources", AUDIT = "
 export function registerModels(ctx: Context) {
     ctx.model.extend(STATE, { scope: "string", revision: "unsigned", state: "json" }, { primary: "scope" });
     ctx.model.extend(SOURCE, { key: "string", scope: "string", userId: "string", timestamp: "double", source: "json" }, { primary: "key" });
-    ctx.model.extend(AUDIT, { id: "string", scope: "string", timestamp: "double", revision: "unsigned", actor: "string", action: "string", changes: "json" }, { primary: "id" });
+    ctx.model.extend(AUDIT, { baseline: "json", format: "unsigned", id: "string", scope: "string", timestamp: "double", revision: "unsigned", actor: "string", action: "string", changes: "json" }, { primary: "id" });
 }
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 function empty(mode: Mode): State { return { people: {}, accounts: {}, proposals: {}, linkProposals: {}, settings: { mode, paused: false } }; }
@@ -83,8 +83,8 @@ function bindAccount(state: State, userId: string, p: Person, confidence: number
     return a;
 }
 class Conflict extends Error {}
-// Serialize transactions on the same driver, including separate plugin instances. CAS
-// also prevents a remote writer from silently replacing a newer scene revision.
+// Reduce contention between local instances. Correctness comes from the unique
+// commit INSERT, never from this local lock or Minato set() (not a SQLite CAS).
 const locks = new WeakMap<object, Map<string, Promise<void>>>();
 async function serial<T>(db: object, key: string, fn: () => Promise<T>): Promise<T> {
     let map = locks.get(db);
@@ -100,39 +100,79 @@ async function serial<T>(db: object, key: string, fn: () => Promise<T>): Promise
 
 export class PersonStore {
     constructor(private db: Context["database"], private defaultMode: Mode) {}
-    async read(scope: string): Promise<State> {
-        return normalize(structuredClone((await this.db.get(STATE, { scope }))[0]?.state || empty(this.defaultMode)));
+    private async snapshot(scope: string): Promise<StateRow & { firstCommit: boolean }> {
+        const cached = (await this.db.get(STATE, { scope }))[0];
+        const first = (await this.db.get(AUDIT, { scope, format: 1 }, { sort: { revision: "asc" }, limit: 1 }))[0];
+        const baseline = first?.baseline;
+        const useBaseline = baseline?.state && (!cached || cached.revision < baseline.revision);
+        const row = { scope, revision: useBaseline ? baseline.revision : cached?.revision || 0,
+            state: normalize(structuredClone(useBaseline ? baseline.state : cached?.state || empty(this.defaultMode))), firstCommit: !first };
+        const commits = await this.db.get(AUDIT, { scope, format: 1, revision: { $gt: row.revision } }, { sort: { revision: "asc" } });
+        for (const commit of commits) {
+            if (commit.revision !== row.revision + 1) throw new Error("人物提交日志不连续，请恢复完整数据库备份");
+            for (const change of commit.changes) {
+                const collection = row.state[change.collection] as any;
+                if (change.after === null) delete collection[change.key];
+                else collection[change.key] = structuredClone(change.after);
+            }
+            row.revision = commit.revision;
+        }
+        row.firstCommit = !first && !commits.length;
+        if (row.revision && (!cached || cached.revision !== row.revision)) await this.cache({ scope, revision: row.revision, state: row.state });
+        return row;
+    }
+    async read(scope: string): Promise<State> { return (await this.snapshot(scope)).state; }
+    private async cache(row: StateRow) {
+        // A stale whole-row snapshot is safe: readers replay all later commits.
+        // Cache failure must not turn an accepted, audited commit into a failure.
+        try {
+            const result = await this.db.set(STATE, { scope: row.scope }, { revision: row.revision, state: row.state });
+            if (!result.matched) await this.db.create(STATE, row);
+        } catch { /* Disposable projection; retry on the next successful edit. */ }
     }
     private async edit<T>(scope: string, actor: string, action: string, fn: (state: State, db: Context["database"]) => T | Promise<T>, active = () => true): Promise<T> {
-        return serial(this.db, "state", async () => {
-            for (let attempt = 0; attempt < 4; attempt++) {
+        return serial(this.db, scope, async () => {
+            for (let attempt = 0; attempt < 16; attempt++) {
+                const row = await this.snapshot(scope);
+                if (!active()) throw new Error("任务已取消");
+                const state = normalize(structuredClone(row.state));
+                const result = await fn(state, this.db);
+                // Revisions never roll back, including after undo and recreation.
+                for (const collection of ["people", "accounts"] as const) {
+                    for (const [id, value] of Object.entries(state[collection])) {
+                        if (!equal(value, row.state[collection][id])) value.revision = row.revision + 1;
+                    }
+                }
+                validate(state);
+                const delta = changes(row.state, state);
+                if (!active()) throw new Error("任务已取消");
+                if (!delta.length) return structuredClone(result);
+                if (!row.revision) {
+                    // The first commit must also preserve defaults if its cache is
+                    // lost and the plugin restarts with a different default mode.
+                    for (const key of ["mode", "paused"] as const) if (!delta.some(c => c.collection === "settings" && c.key === key)) {
+                        delta.push({ collection: "settings", key, before: row.state.settings[key], after: state.settings[key] });
+                    }
+                }
+                const revision = row.revision + 1;
+                const id = `commit:${digest(JSON.stringify([scope, revision]))}`;
                 try {
-                    return await this.db.transact(async db => {
-                        let row = (await db.get(STATE, { scope }))[0];
-                        if (!row) row = await db.create(STATE, { scope, revision: 0, state: empty(this.defaultMode) });
-                        if (!active()) throw new Error("任务已取消");
-                        const state = normalize(structuredClone(row.state));
-                        const result = await fn(state, db);
-                        // Scene revisions never roll back. Using their next value for all
-                        // changed entities prevents ABA after an account/person is removed
-                        // by undo and recreated with the same external account ID.
-                        for (const collection of ["people", "accounts"] as const) {
-                            for (const [id, value] of Object.entries(state[collection])) {
-                                if (!equal(value, row.state[collection][id])) value.revision = row.revision + 1;
-                            }
-                        }
-                        validate(state);
-                        const delta = changes(row.state, state);
-                        if (!delta.length) return structuredClone(result);
-                        const write = await db.set(STATE, { scope, revision: row.revision }, { revision: row.revision + 1, state });
-                        if (write.matched !== 1) throw new Conflict("状态被同时修改，请重试");
-                        await db.create(AUDIT, { id: randomUUID(), scope, revision: row.revision + 1, timestamp: Date.now(), actor, action, changes: delta });
-                        if (!active()) throw new Error("任务已取消"); // Abort inside the transaction, including during awaited audit writes.
-                        return structuredClone(result);
+                    // One INSERT is both the accepted state delta and its audit.
+                    // Cancellation is checked before dispatch; once inserted, the
+                    // operation is accepted even if disposal races its completion.
+                    await this.db.create(AUDIT, { id, format: 1, scope, revision, timestamp: Date.now(), actor, action, changes: delta,
+                        // Capture legacy state in the same atomic INSERT. It is not
+                        // an audit change and must not affect conditional revert.
+                        ...(row.firstCommit && row.revision ? { baseline: { revision: row.revision, state: row.state } } : {}),
                     });
                 } catch (error) {
-                    if (!(error instanceof Conflict) || attempt === 3) throw error;
+                    const winner = (await this.db.get(AUDIT, { id }))[0];
+                    if (!winner || winner.format !== 1 || winner.scope !== scope || winner.revision !== revision) throw error;
+                    if (attempt === 15) throw new Conflict("状态被同时修改，请重试");
+                    continue;
                 }
+                await this.cache({ scope, revision, state });
+                return structuredClone(result);
             }
             throw new Conflict("状态更新失败");
         });
@@ -170,16 +210,21 @@ export class PersonStore {
     async capture(scope: string, input: Evidence, active = () => true) {
         const source = { id: text(input.id, 256, "消息 ID"), userId: text(input.userId, 256, "来源账号"), name: String(input.name || "").slice(0, 80), text: String(input.text).slice(0, 1000), timestamp: input.timestamp };
         if (!Number.isFinite(source.timestamp) || !source.text.trim()) return;
-        await serial(this.db, "state", () => this.db.transact(async db => {
-            if (!active()) throw new Error("任务已取消");
+        await serial(this.db, scope, async () => {
             const key = digest(JSON.stringify([scope, source.id]));
-            if ((await db.get(SOURCE, { key })).length) return; // Never rewrite original evidence.
-            await db.create(SOURCE, { key, scope, userId: source.userId, timestamp: source.timestamp, source });
-            const old = await db.get(SOURCE, { scope }, { sort: { timestamp: "desc", key: "desc" }, offset: 200, limit: 2000 });
-            if (old.length) await db.remove(SOURCE, { key: { $in: old.map(r => r.key) } });
+            if ((await this.db.get(SOURCE, { key })).length) return; // Never rewrite original evidence.
             if (!active()) throw new Error("任务已取消");
-        }));
+            try { await this.db.create(SOURCE, { key, scope, userId: source.userId, timestamp: source.timestamp, source }); }
+            catch (error) { if (!(await this.db.get(SOURCE, { key })).length) throw error; }
+            // Retention is an idempotent projection cleanup after acceptance. A
+            // failed cleanup may temporarily retain extra sources, never undo one.
+            try {
+                const old = await this.db.get(SOURCE, { scope }, { sort: { timestamp: "desc", key: "desc" }, offset: 200, limit: 2000 });
+                if (old.length) await this.db.remove(SOURCE, { key: { $in: old.map(r => r.key) } });
+            } catch { /* Retry cleanup on the next captured source. */ }
+        });
     }
+
     async sources(scope: string, userId: string, limit = 20): Promise<Evidence[]> {
         const rows = await this.db.get(SOURCE, { scope, userId }, { sort: { timestamp: "desc", key: "desc" }, limit: Math.min(20, Math.max(1, limit)) });
         return rows.reverse().map(r => r.source);

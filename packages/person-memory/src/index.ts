@@ -21,10 +21,10 @@ export const Config: Schema<Config> = Schema.object({
     timeoutSeconds: Schema.number().min(5).max(120).default(30).description("一次后台总结超时秒数"),
     maxQueue: Schema.number().min(1).max(100).step(1).default(32).description("待总结任务上限；全局同时运行一个任务"),
 });
-interface Tools { registerTool(tool: unknown): void; unregisterTool(name: string): void }
+interface Tools { capabilities?: { trustedToolSession?: number }; registerTool(tool: unknown): void; unregisterTool(name: string): void }
 interface Prompt { inject(name: string, priority: number, fn: (scope: Record<string, any>) => Promise<string>): void | (() => void) }
 interface Models { useChatGroup(name: string): { chat(options: any): Promise<{ text?: string }> } | undefined }
-interface Dependencies { "yesimbot.tool": Tools; "yesimbot.prompt": Prompt; "yesimbot.world-state": { isChannelAllowed(session: Session): boolean }; "yesimbot.model"?: Models }
+interface Dependencies { "yesimbot.tool": Tools; "yesimbot.prompt": Prompt; "yesimbot.world-state": { capabilities?: { beforeUserStimulus?: number }; isChannelAllowed(session: Session): boolean }; "yesimbot.model"?: Models }
 const Success = (result: unknown) => ({ status: "success", result });
 const Failed = (error: unknown) => ({ status: "error", error: { name: "PersonMemoryError", message: error instanceof Error ? error.message : String(error) } });
 const key = (session: Session) => sceneKey(session as unknown as SceneInput);
@@ -71,8 +71,11 @@ function candidate(p: Proposal | LinkProposal) {
 
 export function apply(ctx: Context, config: Config) {
     if (!config.enabled) return;
-    registerModels(ctx);
     const deps = ctx as unknown as Dependencies;
+    if (deps["yesimbot.world-state"].capabilities?.beforeUserStimulus !== 1 || deps["yesimbot.tool"].capabilities?.trustedToolSession !== 1) {
+        throw new Error("人物记忆需要 YesImBot 3.0.4 或包含 beforeUserStimulus v1 与 trustedToolSession v1 能力的源码核心，请升级核心后重新启用插件");
+    }
+    registerModels(ctx);
     const logger = ctx.logger(name), store = new PersonStore(ctx.database, config.mode);
     let active = true;
     const allowed = (session: Session) => active && deps["yesimbot.world-state"].isChannelAllowed(session);

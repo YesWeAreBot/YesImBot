@@ -5,16 +5,16 @@ const {apply}=load('index');
 const {registerModels,PersonStore,sceneKey}=load('store');
 const defaults={enabled:true,mode:'review',modelGroup:'',summaryThreshold:6,cooldownSeconds:600,timeoutSeconds:30,maxQueue:32};
 const session=(extra={})=>({platform:'onebot',bot:{selfId:'b'},channelId:'g',userId:'u',isDirect:false,author:{name:'群友'},content:'喜欢 Python',messageId:'m',timestamp:Date.now(),user:{authority:3},...extra});
-async function setup(t,config={}) {
+async function setup(t,config={},capabilities=true) {
     const tools=new Map(),commands=new Map(),hooks=new Map();
     let injection,middleware,disposed=false;const warnings=[];
     const ctx=await fixture(t,registerModels);
     {
         // External YIB services and Koishi command dispatch only; DB remains actual SQLite.
         const facade={model:ctx.model,database:ctx.database};
-        facade['yesimbot.tool']={registerTool:tool=>tools.set(tool.name,tool),unregisterTool:name=>tools.delete(name)};
+        facade['yesimbot.tool']={registerTool:tool=>tools.set(tool.name,tool),unregisterTool:name=>tools.delete(name),...(capabilities?{capabilities:{trustedToolSession:1}}:{})};
         facade['yesimbot.prompt']={inject:(_name,_priority,fn)=>{injection=fn;return()=>{disposed=true;injection=undefined}}};
-        facade['yesimbot.world-state']={isChannelAllowed:s=>s.channelId!=='blocked'};
+        facade['yesimbot.world-state']={isChannelAllowed:s=>s.channelId!=='blocked',...(capabilities?{capabilities:{beforeUserStimulus:1}}:{})};
         facade.command=(name,description,options)=>{ const spec={name,description,options,action:null,optionDeclarations:[]};commands.set(name.split(' ')[0],spec);const chain={option:(...option)=>{spec.optionDeclarations.push(option);return chain},action:fn=>{spec.action=fn;return chain}};return chain; };
         facade.on=(name,fn)=>{hooks.set(name,fn)};
         facade.middleware=fn=>{middleware=fn};
@@ -169,4 +169,19 @@ test('model history includes profile changes for the formerly associated person 
     assert.ok(profile);
     assert.ok(profile.changeCount>0);
     assert.match(JSON.stringify(profile.changes),/旧人物喜欢 Go/);
+});
+
+test('legacy core without required capabilities fails before registering business effects',()=>{
+    for (const missing of ['both', 'world', 'tool']) {
+        const effects=[];
+        const ctx={
+            'yesimbot.world-state': {isChannelAllowed:()=>true,...(missing==='tool'?{capabilities:{beforeUserStimulus:1}}:{})},
+            'yesimbot.tool': {registerTool:()=>effects.push('tool'),...(missing==='world'?{capabilities:{trustedToolSession:1}}:{})},
+            'yesimbot.prompt': {inject:()=>effects.push('prompt')},
+            model:{extend:()=>effects.push('model')},
+            on:()=>effects.push('listener'), command:()=>effects.push('command'),
+        };
+        assert.throws(()=>apply(ctx,defaults),/3\.0\.4.*beforeUserStimulus.*trustedToolSession/);
+        assert.deepEqual(effects,[]);
+    }
 });

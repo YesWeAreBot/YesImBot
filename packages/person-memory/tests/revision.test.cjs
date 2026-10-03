@@ -148,12 +148,12 @@ test('stale identity link proposals cannot override a revised target or wrong-ac
     assert.equal((await store.read('s')).linkProposals[candidate.id], undefined);
 });
 
-test('unload guards roll back recognition and source capture during awaited database writes', async t => {
+test('unload after commit dispatch accepts recognition and source capture without rollback', async t => {
     const { ctx, store } = await setup(t);
     await store.recognize('s', 'existing', '已有账号');
     for (const operation of ['recognize', 'capture']) {
         let active = true;
-        const db = { transact: fn => ctx.database.transact(tx => fn(new Proxy(tx, {
+        const db = new Proxy(ctx.database, {
             get(target, key) {
                 if (key === 'create') return async (table, data) => {
                     const value = await target.create(table, data);
@@ -163,15 +163,15 @@ test('unload guards roll back recognition and source capture during awaited data
                 const value = target[key];
                 return typeof value === 'function' ? value.bind(target) : value;
             },
-        }))) };
+        });
         const guarded = new PersonStore(db, 'review');
         const job = operation === 'recognize'
             ? guarded.recognize('s', 'cancelled', '卸载中的账号', () => active)
             : guarded.capture('s', { id: 'cancelled', userId: 'existing', name: '已有账号', text: '卸载中的消息', timestamp: 1234 }, () => active);
-        await assert.rejects(job, /取消/);
+        await job;
     }
-    assert.equal(await store.find('s', 'cancelled'), undefined);
-    assert.equal((await store.sources('s', 'existing')).length, 0);
+    assert.ok(await store.find('s', 'cancelled'));
+    assert.equal((await store.sources('s', 'existing')).length, 1);
 });
 
 test('a full pending queue permits automatic profiles but still rejects new pending candidates', async t => {

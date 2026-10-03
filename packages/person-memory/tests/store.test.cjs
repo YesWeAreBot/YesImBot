@@ -90,11 +90,11 @@ test('SQLite file reopening preserves UUID, reviewed profile, source and audit',
     const found=await restored.find(scene,'u1');assert.equal(found.person.id,initial.person.id);assert.equal(found.person.profile,'喜欢 Python');
     assert.equal((await restored.read(scene)).settings.mode,'review');assert.equal((await restored.sources(scene,'u1'))[0].id,'m1');assert.equal((await restored.history(scene))[0].action,'approve');
 });
-test('audit failure rolls back state; evidence cannot be rewritten by duplicate message id',async t=>{
+test('audit failure leaves state unchanged; evidence cannot be rewritten by duplicate message id',async t=>{
     const {ctx,store}=await setup(t);await store.recognize(scene,'u1','甲');
     await store.capture(scene,source('m1'));await store.capture(scene,{...source('m1','u2'),text:'伪造'});
     assert.equal((await store.sources(scene,'u1'))[0].text,'我喜欢写 Python');
-    const db={transact:fn=>ctx.database.transact(tx=>fn(new Proxy(tx,{get(target,key){if(key==='create')return async(table,data)=>{if(table==='person_memory.audit')throw new Error('audit unavailable');return target.create(table,data)};const v=target[key];return typeof v==='function'?v.bind(target):v}})))};
+    const db=new Proxy(ctx.database,{get(target,key){if(key==='create')return async(table,data)=>{if(table==='person_memory.audit')throw new Error('audit unavailable');return target.create(table,data)};const v=target[key];return typeof v==='function'?v.bind(target):v}});
     await assert.rejects(new PersonStore(db,'review').setProfile(scene,'u1','失败写入',actor),/audit unavailable/);
     assert.equal((await store.find(scene,'u1')).person.profile,'');assert.equal((await store.history(scene)).length,1);
 });
@@ -124,12 +124,21 @@ test('new account binding invalidates existing profile and pre-binding proposals
     assert.equal((await store.find(scene,'u1')).person.stale,true);
     await assert.rejects(store.review(scene,proposal.id,true,actor));
 });
-test('cancellation during audit write rolls back model proposal and auto profile',async t=>{
+test('cancellation before commit rejects model proposal and auto profile',async t=>{
     const {ctx,store}=await setup(t);await store.recognize(scene,'u1','甲');await store.capture(scene,source('m1'));await store.settings(scene,{mode:'auto'},actor);
     let active=true;
-    const db={get:ctx.database.get.bind(ctx.database),transact:fn=>ctx.database.transact(tx=>fn(new Proxy(tx,{get(target,key){if(key==='create')return async(table,data)=>{const result=await target.create(table,data);if(table==='person_memory.audit')active=false;return result};const v=target[key];return typeof v==='function'?v.bind(target):v}})))};
-    const cancelled=new PersonStore(db,'auto');
-    await assert.rejects(cancelled.propose(scene,'u1','迟到结果',['m1'],'model',undefined,()=>active),/取消/);
+    const db=new Proxy(ctx.database,{get(target,key){if(key==='get')return async(table,...args)=>{const result=await target.get(table,...args);if(table==='person_memory.sources')active=false;return result};const v=target[key];return typeof v==='function'?v.bind(target):v}});
+    await assert.rejects(new PersonStore(db,'auto').propose(scene,'u1','迟到结果',['m1'],'model',undefined,()=>active),/取消/);
     assert.equal((await store.find(scene,'u1')).person.profile,'');
     assert.equal((await store.history(scene))[0].action,'settings');
+});
+test('late cancellation during successful audit INSERT keeps accepted auto profile and evidence',async t=>{
+    const {ctx,store}=await setup(t);await store.recognize(scene,'u1','甲');await store.capture(scene,source('m1'));await store.settings(scene,{mode:'auto'},actor);
+    let active=true;
+    const db=new Proxy(ctx.database,{get(target,key){if(key==='create')return async(table,data)=>{const result=await target.create(table,data);if(table==='person_memory.audit')active=false;return result};const v=target[key];return typeof v==='function'?v.bind(target):v}});
+    const result=await new PersonStore(db,'auto').propose(scene,'u1','已接受画像',['m1'],'model',undefined,()=>active);
+    assert.equal(result.state,'accepted');
+    assert.equal((await store.find(scene,'u1')).person.profile,'已接受画像');
+    assert.equal((await store.find(scene,'u1')).person.evidence[0].id,'m1');
+    assert.equal((await store.history(scene))[0].action,'proposal');
 });
