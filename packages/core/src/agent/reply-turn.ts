@@ -3,6 +3,62 @@ import type { ReplyTarget } from "./reply-control";
 import type { Bot, Session } from "koishi";
 
 const turns = new AsyncLocalStorage<{ valid: () => boolean; signal?: AbortSignal; canSend?: (target: ReplyTarget) => boolean }>();
+// 只在受保护的发送期间替换此 bot 实例的 constructor 读取。适配器方法仍以
+// 原 bot 为 this（包括 JS 私有字段），共享类和普通发送不受影响。
+const encoderScopes = new AsyncLocalStorage<Map<Bot, Function>>();
+const activeEncoders = new WeakMap<Bot, { count: number; descriptor?: PropertyDescriptor }>();
+const encoderSendToken = Symbol("reply encoder send");
+async function withGuardedEncoder<T>(bot: Bot, channelId: string, options: any, check: (channelId: string) => void, task: (options: any) => T): Promise<Awaited<T>> {
+    const constructor = bot.constructor as typeof Bot;
+    const Encoder = constructor.MessageEncoder;
+    if (!Encoder) return await task(options);
+    const token = {};
+    const sendOptions = { ...options, [encoderSendToken]: token };
+    const guardedEncoder = new Proxy(Encoder, {
+        construct(target, args) {
+            // 同 bot、频道和异步链上的普通发送/新 turn 也必须有本次调用的令牌。
+            if (args[3]?.[encoderSendToken] !== token || String(args[1]) !== String(channelId)) return Reflect.construct(target, args);
+            const encoderOptions = { ...args[3] };
+            delete encoderOptions[encoderSendToken];
+            const encoderArgs = [...args];
+            encoderArgs[0] = bot;
+            encoderArgs[3] = encoderOptions;
+            const encoder = Reflect.construct(target, encoderArgs);
+            for (const key of ["render", "visit", "flush"] as const) {
+                const method = encoder[key];
+                encoder[key] = function (...args: any[]) {
+                    check(encoder.channelId);
+                    return method.apply(encoder, args);
+                };
+            }
+            return encoder;
+        },
+    });
+    const guardedConstructor = new Proxy(constructor, {
+        get(target, key) { return key === "MessageEncoder" ? guardedEncoder : Reflect.get(target, key, target); },
+    });
+    let active = activeEncoders.get(bot);
+    if (!active) {
+        active = { count: 0, descriptor: Object.getOwnPropertyDescriptor(bot, "constructor") };
+        Object.defineProperty(bot, "constructor", {
+            configurable: true,
+            get: () => encoderScopes.getStore()?.get(bot) ?? constructor,
+        });
+        activeEncoders.set(bot, active);
+    }
+    active.count++;
+    const scope = new Map(encoderScopes.getStore());
+    scope.set(bot, guardedConstructor);
+    try {
+        return await encoderScopes.run(scope, () => task(sendOptions));
+    } finally {
+        if (--active.count === 0) {
+            if (active.descriptor) Object.defineProperty(bot, "constructor", active.descriptor);
+            else delete (bot as any).constructor;
+            activeEncoders.delete(bot);
+        }
+    }
+}
 export function assertReplyTurn(): void {
     if (turns.getStore()?.valid() === false) throw new Error("聊天任务已取消");
 }
@@ -56,7 +112,7 @@ export function guardReplyBot(bot: Bot): Bot {
         get(target, key, receiver) {
             if (key === "constructor") return target.constructor;
             if (key === "internal") return internal;
-            const value = Reflect.get(target, key, receiver);
+            const value = Reflect.get(target, key, onebot ? receiver : target);
             if (onebot && key === "createMessage" && typeof value === "function") {
                 return (...args: any[]) => {
                     check();
@@ -74,11 +130,18 @@ export function guardReplyBot(bot: Bot): Bot {
                             false
                         )
                             throw new Error("目标会话的回复已被抑制");
-                        return target.sendMessage.apply(onebot ? receiver : target, [channel.id, args[1], null, args[3]]);
+                        const send = (options = args[3]) => target.sendMessage.apply(onebot ? receiver : target, [channel.id, args[1], null, options]);
+                        return onebot ? send() : withGuardedEncoder(target, channel.id, args[3], id => destination(id, true), send);
                     }
-                    const destination = { platform: target.platform, selfId: target.selfId, channelId: args[0] };
-                    if (turn?.canSend?.(destination) === false) throw new Error("目标会话的回复已被抑制");
-                    return value.apply(onebot ? receiver : target, args);
+                    const targetDestination = { platform: target.platform, selfId: target.selfId, channelId: args[0] };
+                    if (turn?.canSend?.(targetDestination) === false) throw new Error("目标会话的回复已被抑制");
+                    if (onebot || key === "sendUpload") return value.apply(onebot ? receiver : target, args);
+                    const send = (options: any) => {
+                        const sendArgs = [...args];
+                        if (options !== args[3]) sendArgs[3] = options;
+                        return value.apply(target, sendArgs);
+                    };
+                    return withGuardedEncoder(target, args[0], args[3], id => destination(id), send);
                 };
             }
             return typeof value === "function" ? value.bind(target) : value;
