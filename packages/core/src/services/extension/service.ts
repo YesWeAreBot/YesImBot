@@ -378,9 +378,11 @@ export class ToolService extends Service<Config> {
                             Schema.union([
                                 Schema.object({
                                     enabled: Schema.const(true),
-                                    ...(validate && enabled ? validate.default(validatedConfig) : Schema.object({})).dict,
+                                    ...(validate ? validate.default(validatedConfig) : Schema.object({})).dict,
                                 }),
-                                Schema.object({}),
+                                Schema.object(Object.fromEntries(
+                                    Object.entries(validate?.dict || {}).map(([key, schema]) => [key, schema.hidden()])
+                                )),
                             ]),
                         ])
                     )
