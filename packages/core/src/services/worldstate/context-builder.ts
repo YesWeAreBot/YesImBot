@@ -5,6 +5,7 @@ import { HistoryConfig } from "./config";
 import { InteractionManager } from "./interaction-manager";
 import { SemanticMemoryManager } from "./l2-semantic-memory";
 import { ArchivalMemoryManager } from "./l3-archival-memory";
+import { diaryDateKey } from "./memory-date";
 import { ContextualMessage, DiaryEntryData, L1HistoryItem, RetrievedMemoryChunk, WorldState } from "./types";
 
 export class ContextBuilder {
@@ -53,7 +54,7 @@ export class ContextBuilder {
             l2_retrieved_memories = [];
         }
 
-        const l3_diary_entries = await this.retrieveL3Memories(channelId);
+        const l3_diary_entries = await this.retrieveL3Memories(platform, channelId);
 
         const channelInfo = await this.getChannelInfo(session);
         const selfInfo = await this.getSelfInfo(session);
@@ -182,13 +183,12 @@ export class ContextBuilder {
         } catch (error) {}
     }
 
-    private async retrieveL3Memories(channelId: string): Promise<DiaryEntryData[]> {
+    private async retrieveL3Memories(platform: string, channelId: string): Promise<DiaryEntryData[]> {
         if (!this.config.l3_memory.enabled) return [];
         // Example: retrieve yesterday's diary
         const yesterday = new Date();
         yesterday.setDate(yesterday.getDate() - 1);
-        const dateStr = yesterday.toISOString().split("T")[0];
-        return this.ctx.database.get(TableName.L3Diaries, { channelId, date: dateStr });
+        return this.ctx.database.get(TableName.L3Diaries, { platform, channelId, date: diaryDateKey(yesterday) });
     }
 
     private async getChannelInfo(session: Session) {
