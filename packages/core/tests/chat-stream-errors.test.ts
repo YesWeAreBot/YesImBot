@@ -3,6 +3,7 @@ import { ChatModel } from "../src/services/model/chat-model";
 import { ModelAbility } from "../src/services/model/config";
 import { Services } from "../src/shared/constants";
 import { AppError, ErrorDefinitions } from "../src/shared/errors";
+import { ChatModelSwitcher } from "../src/services/model/service";
 
 const usage = { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 };
 const frame = (delta: any, finish_reason: string | null = null) =>
@@ -20,6 +21,7 @@ function fixture(response: () => Response | Promise<Response>) {
             if (level === "debug") debugLogs.push(message);
         }])
     );
+    logger.extend = () => logger;
     let requests = 0;
     const model = new ChatModel(
         { [Services.Logger]: { getLogger: () => logger } } as any,
@@ -203,4 +205,192 @@ it("discards partial content when the response body aborts and preserves TIMEOUT
     expect((error.cause as Error)?.name).toBe("AbortError");
     expect(error.context?.rawResponse).toBeUndefined();
     expect(requests()).toBe(1);
+});
+
+it("rejects complete content frames followed by EOF without a completion signal", async () => {
+    const { model } = fixture(() => sse(frame({ content: "partial reply" })));
+    const error = await failure(model);
+    expect(error.code).toBe(ErrorDefinitions.LLM.REQUEST_FAILED.code);
+    expect(error.message).toMatch(/EOF|完成|终止/);
+});
+
+it("does not execute a tool from a complete frame followed by abnormal EOF", async () => {
+    let executions = 0;
+    const { model } = fixture(() => sse(frame({ tool_calls: [{ index: 0, id: "call-1", type: "function",
+        function: { name: "lookup", arguments: '{}' } }] })));
+    await expect(model.chat({ messages: [{ role: "user", content: "hi" }], tools: [{
+        type: "function", function: { name: "lookup", parameters: { type: "object" } },
+        execute: async () => { executions++; return "result"; },
+    }] })).rejects.toBeInstanceOf(AppError);
+    expect(executions).toBe(0);
+});
+
+for (const termination of [done, frame({}, "stop") + usageFrame, frame({}, "content_filter")]) {
+    it(`accepts a supported completion signal ${JSON.stringify(termination)}`, async () => {
+        const { model } = fixture(() => sse(frame({ content: "reply" }) + termination));
+        expect((await model.chat({ messages: [] })).text).toBe("reply");
+    });
+}
+
+it("keeps a validator-approved early exit without an upstream finish frame", async () => {
+    const { model } = fixture(() => sse(frame({ content: '{"answer":1}' })));
+    const result = await model.chat({ messages: [], validation: { format: "json" } });
+    expect(result.text).toBe('{"answer":1}');
+});
+
+it("does not trust an upstream AbortError named early_exit without validator approval", async () => {
+    const { model } = fixture(() => new Response(new ReadableStream({
+        start(controller) {
+            controller.enqueue(new TextEncoder().encode(frame({ content: "partial" })));
+        },
+        pull(controller) { controller.error(new DOMException("early_exit", "AbortError")); },
+    }), { headers: { "content-type": "text/event-stream" } }));
+    expect((await failure(model)).code).toBe(ErrorDefinitions.LLM.TIMEOUT.code);
+});
+
+it("routes an abnormal EOF through the existing fallback model", async () => {
+    const primary = fixture(() => sse(frame({ content: "partial" })));
+    const fallback = fixture(() => sse(frame({ content: "fallback" }) + done));
+    primary.model.config.modelId = "primary";
+    fallback.model.config.modelId = "fallback";
+    for (const f of [primary, fallback]) {
+        f.model.config.retryPolicy = { maxRetries: 0 } as any;
+        f.model.config.timeoutPolicy = { firstTokenTimeout: 5, totalTimeout: 5 };
+    }
+    const logger = { extend() { return this; }, debug() {}, info() {}, warn() {}, error() {} };
+    const switcher = new ChatModelSwitcher({ [Services.Logger]: { getLogger: () => logger } } as any,
+        { name: "test", models: ["primary", "fallback"].map(modelId => ({ providerName: "test", modelId })) },
+        (_, id) => id === "primary" ? primary.model : fallback.model);
+    expect((await switcher.chat({ messages: [] })).text).toBe("fallback");
+    expect(primary.requests()).toBe(1);
+    expect(fallback.requests()).toBe(1);
+});
+
+it("requires a completion signal for each response of a multi-step tool request", async () => {
+    let response = 0, executions = 0;
+    const tool = frame({ tool_calls: [{ index: 0, id: "call-1", type: "function",
+        function: { name: "lookup", arguments: '{}' } }] });
+    const { model } = fixture(() => sse(++response === 1 ? tool + frame({}, "tool_calls") + done : tool));
+    await expect(model.chat({ messages: [], maxSteps: 2, tools: [{
+        type: "function", function: { name: "lookup", parameters: { type: "object" } },
+        execute: async () => { executions++; return "result"; },
+    }] })).rejects.toBeInstanceOf(AppError);
+    expect(executions).toBe(1);
+    expect(response).toBe(2);
+});
+
+for (const termination of [done, frame({}, "tool_calls") + usageFrame]) {
+    it(`accepts a tool response terminated by ${JSON.stringify(termination)}`, async () => {
+        let executions = 0;
+        const { model } = fixture(() => sse(frame({ tool_calls: [{ index: 0, id: "call-1", type: "function",
+            function: { name: "lookup", arguments: '{}' } }] }) + termination));
+        const result = await model.chat({ messages: [], tools: [{
+            type: "function", function: { name: "lookup", parameters: { type: "object" } },
+            execute: async () => { executions++; return "result"; },
+        }] });
+        expect(executions).toBe(1);
+        expect(result.toolCalls?.[0].toolName).toBe("lookup");
+    });
+}
+
+it("does not let validator-approved text authorize a truncated tool response", async () => {
+    let executions = 0;
+    const { model } = fixture(() => sse(frame({ content: '{"answer":1}' }) +
+        frame({ tool_calls: [{ index: 0, id: "call-1", type: "function",
+            function: { name: "lookup", arguments: '{}' } }] })));
+    await expect(model.chat({ messages: [], validation: { format: "json" }, tools: [{
+        type: "function", function: { name: "lookup", parameters: { type: "object" } },
+        execute: async () => { executions++; return "result"; },
+    }] })).rejects.toBeInstanceOf(AppError);
+    expect(executions).toBe(0);
+});
+
+it("preserves cancellation at EOF even after validator-approved text", async () => {
+    const controller = new AbortController();
+    const reason = new DOMException("cancelTurn", "AbortError");
+    const { model } = fixture(() => new Response(new ReadableStream({
+        start(stream) { stream.enqueue(new TextEncoder().encode(frame({ content: '{"answer":1}' }))); },
+        pull(stream) { controller.abort(reason); stream.close(); },
+    }), { headers: { "content-type": "text/event-stream" } }));
+    try {
+        await model.chat({ messages: [], abortSignal: controller.signal, validation: { format: "json" } });
+        throw new Error("Cancelled response succeeded");
+    } catch (error) {
+        expect(error).toBeInstanceOf(AppError);
+        expect((error as AppError).code).toBe(ErrorDefinitions.LLM.TIMEOUT.code);
+        expect((error as AppError).cause).toBe(reason);
+    }
+});
+
+it("accepts only the validator's own early-exit abort reason", async () => {
+    const controller = new AbortController();
+    (controller.signal as any).controller = controller;
+    const { model } = fixture(() => sse(frame({ content: '{"answer":1}' })));
+    expect((await model.chat({ messages: [], abortSignal: controller.signal, validation: { format: "json" } })).text)
+        .toBe('{"answer":1}');
+    expect(controller.signal.reason.message).toBe("early_exit");
+});
+
+it("does not reuse validator approval from a completed tool step for the next response EOF", async () => {
+    let requests = 0, executions = 0;
+    const tool = frame({ tool_calls: [{ index: 0, id: "call-1", type: "function",
+        function: { name: "lookup", arguments: '{}' } }] });
+    const { model } = fixture(() => sse(++requests === 1
+        ? frame({ content: '{"answer":1}' }) + tool + frame({}, "tool_calls") + done
+        : frame({ content: "truncated second response" })));
+    await expect(model.chat({ messages: [], maxSteps: 2, validation: { format: "json" }, tools: [{
+        type: "function", function: { name: "lookup", parameters: { type: "object" } },
+        execute: async () => { executions++; return "result"; },
+    }] })).rejects.toBeInstanceOf(AppError);
+    expect(executions).toBe(1);
+    expect(requests).toBe(2);
+});
+
+it("does not execute an oversized tool frame after validator-approved text without termination", async () => {
+    let executions = 0;
+    const { model } = fixture(() => sse(frame({ content: '{"answer":1}' }) +
+        frame({ tool_calls: [{ index: 0, id: "call-1", type: "function",
+            function: { name: "lookup", arguments: JSON.stringify({ payload: "x".repeat(66000) }) } }] })));
+    await expect(model.chat({ messages: [], validation: { format: "json" }, tools: [{
+        type: "function", function: { name: "lookup", parameters: { type: "object" } },
+        execute: async () => { executions++; return "result"; },
+    }] })).rejects.toBeInstanceOf(AppError);
+    expect(executions).toBe(0);
+});
+
+it("accepts finish_reason in a legitimate oversized content frame without DONE", async () => {
+    const text = "x".repeat(66000);
+    const { model } = fixture(() => sse(frame({ content: text }, "stop")));
+    const result = await model.chat({ messages: [] });
+    expect(result.text).toBe(text);
+    expect(result.finishReason).toBe("stop");
+});
+
+it("keeps independently validated text after a normally completed tool step", async () => {
+    let requests = 0, executions = 0;
+    const { model } = fixture(() => sse(++requests === 1
+        ? frame({ content: '{"answer":1}' }) + frame({ tool_calls: [{ index: 0, id: "call-1", type: "function",
+            function: { name: "lookup", arguments: '{}' } }] }) + frame({}, "tool_calls") + done
+        : frame({ content: '{"answer":2}' }) + frame({}, "stop") + done));
+    const result = await model.chat({ messages: [], maxSteps: 2, validation: { format: "json" }, tools: [{
+        type: "function", function: { name: "lookup", parameters: { type: "object" } },
+        execute: async () => { executions++; return "result"; },
+    }] });
+    expect(result.text).toBe('{"answer":2}');
+    expect(result.steps).toHaveLength(2);
+    expect(result.steps[1].finishReason).toBe("stop");
+    expect(executions).toBe(1);
+});
+
+it("accepts a legitimate oversized tool frame with finish_reason and executes once", async () => {
+    let executions = 0;
+    const payload = "x".repeat(66000);
+    const { model } = fixture(() => sse(frame({ tool_calls: [{ index: 0, id: "call-1", type: "function",
+        function: { name: "lookup", arguments: JSON.stringify({ payload }) } }] }, "tool_calls")));
+    const result = await model.chat({ messages: [], tools: [{
+        type: "function", function: { name: "lookup", parameters: { type: "object" } },
+        execute: async args => { expect(args.payload).toBe(payload); executions++; return "result"; },
+    }] });
+    expect(result.finishReason).toBe("tool_calls");
+    expect(executions).toBe(1);
 });
