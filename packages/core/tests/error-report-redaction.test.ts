@@ -138,6 +138,27 @@ it("shares credential filtering with real local files while preserving nested Er
     } finally { await writer.close(); await fs.rm(directory, { recursive: true, force: true }); }
 });
 
+for (const [label, secret] of [["plain", "configured-tojson-secret"], ["escaped", 'configured-"tojson\\secret']] as const) {
+    it(`redacts ${label} configured secrets returned by custom toJSON in real local files`, async () => {
+        const directory = await fs.mkdtemp(path.join(os.tmpdir(), "telemetry-local-tojson-"));
+        const writer = new LocalLogWriter(directory, { enabled: true, directory: "logs", level: 3, maxFileSizeMB: 1, maxFiles: 2, retentionDays: 7 }, () => {}, [secret]);
+        const payload = { apiKey: secret, toJSON() { return { detail: secret, [secret]: "key-preserved", safe: "diagnostic-preserved" }; } };
+        try {
+            await writer.write({ arguments: [payload], safe: "record-preserved" });
+            await writer.close();
+            const names = await fs.readdir(writer.directory);
+            expect(names).toHaveLength(1);
+            const text = await fs.readFile(path.join(writer.directory, names[0]), "utf8");
+            expect(text).not.toContain(secret);
+            expect(text).not.toContain(JSON.stringify(secret).slice(1, -1));
+            const parsed = JSON.parse(text);
+            expect(parsed.arguments[0]).toEqual({ detail: "[REDACTED]", "[REDACTED]": "key-preserved", safe: "diagnostic-preserved" });
+            expect(parsed.safe).toBe("record-preserved");
+            expect(payload.apiKey).toBe(secret);
+        } finally { await writer.close(); await fs.rm(directory, { recursive: true, force: true }); }
+    });
+}
+
 it("keeps local saving active when remote reporting is disabled, with existing log behavior", async () => {
     const dumps = capture();
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), "telemetry-local-"));

@@ -37,6 +37,10 @@ export class LocalLogWriter {
         let line: string;
         try {
             line = JSON.stringify(sanitizeDiagnostic(record, this.secrets)) + "\n";
+            // Custom toJSON methods can reintroduce credentials after object filtering.
+            const secrets = this.secrets.filter(Boolean).map(secret => JSON.stringify(secret).slice(1, -1))
+                .sort((a, b) => b.length - a.length);
+            for (const secret of secrets) line = line.split(secret).join("[REDACTED]");
         }
         catch { this.warning("本地日志序列化失败"); return Promise.resolve(); }
         const bytes = Buffer.byteLength(line);
