@@ -97,7 +97,7 @@ export default class YesImBot extends Service<Config> {
                 agentCore,
             ];
 
-            initializeErrorReporter(config.errorReporting, this.ctx.logger("[错误报告]"), (id, error) => this.ctx[Services.Logger].recordError(id, error));
+            initializeErrorReporter(config.errorReporting, this.ctx.logger("[错误报告]"), (id, error) => this.ctx[Services.Logger].recordError(id, error), config.providers?.map(provider => provider.apiKey).filter(Boolean));
 
             waitForServices(services)
                 .then(() => {

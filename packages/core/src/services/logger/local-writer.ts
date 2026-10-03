@@ -1,6 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
+import { sanitizeDiagnostic } from "@/shared/diagnostic-sanitizer";
 
 export interface LocalLoggingConfig {
     enabled: boolean;
@@ -11,38 +12,9 @@ export interface LocalLoggingConfig {
     retentionDays: number;
 }
 
-const secretKey = /^(authorization|proxy-authorization|cookie|set-cookie|api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret)$/i;
-
-function redactText(text: string): string {
-    const keys = "authorization|proxy-authorization|cookie|set-cookie|api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret";
-    return text
-        // JSON 字符串可能嵌在错误描述中，先处理完整的带引号字段值。
-        .replace(new RegExp(`("(?:${keys})"\\s*:\\s*)"(?:\\\\.|[^"\\\\])*"`, "gi"), '$1"[REDACTED]"')
-        .replace(new RegExp(`('(?:${keys})'\\s*:\\s*)'(?:\\\\.|[^'\\\\])*'`, "gi"), "$1'[REDACTED]'")
-        // 非结构化 header / 配置文本按整行遮蔽，避免带空格的值泄露后半段。
-        .replace(new RegExp(`(\\b(?:${keys})\\s*[:=]\\s*)[^\\r\\n]+`, "gi"), "$1[REDACTED]")
-        .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9+/_=.\-]+/gi, "$1 [REDACTED]")
-        .replace(/(https?:\/\/)[^\s/@]+:[^\s/@]+@/gi, "$1[REDACTED]@");
-}
-
-/** Error 的不可枚举字段也需保留；日志序列化不能修改业务对象。 */
+// Preserve the existing local logger helper API while sharing the filtering implementation.
 export function sanitizeLog(value: unknown, seen = new Set<object>(), depth = 0): unknown {
-    if (typeof value === "string") return redactText(value);
-    if (typeof value === "bigint") return String(value);
-    if (!value || typeof value !== "object") return value;
-    if (depth > 20) return "[Depth limit]";
-    if (seen.has(value)) return "[Circular]";
-    seen.add(value);
-    try {
-        if (value instanceof Date) return value.toISOString();
-        if (Array.isArray(value)) return value.map(item => sanitizeLog(item, seen, depth + 1));
-        const keys = value instanceof Error
-            ? [...new Set(["name", "message", "stack", "cause", ...Object.getOwnPropertyNames(value)])]
-            : Object.keys(value);
-        return Object.fromEntries(keys.map(key => [key, secretKey.test(key) ? "[REDACTED]" : sanitizeLog(value[key], seen, depth + 1)]));
-    } finally {
-        seen.delete(value);
-    }
+    return sanitizeDiagnostic(value, [], seen, depth);
 }
 
 /** 独立于控制台和远程上报的顺序写入器。失败只通知控制台，不向业务抛出。 */
@@ -64,10 +36,11 @@ export class LocalLogWriter {
         if (this.closed) return Promise.resolve();
         let line: string;
         try {
-            line = JSON.stringify(sanitizeLog(record)) + "\n";
-            for (const secret of this.secrets) {
-                if (secret) line = line.split(JSON.stringify(secret).slice(1, -1)).join("[REDACTED]");
-            }
+            line = JSON.stringify(sanitizeDiagnostic(record, this.secrets)) + "\n";
+            // Custom toJSON methods can reintroduce credentials after object filtering.
+            const secrets = this.secrets.filter(Boolean).map(secret => JSON.stringify(secret).slice(1, -1))
+                .sort((a, b) => b.length - a.length);
+            for (const secret of secrets) line = line.split(secret).join("[REDACTED]");
         }
         catch { this.warning("本地日志序列化失败"); return Promise.resolve(); }
         const bytes = Buffer.byteLength(line);
