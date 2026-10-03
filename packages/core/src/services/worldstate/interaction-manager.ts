@@ -48,6 +48,14 @@ export class InteractionManager {
         return path.join(this.basePath, clear(platform), `${clear(channelId)}.agent.jsonl`);
     }
 
+    private canIdentifyLegacyLogOwner(filePath: string, channelId?: string, channelType?: "private" | "guild" | "all"): boolean {
+        const legacyId = path.basename(filePath, ".agent.jsonl");
+        // 下划线可能来自原始冒号、斜线或下划线，平台目录和频道名都不能据此猜测归属。
+        return !path.basename(path.dirname(filePath)).includes("_") &&
+            (!channelId || !legacyId.includes("_")) &&
+            (!channelType || channelType === "all" || (channelType === "guild" && !legacyId.includes("_")));
+    }
+
     private async ensureDirExists(dirPath: string): Promise<void> {
         try {
             await fs.mkdir(dirPath, { recursive: true });
@@ -144,9 +152,23 @@ export class InteractionManager {
         const filePath = this.getLogFilePath(platform, channelId);
         try {
             const content = await fs.readFile(filePath, "utf-8");
-            const lines = content.trim().split("\n").filter(Boolean);
-            const recentLines = lines.slice(-limit);
-            return recentLines.map((line) => this.logEntryToHistoryItem(JSON.parse(line)));
+            const legacyAllowed = this.canIdentifyLegacyLogOwner(filePath, channelId);
+            const history: L1HistoryItem[] = [];
+            for (const line of content.split("\n")) {
+                if (!line.trim()) continue;
+                try {
+                    const entry = JSON.parse(line) as InteractionLogEntry & { platform?: unknown; channelId?: unknown };
+                    if (!entry || typeof entry !== "object") continue;
+                    if (typeof entry.platform === "string" && entry.platform !== platform) continue;
+                    if (typeof entry.channelId === "string" && entry.channelId !== channelId) continue;
+                    if ((typeof entry.platform !== "string" || typeof entry.channelId !== "string") && !legacyAllowed) continue;
+                    const item = this.logEntryToHistoryItem(entry);
+                    if (item && Number.isFinite(item.timestamp.getTime())) history.push(item);
+                } catch {
+                    // 坏行不应使同一文件中的有效记录全部丢失。
+                }
+            }
+            return history.slice(-limit);
         } catch (error) {
             if (error.code === "ENOENT") return [];
             this.logger.error(`读取Agent日志失败: ${filePath}`, error);
@@ -326,11 +348,7 @@ export class InteractionManager {
                     if (!file.isFile() || !file.name.endsWith(".agent.jsonl")) continue;
                     const filePath = path.join(directory, file.name);
                     if (channelId && filePath !== this.getLogFilePath(platform!, channelId)) continue;
-                    const legacyId = path.basename(file.name, ".agent.jsonl");
-                    // 含下划线的旧名称不能区分原始冒号、斜线与下划线，部分清理时保留无归属记录。
-                    const legacyAllowed = !path.basename(directory).includes("_") &&
-                        (!channelId || !legacyId.includes("_")) &&
-                        (!channelType || channelType === "all" || (channelType === "guild" && !legacyId.includes("_")));
+                    const legacyAllowed = this.canIdentifyLegacyLogOwner(filePath, channelId, channelType);
                     let content: string;
                     try {
                         content = await fs.readFile(filePath, "utf8");
