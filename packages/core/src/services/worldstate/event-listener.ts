@@ -72,6 +72,17 @@ export class EventListenerManager {
                 await next();
 
                 if (!session["__commandHandled"]) {
+                    // 等待所有前置处理结束；单个插件失败不能提前触发回复。
+                    const hooks = this.ctx.lifecycle.filterHooks(
+                        this.ctx.lifecycle._hooks["yesimbot/before-user-stimulus"] || [],
+                        session
+                    );
+                    const results = await Promise.allSettled(
+                        hooks.map((hook) => Promise.resolve().then(() => hook.callback.call(session, session)))
+                    );
+                    for (const result of results) {
+                        if (result.status === "rejected") this.logger.error("用户消息前置处理失败", result.reason);
+                    }
                     const stimulus: AgentStimulus<UserMessagePayload> = {
                         type: "user_message",
                         channelCid: session.cid,

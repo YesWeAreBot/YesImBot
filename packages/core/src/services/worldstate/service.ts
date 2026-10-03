@@ -15,6 +15,7 @@ declare module "koishi" {
         [Services.WorldState]: WorldStateService;
     }
     interface Events {
+        "yesimbot/before-user-stimulus": (session: Session) => void | Promise<void>;
         "agent/stimulus": (stimulus: AgentStimulus<any>) => void;
         "agent/bot-muted": (target: { platform: string; selfId: string; channelId: string }) => void;
     }
@@ -28,6 +29,9 @@ declare module "koishi" {
 }
 
 export class WorldStateService extends Service<Config> {
+    /** Extension contract v1; feature detection also supports source checkouts. */
+    public get capabilities() { return Object.freeze({ beforeUserStimulus: 1 as const }); }
+
     static readonly inject = [Services.Model, Services.Asset, Services.Logger, Services.Prompt, Services.Memory, "database"];
 
     public l1_manager: InteractionManager;
@@ -266,11 +270,12 @@ export class WorldStateService extends Service<Config> {
         try {
             const expiresAt = Date.now() - this.config.dataRetentionDays * 24 * 60 * 60 * 1000;
 
-            await this.ctx.database.transact(async (db) => {
-                await db.remove(TableName.Messages, { timestamp: { $lt: new Date(expiresAt) } });
-                await db.remove(TableName.SystemEvents, { timestamp: { $lt: new Date(expiresAt) } });
-                await db.remove(TableName.L2Chunks, { endTimestamp: { $lt: new Date(expiresAt) } });
-            });
+            // Each retention deletion is idempotent and retried next run on
+            // failure. A shared SQLite transaction could roll back unrelated
+            // ordinary writes accepted while cleanup awaits its next deletion.
+            await this.ctx.database.remove(TableName.Messages, { timestamp: { $lt: new Date(expiresAt) } });
+            await this.ctx.database.remove(TableName.SystemEvents, { timestamp: { $lt: new Date(expiresAt) } });
+            await this.ctx.database.remove(TableName.L2Chunks, { endTimestamp: { $lt: new Date(expiresAt) } });
 
             await this.l1_manager.pruneOldData();
             this.logger.info("历史数据清理完成");

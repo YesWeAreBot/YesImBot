@@ -25,6 +25,9 @@ declare module "koishi" {
  * 负责注册、管理和提供所有扩展和工具。
  */
 export class ToolService extends Service<Config> {
+    /** Extension contract v1; feature detection also supports source checkouts. */
+    public get capabilities() { return Object.freeze({ trustedToolSession: 1 as const }); }
+
     static readonly inject = [Services.Logger, Services.Prompt];
     private tools: Map<string, ToolDefinition> = new Map();
     private extensions: Map<string, IExtension> = new Map();
@@ -472,7 +475,7 @@ export class ToolService extends Service<Config> {
                 assertReplyTurn();
                 // 3. 使用验证和处理过后的参数执行工具
                 /* prettier-ignore */
-                lastResult = (await tool.execute({ session, ...validatedParams })) || Failed("Tool call did not execute.");
+                lastResult = (await tool.execute({ ...validatedParams, session })) || Failed("Tool call did not execute.");
                 const resultString = truncate(stringify(lastResult), 120);
 
                 if (lastResult.status === "success") {
