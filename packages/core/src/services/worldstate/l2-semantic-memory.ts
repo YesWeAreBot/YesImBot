@@ -8,7 +8,7 @@ import { HistoryConfig } from "./config";
 import { ContextualMessage, MemoryChunkData, MessageData } from "./types";
 
 export type SemanticMemoryScope = { platform: string; channelId: string } | { type: "private" | "guild" | "all" };
-type MemoryTarget = { platform: string; channelId: string };
+export type MemoryTarget = { platform: string; channelId: string };
 
 export class SemanticMemoryManager {
     private ctx: Context;
@@ -20,6 +20,9 @@ export class SemanticMemoryManager {
     private generations = new Map<string, number>();
     private activeClears = new Set<{ scope: SemanticMemoryScope; done: Promise<void> }>();
     private pendingWrites = new Set<{ target: MemoryTarget; done: Promise<unknown> }>();
+    private pendingBatches = new Set<Promise<void>>();
+    private stopped = false;
+    private stopTask?: Promise<void>;
 
     constructor(ctx: Context, config: HistoryConfig) {
         this.ctx = ctx;
@@ -28,6 +31,8 @@ export class SemanticMemoryManager {
     }
 
     public start() {
+        this.stopped = false;
+        this.stopTask = undefined;
         try {
             this.embedModel = this.ctx[Services.Model].useEmbeddingGroup(TaskType.Embedding).getModels()[0];
         } catch {
@@ -36,8 +41,16 @@ export class SemanticMemoryManager {
         if (!this.embedModel) this.logger.warn("未找到任何可用的嵌入模型，记忆功能将受限");
     }
 
-    public stop() {
-        this.flushAllBuffers();
+    public stop(): Promise<void> {
+        this.stopped = true;
+        return (this.stopTask ??= (async () => {
+            try {
+                await this.flushAllBuffers();
+            } finally {
+                // 达到分块阈值的任务已不在缓冲中，也要等其嵌入和写入完成。
+                while (this.pendingBatches.size) await Promise.allSettled([...this.pendingBatches]);
+            }
+        })());
     }
 
     private targetKey(target: MemoryTarget): string {
@@ -52,6 +65,18 @@ export class SemanticMemoryManager {
     private generation(target: MemoryTarget, generations = this.generations): number {
         const type = target.channelId.startsWith("private:") ? "private" : "guild";
         return (generations.get("all") || 0) + (generations.get(type) || 0) + (generations.get(this.targetKey(target)) || 0);
+    }
+
+    public getHistoryGeneration(target: MemoryTarget): number {
+        return this.generation(target);
+    }
+
+    public async waitForHistoryClear(target: MemoryTarget): Promise<void> {
+        let barriers = [...this.activeClears].filter((entry) => this.matchesScope(target, entry.scope));
+        while (barriers.length) {
+            await Promise.all(barriers.map((entry) => entry.done));
+            barriers = [...this.activeClears].filter((entry) => this.matchesScope(target, entry.scope));
+        }
     }
 
     /** 使旧任务失效，等待已发出的写入完成，并阻止新写入直到删除结束。 */
@@ -88,7 +113,7 @@ export class SemanticMemoryManager {
         }
     }
 
-    private async writeChunk(target: MemoryTarget, generation: number, write: () => Promise<unknown>): Promise<boolean> {
+    public async writeMemory(target: MemoryTarget, generation: number, write: () => Promise<unknown>): Promise<boolean> {
         if (this.generation(target) !== generation) return false;
         let barriers = [...this.activeClears].filter((entry) => this.matchesScope(target, entry.scope));
         while (barriers.length) {
@@ -108,7 +133,7 @@ export class SemanticMemoryManager {
     }
 
     public async addMessageToBuffer(message: MessageData): Promise<void> {
-        if (!this.config.l2_memory.enabled) return;
+        if (this.stopped || !this.config.l2_memory.enabled) return;
         const key = this.targetKey(message);
         if (!this.messageBuffer.has(key)) this.messageBuffer.set(key, []);
         const buffer = this.messageBuffer.get(key);
@@ -140,7 +165,13 @@ export class SemanticMemoryManager {
         for (const key of [...this.messageBuffer.keys()]) await this.flushBufferKey(key);
     }
 
-    private async processMessageBatch(messages: MessageData[]): Promise<void> {
+    private processMessageBatch(messages: MessageData[]): Promise<void> {
+        const task = this.indexMessageBatch(messages);
+        this.pendingBatches.add(task);
+        return task.finally(() => this.pendingBatches.delete(task));
+    }
+
+    private async indexMessageBatch(messages: MessageData[]): Promise<void> {
         if (!this.embedModel || messages.length === 0) return;
 
         const firstEvent = messages[0];
@@ -164,7 +195,7 @@ export class SemanticMemoryManager {
                 startTimestamp: firstEvent.timestamp,
                 endTimestamp: lastEvent.timestamp,
             };
-            if (await this.writeChunk(firstEvent, generation, () => this.ctx.database.create(TableName.L2Chunks, memoryChunk))) {
+            if (await this.writeMemory(firstEvent, generation, () => this.ctx.database.create(TableName.L2Chunks, memoryChunk))) {
                 this.logger.debug(`已为 ${messages.length} 条消息建立索引`);
             }
         } catch (error) {
@@ -176,8 +207,8 @@ export class SemanticMemoryManager {
     /**
      * 根据查询文本检索相关的记忆片段。
      * 1. 高效获取候选池：一次性加载所有相关chunks，在内存中计算相似度，避免全表扫描和N+1查询。
-     * 2. 精确近邻扩展：对Top-K候选块，在内存时间线中查找前后邻居。
-     * 3. 智能合并：将所有相关（候选+邻居）且时间连续的块分组，并按“头取半、尾取半、中间全取”的规则合并，确保上下文完整且无冗余。
+     * 2. 精确近邻扩展：按配置对Top-K候选块，在各会话时间线中查找前后邻居。
+     * 3. 智能合并：按会话连续性分组，保留命中块全文，仅裁切边缘上下文邻居。
      * 4. 向量兼容性处理：自动检测并处理因更换模型导致的向量维度不一致问题，通过后台任务重建索引。
      * @param queryText - 查询文本
      * @param options - 查询选项
@@ -187,9 +218,8 @@ export class SemanticMemoryManager {
         queryText: string,
         options?: { platform?: string; channelId?: string; k?: number; startTimestamp?: Date; endTimestamp?: Date }
     ): Promise<(MemoryChunkData & { similarity: number })[]> {
-        if (!this.embedModel) return [];
-
-        const k = options?.k || 5;
+        const k = options?.k ?? 5;
+        if (!this.embedModel || k <= 0) return [];
         const minAllowedSim = this.config.l2_memory.retrievalMinSimilarity ?? 0.5;
 
         const queryEmbedding = await this.embedModel.embed(queryText);
@@ -211,13 +241,18 @@ export class SemanticMemoryManager {
 
         if (validChunks.length === 0) return [];
 
-        // 按时间升序排序，构建完整的时间线
+        // 各会话分别建立时间线，宽范围检索也不能把不同会话作为邻居。
         allChunks.sort((a, b) => new Date(a.startTimestamp).getTime() - new Date(b.startTimestamp).getTime());
 
         const chunkIndexMap = new Map<string, number>();
         const chunkMap = new Map<string, MemoryChunkData>();
-        allChunks.forEach((chunk, index) => {
-            chunkIndexMap.set(chunk.id, index);
+        const timelines = new Map<string, MemoryChunkData[]>();
+        allChunks.forEach((chunk) => {
+            const key = this.targetKey(chunk);
+            const timeline = timelines.get(key) || [];
+            timelines.set(key, timeline);
+            chunkIndexMap.set(chunk.id, timeline.length);
+            timeline.push(chunk);
             chunkMap.set(chunk.id, chunk);
         });
 
@@ -229,16 +264,18 @@ export class SemanticMemoryManager {
         resultsWithSimilarity.sort((a, b) => b.similarity - a.similarity);
 
         const candidateChunks = resultsWithSimilarity.slice(0, k).filter((c) => c.similarity >= minAllowedSim);
+        const candidateIds = new Set(candidateChunks.map((chunk) => chunk.id));
 
         const finalChunkIds = new Set<string>();
         for (const chunk of candidateChunks) {
             finalChunkIds.add(chunk.id);
             const currentIndex = chunkIndexMap.get(chunk.id);
 
-            if (currentIndex === undefined) continue;
+            if (currentIndex === undefined || this.config.l2_memory.includeNeighborChunks === false) continue;
 
-            if (currentIndex > 0) finalChunkIds.add(allChunks[currentIndex - 1].id);
-            if (currentIndex < allChunks.length - 1) finalChunkIds.add(allChunks[currentIndex + 1].id);
+            const timeline = timelines.get(this.targetKey(chunk))!;
+            if (currentIndex > 0) finalChunkIds.add(timeline[currentIndex - 1].id);
+            if (currentIndex < timeline.length - 1) finalChunkIds.add(timeline[currentIndex + 1].id);
         }
 
         // 从包含相似度的结果中找回块，若邻居块是无效块，则其没有相似度
@@ -256,46 +293,53 @@ export class SemanticMemoryManager {
 
         finalChunks.sort((a, b) => new Date(a.startTimestamp).getTime() - new Date(b.startTimestamp).getTime());
 
-        return this.groupAndMergeChunks(finalChunks, chunkIndexMap);
+        return this.groupAndMergeChunks(finalChunks, chunkIndexMap, candidateIds);
     }
 
     /**
      * 将一组按时间排序的记忆块进行分组和合并。
-     * 只有在全局时间线上连续的块才会被分到同一组并合并。
+     * 只有在同一会话时间线上连续的块才会被分到同一组并合并。
      * @param chunks - 待处理的、已按时间排序的记忆块（候选块+邻居）
-     * @param chunkIndexMap - 全局块ID到其在时间线上索引的映射
+     * @param chunkIndexMap - 块ID到其在会话时间线上索引的映射
      * @returns 合并后的记忆块列表
      */
     private groupAndMergeChunks(
         chunks: (MemoryChunkData & { similarity: number })[],
-        chunkIndexMap: Map<string, number>
+        chunkIndexMap: Map<string, number>,
+        candidateIds: Set<string>
     ): (MemoryChunkData & { similarity: number })[] {
         if (chunks.length === 0) return [];
 
         const groups: (MemoryChunkData & { similarity: number })[][] = [];
-        let currentGroup: (MemoryChunkData & { similarity: number })[] = [];
-
+        const conversations = new Map<string, (MemoryChunkData & { similarity: number })[]>();
         for (const chunk of chunks) {
-            if (currentGroup.length === 0) {
-                currentGroup.push(chunk);
-            } else {
-                const lastChunkInGroup = currentGroup[currentGroup.length - 1];
-                const lastChunkIndex = chunkIndexMap.get(lastChunkInGroup.id)!;
-                const currentChunkIndex = chunkIndexMap.get(chunk.id)!;
+            const key = this.targetKey(chunk);
+            const conversation = conversations.get(key) || [];
+            conversations.set(key, conversation);
+            conversation.push(chunk);
+        }
 
-                // 检查当前块是否是上一块在全局时间线上的直接后继
-                if (currentChunkIndex === lastChunkIndex + 1) {
+        for (const conversation of conversations.values()) {
+            let currentGroup: (MemoryChunkData & { similarity: number })[] = [];
+            for (const chunk of conversation) {
+                if (currentGroup.length === 0) {
                     currentGroup.push(chunk);
                 } else {
-                    // 不连续，开启新分组
-                    groups.push(currentGroup);
-                    currentGroup = [chunk];
+                    const lastChunkInGroup = currentGroup[currentGroup.length - 1];
+                    const lastChunkIndex = chunkIndexMap.get(lastChunkInGroup.id)!;
+                    const currentChunkIndex = chunkIndexMap.get(chunk.id)!;
+
+                    // 检查当前块是否是上一块在会话时间线上的直接后继
+                    if (currentChunkIndex === lastChunkIndex + 1) {
+                        currentGroup.push(chunk);
+                    } else {
+                        // 不连续，开启新分组
+                        groups.push(currentGroup);
+                        currentGroup = [chunk];
+                    }
                 }
             }
-        }
-        // 推入最后一个分组
-        if (currentGroup.length > 0) {
-            groups.push(currentGroup);
+            if (currentGroup.length > 0) groups.push(currentGroup);
         }
 
         const mergedResults: (MemoryChunkData & { similarity: number })[] = [];
@@ -321,9 +365,9 @@ export class SemanticMemoryManager {
             };
 
             const mergedContentParts: string[] = [];
-            mergedContentParts.push(splitContent(firstChunk.content, false));
+            mergedContentParts.push(candidateIds.has(firstChunk.id) ? firstChunk.content : splitContent(firstChunk.content, false));
             middleChunks.forEach((chunk) => mergedContentParts.push(chunk.content));
-            mergedContentParts.push(splitContent(lastChunk.content, true));
+            mergedContentParts.push(candidateIds.has(lastChunk.id) ? lastChunk.content : splitContent(lastChunk.content, true));
 
             const mergedContent = mergedContentParts.join("\n");
             const maxSimilarity = Math.max(...group.map((chunk) => chunk.similarity));
@@ -335,10 +379,11 @@ export class SemanticMemoryManager {
                 content: mergedContent,
                 similarity: maxSimilarity,
                 embedding: firstChunk.embedding,
+                participantIds: [...new Set(group.flatMap((chunk) => chunk.participantIds))],
             });
         }
 
-        return mergedResults;
+        return mergedResults.sort((a, b) => new Date(a.startTimestamp).getTime() - new Date(b.startTimestamp).getTime());
     }
 
     public compileEventsToText(messages: (MessageData | ContextualMessage)[]): string {
@@ -350,6 +395,7 @@ export class SemanticMemoryManager {
      * 增加状态锁，防止多个重建任务同时运行。
      */
     public async rebuildIndex() {
+        if (this.stopped) return;
         if (this.isRebuilding) {
             this.logger.info("索引重建任务已在后台运行，本次请求被跳过");
             return;
@@ -360,6 +406,16 @@ export class SemanticMemoryManager {
         }
 
         this.isRebuilding = true;
+        const task = this.rebuildChunks();
+        this.pendingBatches.add(task);
+        try {
+            await task;
+        } finally {
+            this.pendingBatches.delete(task);
+        }
+    }
+
+    private async rebuildChunks(): Promise<void> {
         this.logger.info("开始重建 L2 记忆索引...");
 
         try {
@@ -376,7 +432,7 @@ export class SemanticMemoryManager {
                     if (this.generation(chunk) !== generation) continue;
                     const result = await this.embedModel.embed(chunk.content);
                     if (
-                        await this.writeChunk(chunk, generation, () =>
+                        await this.writeMemory(chunk, generation, () =>
                             this.ctx.database.set(TableName.L2Chunks, { id: chunk.id }, { embedding: result.embedding })
                         )
                     ) {

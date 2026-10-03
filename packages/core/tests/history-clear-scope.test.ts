@@ -52,10 +52,9 @@ async function fixture() {
             },
         },
     };
-    const config = {} as any;
-    const manager = new InteractionManager(ctx, config);
-    const semanticMemory = new SemanticMemoryManager(ctx, config);
-    new HistoryCommandManager(ctx, { l1_manager: manager, l2_manager: semanticMemory } as any, config).register();
+    const manager = new InteractionManager(ctx, {} as any);
+    const memory = new SemanticMemoryManager(ctx, { l2_memory: { enabled: false } } as any);
+    new HistoryCommandManager(ctx, { l1_manager: manager, l2_manager: memory } as any, {} as any).register();
     const invoke = (options: any = {}) => actions.get("history.clear")!({ session: { platform: "qq", channelId: "group" }, options });
     const exists = async (file: string) =>
         fs.access(path.join(logRoot, file)).then(
@@ -74,7 +73,7 @@ for (const type of ["private", "guild", "all"]) {
             expect(await exists(file)).toBe(!selected);
         }
         if (type !== "all") expect(await exists("qq/keep.txt")).toBe(true);
-        expect(removals).toHaveLength(3);
+        expect(removals).toHaveLength(4);
         if (type === "private") expect(removals[0].query.channelId.$regex.test("private:alice")).toBe(true);
         if (type === "guild") expect(removals[0].query.channelId.$not.$regex.test("private:alice")).toBe(true);
     });
@@ -113,7 +112,7 @@ it("explicit platform and channel cleanup retains same channel on another platfo
     const { invoke, exists, files, removals } = await fixture();
     await invoke({ platform: "onebot", channel: "group" });
     for (const file of files) expect(await exists(file)).toBe(file !== "onebot/group.agent.jsonl");
-    expect(removals.map(({ query }) => query)).toEqual(Array(3).fill({ platform: "onebot", channelId: "group" }));
+    expect(removals.map(({ query }) => query)).toEqual(Array(4).fill({ platform: "onebot", channelId: "group" }));
 });
 it("explicit private target cleanup leaves other private conversations intact", async () => {
     const { invoke, exists, files } = await fixture();

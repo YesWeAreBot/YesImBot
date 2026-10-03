@@ -50,7 +50,7 @@ export class WorldStateService extends Service<Config> {
         // Initialize all managers
         this.l1_manager = new InteractionManager(ctx, config);
         this.l2_manager = new SemanticMemoryManager(ctx, config);
-        this.l3_manager = new ArchivalMemoryManager(ctx, config, this.l1_manager);
+        this.l3_manager = new ArchivalMemoryManager(ctx, config, this.l1_manager, this.l2_manager);
         this.contextBuilder = new ContextBuilder(ctx, config, this.l1_manager, this.l2_manager, this.l3_manager);
         this.eventListenerManager = new EventListenerManager(ctx, this, config);
         this.commandManager = new HistoryCommandManager(ctx, this, config);
@@ -70,13 +70,14 @@ export class WorldStateService extends Service<Config> {
         this.logger.info("服务已启动");
     }
 
-    protected stop(): void {
+    protected async stop(): Promise<void> {
         this.eventListenerManager.stop();
-        this.l2_manager.stop();
-        this.l3_manager.stop();
+        const stoppingDiaries = this.l3_manager.stop();
         if (this.clearTimer) {
             this.clearTimer();
+            this.clearTimer = null;
         }
+        await Promise.all([this.l2_manager.stop(), stoppingDiaries]);
         this.logger.info("服务已停止");
     }
 

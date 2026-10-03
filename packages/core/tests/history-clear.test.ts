@@ -26,6 +26,7 @@ function fixture(chunkSize = 2) {
         [TableName.Messages, []],
         [TableName.SystemEvents, []],
         [TableName.L2Chunks, []],
+        [TableName.L3Diaries, []],
     ]);
     const actions = new Map<string, any>();
     const operations: string[] = [];
@@ -265,6 +266,7 @@ it("waits for a rebuild database update already in progress before reporting suc
         `remove:${TableName.Messages}`,
         `remove:${TableName.SystemEvents}`,
         `remove:${TableName.L2Chunks}`,
+        `remove:${TableName.L3Diaries}`,
     ]);
     expect(f.chunks()).toEqual([]);
 });

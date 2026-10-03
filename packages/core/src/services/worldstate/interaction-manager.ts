@@ -394,20 +394,88 @@ export class InteractionManager {
         });
     }
 
+    public async getAgentChannels(knownChannels: { platform: string; channelId: string }[] = []): Promise<{ platform: string; channelId: string }[]> {
+        const channels = new Map<string, { platform: string; channelId: string }>();
+        let directories;
+        try {
+            directories = await fs.readdir(this.basePath, { withFileTypes: true });
+        } catch (error) {
+            if (error.code === "ENOENT") return [];
+            throw error;
+        }
+        const add = (channel: { platform: string; channelId: string }) => channels.set(JSON.stringify([channel.platform, channel.channelId]), channel);
+        for (const directory of directories) {
+            if (!directory.isDirectory()) continue;
+            const directoryPath = path.join(this.basePath, directory.name);
+            let files;
+            try {
+                files = await fs.readdir(directoryPath, { withFileTypes: true });
+            } catch (error) {
+                if (error.code === "ENOENT") continue;
+                throw error;
+            }
+            for (const file of files) {
+                if (!file.isFile() || !file.name.endsWith(".agent.jsonl")) continue;
+                const filePath = path.join(directoryPath, file.name);
+                let content: string;
+                try {
+                    content = await fs.readFile(filePath, "utf-8");
+                } catch (error) {
+                    if (error.code === "ENOENT") continue;
+                    throw error;
+                }
+                let identified = false;
+                for (const line of content.split("\n")) {
+                    try {
+                        const entry = JSON.parse(line) as AgentLogEntry;
+                        if (typeof entry.platform !== "string" || typeof entry.channelId !== "string") continue;
+                        if (this.getLogFilePath(entry.platform, entry.channelId) !== filePath) continue;
+                        add({ platform: entry.platform, channelId: entry.channelId });
+                        identified = true;
+                    } catch { /* 空行或损坏记录不参与会话发现。 */ }
+                }
+                if (identified) continue;
+                const known = knownChannels.filter(channel => this.getLogFilePath(channel.platform, channel.channelId) === filePath);
+                if (known.length === 1) {
+                    add(known[0]);
+                    continue;
+                }
+                const channelId = path.basename(file.name, ".agent.jsonl");
+                // 冒号和下划线在旧文件名中不可区分，不能凭文件名生成错误会话的日记。
+                if (known.length > 1 || channelId.includes("_")) {
+                    this.logger.warn(`旧日志缺少可确认的会话编号，跳过日记发现: ${filePath}`);
+                    continue;
+                }
+                add({ platform: directory.name, channelId });
+            }
+        }
+        return [...channels.values()];
+    }
+
     public async getAgentHistoryForDateRange(
         platform: string,
         channelId: string,
         startDate: Date,
-        endDate: Date
+        endDate: Date,
+        knownChannels?: { platform: string; channelId: string }[]
     ): Promise<AgentLogEntry[]> {
         const filePath = this.getLogFilePath(platform, channelId);
         try {
+            const knownOwners = knownChannels && new Set(knownChannels
+                .filter(channel => this.getLogFilePath(channel.platform, channel.channelId) === filePath)
+                .map(channel => JSON.stringify([channel.platform, channel.channelId])));
+            const allowLegacy = !knownOwners ||
+                (knownOwners.size === 1 && knownOwners.has(JSON.stringify([platform, channelId]))) ||
+                (knownOwners.size === 0 && !path.basename(filePath, ".agent.jsonl").includes("_"));
             const content = await fs.readFile(filePath, "utf-8");
             const lines = content.trim().split("\n");
             const entries: AgentLogEntry[] = [];
             for (const line of lines) {
                 if (!line) continue;
                 const entry = JSON.parse(line) as AgentLogEntry;
+                if ((entry.platform === undefined || entry.channelId === undefined) && !allowLegacy) continue;
+                if (entry.platform !== undefined && entry.platform !== platform) continue;
+                if (entry.channelId !== undefined && entry.channelId !== channelId) continue;
                 const entryDate = new Date(entry.timestamp);
                 if (entryDate >= startDate && entryDate < endDate) {
                     entries.push(entry);
