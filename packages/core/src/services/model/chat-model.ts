@@ -489,7 +489,11 @@ class StreamCompletion {
 
     observe(chunk: Uint8Array): void { this.scan(this.decoder.decode(chunk, { stream: true })); }
     finish(): void { this.scan(this.decoder.decode()); }
-    hasUnterminatedData(): boolean { return this.pendingLine.startsWith("data:"); }
+    hasUnterminatedData(): boolean {
+        if (!this.pendingLine.startsWith("data:")) return false;
+        // 兼容上游省略 DONE 尾行换行；尾标自身不能授权异常 EOF。
+        return !(this.completed && this.pendingLine.slice(5).trim() === "[DONE]");
+    }
 
     private scan(text: string): void {
         const lines = (this.pendingLine + text).split("\n");

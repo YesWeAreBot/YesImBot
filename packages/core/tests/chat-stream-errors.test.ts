@@ -214,6 +214,61 @@ it("rejects complete content frames followed by EOF without a completion signal"
     expect(error.message).toMatch(/EOF|完成|终止/);
 });
 
+it("accepts an unnewline-terminated DONE tail after a complete finish_reason frame", async () => {
+    const { model, requests } = fixture(() => sse(frame({ content: "complete reply" }) + frame({}, "stop") + usageFrame + "data: [DONE]"));
+    const result = await model.chat({ messages: [] });
+    expect(result.text).toBe("complete reply");
+    expect(result.finishReason).toBe("stop");
+    expect(result.usage).toEqual(usage);
+    expect(requests()).toBe(1);
+});
+
+it("accepts a split DONE tail only after a complete completion signal", async () => {
+    const bytes = new TextEncoder().encode(frame({ content: "你好" }) + frame({}, "stop") + "data: [DONE]");
+    const { model } = fixture(() => new Response(new ReadableStream({
+        start(controller) {
+            for (const byte of bytes) controller.enqueue(new Uint8Array([byte]));
+            controller.close();
+        },
+    }), { headers: { "content-type": "text/event-stream" } }));
+    expect((await model.chat({ messages: [] })).text).toBe("你好");
+});
+
+it("rejects a DONE tail at EOF when no complete completion signal preceded it", async () => {
+    const { model } = fixture(() => sse(frame({ content: "partial reply" }) + "data: [DONE]"));
+    expect((await failure(model)).code).toBe(ErrorDefinitions.LLM.REQUEST_FAILED.code);
+});
+
+for (const tail of ["data: [DON", "data: [DONE]garbage", 'data: {"choices":[',
+    'data: {"choices":[{"delta":{"tool_calls":[']) {
+    it(`rejects a truncated data tail after finish_reason: ${JSON.stringify(tail)}`, async () => {
+        const { model } = fixture(() => sse(frame({ content: "reply" }) + frame({}, "stop") + tail));
+        expect((await failure(model)).code).toBe(ErrorDefinitions.LLM.REQUEST_FAILED.code);
+    });
+}
+
+it("does not execute an incomplete tool call followed by an unnewline-terminated DONE tail", async () => {
+    let executions = 0;
+    const { model } = fixture(() => sse(frame({ tool_calls: [{ index: 0, id: "call-1", type: "function",
+        function: { name: "lookup", arguments: '{"id":' } }] }) + "data: [DONE]"));
+    await expect(model.chat({ messages: [], tools: [{
+        type: "function", function: { name: "lookup", parameters: { type: "object" } },
+        execute: async () => { executions++; return "result"; },
+    }] })).rejects.toBeInstanceOf(AppError);
+    expect(executions).toBe(0);
+});
+
+it("does not execute truncated tool arguments even with finish_reason before the DONE tail", async () => {
+    let executions = 0;
+    const { model } = fixture(() => sse(frame({ tool_calls: [{ index: 0, id: "call-1", type: "function",
+        function: { name: "lookup", arguments: '{"id":' } }] }) + frame({}, "tool_calls") + "data: [DONE]"));
+    await expect(model.chat({ messages: [], tools: [{
+        type: "function", function: { name: "lookup", parameters: { type: "object" } },
+        execute: async () => { executions++; return "result"; },
+    }] })).rejects.toBeInstanceOf(AppError);
+    expect(executions).toBe(0);
+});
+
 it("does not execute a tool from a complete frame followed by abnormal EOF", async () => {
     let executions = 0;
     const { model } = fixture(() => sse(frame({ tool_calls: [{ index: 0, id: "call-1", type: "function",
