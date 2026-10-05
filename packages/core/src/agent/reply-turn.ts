@@ -6,10 +6,65 @@ const turns = new AsyncLocalStorage<{ valid: () => boolean; signal?: AbortSignal
 // 只在受保护的发送期间替换此 bot 实例的 constructor 读取。适配器方法仍以
 // 原 bot 为 this（包括 JS 私有字段），共享类和普通发送不受影响。
 const encoderScopes = new AsyncLocalStorage<Map<Bot, Function>>();
-const activeEncoders = new WeakMap<Bot, { count: number; descriptor?: PropertyDescriptor }>();
+const outboundScopes = new AsyncLocalStorage<Map<Bot, () => void>>();
+const activeEncoders = new WeakMap<Bot, { count: number; constructor: typeof Bot; descriptor?: PropertyDescriptor; restoreTransports: (() => void)[] }>();
 const encoderSendToken = Symbol("reply encoder send");
+
+// 不代理整个 bot，也不改变 transport 方法的 this，兼容 JS 私有字段。
+// 这里只覆盖编码器通过 bot.internal / bot.http 读取的常见出站接口。
+function guardTransport(transport: any, key: "internal" | "http", check: () => void): any {
+    if (!transport || !["object", "function"].includes(typeof transport)) return transport;
+    const outbound = (method: PropertyKey) => key === "http"
+        ? ["request", "post", "put", "patch", "delete"].includes(String(method))
+        : /^(send[A-Z_]|createMessage$|execute$|request$)/.test(String(method));
+    return new Proxy(transport, {
+        apply(target, _receiver, args) { check(); return Reflect.apply(target, target, args); },
+        get(target, method) {
+            const value = Reflect.get(target, method, target);
+            if (typeof value !== "function") return value;
+            return (...args: any[]) => {
+                if (outbound(method)) check();
+                // Cordis HTTP.extend 返回的新客户端也需要保持本次调用的检查。
+                const result = Reflect.apply(value, target, args);
+                return key === "http" && method === "extend" ? guardTransport(result, key, check) : result;
+            };
+        },
+    });
+}
+
+function scopeTransport(bot: Bot, key: "internal" | "http"): () => void {
+    const own = Object.getOwnPropertyDescriptor(bot, key);
+    let source = own;
+    for (let proto = Object.getPrototypeOf(bot); !source && proto; proto = Object.getPrototypeOf(proto))
+        source = Object.getOwnPropertyDescriptor(proto, key);
+    if (!source) return () => {};
+    if (own?.configurable === false || (!own && !Object.isExtensible(bot)))
+        throw new Error(`无法保护回复出站：bot.${key} 属性不可配置`);
+    let stored = source.value;
+    let assigned = false;
+    const read = () => source.get ? source.get.call(bot) : stored;
+    const descriptor: PropertyDescriptor = {
+        configurable: true,
+        enumerable: source.enumerable,
+        get() {
+            const value = read();
+            const check = outboundScopes.getStore()?.get(bot);
+            return check ? guardTransport(value, key, check) : value;
+        },
+    };
+    if (source.set) descriptor.set = value => source.set.call(bot, value);
+    else if (source.writable) descriptor.set = value => { stored = value; assigned = true; };
+    Object.defineProperty(bot, key, descriptor);
+    return () => {
+        if (own) Object.defineProperty(bot, key, "value" in own ? { ...own, value: stored } : own);
+        else if (assigned) Object.defineProperty(bot, key, { value: stored, configurable: true, writable: true, enumerable: true });
+        else delete (bot as any)[key];
+    };
+}
+
 async function withGuardedEncoder<T>(bot: Bot, channelId: string, options: any, check: (channelId: string) => void, task: (options: any) => T): Promise<Awaited<T>> {
-    const constructor = bot.constructor as typeof Bot;
+    // 内层新 turn 必须从真实适配器类构造，避免嵌套旧代理擦除新 turn 的上下文。
+    const constructor = activeEncoders.get(bot)?.constructor ?? bot.constructor as typeof Bot;
     const Encoder = constructor.MessageEncoder;
     if (!Encoder) return await task(options);
     const token = {};
@@ -17,18 +72,23 @@ async function withGuardedEncoder<T>(bot: Bot, channelId: string, options: any, 
     const guardedEncoder = new Proxy(Encoder, {
         construct(target, args) {
             // 同 bot、频道和异步链上的普通发送/新 turn 也必须有本次调用的令牌。
-            if (args[3]?.[encoderSendToken] !== token || String(args[1]) !== String(channelId)) return Reflect.construct(target, args);
+            const guarded = args[3]?.[encoderSendToken] === token && String(args[1]) === String(channelId);
             const encoderOptions = { ...args[3] };
-            delete encoderOptions[encoderSendToken];
+            if (guarded) delete encoderOptions[encoderSendToken];
             const encoderArgs = [...args];
             encoderArgs[0] = bot;
-            encoderArgs[3] = encoderOptions;
+            if (guarded) encoderArgs[3] = encoderOptions;
             const encoder = Reflect.construct(target, encoderArgs);
-            for (const key of ["render", "visit", "flush"] as const) {
+            for (const key of ["send", "prepare", "render", "visit", "flush"] as const) {
                 const method = encoder[key];
+                if (typeof method !== "function") continue;
                 encoder[key] = function (...args: any[]) {
-                    check(encoder.channelId);
-                    return method.apply(encoder, args);
+                    if (guarded) check(encoder.channelId);
+                    const scope = new Map(outboundScopes.getStore());
+                    // 普通发送在自己的编码器中移除父异步链的旧保护。
+                    if (guarded) scope.set(bot, () => check(encoder.channelId));
+                    else scope.delete(bot);
+                    return outboundScopes.run(scope, () => method.apply(encoder, args));
                 };
             }
             return encoder;
@@ -39,11 +99,17 @@ async function withGuardedEncoder<T>(bot: Bot, channelId: string, options: any, 
     });
     let active = activeEncoders.get(bot);
     if (!active) {
-        active = { count: 0, descriptor: Object.getOwnPropertyDescriptor(bot, "constructor") };
-        Object.defineProperty(bot, "constructor", {
-            configurable: true,
-            get: () => encoderScopes.getStore()?.get(bot) ?? constructor,
-        });
+        active = { count: 0, constructor, descriptor: Object.getOwnPropertyDescriptor(bot, "constructor"), restoreTransports: [] };
+        try {
+            for (const key of ["internal", "http"] as const) active.restoreTransports.push(scopeTransport(bot, key));
+            Object.defineProperty(bot, "constructor", {
+                configurable: true,
+                get: () => encoderScopes.getStore()?.get(bot) ?? constructor,
+            });
+        } catch (error) {
+            active.restoreTransports.reverse().forEach(restore => restore());
+            throw error;
+        }
         activeEncoders.set(bot, active);
     }
     active.count++;
@@ -55,6 +121,7 @@ async function withGuardedEncoder<T>(bot: Bot, channelId: string, options: any, 
         if (--active.count === 0) {
             if (active.descriptor) Object.defineProperty(bot, "constructor", active.descriptor);
             else delete (bot as any).constructor;
+            active.restoreTransports.reverse().forEach(restore => restore());
             activeEncoders.delete(bot);
         }
     }
