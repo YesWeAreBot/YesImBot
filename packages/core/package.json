@@ -63,6 +63,7 @@
     "uuid": "^11.1.0"
   },
   "devDependencies": {
+    "@minatojs/driver-sqlite": "^4.7.0",
     "@koishijs/plugin-notifier": "^1.2.1",
     "@types/semver": "^7",
     "@xsai-ext/providers-cloud": "^0.3.2",

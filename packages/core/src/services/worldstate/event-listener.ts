@@ -194,9 +194,9 @@ export class EventListenerManager {
         };
 
         if (allMembers) {
-            this.service.updateMuteStatus(session.cid, released ? 0 : Infinity, selfId, "all");
+            await this.service.updateMuteStatus(session.cid, released ? 0 : Infinity, selfId, "all");
         } else if (isTargetingBot || this.ctx.bots.some(bot => bot.platform === session.platform && bot.selfId === userId)) {
-            this.service.updateMuteStatus(session.cid, released ? 0 : timestamp.getTime() + duration, userId);
+            await this.service.updateMuteStatus(session.cid, released ? 0 : timestamp.getTime() + duration, userId);
         }
         await this.service.recordSystemEvent({
             id: `sysevt_${released ? "unban" : "ban"}_${Random.id()}`,

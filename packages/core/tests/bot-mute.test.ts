@@ -1,12 +1,12 @@
-// Build core before running these state/event regressions.
+// Agent reply regressions use built core; state/event methods are tested from source.
 import { expect, it, spyOn } from "bun:test";
 import { Bot, Context, MessageEncoder } from "koishi";
-import { WorldStateService } from "../lib/services/worldstate/service";
-import { EventListenerManager } from "../lib/services/worldstate/event-listener";
+import { WorldStateService } from "../src/services/worldstate/service";
+import { EventListenerManager } from "../src/services/worldstate/event-listener";
 import { AgentCore } from "../lib/agent/agent-core";
 import { Config } from "../lib/config";
 import { replyTurnSignal } from "../lib/agent/reply-turn";
-import { Services } from "../lib/shared/constants";
+import { Services, TableName } from "../src/shared/constants";
 import CoreUtilExtension from "../lib/services/extension/builtin/core-util";
 
 const logger = { debug() {}, info() {}, warn() {}, error() {} };
@@ -19,8 +19,16 @@ export function muteFixture(rows: any[] = []) {
         { platform: "other", selfId: "a" } as any
     );
     let reads = 0;
+    const states: any[] = [];
     ctx.database = {
+        upsert: async (_table: string, values: any[]) => {
+            for (const value of values) {
+                const existing = states.find(row => row.id === value.id);
+                if (existing) Object.assign(existing, value); else states.push({ ...value });
+            }
+        },
         get: async (_table: string, query: any) => {
+            if (_table === TableName.BotMuteState) return states;
             reads++;
             return rows.filter(
                 (row) =>
@@ -34,7 +42,9 @@ export function muteFixture(rows: any[] = []) {
     const world: any = Object.create(WorldStateService.prototype);
     Object.defineProperty(world, "ctx", { value: ctx });
     Object.defineProperty(world, "logger", { value: logger });
-    Object.assign(world, { mutedChannels: new Map(), allMutedChannels: new Map() });
+    Object.assign(world, { mutedChannels: new Map(), allMutedChannels: new Map(),
+        l2_manager: { getHistoryGeneration: () => 0, writeMemory: async (_target: any, _generation: number, write: Function) => { await write(); return true; } },
+    });
     const recorded: any[] = [];
     world.l1_manager = {
         recordSystemEvent: async (event: any) => {
