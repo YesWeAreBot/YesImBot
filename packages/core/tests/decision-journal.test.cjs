@@ -383,3 +383,125 @@ test("replay preserves live multiplication order at an exact random-roll boundar
     assert.equal(event.recomputed.decision, false);
     assert.equal(event.recomputed.probability, precise.probability);
 });
+
+test("a second writer is explicitly disabled before recovery or compaction", async (t) => {
+    const DecisionJournal = loadJournal();
+    const dir = await temporary(t);
+    const first = new DecisionJournal(dir, { ...options, maxEntries: 2 });
+    t.after(() => first.close());
+    await first.append(record("a"));
+    const warnings = [];
+    const second = new DecisionJournal(dir, { ...options, maxEntries: 1 }, (message) => warnings.push(message));
+    t.after(() => second.close());
+    await second.append(record("b"));
+    assert.ok(warnings.some((message) => /already.*writer|writer.*already|another.*writer|locked/i.test(message)));
+    assert.deepEqual(await second.list(), []);
+    assert.equal(second.diagnostics.droppedRecords, 1);
+    await first.append(record("c"));
+    await first.append(record("d"));
+    await second.close();
+    assert.deepEqual((await fs.readFile(first.filePath, "utf8")).trim().split("\n").map((line) => JSON.parse(line).id), ["c", "d"]);
+    // Closing the rejected writer must not release the first writer's lock.
+    const third = new DecisionJournal(dir, options, (message) => warnings.push(message));
+    await third.append(record("e"));
+    assert.deepEqual(await third.list(), []);
+    await third.close();
+    await first.close();
+    const restarted = new DecisionJournal(dir, options);
+    t.after(() => restarted.close());
+    await restarted.append(record("f"));
+    assert.deepEqual((await restarted.list()).map((r) => r.id), ["c", "d", "f"]);
+});
+
+function childJournal(dir, action) {
+    const code = `
+        const ts = require("typescript");
+        const Module = require("node:module");
+        const path = require("node:path");
+        const __dirname = ${JSON.stringify(__dirname)};
+        const DecisionJournal = (${loadJournal.toString()})();
+        const options = ${JSON.stringify(options)};
+        const record = (${record.toString()});
+        const journal = new DecisionJournal(${JSON.stringify(dir)}, options, (message) => console.error(message));
+        (async () => { ${action} })().catch((error) => { console.error(error); process.exitCode = 1; });
+    `;
+    return spawnSync(process.execPath, ["-e", code], { encoding: "utf8", cwd: path.resolve(__dirname, "../../..") });
+}
+
+test("directory exclusion also applies across processes", async (t) => {
+    const DecisionJournal = loadJournal();
+    const dir = await temporary(t);
+    const first = new DecisionJournal(dir, options);
+    t.after(() => first.close());
+    await first.append(record("parent"));
+    const child = childJournal(dir, 'await journal.append(record("child")); console.log(JSON.stringify(await journal.list())); await journal.close();');
+    assert.equal(child.status, 0, child.stderr);
+    assert.match(child.stderr, /locked.*recording and queries are disabled/);
+    assert.deepEqual(JSON.parse(child.stdout), []);
+    assert.equal((await fs.stat(path.join(dir, ".decisions.lock"))).mode & 0o777, 0o600);
+    await first.append(record("still-parent"));
+    assert.deepEqual((await first.list()).map((r) => r.id), ["parent", "still-parent"]);
+});
+
+test("abnormal exit keeps history safe and requires explicit stale-lock cleanup", async (t) => {
+    const DecisionJournal = loadJournal();
+    const dir = await temporary(t);
+    const child = childJournal(dir, 'await journal.append(record("before-crash")); process.exit(0);');
+    assert.equal(child.status, 0, child.stderr);
+    const original = await fs.readFile(path.join(dir, "decisions.jsonl"), "utf8");
+    const warnings = [];
+    const blocked = new DecisionJournal(dir, options, (message) => warnings.push(message));
+    await blocked.append(record("blocked"));
+    await blocked.close();
+    assert.ok(warnings.some((message) => /Stop all instances.*manually removing.*abnormal exit/.test(message)));
+    assert.equal(await fs.readFile(path.join(dir, "decisions.jsonl"), "utf8"), original);
+    // The child has exited, and the rejected instance has closed: removal is safe.
+    await fs.unlink(path.join(dir, ".decisions.lock"));
+    const restored = new DecisionJournal(dir, options);
+    t.after(() => restored.close());
+    assert.deepEqual((await restored.list()).map((r) => r.id), ["before-crash"]);
+});
+
+test("initialization failure and immediate close both release the acquired lock", async (t) => {
+    const DecisionJournal = loadJournal();
+    const dir = await temporary(t);
+    await fs.mkdir(path.join(dir, "decisions.jsonl"));
+    const failed = new DecisionJournal(dir, options);
+    await failed.close();
+    await assert.rejects(fs.stat(path.join(dir, ".decisions.lock")), { code: "ENOENT" });
+    await fs.rmdir(path.join(dir, "decisions.jsonl"));
+    const immediate = new DecisionJournal(dir, options);
+    await immediate.close();
+    await assert.rejects(fs.stat(path.join(dir, ".decisions.lock")), { code: "ENOENT" });
+    const restarted = new DecisionJournal(dir, options);
+    t.after(() => restarted.close());
+    await restarted.append(record("new"));
+    // Older, closed objects may still be queried, but cannot compact without a lock.
+    await immediate.flush();
+    assert.deepEqual((await restarted.list()).map((r) => r.id), ["new"]);
+});
+
+test("flush failure cannot strand a live writer's lock on close", async (t) => {
+    const DecisionJournal = loadJournal();
+    const dir = await temporary(t);
+    const warnings = [];
+    const journal = new DecisionJournal(dir, options, (message) => warnings.push(message));
+    await journal.append(record("before-failure"));
+    await fs.unlink(journal.filePath);
+    await assert.doesNotReject(journal.close());
+    assert.ok(warnings.some((message) => /I\/O failed/.test(message)));
+    await assert.rejects(fs.stat(path.join(dir, ".decisions.lock")), { code: "ENOENT" });
+});
+
+test("lock release failure warns clearly and stays isolated from realtime work", async (t) => {
+    const DecisionJournal = loadJournal();
+    const dir = await temporary(t);
+    const warnings = [];
+    const journal = new DecisionJournal(dir, options, (message) => warnings.push(message));
+    await journal.append(record("saved"));
+    await fs.unlink(path.join(dir, ".decisions.lock"));
+    await fs.mkdir(path.join(dir, ".decisions.lock"));
+    await assert.doesNotReject(journal.close());
+    assert.ok(warnings.some((message) => /lock release failed.*Stop all instances.*manually removing/.test(message)));
+    assert.ok(journal.diagnostics.writeFailures > 0);
+});

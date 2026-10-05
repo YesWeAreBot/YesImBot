@@ -37,7 +37,7 @@ export class LocalLogWriter {
         let line: string;
         try {
             line = JSON.stringify(sanitizeDiagnostic(record, this.secrets)) + "\n";
-            // Custom toJSON methods can reintroduce credentials after object filtering.
+            // Also replace configured secrets in their serialized escape form.
             const secrets = this.secrets.filter(Boolean).map(secret => JSON.stringify(secret).slice(1, -1))
                 .sort((a, b) => b.length - a.length);
             for (const secret of secrets) line = line.split(secret).join("[REDACTED]");
