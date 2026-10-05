@@ -97,14 +97,21 @@ it("preserves the direct category for private channel IDs without a private pref
     expect(delivered).toBe("real-dm");
 });
 
-async function encoderFixture(platform = "discord", selfId = "bot-a", privateReceiver = false) {
+async function encoderFixture(platform = "discord", selfId = "bot-a", privateReceiver = false, prepare?: () => Promise<void>, transport = "internal", stage = "flush") {
     const ctx = new Context();
     const deliveries: string[] = [];
     class Encoder extends MessageEncoder {
         #marker = "reply";
         async visit() {}
+        async deliver() {
+            await prepare?.();
+            if (transport === "internal") await this.bot.internal.sendGroupMsg(this.channelId, this.#marker);
+            else if (transport === "http-call") await (this.bot as any).http("POST", this.channelId, { data: this.#marker });
+            else await (this.bot as any).http.post(this.channelId, this.#marker);
+        }
+        async prepare() { if (stage === "prepare") await this.deliver(); }
         async flush() {
-            await this.bot.internal.sendGroupMsg(this.channelId, this.#marker);
+            if (stage === "flush") await this.deliver();
             this.results.push({ id: "sent" });
         }
     }
@@ -124,6 +131,16 @@ async function encoderFixture(platform = "discord", selfId = "bot-a", privateRec
         internal: { sendGroupMsg: async (id: string) => { deliveries.push(id); } },
         createDirectChannel: async () => ({ id: "real-dm" }),
     });
+    class Internal {
+        #marker = "internal";
+        async sendGroupMsg(id: string) { expect(this.#marker).toBe("internal"); deliveries.push(id); }
+    }
+    class Http {
+        #marker = "http";
+        async post(id: string) { expect(this.#marker).toBe("http"); deliveries.push(id); }
+    }
+    if (platform !== "onebot") bot.internal = new Internal();
+    bot.http = transport === "http-call" ? async (_method: string, id: string) => { deliveries.push(id); } : new Http();
     await ctx.start();
     const session = bot.session({ type: "message", channel: { id: "group" }, user: { id: "user" } });
     // Use the real Koishi session mixin methods (the fixture bot bypasses registration).
@@ -177,6 +194,82 @@ it("keeps guarded encoder returns and cancellation isolated across turns and bot
     expect(b.deliveries).toEqual(["group", "group", "other-group", "real-dm"]);
     await a.ctx.stop();
     await b.ctx.stop();
+});
+
+for (const stage of ["flush", "prepare"]) for (const transport of ["internal", "http-post", "http-call"]) {
+    it(`rechecks ${transport} after asynchronous preparation inside real MessageEncoder.${stage}`, async () => {
+        let entered!: () => void, release!: () => void, valid = true;
+        const started = new Promise<void>(resolve => { entered = resolve; });
+        const gate = new Promise<void>(resolve => { release = resolve; });
+        let first = true;
+        const f = await encoderFixture("discord", "private-bot", true, async () => {
+            if (!first) return;
+            first = false; entered(); await gate;
+        }, transport, stage);
+        const internal = f.bot.internal, http = f.bot.http;
+        Object.defineProperty(f.bot, "internal", { configurable: true, enumerable: true,
+            get() { expect(this.receiverMarker).toBe("receiver"); return internal; } });
+        Object.defineProperty(f.bot, "http", { configurable: true, enumerable: true,
+            get() { expect(this.receiverMarker).toBe("receiver"); return http; } });
+        const internalDescriptor = Object.getOwnPropertyDescriptor(f.bot, "internal");
+        const httpDescriptor = Object.getOwnPropertyDescriptor(f.bot, "http");
+        const pending = withReplyTurn(() => valid, () => guardReplySession(f.session).bot.sendMessage("group", "old"));
+        await started;
+        valid = false;
+        expect(await f.bot.sendMessage("group", "ordinary")).toEqual(["sent"]);
+        expect(await withReplyTurn(() => true, () => guardReplySession(f.session).bot.sendMessage("group", "fresh"))).toEqual(["sent"]);
+        release();
+        await expect(pending).rejects.toThrow("取消");
+        expect(f.deliveries).toEqual(["group", "group"]);
+        expect(Object.getOwnPropertyDescriptor(f.bot, "internal")).toEqual(internalDescriptor);
+        expect(Object.getOwnPropertyDescriptor(f.bot, "http")).toEqual(httpDescriptor);
+        await f.bot.dispose();
+        await f.ctx.stop();
+    });
+}
+
+for (const property of ["internal", "http"]) {
+    it(`rejects protected sends with non-configurable ${property} and preserves ordinary sending`, async () => {
+        const f = await encoderFixture();
+        Object.defineProperty(f.bot, property, { value: f.bot[property], configurable: false, writable: true });
+        const internal = Object.getOwnPropertyDescriptor(f.bot, "internal");
+        const http = Object.getOwnPropertyDescriptor(f.bot, "http");
+        await expect(withReplyTurn(() => true, () => guardReplySession(f.session).bot.sendMessage("group", "reply")))
+            .rejects.toThrow("不可配置");
+        expect(Object.getOwnPropertyDescriptor(f.bot, "internal")).toEqual(internal);
+        expect(Object.getOwnPropertyDescriptor(f.bot, "http")).toEqual(http);
+        expect(Object.hasOwn(f.bot, "constructor")).toBe(false);
+        expect(await f.bot.sendMessage("ordinary", "reply")).toEqual(["sent"]);
+        expect(f.deliveries).toEqual(["ordinary"]);
+        await f.ctx.stop();
+    });
+}
+
+it("keeps a fresh nested turn protected after its own asynchronous preparation", async () => {
+    let entered!: () => void, release!: () => void, oldValid = true, freshValid = true;
+    const started = new Promise<void>(resolve => { entered = resolve; });
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let first = true, hooked = false, freshError: Error | undefined;
+    const f = await encoderFixture("discord", "bot", false, async () => {
+        if (!first) return;
+        first = false; entered(); await gate;
+        // 普通发送从旧 turn 的异步子链发起，仍使用自己的无保护编码器。
+        expect(await f.bot.sendMessage("ordinary", "command")).toEqual(["sent"]);
+    });
+    f.ctx.on("before-send", async () => {
+        if (hooked) return;
+        hooked = true; oldValid = false;
+        await withReplyTurn(() => freshValid, () => guardReplySession(f.session).bot.sendMessage("fresh", "reply"))
+            .catch(error => { freshError = error; });
+    });
+    const pending = withReplyTurn(() => oldValid, () => guardReplySession(f.session).bot.sendMessage("old", "reply"));
+    await started;
+    freshValid = false; release();
+    await expect(pending).rejects.toThrow("取消");
+    expect(freshError?.message).toContain("取消");
+    expect(f.deliveries).toEqual(["ordinary"]);
+    expect(Object.hasOwn(f.bot, "constructor")).toBe(false);
+    await f.ctx.stop();
 });
 
 it("preserves private bot/encoder receivers and restores the constructor descriptor", async () => {

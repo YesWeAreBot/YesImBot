@@ -1,4 +1,5 @@
 import { Argv, Context, Logger, Random, Session } from "koishi";
+import type { Universal } from "koishi";
 
 import { Services, TableName } from "@/shared/constants";
 import { truncate } from "@/shared/utils";
@@ -12,11 +13,14 @@ interface PendingCommand {
     scope: string;
     invokerId: string;
     timestamp: number;
+    session: Session;
 }
 
 export class EventListenerManager {
     private readonly disposers: (() => boolean)[] = [];
     private readonly pendingCommands = new Map<string, PendingCommand[]>();
+    private cleanupTimer?: () => void;
+    private generation = 0;
     private logger: Logger;
     private assetService: AssetService;
 
@@ -30,12 +34,18 @@ export class EventListenerManager {
     }
 
     public start(): void {
+        if (this.cleanupTimer) return;
         this.registerEventListeners();
+        this.cleanupTimer = this.ctx.setInterval(() => this.cleanupPendingCommands(), 60 * 1000);
     }
 
     public stop(): void {
+        this.generation++;
+        this.cleanupTimer?.();
+        this.cleanupTimer = undefined;
         this.disposers.forEach((dispose) => dispose());
         this.disposers.length = 0;
+        this.pendingCommands.clear();
     }
 
     public cleanupPendingCommands(): void {
@@ -98,11 +108,11 @@ export class EventListenerManager {
         this.disposers.push(
             this.ctx.on("command/before-execute", (argv) => {
                 argv.session["__commandHandled"] = true;
-                this.handleCommandInvocation(argv);
+                return this.handleCommandInvocation(argv);
             })
         );
 
-        this.disposers.push(this.ctx.on("before-send", (session) => this.matchCommandResult(session), true));
+        this.disposers.push(this.ctx.on("before-send", (session, options) => this.matchCommandResult(session, options), true));
         this.disposers.push(this.ctx.on("after-send", (session) => this.recordBotSentMessage(session), true));
 
         this.disposers.push(
@@ -231,9 +241,10 @@ export class EventListenerManager {
     private async handleCommandInvocation(argv: Argv): Promise<void> {
         const { session, command, source } = argv;
         if (!session) return;
+        const generation = this.generation;
 
         this.logger.info(`记录指令调用 | 用户: ${session.author.name || session.userId} | 指令: ${command.name} | 频道: ${session.cid}`);
-        const commandEventId = `cmd_invoked_${session.messageId || Random.id()}`;
+        const commandEventId = `cmd_invoked_${session.messageId || "call"}_${Random.id()}`;
 
         const eventPayload: SystemEventData = {
             id: commandEventId,
@@ -250,27 +261,40 @@ export class EventListenerManager {
         };
 
         await this.service.recordSystemEvent(eventPayload);
+        if (generation !== this.generation) return;
 
-        const pendingList = this.pendingCommands.get(session.channelId) || [];
+        const key = this.commandKey(session);
+        const pendingList = this.pendingCommands.get(key) || [];
         pendingList.push({
             commandEventId,
             scope: session.scope,
             invokerId: session.userId,
             timestamp: Date.now(),
+            session,
         });
-        this.pendingCommands.set(session.channelId, pendingList);
+        this.pendingCommands.set(key, pendingList);
     }
 
-    private async matchCommandResult(session: Session): Promise<void> {
-        if (!session.scope) return;
+    private commandKey(session: Session): string {
+        return JSON.stringify([session.platform, session.channelId, session.selfId || session.bot?.selfId]);
+    }
 
-        const pendingInChannel = this.pendingCommands.get(session.channelId);
+    private async matchCommandResult(session: Session, options?: Universal.SendOptions): Promise<void> {
+        this.cleanupPendingCommands();
+        if (!session.scope || !options?.session) return;
+
+        const key = this.commandKey(session);
+        const pendingInChannel = this.pendingCommands.get(key);
         if (!pendingInChannel?.length) return;
 
-        const pendingIndex = pendingInChannel.findIndex((p) => p.scope === session.scope);
-        if (pendingIndex === -1) return;
+        // command scope 是固定作用域；真实编码器通过 options.session 传递调用者。
+        // 同一个 Session 并发执行同名命令仍有歧义，宁可不关联也不能猜测 FIFO。
+        const candidates = pendingInChannel.filter(p => p.session === options.session && p.scope === session.scope);
+        if (candidates.length !== 1) return;
+        const pendingIndex = pendingInChannel.indexOf(candidates[0]);
 
         const [pendingCmd] = pendingInChannel.splice(pendingIndex, 1);
+        if (!pendingInChannel.length) this.pendingCommands.delete(key);
         this.logger.debug(`匹配到指令结果 | 事件ID: ${pendingCmd.commandEventId}`);
 
         const [existingEvent] = await this.ctx.database.get(TableName.SystemEvents, { id: pendingCmd.commandEventId });
