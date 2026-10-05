@@ -1,4 +1,5 @@
 import { Context, Service, Session } from "koishi";
+import { createHash } from "node:crypto";
 
 import { Config } from "@/config";
 import { Services, TableName } from "@/shared/constants";
@@ -8,7 +9,7 @@ import { EventListenerManager } from "./event-listener";
 import { InteractionManager } from "./interaction-manager";
 import { SemanticMemoryManager } from "./l2-semantic-memory";
 import { ArchivalMemoryManager } from "./l3-archival-memory";
-import { AgentStimulus, DiaryEntryData, MemberData, MemoryChunkData, MessageData, SystemEventData, WorldState } from "./types";
+import { AgentStimulus, BotMuteStateData, DiaryEntryData, MemberData, MemoryChunkData, MessageData, SystemEventData, WorldState } from "./types";
 
 declare module "koishi" {
     interface Context {
@@ -23,6 +24,7 @@ declare module "koishi" {
         [TableName.Members]: MemberData;
         [TableName.Messages]: MessageData;
         [TableName.SystemEvents]: SystemEventData;
+        [TableName.BotMuteState]: BotMuteStateData;
         [TableName.L2Chunks]: MemoryChunkData;
         [TableName.L3Diaries]: DiaryEntryData;
     }
@@ -43,6 +45,7 @@ export class WorldStateService extends Service<Config> {
     private commandManager: HistoryCommandManager;
     private readonly mutedChannels = new Map<string, number>();
     private readonly allMutedChannels = new Map<string, number>();
+    private muteWrites?: Promise<void>;
 
     private clearTimer: ReturnType<Context["setInterval"]> | null = null;
 
@@ -81,7 +84,7 @@ export class WorldStateService extends Service<Config> {
             this.clearTimer();
             this.clearTimer = null;
         }
-        await Promise.all([this.l2_manager.stop(), stoppingDiaries]);
+        await Promise.all([this.l2_manager.stop(), stoppingDiaries, this.muteWrites]);
         this.logger.info("服务已停止");
     }
 
@@ -90,8 +93,10 @@ export class WorldStateService extends Service<Config> {
     }
 
     public async recordMessage(message: MessageData): Promise<void> {
-        await this.l1_manager.recordMessage(message);
-        if (this.config.l2_memory.enabled) {
+        // 在 L1 异步写入之前登记代次与在途任务，清除必须等待已接受的写入。
+        const generation = this.l2_manager.getHistoryGeneration(message);
+        const recorded = await this.l2_manager.writeMemory(message, generation, () => this.l1_manager.recordMessage(message));
+        if (recorded && this.l2_manager.getHistoryGeneration(message) === generation && this.config.l2_memory.enabled) {
             this.l2_manager.addMessageToBuffer(message);
         }
     }
@@ -108,7 +113,8 @@ export class WorldStateService extends Service<Config> {
     }
 
     public async recordSystemEvent(event: SystemEventData): Promise<void> {
-        await this.l1_manager.recordSystemEvent(event);
+        const generation = this.l2_manager.getHistoryGeneration(event);
+        await this.l2_manager.writeMemory(event, generation, () => this.l1_manager.recordSystemEvent(event));
     }
 
     /** 查询使用纯读取，不清除到期状态。 */
@@ -137,7 +143,33 @@ export class WorldStateService extends Service<Config> {
         return [cid, ...new Set([...this.mutedChannels.keys(), ...this.allMutedChannels.keys()].filter(key => key.startsWith(prefix)))];
     }
 
-    public updateMuteStatus(cid: string, expiresAt: number, selfId?: string, kind: "individual" | "all" = "individual"): void {
+    public updateMuteStatus(cid: string, expiresAt: number, selfId?: string, kind: "individual" | "all" = "individual"): Promise<void> {
+        this.applyMuteStatus(cid, expiresAt, selfId, kind);
+        return this.persistMuteStates([this.muteState(cid, expiresAt, selfId, kind)]);
+    }
+
+    private muteState(cid: string, expiresAt: number, selfId: string | undefined, kind: "individual" | "all"): BotMuteStateData {
+        return {
+            id: createHash("sha256").update(JSON.stringify([cid, selfId ?? null, kind])).digest("hex"),
+            channelCid: cid,
+            selfId: selfId ?? "",
+            kind,
+            expiresAt: Number.isFinite(expiresAt) && expiresAt > Date.now() ? expiresAt : 0,
+            permanent: expiresAt === Infinity,
+        };
+    }
+
+    private persistMuteStates(states: BotMuteStateData[]): Promise<void> {
+        // 失败仍由当前调用方观察；后续更新可以恢复队列，不能永久被一次故障阻塞。
+        const task = (this.muteWrites || Promise.resolve()).catch(() => {}).then(async () => {
+            await this.ctx.database.upsert(TableName.BotMuteState, states, ["id"]);
+        });
+        this.muteWrites = task;
+        void task.catch(error => this.logger.error("持久化机器人禁言状态失败", error));
+        return task;
+    }
+
+    private applyMuteStatus(cid: string, expiresAt: number, selfId?: string, kind: "individual" | "all" = "individual"): void {
         const key = selfId === undefined ? cid : JSON.stringify([cid, selfId]);
         const states = kind === "all" ? this.allMutedChannels : this.mutedChannels;
         if (expiresAt > Date.now()) {
@@ -155,7 +187,18 @@ export class WorldStateService extends Service<Config> {
     }
 
     private async initializeMuteStatus(): Promise<void> {
-        this.logger.info("正在从历史记录初始化机器人禁言状态...");
+        this.logger.info("正在初始化机器人禁言状态...");
+        const states = await this.ctx.database.get(TableName.BotMuteState, {});
+        const persisted = new Set(states.map(state => state.id));
+        for (const state of states) {
+            this.applyMuteStatus(state.channelCid, state.permanent ? Infinity : state.expiresAt, state.selfId || undefined, state.kind);
+        }
+        // 旧事件仅用于迁移尚无当前状态的键；解除墓碑不能被残留历史覆盖。
+        const migrated = new Map<string, BotMuteStateData>();
+        const migrate = (cid: string, until: number, selfId: string, kind: "individual" | "all" = "individual") => {
+            const state = this.muteState(cid, until, selfId, kind);
+            if (!persisted.has(state.id)) migrated.set(state.id, state);
+        };
         const events = await this.ctx.database.get(TableName.SystemEvents, {
             type: { $in: ["guild-member-ban", "guild-member-unban", "guild-all-member-ban", "guild-all-member-unban"] },
         });
@@ -172,17 +215,36 @@ export class WorldStateService extends Service<Config> {
                 const bots = this.ctx.bots.filter(bot => bot.platform === event.platform &&
                     (details.selfId === undefined || bot.selfId === String(details.selfId)));
                 const until = event.type.endsWith("-unban") ? 0 : Infinity;
-                for (const bot of bots) this.updateMuteStatus(cid, until, bot.selfId, "all");
+                for (const bot of bots) migrate(cid, until, bot.selfId, "all");
             } else if (this.ctx.bots.some(bot => bot.platform === event.platform && bot.selfId === userId)) {
-                if (event.type === "guild-member-unban") this.updateMuteStatus(cid, 0, userId);
+                if (event.type === "guild-member-unban") migrate(cid, 0, userId);
                 else if (Number.isFinite(details.duration) && details.duration > 0)
-                    this.updateMuteStatus(cid, event.timestamp.getTime() + details.duration, userId);
+                    migrate(cid, event.timestamp.getTime() + details.duration, userId);
             }
+        }
+        if (migrated.size) {
+            for (const state of migrated.values()) {
+                this.applyMuteStatus(state.channelCid, state.permanent ? Infinity : state.expiresAt, state.selfId || undefined, state.kind);
+            }
+            this.persistMuteStates([...migrated.values()]);
+            await this.muteWrites;
         }
         this.logger.info("机器人禁言状态初始化完成");
     }
 
     private registerModels(): void {
+        this.ctx.model.extend(
+            TableName.BotMuteState,
+            {
+                id: "string(64)",
+                channelCid: "string(511)",
+                selfId: "string(255)",
+                kind: "string(16)",
+                expiresAt: "double",
+                permanent: "boolean",
+            },
+            { primary: "id" }
+        );
         this.ctx.model.extend(
             TableName.Members,
             {
