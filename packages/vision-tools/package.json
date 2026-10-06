@@ -50,5 +50,8 @@
         "yesimbot"
       ]
     }
+  },
+  "dependencies": {
+    "undici": "^6.29.0"
   }
 }

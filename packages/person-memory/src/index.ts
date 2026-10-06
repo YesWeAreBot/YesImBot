@@ -21,7 +21,7 @@ export const Config: Schema<Config> = Schema.object({
     timeoutSeconds: Schema.number().min(5).max(120).default(30).description("一次后台总结超时秒数"),
     maxQueue: Schema.number().min(1).max(100).step(1).default(32).description("待总结任务上限；全局同时运行一个任务"),
 });
-interface Tools { capabilities?: { trustedToolSession?: number }; registerTool(tool: unknown): void; unregisterTool(name: string): void }
+interface Tools { capabilities?: { trustedToolSession?: number }; registerTool(tool: unknown): void | (() => void); unregisterTool(name: string): void }
 interface Prompt { inject(name: string, priority: number, fn: (scope: Record<string, any>) => Promise<string>): void | (() => void) }
 interface Models { useChatGroup(name: string): { chat(options: any): Promise<{ text?: string }> } | undefined }
 interface Dependencies { "yesimbot.tool": Tools; "yesimbot.prompt": Prompt; "yesimbot.world-state": { capabilities?: { beforeUserStimulus?: number }; isChannelAllowed(session: Session): boolean }; "yesimbot.model"?: Models }
@@ -78,7 +78,7 @@ export function apply(ctx: Context, config: Config) {
     registerModels(ctx);
     const logger = ctx.logger(name), store = new PersonStore(ctx.database, config.mode);
     let active = true;
-    const allowed = (session: Session) => active && deps["yesimbot.world-state"].isChannelAllowed(session);
+    const allowed = (session: Session) => active && ctx.filter(session) && deps["yesimbot.world-state"].isChannelAllowed(session);
     let model: SummaryModel | undefined;
     if (config.modelGroup) model = async (messages, signal) => {
         const group = deps["yesimbot.model"]?.useChatGroup(config.modelGroup);
@@ -142,8 +142,8 @@ export function apply(ctx: Context, config: Config) {
             } catch (error) { return Failed(error); }
         },
     };
-    deps["yesimbot.tool"].registerTool(tool);
-    ctx.on("dispose", () => { active = false; worker.stop(); deps["yesimbot.tool"].unregisterTool(tool.name); if (typeof removeInjection === "function") removeInjection(); });
+    const removeTool = deps["yesimbot.tool"].registerTool(tool);
+    ctx.on("dispose", () => { active = false; worker.stop(); if (typeof removeTool === "function") removeTool(); else deps["yesimbot.tool"].unregisterTool(tool.name); if (typeof removeInjection === "function") removeInjection(); });
 
     function command(declaration: string, description: string, action: (scope: string, actor: string, args: any[], session: Session, options: Record<string, any>) => Promise<string>) {
         return ctx.command(declaration, description, { authority: 3 }).action(async ({ session, options }, ...args) => {
