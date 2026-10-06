@@ -5,10 +5,10 @@ import { IEmbedModel, TaskType } from "@/services/model";
 import { Services, TableName } from "@/shared/constants";
 import { cosineSimilarity } from "@/shared/utils";
 import { HistoryConfig } from "./config";
-import { ContextualMessage, MemoryChunkData, MessageData } from "./types";
+import { ContextualMessage, HistoryChannelType, MemoryChunkData, MessageData } from "./types";
 
 export type SemanticMemoryScope = { platform: string; channelId: string } | { type: "private" | "guild" | "all" };
-export type MemoryTarget = { platform: string; channelId: string };
+export type MemoryTarget = { platform: string; channelId: string; channelType?: HistoryChannelType };
 
 export class SemanticMemoryManager {
     private ctx: Context;
@@ -17,6 +17,7 @@ export class SemanticMemoryManager {
     private embedModel: IEmbedModel;
     private messageBuffer: Map<string, MessageData[]> = new Map();
     private isRebuilding: boolean = false;
+    private channelTypes = new Map<string, HistoryChannelType>();
     private generations = new Map<string, number>();
     private activeClears = new Set<{ scope: SemanticMemoryScope; done: Promise<void> }>();
     private pendingWrites = new Set<{ target: MemoryTarget; done: Promise<unknown> }>();
@@ -57,14 +58,22 @@ export class SemanticMemoryManager {
         return JSON.stringify([target.platform, target.channelId]);
     }
 
+    public observeChannel(target: MemoryTarget, channelType: HistoryChannelType): void {
+        this.channelTypes.set(this.targetKey(target), channelType);
+    }
+
+    private channelType(target: MemoryTarget): HistoryChannelType | undefined {
+        return target.channelType || this.channelTypes.get(this.targetKey(target));
+    }
+
     private matchesScope(target: MemoryTarget, scope: SemanticMemoryScope): boolean {
         if (!("type" in scope)) return target.platform === scope.platform && target.channelId === scope.channelId;
-        return scope.type === "all" || (target.channelId.startsWith("private:") ? scope.type === "private" : scope.type === "guild");
+        return scope.type === "all" || this.channelType(target) === scope.type;
     }
 
     private generation(target: MemoryTarget, generations = this.generations): number {
-        const type = target.channelId.startsWith("private:") ? "private" : "guild";
-        return (generations.get("all") || 0) + (generations.get(type) || 0) + (generations.get(this.targetKey(target)) || 0);
+        const type = this.channelType(target);
+        return (generations.get("all") || 0) + (type ? generations.get(type) || 0 : 0) + (generations.get(this.targetKey(target)) || 0);
     }
 
     public getHistoryGeneration(target: MemoryTarget): number {

@@ -1,5 +1,5 @@
 import { assertReplyDestination, guardReplyBot, replyTurnSignal } from "@/agent/reply-turn";
-import { Bot, Context, h, Logger, Schema, Session, sleep } from "koishi";
+import { Bot, Context, h, Logger, Schema, Session, sleep, Universal } from "koishi";
 
 import { AssetService } from "@/services/assets";
 import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
@@ -310,7 +310,7 @@ export default class CoreUtilExtension {
 
             // --- 发送后处理 ---
             if (messageIds && messageIds.length > 0) {
-                this.emitAfterSendEvent(bot, channelId, msg, messageIds[0], originalSession);
+                await this.emitAfterSendEvent(bot, channelId, msg, messageIds[0], originalSession);
             }
 
             // 如果还有下一条消息，增加一个“段落间隔”延迟
@@ -325,22 +325,46 @@ export default class CoreUtilExtension {
     /**
      * 封装 after-send 事件的发射逻辑
      */
-    private emitAfterSendEvent(bot: Bot, channelId: string, content: string, messageId: string, originalSession: Session): void {
+    private async emitAfterSendEvent(bot: Bot, channelId: string, content: string, messageId: string, originalSession: Session): Promise<void> {
+        const sameSession = bot === originalSession.bot && channelId === originalSession.channelId;
+        let channel = sameSession ? originalSession.event.channel : undefined;
+        if (!channel) {
+            try {
+                channel = await bot.getChannel(channelId);
+            } catch (error) {
+                this.logger.debug(`获取目标频道信息失败: ${this.getSendErrorMessage(error)}`);
+            }
+        }
+        channel = {
+            ...channel,
+            id: channelId,
+            type: channel?.type ?? (channelId.startsWith("private:") ? Universal.Channel.Type.DIRECT : Universal.Channel.Type.TEXT),
+        };
+        const guild = channel.type === Universal.Channel.Type.DIRECT
+            ? undefined
+            : sameSession
+              ? originalSession.event.guild
+              : bot.platform === "onebot"
+                ? { id: channelId }
+                : undefined;
+        const timestamp = Date.now();
         const session = bot.session({
-            ...originalSession.event,
             type: "after-send",
+            platform: bot.platform,
+            selfId: bot.selfId,
+            timestamp,
+            user: bot.user,
             message: {
                 id: messageId,
-                content: content,
+                content,
                 elements: h.parse(content),
-                timestamp: Date.now(),
+                timestamp,
                 user: bot.user,
             },
-            channel: {
-                id: channelId,
-                type: originalSession.guildId ? 0 : 1,
-            },
+            channel,
+            guild,
         });
+        session.content = content;
         this.ctx.emit("after-send", session as Session);
     }
 }
