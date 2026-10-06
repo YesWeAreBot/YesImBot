@@ -32,25 +32,22 @@ export default class StickerTools {
     private assetService: AssetService;
     private stickerService: StickerService;
 
-    private static serviceInstance: StickerService | null = null;
+    private disposed = false;
 
     constructor(
         public ctx: Context,
         public config: StickerConfig
     ) {
-        // 确保只创建一个服务实例
-        if (!StickerTools.serviceInstance) {
-            StickerTools.serviceInstance = new StickerService(ctx, config);
-        }
-
         this.assetService = ctx[Services.Asset];
-        this.stickerService = StickerTools.serviceInstance;
+        this.stickerService = new StickerService(ctx, config);
+        ctx.on("dispose", () => {
+            this.disposed = true;
+        });
 
         ctx.on("ready", async () => {
-            // 等待服务完全启动
-            await this.stickerService.whenReady();
-
             try {
+                await this.stickerService.whenReady();
+                if (this.disposed) return;
                 // 确保只初始化一次
                 if (!this.initialized) {
                     this.initialized = true;
@@ -293,9 +290,13 @@ export default class StickerTools {
     private registerSnippets() {
         const promptService: PromptService = this.ctx[Services.Prompt];
 
-        promptService.registerSnippet("sticker.categories", async () => {
+        const removeSnippet: unknown = promptService.registerSnippet("sticker.categories", async () => {
+            if (this.disposed) return "";
             const categories = await this.stickerService.getCategories();
             return categories.join(", ") || "暂无分类，请先收藏表情包";
+        });
+        this.ctx.on("dispose", () => {
+            if (typeof removeSnippet === "function") removeSnippet();
         });
     }
 
