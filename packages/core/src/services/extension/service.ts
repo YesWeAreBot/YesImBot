@@ -26,7 +26,9 @@ declare module "koishi" {
  */
 export class ToolService extends Service<Config> {
     /** Extension contract v1; feature detection also supports source checkouts. */
-    public get capabilities() { return Object.freeze({ trustedToolSession: 1 as const }); }
+    public get capabilities() {
+        return Object.freeze({ trustedToolSession: 1 as const });
+    }
 
     static readonly inject = [Services.Logger, Services.Prompt];
     private tools: Map<string, ToolDefinition> = new Map();
@@ -434,6 +436,9 @@ export class ToolService extends Service<Config> {
 
     public registerTool(definition: ToolDefinition) {
         this.tools.set(definition.name, definition);
+        return () => {
+            if (this.tools.get(definition.name) === definition) this.tools.delete(definition.name);
+        };
     }
 
     public unregisterTool(name: string) {

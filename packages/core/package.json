@@ -44,12 +44,12 @@
     "./package.json": "./package.json",
     "./services": {
       "types": "./lib/services/index.d.ts",
-      "import": "./lib/services/index.mjs",
+      "import": "./lib/services/index.js",
       "require": "./lib/services/index.js"
     },
     "./shared": {
       "types": "./lib/shared/index.d.ts",
-      "import": "./lib/shared/index.mjs",
+      "import": "./lib/shared/index.js",
       "require": "./lib/shared/index.js"
     }
   },

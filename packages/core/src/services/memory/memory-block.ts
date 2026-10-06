@@ -19,6 +19,9 @@ export class MemoryBlock {
     private lastModifiedInMemory: Date = new Date();
     private _filePath: string;
 
+    private disposed = false;
+    private watchGeneration = 0;
+    private reloadGeneration = 0;
     private watcher?: fs.FSWatcher;
     private debounceTimer?: NodeJS.Timeout;
     private lastModifiedFileMs: number = 0;
@@ -63,6 +66,8 @@ export class MemoryBlock {
     // --- Public Methods ---
 
     public dispose(): void {
+        this.disposed = true;
+        this.reloadGeneration++;
         this.stopWatching();
     }
 
@@ -78,9 +83,12 @@ export class MemoryBlock {
     // --- File Watching and Sync ---
 
     private async reloadFromFile(): Promise<void> {
+        if (this.disposed) return;
+        const generation = ++this.reloadGeneration;
         this.logger.debug(`开始同步 | 文件 -> 内存`);
         try {
             const block = await MemoryBlock.loadDataFromFile(this._filePath);
+            if (this.disposed || generation !== this.reloadGeneration) return;
             this._metadata = {
                 title: block.title,
                 label: block.label,
@@ -90,16 +98,20 @@ export class MemoryBlock {
             this.lastModifiedInMemory = new Date();
             this.logger.debug(`同步成功`);
         } catch (error) {
-            this.logger.error(`同步失败 | 错误: ${error.message}`);
+            if (!this.disposed && generation === this.reloadGeneration) this.logger.error(`同步失败 | 错误: ${error.message}`);
         }
     }
 
     public async startWatching(): Promise<void> {
-        if (this.watcher) return;
+        if (this.disposed || this.watcher) return;
+        const generation = ++this.watchGeneration;
         // this.logger.debug(`[文件监视] 启动 | 路径: ${this.filePath}`);
         this.watcher = fs.watch(this._filePath, (eventType) => {
+            if (this.disposed || generation !== this.watchGeneration) return;
             if (this.debounceTimer) clearTimeout(this.debounceTimer);
             this.debounceTimer = setTimeout(async () => {
+                this.debounceTimer = undefined;
+                if (this.disposed || generation !== this.watchGeneration) return;
                 try {
                     if (!fs.existsSync(this.filePath)) {
                         this.logger.warn(`文件已删除，停止监听 | 路径: ${this.filePath}`);
@@ -107,13 +119,14 @@ export class MemoryBlock {
                         return;
                     }
                     const currentFstat = await stat(this.filePath);
+                    if (this.disposed || generation !== this.watchGeneration) return;
                     if (currentFstat.mtimeMs > this.lastModifiedFileMs) {
                         this.logger.debug(`文件变更，开始同步 | 路径: ${this.filePath}`);
                         this.lastModifiedFileMs = currentFstat.mtimeMs;
                         await this.reloadFromFile();
                     }
                 } catch (error) {
-                    this.logger.error(`处理变更时出错 | 错误: ${error.message}`);
+                    if (!this.disposed && generation === this.watchGeneration) this.logger.error(`处理变更时出错 | 错误: ${error.message}`);
                 }
             }, 300);
         });
@@ -124,6 +137,8 @@ export class MemoryBlock {
     }
 
     private stopWatching(): void {
+        this.watchGeneration++;
+        this.reloadGeneration++;
         if (this.watcher) {
             this.watcher.close();
             this.watcher = undefined;
@@ -139,19 +154,31 @@ export class MemoryBlock {
 
     public static async createFromFile(ctx: Context, filePath: string): Promise<MemoryBlock> {
         const logger = ctx[Services.Logger].getLogger("[核心记忆]");
+        let disposed = false;
+        let block: MemoryBlock | undefined;
+        // Bind ownership before asynchronous reads or watcher creation.
+        ctx.on("dispose", () => {
+            disposed = true;
+            block?.dispose();
+        });
         try {
             const fileStats = await stat(filePath);
+            if (disposed) throw new Error("核心记忆服务已停止");
             const blockData = await this.loadDataFromFile(filePath);
+            if (disposed) throw new Error("核心记忆服务已停止");
 
             // logger.debug(`加载实例 | 标签: "${data.label}", 路径: "${filePath}"`);
-            const block = new MemoryBlock(ctx, filePath, blockData, fileStats.mtimeMs);
+            block = new MemoryBlock(ctx, filePath, blockData, fileStats.mtimeMs);
 
             await block.startWatching();
-            ctx.on("dispose", () => block.dispose());
-
+            if (disposed) {
+                block.dispose();
+                throw new Error("核心记忆服务已停止");
+            }
             return block;
         } catch (error) {
-            logger.error(`加载失败 | 路径: "${filePath}" | 错误: ${error.message}`);
+            block?.dispose();
+            if (!disposed) logger.error(`加载失败 | 路径: "${filePath}" | 错误: ${error.message}`);
 
             throw new AppError(ErrorDefinitions.MEMORY.PROVIDER_ERROR, {
                 cause: error,
