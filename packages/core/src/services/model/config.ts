@@ -193,6 +193,8 @@ export const PROVIDER_TYPES = Object.keys(PROVIDERS) as ProviderType[];
 
 export type ProviderType = keyof typeof PROVIDERS;
 
+const DEFAULT_PROVIDER_TYPE: ProviderType = "OpenAI";
+
 export interface ProviderConfig {
     name: string;
     type: ProviderType;
@@ -205,12 +207,13 @@ export interface ProviderConfig {
 export const ProviderConfigSchema: Schema<ProviderConfig> = Schema.intersect([
     Schema.object({
         name: Schema.string().required().description("提供商名称"),
-        type: Schema.union(PROVIDER_TYPES).default("OpenAI").description("提供商类型"),
+        type: Schema.union(PROVIDER_TYPES).default(DEFAULT_PROVIDER_TYPE).description("提供商类型"),
     }),
     Schema.union(
         PROVIDER_TYPES.map((type) => {
             return Schema.object({
-                type: Schema.const(type),
+                // Only the default branch may match when the provider type is omitted.
+                type: type === DEFAULT_PROVIDER_TYPE ? Schema.const(type) : Schema.const(type).required(),
                 baseURL: Schema.string().default(PROVIDERS[type].baseURL).role("link").description(`提供商的 API 地址`),
                 apiKey: Schema.string()
                     .role("secret")
