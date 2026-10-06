@@ -146,6 +146,7 @@ export class ChatModel extends BaseModel implements IChatModel {
         const { validation, onStreamStart, abortSignal, singleStep, ...restOptions } = options;
         return {
             ...this.chatProvider(this.config.modelId),
+            abortSignal,
             fetch: async (url: string, init: RequestInit) => {
                 init.signal = options.abortSignal;
                 return this.fetch(url, init);
@@ -205,13 +206,20 @@ export class ChatModel extends BaseModel implements IChatModel {
         let finalUsage: GenerateTextResult["usage"];
         let finalFinishReason: GenerateTextResult["finishReason"] = "unknown";
 
-        let streamFinished = false;
-        const diagnostics = new StreamDiagnostics(stime);
+        let completion = new StreamCompletion();
+        let buffer: string[] = [];
+        let earlyExitError: DOMException | undefined;
+        let diagnostics = new StreamDiagnostics(stime);
         const originalFetch = chatOptions.fetch;
         const streamOptions = {
             ...chatOptions,
             fetch: async (url: URL, init: RequestInit) => {
                 const response = await originalFetch(url, init);
+                // 多步工具响应每次都必须有自己的终止信号。
+                diagnostics = new StreamDiagnostics(stime);
+                const responseCompletion = completion = new StreamCompletion();
+                buffer = [];
+                earlyExitError = undefined;
                 diagnostics.recordResponse(response);
                 this.logger.debug(`[${requestId}] HTTP 响应 | ${JSON.stringify(diagnostics.summary())}`);
                 if (response.ok) {
@@ -224,14 +232,38 @@ export class ChatModel extends BaseModel implements IChatModel {
                             context: { httpStatus: response.status, contentType },
                         });
                     }
-                    return diagnostics.observe(response);
+                    // xsai 在响应体结束后、streamText 返回前执行工具。必须在本次
+                    // body 的 flush 边界阻止异常 EOF，不能等 SDK 返回后再检查。
+                    const observed = diagnostics.observe(response);
+                    if (!observed.body) return observed;
+                    const body = observed.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+                        transform: (chunk, controller) => {
+                            responseCompletion.observe(chunk);
+                            controller.enqueue(chunk);
+                        },
+                        flush: () => {
+                            responseCompletion.finish();
+                            if (chatOptions.abortSignal?.aborted) {
+                                throw chatOptions.abortSignal.reason ?? new DOMException("Request aborted", "AbortError");
+                            }
+                            const summary = diagnostics.summary();
+                            const completed = !responseCompletion.hasUnterminatedData() && responseCompletion.completed;
+                            // 验证器只能提前接受文本，不能授权不完整的工具调用。
+                            if (!completed && (!responseCompletion.earlyExit || responseCompletion.hasTools)) {
+                                throw new AppError(ErrorDefinitions.LLM.REQUEST_FAILED, {
+                                    args: ["SSE 响应异常 EOF：未收到完整的完成或终止信号"],
+                                    context: { streamDiagnostics: summary },
+                                });
+                            }
+                        },
+                    }));
+                    return new Response(body, { status: observed.status, statusText: observed.statusText, headers: observed.headers });
                 }
                 return response;
             },
         };
 
         try {
-            const buffer: string[] = [];
             const stream = await streamText({
                 ...streamOptions,
                 streamOptions: { includeUsage: true },
@@ -240,7 +272,7 @@ export class ChatModel extends BaseModel implements IChatModel {
                         onStreamStart?.();
                         streamStarted = true;
                     }
-                    if (event.type !== "text-delta" || streamFinished) return;
+                    if (event.type !== "text-delta" || completion.earlyExit) return;
 
                     const textDelta = event.text || "";
                     if (!streamStarted && isNotEmpty(textDelta)) {
@@ -258,14 +290,17 @@ export class ChatModel extends BaseModel implements IChatModel {
                         const validationResult = validator(buffer.join(""));
                         if (validationResult.valid && validationResult.earlyExit) {
                             this.logger.debug(`✅ 内容有效，提前中断流... | 耗时: ${Date.now() - stime}ms`);
-                            streamFinished = true;
+                            completion.earlyExit = true;
                             // 使用解析后的干净数据替换部分流式文本
                             if (validationResult.parsedData) {
                                 finalContentParts.splice(0, finalContentParts.length, JSON.stringify(validationResult.parsedData));
                             }
                             // 触发 AbortController 来中断HTTP连接
                             const controller = (chatOptions.abortSignal as any)?.controller;
-                            if (controller) controller.abort("early_exit");
+                            if (controller) {
+                                earlyExitError = new DOMException("early_exit", "AbortError");
+                                controller.abort(earlyExitError);
+                            }
                         }
                     }
                 },
@@ -305,7 +340,7 @@ export class ChatModel extends BaseModel implements IChatModel {
             })();
         } catch (error) {
             // "early_exit" 是我们主动中断流时产生的预期错误，应静默处理
-            if (error.name === "AbortError" && error.message === "early_exit") {
+            if (completion.earlyExit && earlyExitError && error === earlyExitError) {
                 this.logger.debug(`🟢 [流式] 捕获到预期的 AbortError，流程正常结束。`);
             } else {
                 this.logger.debug(`[${requestId}] 流式异常 | 类型: ${error.name} | ${JSON.stringify(diagnostics.summary())}`);
@@ -324,7 +359,7 @@ export class ChatModel extends BaseModel implements IChatModel {
         const duration = Date.now() - stime;
         const finalText = finalContentParts.join("");
 
-        if (diagnostics.hasUnterminatedData()) {
+        if (!completion.earlyExit && completion.hasUnterminatedData()) {
             throw new AppError(ErrorDefinitions.LLM.REQUEST_FAILED, {
                 args: ["SSE 数据行未完整结束，响应可能被截断"],
                 context: { streamDiagnostics: diagnostics.summary() },
@@ -442,4 +477,38 @@ export class ChatModel extends BaseModel implements IChatModel {
 /** 单步调用交回框架；真实工具只在模型请求完整成功后执行。 */
 class SingleStepComplete extends Error {
     constructor(public readonly step: CompletionStep) { super("Single step complete"); }
+}
+
+/** 协议授权独立于有长度限制的诊断。与 SDK 一样逐行解析，完整帧后立即释放正文。 */
+class StreamCompletion {
+    private readonly decoder = new TextDecoder();
+    private pendingLine = "";
+    completed = false;
+    hasTools = false;
+    earlyExit = false;
+
+    observe(chunk: Uint8Array): void { this.scan(this.decoder.decode(chunk, { stream: true })); }
+    finish(): void { this.scan(this.decoder.decode()); }
+    hasUnterminatedData(): boolean {
+        if (!this.pendingLine.startsWith("data:")) return false;
+        // 兼容上游省略 DONE 尾行换行；尾标自身不能授权异常 EOF。
+        return !(this.completed && this.pendingLine.slice(5).trim() === "[DONE]");
+    }
+
+    private scan(text: string): void {
+        const lines = (this.pendingLine + text).split("\n");
+        this.pendingLine = lines.pop() ?? "";
+        for (const line of lines) {
+            if (!line.startsWith("data:")) continue;
+            const data = line.slice(5).trim();
+            if (data === "[DONE]") { this.completed = true; continue; }
+            try {
+                const choice = JSON.parse(data)?.choices?.[0];
+                if (typeof choice?.finish_reason === "string" && choice.finish_reason.length > 0) this.completed = true;
+                if (choice?.delta?.tool_calls?.length) this.hasTools = true;
+            } catch {
+                // SDK 保留原始解析错误；这里不把畸形帧当作完成信号。
+            }
+        }
+    }
 }

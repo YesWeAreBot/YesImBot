@@ -388,12 +388,13 @@ class RequestExecutor {
             const startedAt = Date.now();
             attemptLogger.debug(`开始请求 | 首字超时: ${timeoutPolicy.firstTokenTimeout ?? "未配置"}s | 总超时: ${timeoutPolicy.totalTimeout}s`);
 
-            const firstTokenTimeoutId = setTimeout(() => {
+            const useStream = options.stream ?? model.config.parameters?.stream ?? true;
+            const firstTokenTimeoutId = useStream && timeoutPolicy.firstTokenTimeout !== undefined ? setTimeout(() => {
                 const timeoutError = new Error(`First token not received within ${timeoutPolicy.firstTokenTimeout}s`);
                 timeoutError.name = "AbortError";
                 timeoutError["duration"] = timeoutPolicy.firstTokenTimeout;
                 controller.abort(timeoutError);
-            }, timeoutPolicy.firstTokenTimeout * 1000);
+            }, timeoutPolicy.firstTokenTimeout * 1000) : undefined;
 
             const timeoutId = setTimeout(() => {
                 const timeoutError = new Error(`Request timed out after ${timeoutPolicy.totalTimeout}s`);

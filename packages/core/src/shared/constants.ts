@@ -12,6 +12,7 @@ export enum TableName {
     Members = "worldstate.members",
     Messages = "worldstate.messages",
     SystemEvents = "worldstate.system_events",
+    BotMuteState = "worldstate.bot_mute_state",
     L2Chunks = "worldstate.l2_chunks",
     L3Diaries = "worldstate.l3_diaries",
 

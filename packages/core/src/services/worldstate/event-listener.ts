@@ -1,4 +1,5 @@
 import { Argv, Context, Logger, Random, Session } from "koishi";
+import type { Universal } from "koishi";
 
 import { Services, TableName } from "@/shared/constants";
 import { truncate } from "@/shared/utils";
@@ -12,11 +13,14 @@ interface PendingCommand {
     scope: string;
     invokerId: string;
     timestamp: number;
+    session: Session;
 }
 
 export class EventListenerManager {
     private readonly disposers: (() => boolean)[] = [];
     private readonly pendingCommands = new Map<string, PendingCommand[]>();
+    private cleanupTimer?: () => void;
+    private generation = 0;
     private logger: Logger;
     private assetService: AssetService;
 
@@ -30,12 +34,18 @@ export class EventListenerManager {
     }
 
     public start(): void {
+        if (this.cleanupTimer) return;
         this.registerEventListeners();
+        this.cleanupTimer = this.ctx.setInterval(() => this.cleanupPendingCommands(), 60 * 1000);
     }
 
     public stop(): void {
+        this.generation++;
+        this.cleanupTimer?.();
+        this.cleanupTimer = undefined;
         this.disposers.forEach((dispose) => dispose());
         this.disposers.length = 0;
+        this.pendingCommands.clear();
     }
 
     public cleanupPendingCommands(): void {
@@ -72,6 +82,17 @@ export class EventListenerManager {
                 await next();
 
                 if (!session["__commandHandled"]) {
+                    // 等待所有前置处理结束；单个插件失败不能提前触发回复。
+                    const hooks = this.ctx.lifecycle.filterHooks(
+                        this.ctx.lifecycle._hooks["yesimbot/before-user-stimulus"] || [],
+                        session
+                    );
+                    const results = await Promise.allSettled(
+                        hooks.map((hook) => Promise.resolve().then(() => hook.callback.call(session, session)))
+                    );
+                    for (const result of results) {
+                        if (result.status === "rejected") this.logger.error("用户消息前置处理失败", result.reason);
+                    }
                     const stimulus: AgentStimulus<UserMessagePayload> = {
                         type: "user_message",
                         channelCid: session.cid,
@@ -87,11 +108,11 @@ export class EventListenerManager {
         this.disposers.push(
             this.ctx.on("command/before-execute", (argv) => {
                 argv.session["__commandHandled"] = true;
-                this.handleCommandInvocation(argv);
+                return this.handleCommandInvocation(argv);
             })
         );
 
-        this.disposers.push(this.ctx.on("before-send", (session) => this.matchCommandResult(session), true));
+        this.disposers.push(this.ctx.on("before-send", (session, options) => this.matchCommandResult(session, options), true));
         this.disposers.push(this.ctx.on("after-send", (session) => this.recordBotSentMessage(session), true));
 
         this.disposers.push(
@@ -143,78 +164,66 @@ export class EventListenerManager {
     }
 
     private async handleGuildMember(session: Session): Promise<void> {
-        switch (session.subtype) {
-            case "ban":
-                const duration = session.event._data?.duration * 1000; // ms
-                const isTargetingBot = session.event.user?.id === session.bot.selfId;
+        if (session.subtype !== "ban") return;
+        const raw = session.event._data;
+        if (typeof raw?.duration !== "number" && typeof raw?.duration !== "string") return;
+        if (typeof raw.duration === "string" && !raw.duration.trim()) return;
+        const seconds = Number(raw?.duration);
+        if (!Number.isFinite(seconds)) return;
+        const duration = seconds * 1000;
+        if (!Number.isFinite(duration)) return;
+        const selfId = session.selfId || session.bot.selfId;
+        const userId = session.event.user?.id ?? (raw?.user_id === undefined ? undefined : String(raw.user_id));
+        const allMembers = String(raw?.user_id) === "0" || (duration < 0 && userId === undefined);
+        if (!allMembers && (!userId || duration < 0)) return;
+        const released = raw?.sub_type === "lift_ban" || duration === 0;
+        const timestamp = new Date();
+        const isTargetingBot = userId === selfId;
+        const type = allMembers
+            ? released
+                ? "guild-all-member-unban"
+                : "guild-all-member-ban"
+            : released
+              ? "guild-member-unban"
+              : "guild-member-ban";
+        const payload: Partial<SystemEventData> = {
+            type,
+            payload: {
+                details: {
+                    user: userId === undefined ? undefined : { ...session.event.user, id: userId },
+                    operator: session.event.operator,
+                    duration,
+                    selfId,
+                },
+            },
+            message: allMembers
+                ? `系统提示：管理员 "${session.event.operator?.id}" ${released ? "解除了" : "开启了"}全体禁言`
+                : released
+                  ? `系统提示：管理员 "${session.event.operator?.id}" 已解除用户 "${userId}" 的禁言`
+                  : `系统提示：管理员 "${session.event.operator?.id}" 已将用户 "${userId}" 禁言，时长为 ${duration}ms`,
+        };
 
-                if (duration < 0) {
-                    // 全体禁言
-                    const payload: Partial<SystemEventData> = {
-                        type: "guild-all-member-ban",
-                        payload: { details: { operator: session.event.operator, duration } },
-                        message: `系统提示：管理员 "${session.event.operator?.id}" 开启了全体禁言`,
-                    };
-                    this.service.updateMuteStatus(session.cid, Number.POSITIVE_INFINITY);
-                    this.service.recordSystemEvent({
-                        id: `sysevt_ban_${Random.id()}`,
-                        platform: session.platform,
-                        channelId: session.channelId,
-                        timestamp: new Date(),
-                        ...payload,
-                    } as SystemEventData);
-                    return;
-                }
-
-                if (duration === 0) {
-                    // 解除禁言
-                    const payload: Partial<SystemEventData> = {
-                        type: "guild-member-unban",
-                        payload: { details: { user: session.event.user, operator: session.event.operator } },
-                        message: `系统提示：管理员 "${session.event.operator?.id}" 已解除用户 "${session.event.user?.id}" 的禁言`,
-                    };
-
-                    if (isTargetingBot) {
-                        this.service.updateMuteStatus(session.cid, 0);
-                        const stimulus: AgentStimulus<SystemEventPayload> = {
-                            type: "system_event",
-                            channelCid: session.cid,
-                            session,
-                            priority: 8,
-                            payload: payload as SystemEventPayload,
-                        };
-                        this.ctx.emit("agent/stimulus", stimulus);
-                    }
-                    this.service.recordSystemEvent({
-                        id: `sysevt_unban_${Random.id()}`,
-                        platform: session.platform,
-                        channelId: session.channelId,
-                        timestamp: new Date(),
-                        ...payload,
-                    } as SystemEventData);
-                    return;
-                }
-
-                const payload: Partial<SystemEventData> = {
-                    type: "guild-member-ban",
-                    payload: { details: { user: session.event.user, operator: session.event.operator, duration } },
-                    message: `系统提示：管理员 "${session.event.operator?.id}" 已将用户 "${session.event.user?.id}" 禁言，时长为 ${duration}ms`,
-                };
-
-                this.service.recordSystemEvent({
-                    id: `sysevt_ban_${Random.id()}`,
-                    platform: session.platform,
-                    channelId: session.channelId,
-                    timestamp: new Date(),
-                    ...payload,
-                } as SystemEventData);
-
-                if (isTargetingBot) {
-                    const expiresAt = duration > 0 ? Date.now() + duration : 0;
-                    this.service.updateMuteStatus(session.cid, expiresAt);
-                }
-
-                break;
+        if (allMembers) {
+            await this.service.updateMuteStatus(session.cid, released ? 0 : Infinity, selfId, "all");
+        } else if (isTargetingBot || this.ctx.bots.some(bot => bot.platform === session.platform && bot.selfId === userId)) {
+            await this.service.updateMuteStatus(session.cid, released ? 0 : timestamp.getTime() + duration, userId);
+        }
+        await this.service.recordSystemEvent({
+            id: `sysevt_${released ? "unban" : "ban"}_${Random.id()}`,
+            platform: session.platform,
+            channelId: session.channelId,
+            timestamp,
+            ...payload,
+        } as SystemEventData);
+        if (!allMembers && released && isTargetingBot && !this.service.isBotMuted(session.cid, selfId)) {
+            const stimulus: AgentStimulus<SystemEventPayload> = {
+                type: "system_event",
+                channelCid: session.cid,
+                session,
+                priority: 8,
+                payload: payload as SystemEventPayload,
+            };
+            this.ctx.emit("agent/stimulus", stimulus);
         }
     }
 
@@ -232,9 +241,10 @@ export class EventListenerManager {
     private async handleCommandInvocation(argv: Argv): Promise<void> {
         const { session, command, source } = argv;
         if (!session) return;
+        const generation = this.generation;
 
         this.logger.info(`记录指令调用 | 用户: ${session.author.name || session.userId} | 指令: ${command.name} | 频道: ${session.cid}`);
-        const commandEventId = `cmd_invoked_${session.messageId || Random.id()}`;
+        const commandEventId = `cmd_invoked_${session.messageId || "call"}_${Random.id()}`;
 
         const eventPayload: SystemEventData = {
             id: commandEventId,
@@ -251,27 +261,40 @@ export class EventListenerManager {
         };
 
         await this.service.recordSystemEvent(eventPayload);
+        if (generation !== this.generation) return;
 
-        const pendingList = this.pendingCommands.get(session.channelId) || [];
+        const key = this.commandKey(session);
+        const pendingList = this.pendingCommands.get(key) || [];
         pendingList.push({
             commandEventId,
             scope: session.scope,
             invokerId: session.userId,
             timestamp: Date.now(),
+            session,
         });
-        this.pendingCommands.set(session.channelId, pendingList);
+        this.pendingCommands.set(key, pendingList);
     }
 
-    private async matchCommandResult(session: Session): Promise<void> {
-        if (!session.scope) return;
+    private commandKey(session: Session): string {
+        return JSON.stringify([session.platform, session.channelId, session.selfId || session.bot?.selfId]);
+    }
 
-        const pendingInChannel = this.pendingCommands.get(session.channelId);
+    private async matchCommandResult(session: Session, options?: Universal.SendOptions): Promise<void> {
+        this.cleanupPendingCommands();
+        if (!session.scope || !options?.session) return;
+
+        const key = this.commandKey(session);
+        const pendingInChannel = this.pendingCommands.get(key);
         if (!pendingInChannel?.length) return;
 
-        const pendingIndex = pendingInChannel.findIndex((p) => p.scope === session.scope);
-        if (pendingIndex === -1) return;
+        // command scope 是固定作用域；真实编码器通过 options.session 传递调用者。
+        // 同一个 Session 并发执行同名命令仍有歧义，宁可不关联也不能猜测 FIFO。
+        const candidates = pendingInChannel.filter(p => p.session === options.session && p.scope === session.scope);
+        if (candidates.length !== 1) return;
+        const pendingIndex = pendingInChannel.indexOf(candidates[0]);
 
         const [pendingCmd] = pendingInChannel.splice(pendingIndex, 1);
+        if (!pendingInChannel.length) this.pendingCommands.delete(key);
         this.logger.debug(`匹配到指令结果 | 事件ID: ${pendingCmd.commandEventId}`);
 
         const [existingEvent] = await this.ctx.database.get(TableName.SystemEvents, { id: pendingCmd.commandEventId });

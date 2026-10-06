@@ -65,9 +65,11 @@ export const Config: Schema<Config> = Schema.object({
             command: Schema.string().description("⚡ MCP 服务器启动命令"),
             args: Schema.array(Schema.string()).role("table").description("📋 启动参数列表"),
             env: Schema.dict(String).role("table").description("🔧 环境变量设置"),
-            enableCommandTransform: Schema.boolean()
-                .description("🔄 启用命令转换 (uvx → uv tool run, npx → bun x)")
-                .default(true),
+            enableCommandTransform: Schema.union([
+                Schema.const(undefined).description("继承全局设置"),
+                Schema.const(true).description("启用"),
+                Schema.const(false).description("关闭"),
+            ]).description("🔄 命令转换 (uvx → uv tool run, npx → bun x)"),
         }).collapse()
     ).description("📡 MCP 服务器配置列表"),
     uvSettings: Schema.object({

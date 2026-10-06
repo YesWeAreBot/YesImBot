@@ -45,6 +45,7 @@ YesImBot/
 | --------- | --------------------------- | -------------------------------------- |
 | **core**  | 核心聊天机器人功能          | `koishi-plugin-yesimbot`               |
 | **mcp**   | Model Context Protocol 扩展 | `koishi-plugin-yesimbot-extension-mcp` |
+| **person-memory** | 人物画像、账号关联与管理员审核 | `koishi-plugin-yesimbot-extension-person-memory` |
 | **webui** | Web 管理界面                | _开发中_                               |
 
 ## 📋 文档导航

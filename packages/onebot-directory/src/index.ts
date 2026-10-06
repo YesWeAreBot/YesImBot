@@ -1,4 +1,4 @@
-import { Context, Schema, type Session } from "koishi";
+import { Context, Schema, h, type Session } from "koishi";
 import { DirectoryStore, registerModels, type OneBotClient, type Query } from "./store";
 
 export const name = "yesimbot-onebot-directory";
@@ -123,12 +123,12 @@ export function apply(ctx: Context, config: Config) {
                         offset: options.offset, limit: options.limit, all: options.all, refresh: options.refresh });
                     const header = `${kind === "friends" ? "好友" : `群 ${result.groupId} 成员`}：${result.total} 人；本次 ${result.returned} 人；缓存于 ${new Date(result.fetchedAt).toLocaleString()}（来源机器人 ${result.sourceBotId}）`;
                     const lines = result.entries.map((item, i) => `${result.offset + i + 1}. ${item.userId} ${item.card || item.remark || item.nickname}${item.role ? ` (${item.role})` : ""}`);
-                    if (!lines.length) return header;
+                    if (!lines.length) return h.text(header);
                     // Avoid a single huge platform message when --all is used.
                     for (let i = 0; i < lines.length; i += 40) {
-                        await session.send(`${i === 0 ? header + "\n" : ""}${lines.slice(i, i + 40).join("\n")}`);
+                        await session.send(h.text(`${i === 0 ? header + "\n" : ""}${lines.slice(i, i + 40).join("\n")}`));
                     }
-                } catch (error) { return `查询 OneBot 名单失败：${String(error)}`; }
+                } catch (error) { return h.text(`查询 OneBot 名单失败：${String(error)}`); }
             });
     }
     command("friends");

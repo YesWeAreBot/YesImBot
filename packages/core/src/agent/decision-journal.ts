@@ -1,5 +1,6 @@
 import { constants } from "node:fs";
 import { chmod, lstat, mkdir, open, rename, unlink } from "node:fs/promises";
+import type { FileHandle } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { DecisionRecord } from "./decision-record";
@@ -172,6 +173,8 @@ export class DecisionJournal {
     private closePromise?: Promise<void>;
     private dirty = false;
     private ready = false;
+    private lock?: FileHandle;
+    private readonly lockPath: string;
     private lastWarning = "";
     private readonly options: DecisionJournalOptions;
     private counts = {
@@ -198,7 +201,10 @@ export class DecisionJournal {
             retentionHours: finite(options.retentionHours) ? Math.max(0, options.retentionHours) : 24,
         };
         this.filePath = join(directory, "decisions.jsonl");
-        this.queue = this.recover().catch(() => {
+        this.lockPath = join(directory, ".decisions.lock");
+        this.queue = this.recover().catch(async () => {
+            this.ready = false;
+            await this.releaseLock();
             this.counts.writeFailures++;
             this.warning("Decision journal initialization failed; recording is unavailable.");
         });
@@ -259,6 +265,16 @@ export class DecisionJournal {
         const directoryStat = await lstat(this.directory);
         if (!directoryStat.isDirectory() || directoryStat.isSymbolicLink()) throw new Error("unsafe directory");
         await chmod(this.directory, 0o700);
+        // Acquire before reading or compacting: even recovery can rewrite history.
+        // O_EXCL provides the same exclusion for separate objects and processes.
+        try {
+            this.lock = await open(this.lockPath, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+            this.warning("Decision journal directory is locked by another writer or an interrupted process; this instance's recording and queries are disabled. Stop all instances before manually removing .decisions.lock after an abnormal exit.");
+            return;
+        }
+        await this.lock.writeFile(JSON.stringify({ pid: process.pid }) + "\n");
         try {
             const stat = await lstat(this.filePath);
             if (!stat.isFile() || stat.isSymbolicLink()) throw new Error("unsafe journal");
@@ -448,10 +464,24 @@ export class DecisionJournal {
         });
     }
 
+    private async releaseLock(): Promise<void> {
+        if (!this.lock) return;
+        const lock = this.lock;
+        this.lock = undefined;
+        this.ready = false;
+        try {
+            await lock.close();
+            await unlink(this.lockPath);
+        } catch {
+            this.counts.writeFailures++;
+            this.warning("Decision journal lock release failed; recording may remain disabled on restart. Stop all instances before manually removing .decisions.lock.");
+        }
+    }
+
     close(): Promise<void> {
         if (!this.closePromise) {
             this.closed = true;
-            this.closePromise = this.flush();
+            this.closePromise = this.flush().finally(() => this.releaseLock());
         }
         return this.closePromise;
     }

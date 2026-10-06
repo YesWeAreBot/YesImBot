@@ -51,4 +51,12 @@ export const Config: Schema<Config> = Schema.intersect([
     AssetServiceConfigSchema.collapse().description("资源存储与处理"),
     //TelemetryConfigSchema,
     SystemConfigSchema.collapse().description("系统设置"),
-]);
+].map(configSection));
+
+// Preserve flat configuration fields. Only top-level presentation metadata changes.
+function configSection(schema: Schema): Schema {
+    if (schema.type === "intersect" && !schema.meta.description) {
+        return Schema.intersect(schema.list.map(configSection));
+    }
+    return schema.meta.description ? schema.role("yib-section") : schema;
+}

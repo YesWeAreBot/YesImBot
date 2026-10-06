@@ -19,7 +19,9 @@ async function fixture() {
     const files = ["qq/private_alice.agent.jsonl", "qq/group.agent.jsonl", "onebot/private_bob.agent.jsonl", "onebot/group.agent.jsonl"];
     for (const file of files) {
         await fs.mkdir(path.dirname(path.join(logRoot, file)), { recursive: true });
-        await fs.writeFile(path.join(logRoot, file), '{"type":"agent_thought"}\n');
+        const [platform, name] = file.split("/");
+        const channelId = name.replace(".agent.jsonl", "").replace(/^private_/, "private:");
+        await fs.writeFile(path.join(logRoot, file), JSON.stringify({ type: "agent_thought", platform, channelId }) + "\n");
     }
     await fs.writeFile(path.join(logRoot, "qq/keep.txt"), "unrelated");
     const removals: any[] = [];
@@ -59,7 +61,7 @@ async function fixture() {
             () => true,
             () => false
         );
-    return { manager, invoke, exists, files, removals };
+    return { manager, invoke, exists, files, removals, logRoot };
 }
 
 for (const type of ["private", "guild", "all"]) {
@@ -71,7 +73,7 @@ for (const type of ["private", "guild", "all"]) {
             expect(await exists(file)).toBe(!selected);
         }
         if (type !== "all") expect(await exists("qq/keep.txt")).toBe(true);
-        expect(removals).toHaveLength(3);
+        expect(removals).toHaveLength(4);
         if (type === "private") expect(removals[0].query.channelId.$regex.test("private:alice")).toBe(true);
         if (type === "guild") expect(removals[0].query.channelId.$not.$regex.test("private:alice")).toBe(true);
     });
@@ -110,7 +112,7 @@ it("explicit platform and channel cleanup retains same channel on another platfo
     const { invoke, exists, files, removals } = await fixture();
     await invoke({ platform: "onebot", channel: "group" });
     for (const file of files) expect(await exists(file)).toBe(file !== "onebot/group.agent.jsonl");
-    expect(removals.map(({ query }) => query)).toEqual(Array(3).fill({ platform: "onebot", channelId: "group" }));
+    expect(removals.map(({ query }) => query)).toEqual(Array(4).fill({ platform: "onebot", channelId: "group" }));
 });
 it("explicit private target cleanup leaves other private conversations intact", async () => {
     const { invoke, exists, files } = await fixture();
@@ -121,4 +123,13 @@ it("typed cleanup tolerates missing platform history", async () => {
     const { manager, exists, files } = await fixture();
     await manager.clearAgentHistory("missing", undefined, "private");
     for (const file of files) expect(await exists(file)).toBe(true);
+});
+
+it("channel cleanup reports retained legacy rows instead of claiming the whole file was deleted", async () => {
+    const { invoke, logRoot } = await fixture();
+    await fs.appendFile(path.join(logRoot, "qq/private_alice.agent.jsonl"), '{"type":"agent_thought"}\n');
+    const result = await invoke({ target: "qq:private:alice" });
+    expect(result).toContain("有 1 条归属不明的旧记录已保留");
+    expect(result).not.toContain("Agent日志文件已删除");
+    expect(await fs.readFile(path.join(logRoot, "qq/private_alice.agent.jsonl"), "utf8")).toBe('{"type":"agent_thought"}\n');
 });

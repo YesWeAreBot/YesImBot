@@ -65,10 +65,10 @@ export const HistoryConfigSchema: Schema<HistoryConfig> = Schema.intersect([
 
         l3_memory: Schema.object({
             enabled: Schema.boolean().default(false).description("启用 L3 长期日记功能"),
-            diaryGenerationTime: Schema.string().default("04:00").description("每日生成日记的时间（HH:mm 格式）"),
+            diaryGenerationTime: Schema.string().default("04:00").description("每日生成日记的时间（HH:mm 格式，使用服务器本地时区）"),
         })
-            .hidden()
-            .description("长期存档设置"),
+            .collapse()
+            .description("L3 长期日记"),
 
         ignoreSelfMessage: Schema.boolean().default(false).description("是否忽略自身发送的消息"),
     }).description("历史记录与上下文"),

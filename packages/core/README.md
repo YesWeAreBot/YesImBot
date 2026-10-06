@@ -21,6 +21,14 @@ YesImBot / Athena 是一个 [Koishi](https://koishi.chat/zh-CN/) 插件，旨在
 
 *新的文档站已上线：[https://docs.yesimbot.chat/](https://docs.yesimbot.chat/)*
 
+### 错误上报与本地诊断
+
+`errorReporting.enabled` 控制远程错误上报，`pasteServiceUrl` 继续使用已有配置。远程报告仅包含错误 ID、UTC 时间、插件版本、错误码、错误类型及白名单技术诊断（如请求 ID、HTTP 状态、重试耗时、流统计和标准 token 用量）。默认省略对话、提示词、原始模型响应、自由文本错误信息和完整堆栈，也不提供上传完整内容的开关。
+
+远程报告和本地日志共用凭证清洗器，遮蔽密钥、认证头、Cookie、密码、URL 中的账号密码及已配置提供商 API 密钥；嵌套 Error / cause / AggregateError 也经过处理。`additionalInfo` 遵循同一远程摘要规则，未知文本字段不会上传。
+
+关闭远程上报不影响已启用的 `logging.local` 保存完整错误诊断。本地日志仍可能包含对话和模型响应，请妥善保管；需要排查完整错误内容时，应查看本地日志。
+
 ## 🎹 特性
 
 - **智能对话管理**：基于意愿值系统控制Bot的主动发言频率，模拟真实人类的交流模式。

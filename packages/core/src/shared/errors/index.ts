@@ -4,6 +4,8 @@ import { v4 as uuidv4 } from "uuid";
 
 import { truncate } from "@/shared/utils";
 import { ErrorDefinitions } from "./definitions";
+import { sanitizeDiagnostic, redactDiagnosticText } from "@/shared/diagnostic-sanitizer";
+import { diagnosticId, diagnosticCode, summarizeContext, summarizeError } from "./report-summary";
 
 // --- 错误上报模块 ---
 
@@ -14,7 +16,7 @@ export interface ErrorReporterConfig {
 }
 
 export const ErrorReporterConfigSchema = Schema.object({
-    enabled: Schema.boolean().default(true).description("是否启用错误上报"),
+    enabled: Schema.boolean().default(true).description("是否启用错误上报（仅上传脱敏技术摘要，不上传对话、模型响应或完整堆栈）"),
     pasteServiceUrl: Schema.string().role("link").default("https://dump.yesimbot.chat/").description("错误上报服务的 URL"),
     includeSystemInfo: Schema.boolean().default(true).description("是否包含系统信息"),
 });
@@ -32,7 +34,7 @@ export class ErrorReporter {
     private readonly config: ErrorReporterConfig;
     private readonly logger: Logger;
 
-    constructor(config: ErrorReporterConfig, logger: Logger, private readonly saveLocal?: (errorId: string, error: Error) => Promise<void>) {
+    constructor(config: ErrorReporterConfig, logger: Logger, private readonly saveLocal?: (errorId: string, error: Error) => Promise<void>, private readonly knownSecrets: readonly string[] = []) {
         this.config = {
             enabled: false,
             includeSystemInfo: true,
@@ -95,64 +97,27 @@ export class ErrorReporter {
     }
 
     private formatErrorDump(context: ReportContext): string {
-        const { error, errorId } = context;
-        const appError = error instanceof AppError ? error : new AppError(ErrorDefinitions.SYSTEM.UNKNOWN, { cause: error });
-
-        const { code, suggestion, context: errorContext, cause, stack } = appError;
+        const error = context.error instanceof AppError ? context.error : new AppError(ErrorDefinitions.SYSTEM.UNKNOWN, { cause: context.error });
+        // Credential filtering includes nested Error fields and additionalInfo before
+        // applying the stricter outbound content policy. Neither step mutates inputs.
+        const cleaned = sanitizeDiagnostic({ ...context, error }, this.knownSecrets);
         const packageJson = require(resolve(__dirname, "../../../package.json"));
-        const dumpSections: string[] = [];
-
-        // --- 摘要 ---
-        dumpSections.push(
+        const dump = [
             `# 智能体错误报告\n`,
-            `**ID:** \`${errorId}\`\n`,
+            `**ID:** \`${diagnosticId(cleaned.errorId)}\`\n`,
             `**时间 (UTC):** \`${new Date().toISOString()}\`\n`,
             `**插件版本:** \`${packageJson.version || "N/A"}\`\n`,
-            `**错误码:** \`${code}\`\n`,
-            `---`
-        );
-
-        // --- 错误与建议 ---
-        dumpSections.push(`## 🔴 错误摘要\n`, `**${appError.message}**\n`, `## 💡 用户建议\n`, `*${suggestion}*\n`, `---`);
-
-        // --- 技术细节 ---
-        if (errorContext && Object.keys(errorContext).length > 0) {
-            dumpSections.push(`## 🛠️ 技术上下文\n`);
-            for (const [key, value] of Object.entries(errorContext)) {
-                // 特殊处理长文本和对象
-                if (key === "rawResponse" && typeof value === "string") {
-                    dumpSections.push(`### 原始 LLM 响应:\n`, "```json\n" + value + "\n```");
-                } else if (key === "schedulingStack" && typeof value === "string") {
-                    dumpSections.push(`### 调度堆栈:\n`, "```\n" + value + "\n```");
-                } else {
-                    dumpSections.push(`**${key}:**\n`, "```json\n" + JSON.stringify(value, null, 2) + "\n```");
-                }
-            }
-            dumpSections.push(`---`);
-        }
-
-        // --- 堆栈追踪 ---
-        if (stack) {
-            dumpSections.push(`## 📄 主堆栈追踪:\n`, "```\n" + stack + "\n```");
-        }
-        if (cause) {
-            const causeError = cause as Error;
-            dumpSections.push(
-                `## 🔗 根本原因 (Cause):\n`,
-                `**Type:** \`${causeError.name}\`\n`,
-                `**Message:** \`${causeError.message}\`\n`,
-                "```\n" + (causeError.stack || "No stack available.") + "\n```"
-            );
-            if (causeError instanceof AggregateError) {
-                dumpSections.push(`### 🌿 聚合错误包含的内部错误:\n`);
-                causeError.errors.forEach((e, index) => {
-                    dumpSections.push(`#### 内部错误 ${index + 1}:\n`, "```\n" + e.stack + "\n```");
-                });
-                dumpSections.push(`---`);
-            }
-        }
-
-        return dumpSections.join("\n");
+            `**错误码:** \`${diagnosticCode(cleaned.error.code)}\`\n`,
+            `---`,
+            `## 技术摘要\n`,
+            "```json\n" + JSON.stringify({
+                error: summarizeError(cleaned.error),
+                additionalInfo: summarizeContext(cleaned.additionalInfo),
+            }, null, 2) + "\n```",
+            `\n对话、模型响应、自由文本错误信息及完整堆栈默认省略；需要完整排障信息时请检查已启用的本地日志。`,
+        ].join("\n");
+        // Defense in depth also covers identifiers and serialization escape forms.
+        return redactDiagnosticText(dump, this.knownSecrets);
     }
 }
 
@@ -160,8 +125,8 @@ export class ErrorReporter {
 
 let globalErrorReporter: ErrorReporter | null = null;
 
-export function initializeErrorReporter(config: ErrorReporterConfig, logger: Logger, saveLocal?: (errorId: string, error: Error) => Promise<void>) {
-    globalErrorReporter = new ErrorReporter(config, logger, saveLocal);
+export function initializeErrorReporter(config: ErrorReporterConfig, logger: Logger, saveLocal?: (errorId: string, error: Error) => Promise<void>, knownSecrets: readonly string[] = []) {
+    globalErrorReporter = new ErrorReporter(config, logger, saveLocal, knownSecrets);
 }
 
 type ErrorDomains = keyof typeof ErrorDefinitions;
@@ -253,10 +218,10 @@ export function handleError(logger: Logger, error: unknown, contextDescription: 
     const devContext = { ...context };
     // 对可能很长的原始响应进行截断，防止刷屏
     if (devContext.rawResponse) {
-        devContext.rawResponse = truncate(devContext.rawResponse as string, 200) + "... (完整响应见已启用的本地日志或上报信息)";
+        devContext.rawResponse = truncate(devContext.rawResponse as string, 200) + "... (完整响应见已启用的本地日志)";
     }
     if (Object.keys(devContext).length > 0) {
-        logger.warn(`   - 调试上下文: ${JSON.stringify(devContext)}`);
+        logger.warn(`   - 调试上下文: ${JSON.stringify(sanitizeDiagnostic(devContext))}`);
     }
     // 堆栈信息使用 DEBUG 级别，仅在需要时通过调整日志等级查看
     // logger.debug(`   - 堆栈追踪:\n${stack}`);

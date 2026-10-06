@@ -1,6 +1,7 @@
 import { Services } from "./shared/constants";
 import {} from "@koishijs/plugin-notifier";
 import { Context, ForkScope, Service } from "koishi";
+import path from "node:path";
 
 import { AgentCore } from "./agent";
 import * as ConfigCommand from "./commands/config";
@@ -27,6 +28,11 @@ export default class YesImBot extends Service<Config> {
 官方交流群：[857518324](http://qm.qq.com/cgi-bin/qm/qr?_wv=1027&k=k3O5_1kNFJMERGxBOj1ci43jHvLvfru9&authKey=TkOxmhIa6kEQxULtJ0oMVU9FxoY2XNiA%2B7bQ4K%2FNx5%2F8C8ToakYZeDnQjL%2B31Rx%2B&noverify=0&group_code=857518324)\n`;
     constructor(ctx: Context, config: Config) {
         super(ctx, "yesimbot", true);
+
+        ctx.console.addEntry({
+            dev: path.resolve(__dirname, "../client/index.js"),
+            prod: path.resolve(__dirname, "../dist"),
+        });
 
         let version = config.version;
         const hasLegacyV1Field = Object.hasOwn(config, "modelService");
@@ -99,7 +105,7 @@ export default class YesImBot extends Service<Config> {
                 agentCore,
             ];
 
-            initializeErrorReporter(config.errorReporting, this.ctx.logger("[错误报告]"), (id, error) => this.ctx[Services.Logger].recordError(id, error));
+            initializeErrorReporter(config.errorReporting, this.ctx.logger("[错误报告]"), (id, error) => this.ctx[Services.Logger].recordError(id, error), config.providers?.map(provider => provider.apiKey).filter(Boolean));
 
             waitForServices(ctx, services)
                 .then((ready) => {

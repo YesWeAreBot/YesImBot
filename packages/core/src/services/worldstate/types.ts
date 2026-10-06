@@ -57,6 +57,16 @@ export interface SystemEventData {
     message?: string; // 预渲染的自然语言消息
 }
 
+/** 当前禁言状态独立于可清理的历史；0 状态保留为解除墓碑。 */
+export interface BotMuteStateData {
+    id: string;
+    channelCid: string;
+    selfId: string;
+    kind: "individual" | "all";
+    expiresAt: number;
+    permanent: boolean;
+}
+
 /**
  * @description 从LLM响应中解析出的、尚未持久化的数据结构。
  * 这是 `HeartbeatProcessor` 内部流转的核心对象。
@@ -113,7 +123,11 @@ export interface AgentHeartbeatLog {
     max: number;
 }
 
-export type AgentLogEntry = AgentThoughtLog | AgentActionLog | AgentObservationLog | AgentHeartbeatLog;
+export type AgentLogEntry = (AgentThoughtLog | AgentActionLog | AgentObservationLog | AgentHeartbeatLog) & {
+    /** 新日志保留原始会话编号；旧日志仍可按已有文件路径读取。 */
+    platform?: string;
+    channelId?: string;
+};
 
 /** 交互日志中消息事件的结构 */
 export interface MessageLog {
@@ -313,6 +327,7 @@ declare module "koishi" {
         [TableName.Members]: MemberData;
         [TableName.Messages]: MessageData;
         [TableName.SystemEvents]: SystemEventData;
+        [TableName.BotMuteState]: BotMuteStateData;
         [TableName.L2Chunks]: MemoryChunkData;
         [TableName.L3Diaries]: DiaryEntryData;
     }
