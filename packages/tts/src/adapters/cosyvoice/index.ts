@@ -1,5 +1,5 @@
 import fs from "fs";
-import { Awaitable, Context, Schema } from "koishi";
+import { Context, Schema } from "koishi";
 import path from "path";
 import { v4 as uuid } from "uuid";
 import WebSocket from "ws";
@@ -22,6 +22,8 @@ interface CurrentTaskState {
     params: CosyVoiceTTSParams;
     resolve: (result: SynthesisResult) => void;
     reject: (error: Error) => void;
+    finishing: boolean;
+    closed: Promise<void>;
 }
 
 export interface CosyVoiceConfig extends BaseTTSConfig {
@@ -47,207 +49,220 @@ export class CosyVoiceAdapter extends TTSAdapter<CosyVoiceConfig, CosyVoiceTTSPa
 
     private ws: WebSocket;
     private taskQueue: VoiceTask[] = [];
-    private isBusy: boolean = false;
+    private isBusy = false;
     private currentTask: CurrentTaskState | null = null;
     private tempDir: string;
+    private stopped = false;
+    private cancelConnect?: (error: Error) => void;
+    private streamClosures = new Set<Promise<void>>();
 
     constructor(ctx: Context, config: CosyVoiceConfig) {
         super(ctx, config);
-
+        const cacheDir = path.join(ctx.baseDir, "cache");
+        fs.mkdirSync(cacheDir, { recursive: true });
+        this.tempDir = fs.mkdtempSync(path.join(cacheDir, "koishi-tts-"));
         try {
-            fs.mkdirSync(path.join(ctx.baseDir, "cache"));
-            this.tempDir = fs.mkdtempSync(path.join(ctx.baseDir, "cache", "koishi-tts-"));
+            this.connect();
         } catch (error) {
-            this.tempDir = path.join(ctx.baseDir, "data", "tts");
-            fs.mkdirSync(this.tempDir, { recursive: true });
+            fs.rmSync(this.tempDir, { recursive: true, force: true });
+            throw error;
         }
-
-        this.connect();
     }
 
     async stop() {
-        try {
-            fs.unlinkSync(this.tempDir);
-        } catch (error) {}
+        this.stopped = true;
+        const error = new Error("CosyVoice adapter stopped");
+        this.cancelConnect?.(error);
+        this.failAll(error);
+        if (this.ws && this.ws.readyState !== WebSocket.CLOSED) this.ws.terminate();
+        await Promise.all(this.streamClosures);
+        await fs.promises.rm(this.tempDir, { recursive: true, force: true });
     }
 
     private connect() {
-        if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
-            return;
-        }
-
-        this.ws = new WebSocket(this.config.url, {
+        if (this.stopped) throw new Error("CosyVoice adapter stopped");
+        if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return;
+        const socket = new WebSocket(this.config.url, {
             headers: {
                 Authorization: `bearer ${this.config.apiKey}`,
                 "X-DashScope-DataInspection": "enable",
             },
         });
-
-        this.ws.on("open", this.onOpen.bind(this));
-        this.ws.on("message", this.onMessage.bind(this));
-        this.ws.on("close", this.onClose.bind(this));
-        this.ws.on("error", this.onError.bind(this));
-    }
-
-    private onOpen() {
-        this.ctx.logger.info("成功连接到 CosyVoice WebSocket 服务器");
-        this.processQueue();
+        this.ws = socket;
+        socket.on("open", () => {
+            if (this.ws !== socket || this.stopped) return;
+            this.ctx.logger.info("成功连接到 CosyVoice WebSocket 服务器");
+            void this.processQueue();
+        });
+        socket.on("message", (data, isBinary) => {
+            if (this.ws === socket && !this.stopped) this.onMessage(data, isBinary);
+        });
+        socket.on("close", () => {
+            if (this.ws === socket) this.failAll(new Error("WebSocket连接意外关闭"));
+        });
+        socket.on("error", (error) => {
+            if (this.ws !== socket) return;
+            this.ctx.logger.error("CosyVoice WebSocket 连接出错:", error.message);
+            this.failAll(error);
+            if (socket.readyState !== WebSocket.CLOSED) socket.terminate();
+        });
     }
 
     private onMessage(data: WebSocket.RawData, isBinary: boolean) {
-        if (!this.currentTask) return;
-
-        if (isBinary) {
-            this.currentTask.fileStream.write(data);
-        } else {
-            const message = JSON.parse(data.toString());
-
-            if (message.header.task_id !== this.currentTask.taskId) {
-                this.ctx.logger.warn(`收到未知任务ID的消息: ${message.header.task_id}`);
+        const task = this.currentTask;
+        if (!task || task.finishing) return;
+        try {
+            if (isBinary) {
+                task.fileStream.write(data);
                 return;
             }
-
+            const message = JSON.parse(data.toString());
+            if (message.header.task_id !== task.taskId) return;
             switch (message.header.event) {
                 case "task-started":
-                    this.ctx.logger.info(`任务[${this.currentTask.taskId}]已开始`);
-                    this.sendTextForCurrentTask();
+                    this.sendTextForCurrentTask(task);
                     break;
                 case "task-finished":
-                    this.ctx.logger.info(`任务[${this.currentTask.taskId}]已完成`);
-                    this.currentTask.fileStream.end(async () => {
-                        const audio = await fs.promises.readFile(this.currentTask.filePath);
-                        this.currentTask.resolve({ audio, mimeType: "audio/mpeg" });
-                        fs.promises
-                            .unlink(this.currentTask.filePath)
-                            .catch((err) => this.ctx.logger.warn(`清理临时语音文件失败: ${this.currentTask.filePath}`, err.message));
-                        this.finishCurrentTask();
-                    });
+                    task.finishing = true;
+                    task.fileStream.end(() => { void this.completeTask(task); });
                     break;
                 case "task-failed":
-                    const errorMsg = `任务[${this.currentTask.taskId}]失败: ${message.header.error_message}`;
-                    this.ctx.logger.error(errorMsg);
-                    this.currentTask.fileStream.end(() => {
-                        fs.unlink(this.currentTask.filePath, () => {}); // 清理失败的文件
-                        this.currentTask.reject(new Error(errorMsg));
-                        this.finishCurrentTask();
-                    });
+                    this.failTask(task, new Error(`任务[${task.taskId}]失败: ${message.header.error_message}`));
                     break;
             }
+        } catch (error) {
+            this.failTask(task, error instanceof Error ? error : new Error(String(error)));
         }
     }
 
-    private onClose(code: number, reason: Buffer) {
-        this.ctx.logger.warn(`与 CosyVoice WebSocket 服务器的连接已断开，代码: ${code}, 原因: ${reason.toString()}`);
-        if (this.currentTask) {
-            this.currentTask.reject(new Error("WebSocket连接在任务执行期间意外关闭"));
-            this.finishCurrentTask();
+    private async completeTask(task: CurrentTaskState) {
+        try {
+            if (this.currentTask !== task || this.stopped) return;
+            const audio = await fs.promises.readFile(task.filePath);
+            if (this.currentTask !== task || this.stopped) return;
+            task.resolve({ audio, mimeType: "audio/mpeg" });
+            this.finishCurrentTask(task);
+        } catch (error) {
+            this.failTask(task, error instanceof Error ? error : new Error(String(error)));
+        } finally {
+            void this.cleanupTask(task);
         }
     }
 
-    private onError(error: Error) {
-        this.ctx.logger.error("CosyVoice WebSocket 连接出错:", error.message);
-        if (this.currentTask) {
-            this.currentTask.reject(error);
-            this.finishCurrentTask();
-        }
+    private async cleanupTask(task: CurrentTaskState) {
+        await task.closed;
+        await fs.promises.unlink(task.filePath).catch(() => {});
+    }
+
+    private failTask(task: CurrentTaskState, error: Error) {
+        if (this.currentTask !== task) return;
+        task.reject(error);
+        task.fileStream.destroy();
+        void this.cleanupTask(task);
+        this.finishCurrentTask(task);
+    }
+
+    private failAll(error: Error) {
+        // Drain first so finishing a failed task cannot start another queued task.
+        for (const task of this.taskQueue.splice(0)) task.reject(error);
+        if (this.currentTask) this.failTask(this.currentTask, error);
     }
 
     private async ensureConnected(): Promise<void> {
-        if (!this.ws || this.ws.readyState === WebSocket.CLOSED) {
-            this.ctx.logger.info("CosyVoice WebSocket 连接已关闭，正在尝试重连...");
-            this.connect();
-        }
-
-        if (this.ws.readyState === WebSocket.CONNECTING) {
-            return new Promise((resolve) => {
-                this.ws.once("open", resolve);
-            });
-        }
+        if (this.stopped) throw new Error("CosyVoice adapter stopped");
+        this.connect();
+        const socket = this.ws;
+        if (socket.readyState === WebSocket.OPEN) return;
+        if (socket.readyState !== WebSocket.CONNECTING) throw new Error("CosyVoice WebSocket 未连接");
+        await new Promise<void>((resolve, reject) => {
+            const cleanup = () => {
+                socket.off("open", opened);
+                socket.off("error", failed);
+                socket.off("close", closed);
+                if (this.cancelConnect === failed) this.cancelConnect = undefined;
+            };
+            const opened = () => { cleanup(); resolve(); };
+            const failed = (error: Error) => { cleanup(); reject(error); };
+            const closed = () => failed(new Error("CosyVoice WebSocket连接已关闭"));
+            this.cancelConnect = failed;
+            socket.once("open", opened);
+            socket.once("error", failed);
+            socket.once("close", closed);
+        });
     }
 
-    private finishCurrentTask() {
+    private finishCurrentTask(task: CurrentTaskState) {
+        if (this.currentTask !== task) return;
         this.currentTask = null;
         this.isBusy = false;
-        this.processQueue();
+        void this.processQueue();
     }
 
-    private sendTextForCurrentTask() {
-        if (!this.currentTask) return;
-
-        const { taskId, params } = this.currentTask;
-
-        const continueTaskMessage = JSON.stringify({
-            header: { action: "continue-task", task_id: taskId, streaming: "duplex" },
-            payload: { input: { text: params.text } },
+    private send(message: string, task: CurrentTaskState) {
+        this.ws.send(message, (error) => {
+            if (error) this.failTask(task, error);
         });
-        this.ws.send(continueTaskMessage);
+    }
 
-        const finishTaskMessage = JSON.stringify({
-            header: { action: "finish-task", task_id: taskId, streaming: "duplex" },
+    private sendTextForCurrentTask(task: CurrentTaskState) {
+        this.send(JSON.stringify({
+            header: { action: "continue-task", task_id: task.taskId, streaming: "duplex" },
+            payload: { input: { text: task.params.text } },
+        }), task);
+        if (this.currentTask !== task) return;
+        this.send(JSON.stringify({
+            header: { action: "finish-task", task_id: task.taskId, streaming: "duplex" },
             payload: { input: {} },
-        });
-        this.ws.send(finishTaskMessage);
+        }), task);
     }
 
     private async processQueue() {
-        if (this.isBusy || this.taskQueue.length === 0) {
-            return;
-        }
-
-        await this.ensureConnected();
-
-        if (this.ws.readyState !== WebSocket.OPEN) {
-            this.ctx.logger.warn("无法处理队列，CosyVoice WebSocket 未连接");
-            return;
-        }
-
+        if (this.stopped || this.isBusy || this.taskQueue.length === 0) return;
+        // Reserve the only consumer before waiting for the connection.
         this.isBusy = true;
-        const task = this.taskQueue.shift();
-
-        const taskId = uuid();
-        const outputFilePath = path.join(this.tempDir, `${taskId}.mp3`);
-
-        this.currentTask = {
-            taskId: taskId,
-            filePath: outputFilePath,
-            fileStream: fs.createWriteStream(outputFilePath),
-            params: task.params,
-            resolve: task.resolve,
-            reject: task.reject,
-        };
-
-        const runTaskMessage = JSON.stringify({
-            header: {
-                action: "run-task",
-                task_id: taskId,
-                streaming: "duplex",
-            },
-            payload: {
-                task_group: "audio",
-                task: "tts",
-                function: "SpeechSynthesizer",
-                model: this.config.model,
-                parameters: {
-                    text_type: "PlainText",
-                    voice: this.config.voice,
-                    format: "mp3",
-                    sample_rate: 24000,
-                    volume: 50,
-                    rate: 1,
-                    pitch: 1,
-                    enable_ssml: this.config.enable_ssml,
+        try {
+            await this.ensureConnected();
+            if (this.stopped || !this.taskQueue.length) { this.isBusy = false; return; }
+            if (this.ws.readyState !== WebSocket.OPEN) throw new Error("CosyVoice WebSocket 未连接");
+            const task = this.taskQueue.shift()!;
+            const taskId = uuid();
+            const filePath = path.join(this.tempDir, `${taskId}.mp3`);
+            let fileStream: fs.WriteStream;
+            try {
+                fileStream = fs.createWriteStream(filePath);
+            } catch (error) {
+                task.reject(error instanceof Error ? error : new Error(String(error)));
+                throw error;
+            }
+            const closure = new Promise<void>((resolve) => fileStream.once("close", resolve));
+            const current: CurrentTaskState = { ...task, taskId, filePath, fileStream, finishing: false, closed: closure };
+            this.currentTask = current;
+            // Wait for stream closure before removing the owned directory.
+            this.streamClosures.add(closure);
+            void closure.then(() => this.streamClosures.delete(closure));
+            fileStream.on("error", (error) => this.failTask(current, error));
+            this.send(JSON.stringify({
+                header: { action: "run-task", task_id: taskId, streaming: "duplex" },
+                payload: {
+                    task_group: "audio", task: "tts", function: "SpeechSynthesizer", model: this.config.model,
+                    parameters: {
+                        text_type: "PlainText", voice: this.config.voice, format: "mp3", sample_rate: 24000,
+                        volume: 50, rate: 1, pitch: 1, enable_ssml: this.config.enable_ssml,
+                    },
+                    input: {},
                 },
-                input: {},
-            },
-        });
-        this.ws.send(runTaskMessage);
-        this.ctx.logger.info(`已发送 run-task 消息，开启新任务: ${taskId}`);
+            }), current);
+        } catch (error) {
+            this.failAll(error instanceof Error ? error : new Error(String(error)));
+            this.isBusy = false;
+        }
     }
 
     public synthesize(params: CosyVoiceTTSParams): Promise<SynthesisResult> {
+        if (this.stopped) return Promise.reject(new Error("CosyVoice adapter stopped"));
         return new Promise<SynthesisResult>((resolve, reject) => {
             this.taskQueue.push({ params, resolve, reject });
-            this.processQueue();
+            void this.processQueue();
         });
     }
 
