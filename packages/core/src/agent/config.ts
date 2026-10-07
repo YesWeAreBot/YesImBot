@@ -2,6 +2,8 @@ import { readFileSync } from "fs";
 import { Computed, Schema } from "koishi";
 import path from "path";
 
+import type { TopicConfig } from "./topics";
+
 import { SystemConfig } from "@/config";
 import { PROMPTS_DIR } from "@/shared/constants";
 
@@ -24,6 +26,7 @@ export interface ArousalConfig {
     allowedChannels: ChannelDescriptor[];
     /** 消息防抖时间 (毫秒)，防止短时间内对相同模式的重复响应 */
     debounceMs: number;
+    prioritizeMentions?: boolean;
 }
 
 export const ArousalConfigSchema: Schema<ArousalConfig> = Schema.object({
@@ -39,6 +42,7 @@ export const ArousalConfigSchema: Schema<ArousalConfig> = Schema.object({
         .role("table")
         .default([{ platform: "onebot", type: "guild", id: "*" }])
         .description("允许 Agent 响应的频道。使用 * 作为通配符"),
+    prioritizeMentions: Schema.boolean().default(false).description("明确 @ 机器人时直接触发回复判断后的调度，沿用处理新消息策略；当前会话存在回复抑制规则时不生效"),
     debounceMs: Schema.number().default(1000).description("消息防抖时间 (毫秒)"),
 });
 
@@ -52,6 +56,7 @@ export interface TypeSafeConfig {
 }
 
 export interface WillingnessConfig {
+    topics?: TopicConfig;
     participation?: {
         enabled: boolean;
         durationSeconds: number;
@@ -100,6 +105,18 @@ export interface WillingnessConfig {
 }
 
 const WillingnessConfigSchema: Schema<WillingnessConfig> = Schema.object({
+    topics: Schema.object({
+        enabled: Schema.boolean().default(false).experimental().description("启用实验性话题意愿，默认关闭；识别可能滞后或不准确，请按实际聊天效果调整"),
+        model: Schema.dynamic("modelService.selectableModels").description("话题总结模型（需具备对话能力；启用后会发送近期聊天内容）"),
+        minIntervalMs: Schema.number().min(1000).max(3600000).default(30000).description("两次话题分析的最短间隔（毫秒）"),
+        messagesPerAnalysis: Schema.natural().min(1).max(100).default(6).description("再次分析前至少收到的新消息数"),
+        historyLimit: Schema.natural().min(1).max(30).default(20).description("分析时参考的近期消息数"),
+        timeoutMs: Schema.number().min(100).max(30000).default(5000).description("话题分析超时（毫秒），失败后沿用普通意愿"),
+        maxTopics: Schema.natural().min(1).max(8).default(4).description("每个会话最多保留的话题数"),
+        idleTimeoutSeconds: Schema.number().min(10).max(86400).default(600).description("无新消息多久后清除话题状态（秒）"),
+        influence: Schema.number().min(0).max(1).default(0.5).description("话题兴趣对本条消息意愿增益的影响强度"),
+        latestTopicPreference: Schema.number().min(0).max(100).step(1).role("slider").default(70).description("当前话题偏好（%）：80 表示 80% 当前话题偏好 + 20% 话题占比，再结合各话题意愿选择回复重点"),
+    }).collapse().experimental().description("话题意愿（实验性；兴趣沿用 TypeSafe 角色兴趣，留空使用兴趣关键词）"),
     participation: Schema.object({
         enabled: Schema.boolean().default(false).description("成功回复后短暂保持对话参与，默认关闭"),
         durationSeconds: Schema.number().min(1).max(86400).default(60).description("参与保持的持续时间（秒，最多一天），仅成功回复会刷新"),
