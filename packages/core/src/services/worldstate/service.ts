@@ -1,8 +1,9 @@
 import { Context, Service, Session } from "koishi";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { Config } from "@/config";
 import { Services, TableName } from "@/shared/constants";
+import { HISTORY_CHANNELS, MESSAGE_KEY_MIGRATION, registerChannelModel, sessionChannelType } from "./channel-metadata";
 import { HistoryCommandManager } from "./commands";
 import { ContextBuilder } from "./context-builder";
 import { EventListenerManager } from "./event-listener";
@@ -65,6 +66,10 @@ export class WorldStateService extends Service<Config> {
 
     protected async start(): Promise<void> {
         this.registerModels();
+        await this.migrateMessagePrimaryKey();
+        for (const channel of await this.ctx.database.get(HISTORY_CHANNELS, {})) {
+            if (channel.channelType) this.l2_manager.observeChannel({ platform: channel.platform, channelId: channel.channelId }, channel.channelType);
+        }
         await this.initializeMuteStatus();
         this.scheduleClearTask();
 
@@ -92,7 +97,17 @@ export class WorldStateService extends Service<Config> {
         return await this.contextBuilder.build(session);
     }
 
+    /** Channel identity comes from the adapter, never from an ID prefix. */
+    public async observeChannel(session: Session): Promise<void> {
+        const channelType = sessionChannelType(session);
+        if (!channelType || !session.platform || !session.channelId) return;
+        const target = { platform: session.platform, channelId: session.channelId };
+        this.l2_manager.observeChannel(target, channelType);
+        await this.ctx.database.upsert(HISTORY_CHANNELS, [{ ...target, channelType }]);
+    }
+
     public async recordMessage(message: MessageData): Promise<void> {
+        if (message.channelType) this.l2_manager.observeChannel(message, message.channelType);
         // 在 L1 异步写入之前登记代次与在途任务，清除必须等待已接受的写入。
         const generation = this.l2_manager.getHistoryGeneration(message);
         const recorded = await this.l2_manager.writeMemory(message, generation, () => this.l1_manager.recordMessage(message));
@@ -113,6 +128,7 @@ export class WorldStateService extends Service<Config> {
     }
 
     public async recordSystemEvent(event: SystemEventData): Promise<void> {
+        if (event.channelType) this.l2_manager.observeChannel(event, event.channelType);
         const generation = this.l2_manager.getHistoryGeneration(event);
         await this.l2_manager.writeMemory(event, generation, () => this.l1_manager.recordSystemEvent(event));
     }
@@ -232,7 +248,34 @@ export class WorldStateService extends Service<Config> {
         this.logger.info("机器人禁言状态初始化完成");
     }
 
+    /** Minato SQLite does not detect primary-key-only changes. Adding then retiring
+     * a migration column invokes its supported, copy-before-drop schema migration.
+     * The durable marker prevents rebuilding history on subsequent starts. */
+    private async migrateMessagePrimaryKey(): Promise<void> {
+        const [marker] = await this.ctx.database.get(HISTORY_CHANNELS, MESSAGE_KEY_MIGRATION);
+        if (marker?.messageKeyVersion === 2) return;
+        const migrationField = "_messageKeyMigration";
+        this.ctx.model.extend(TableName.Messages, { [migrationField]: "boolean" } as any);
+        await this.ctx.database.prepared();
+        this.ctx.model.migrate(TableName.Messages, { [migrationField]: "boolean" } as any, async () => {});
+        await this.ctx.database.prepared();
+        // Some drivers report migration failures through their logger rather than
+        // rejecting prepared(). Verify the old uniqueness is gone before marking
+        // completion; cleanup is limited to these randomly identified probe rows.
+        const probeId = randomUUID();
+        const platform = "__yesimbot_message_key_migration__";
+        const probe = { id: probeId, platform, sender: { id: "" }, timestamp: new Date(), content: "" };
+        try {
+            await this.ctx.database.create(TableName.Messages, { ...probe, channelId: `${probeId}:a` });
+            await this.ctx.database.create(TableName.Messages, { ...probe, channelId: `${probeId}:b` });
+        } finally {
+            await this.ctx.database.remove(TableName.Messages, { platform, id: probeId });
+        }
+        await this.ctx.database.upsert(HISTORY_CHANNELS, [{ ...MESSAGE_KEY_MIGRATION, channelType: "", messageKeyVersion: 2 }]);
+    }
+
     private registerModels(): void {
+        registerChannelModel(this.ctx);
         this.ctx.model.extend(
             TableName.BotMuteState,
             {
@@ -266,12 +309,13 @@ export class WorldStateService extends Service<Config> {
                 id: "string(255)",
                 platform: "string(255)",
                 channelId: "string(255)",
+                channelType: "string(16)",
                 sender: "json",
                 timestamp: "timestamp",
                 content: "text",
                 quoteId: "string(255)",
             },
-            { primary: ["id", "platform"] }
+            { primary: ["platform", "channelId", "id"] }
         );
 
         this.ctx.model.extend(
@@ -310,6 +354,7 @@ export class WorldStateService extends Service<Config> {
                 platform: "string(255)",
                 channelId: "string(255)",
                 type: "string(255)",
+                channelType: "string(16)",
                 timestamp: "timestamp",
                 payload: "json",
                 message: "text",
