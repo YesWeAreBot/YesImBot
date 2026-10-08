@@ -1,7 +1,6 @@
 import { createHash } from "crypto";
 import { mkdir, readdir, readFile, rename, rmdir, unlink, writeFile } from "fs/promises";
 import { Context, h, Logger, Session } from "koishi";
-import { PromptService } from "koishi-plugin-yesimbot/services";
 import { Services } from "koishi-plugin-yesimbot/shared";
 import path from "path";
 import { pathToFileURL } from "url";
@@ -30,14 +29,23 @@ declare module "koishi" {
 }
 
 export class StickerService {
-    private static tablesRegistered = false;
+    private disposed = false;
+    private readonly ready: Promise<void>;
     public isReady: boolean = false;
 
     constructor(
         private ctx: Context,
         private config: StickerConfig
     ) {
-        this.start();
+        ctx.on("dispose", () => {
+            this.disposed = true;
+            this.isReady = false;
+        });
+        this.ready = this.start();
+        // Keep constructor-start failures handled until a ready listener awaits them.
+        void this.ready.catch((error) => {
+            if (!this.disposed) this.ctx.logger.error("表情包服务初始化失败", error);
+        });
     }
 
     private async start() {
@@ -45,45 +53,18 @@ export class StickerService {
         if (this.isReady) return;
 
         await this.initStorage();
+        if (this.disposed) return;
         await this.registerModels();
-        this.registerPromptSnippet();
+        if (this.disposed) return;
 
         // 标记服务已就绪
         this.isReady = true;
         this.ctx.logger.debug("表情包服务已就绪");
     }
 
-    public whenReady() {
-        return new Promise<void>((resolve) => {
-            if (this.isReady) {
-                resolve();
-            } else {
-                const check = () => {
-                    if (this.isReady) {
-                        resolve();
-                    } else {
-                        setTimeout(check, 100);
-                    }
-                };
-                check();
-            }
-        });
-    }
-
-    private registerPromptSnippet() {
-        const promptService: PromptService = this.ctx[Services.Prompt];
-        if (!promptService) {
-            this.ctx.logger.warn("提示词服务未找到，无法注册分类列表");
-            return;
-        }
-
-        // 注册动态片段
-        promptService.registerSnippet("sticker.categories", async () => {
-            const categories = await this.getCategories();
-            return categories.join(", ");
-        });
-
-        this.ctx.logger.debug("表情包分类列表已注册到提示词系统");
+    public async whenReady() {
+        await this.ready;
+        if (this.disposed) throw new Error("表情包服务已停止");
     }
 
     private async initStorage() {
@@ -92,10 +73,6 @@ export class StickerService {
     }
 
     private async registerModels() {
-        // 确保表只注册一次
-        if (StickerService.tablesRegistered) return;
-        StickerService.tablesRegistered = true;
-
         try {
             // 使用 extend 创建表
             this.ctx.model.extend(
@@ -627,8 +604,8 @@ export class StickerService {
     public async mergeCategories(sourceCategory: string, targetCategory: string): Promise<number> {
         const result = await this.ctx.database.set(TableName, { category: sourceCategory }, { category: targetCategory });
 
-        this.ctx.logger.info(`已将分类 "${sourceCategory}" 合并到 "${targetCategory}"，移动了 ${result.modified} 个表情包`);
-        return result.modified;
+        this.ctx.logger.info(`已将分类 "${sourceCategory}" 合并到 "${targetCategory}"，移动了 ${result.matched} 个表情包`);
+        return result.matched;
     }
 
     /**
@@ -637,12 +614,12 @@ export class StickerService {
     public async moveSticker(stickerId: string, newCategory: string): Promise<number> {
         const result = await this.ctx.database.set(TableName, { id: stickerId }, { category: newCategory });
 
-        if (result.modified === 0) {
+        if (result.matched === 0) {
             throw new Error("未找到该表情包");
         }
 
         this.ctx.logger.info(`已将表情包 ${stickerId} 移动到分类 "${newCategory}"`);
-        return result.modified;
+        return result.matched;
     }
 
     /**

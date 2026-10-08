@@ -52,6 +52,8 @@ export default class CodeToImage {
     static readonly inject = ["puppeteer"];
 
     private highlighter: HighlighterCore;
+    private disposed = false;
+    private initialization?: Promise<void>;
     private localFonts: Map<string, string> = new Map();
 
     constructor(
@@ -60,13 +62,22 @@ export default class CodeToImage {
     ) {
         // 在构造函数中直接监听 ready 事件
         ctx.on("ready", async () => {
+            if (this.disposed) return;
             try {
-                await this.initialize();
+                this.initialization = this.initialize();
+                await this.initialization;
                 logger.info("插件已成功启动");
             } catch (error) {
                 logger.error("插件初始化失败！");
                 logger.error(error);
             }
+        });
+        ctx.on("dispose", async () => {
+            this.disposed = true;
+            this.highlighter?.dispose();
+            this.highlighter = undefined;
+            await this.initialization?.catch(() => {});
+            this.localFonts.clear();
         });
     }
 
@@ -80,15 +91,21 @@ export default class CodeToImage {
         const { createOnigurumaEngine } = await import("shiki/engine/oniguruma");
 
         logger.info("正在初始化 Shiki 高亮器...");
-        this.highlighter = await createHighlighterCore({
+        if (this.disposed) return;
+        const highlighter = await createHighlighterCore({
             themes: [githubLight, materialThemeOcean],
             langs: [import("@shikijs/langs/typescript"), import("@shikijs/langs/javascript"), import("@shikijs/langs/css")],
             engine: createOnigurumaEngine(import("shiki/wasm")),
         });
+        if (this.disposed) {
+            highlighter.dispose();
+            return;
+        }
+        this.highlighter = highlighter;
         logger.info("Shiki 高亮器初始化完成");
 
         await this.loadLocalFonts();
-
+        if (this.disposed) return;
         this.defineCommands();
     }
 
@@ -202,7 +219,7 @@ export default class CodeToImage {
             const buffer = base64ToArrayBuffer(base64Content[1]);
 
             logger.info("图片生成成功");
-            return Buffer.from(buffer);
+            return buffer instanceof ArrayBuffer ? Buffer.from(buffer) : Buffer.from(buffer);
         } catch (error) {
             logger.error("生成图片时发生严重错误：");
             logger.error(error);

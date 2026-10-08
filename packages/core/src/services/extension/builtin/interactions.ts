@@ -1,11 +1,12 @@
 import { Context, h, Schema, Session } from "koishi";
-import { } from "koishi-plugin-adapter-onebot";
+import { CQCode } from "koishi-plugin-adapter-onebot";
 import type { ForwardMessage } from "koishi-plugin-adapter-onebot/lib/types";
 
 import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
 import { Failed, Success } from "@/services/extension/helpers";
 import { Infer } from "@/services/extension/types";
 import { formatDate, isEmpty } from "@/shared";
+import { Services } from "@/shared/constants";
 
 interface InteractionsConfig {}
 
@@ -21,6 +22,7 @@ const InteractionsConfigSchema: Schema<InteractionsConfig> = Schema.object({});
 })
 export default class InteractionsExtension {
     static readonly Config = InteractionsConfigSchema;
+    static readonly inject = [Services.Asset];
 
     constructor(public ctx: Context, public config: InteractionsConfig) {}
 
@@ -151,28 +153,31 @@ async function formatForwardMessage(
                 const { time, sender, content } = message;
 
                 const contentParts = await Promise.all(
-                    h.parse(content).map(async (element) => {
+                    CQCode.parse(content).map(async (element) => {
                         switch (element.type) {
                             case "text":
                                 return element.attrs.content;
 
                             case "image":
-                                return await ctx["yesimbot.image"].processImageElement(element, session);
+                                return await ctx[Services.Asset].transform([h("img", { src: element.attrs.url || element.attrs.file })]);
 
                             case "at":
-                                return `@${element.attrs.id}`;
+                                return element.attrs.qq === "all" ? h("at", { type: "all" }).toString() : h.at(element.attrs.qq).toString();
+
+                            case "reply":
+                                return h("quote", { id: element.attrs.id }).toString();
 
                             case "forward":
-                                return `<forward id="${element.attrs.id}"/>`;
+                                return h("forward", { id: element.attrs.id }).toString();
 
                             default:
-                                return element;
+                                return h(element.type, element.attrs).toString();
                         }
                     })
                 );
 
                 /* prettier-ignore */
-                return `[${formatDate(new Date(time), "YYYY-MM-DD HH:mm:ss")}|${sender.nickname}(${sender.user_id})]: ${contentParts.join(" ")}}`;
+                return `[${formatDate(new Date(time * 1000), "YYYY-MM-DD HH:mm:ss")}|${sender.nickname}(${sender.user_id})]: ${contentParts.join("")}`;
             })
         );
 

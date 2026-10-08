@@ -161,6 +161,8 @@ export class PythonExecutor implements CodeExecutor {
     private readonly pool: PyodideEnginePool;
     private readonly assetService: AssetService;
     private isReady = false;
+    private disposed = false;
+    private readonly pendingTimers = new Set<NodeJS.Timeout>();
 
     constructor(
         private ctx: Context,
@@ -176,13 +178,19 @@ export class PythonExecutor implements CodeExecutor {
                 this.logger.info("Python 执行器已启用，正在初始化...");
                 try {
                     await this.pool.initialize();
-                    this.isReady = true;
+                    this.isReady = !this.disposed;
                     this.logger.info("Python 执行器初始化成功，已准备就绪");
                 } catch (error) {
                     this.logger.error("Python 执行器启动失败，将不可用", error);
                     // isReady 保持 false
                 }
             }
+        });
+        ctx.on("dispose", () => {
+            this.disposed = true;
+            this.isReady = false;
+            for (const timer of this.pendingTimers) clearTimeout(timer);
+            this.pendingTimers.clear();
         });
     }
 
@@ -327,6 +335,7 @@ if os.path.exists(workspace):
 
         this.logger.info("[执行] 收到新的代码执行请求");
         let engine: PyodideAPI | null = null;
+        let timer: NodeJS.Timeout | undefined;
         try {
             this._checkCodeSecurity(code);
 
@@ -418,7 +427,14 @@ if plt.get_fignums():
             const executionPromise = engine.runPythonAsync(finalCode);
             const result = await Promise.race([
                 executionPromise,
-                new Promise((_, reject) => setTimeout(() => reject(new Error("TimeoutError")), this.config.timeout)),
+                new Promise((_, reject) => {
+                    timer = setTimeout(() => reject(new Error("TimeoutError")), this.config.timeout);
+                    this.pendingTimers.add(timer);
+                    if (this.disposed) {
+                        clearTimeout(timer);
+                        this.pendingTimers.delete(timer);
+                    }
+                }),
             ]);
 
             let resultString = "";
@@ -443,6 +459,10 @@ if plt.get_fignums():
                 error: this._parsePyodideError(error),
             };
         } finally {
+            if (timer) {
+                clearTimeout(timer);
+                this.pendingTimers.delete(timer);
+            }
             if (engine) {
                 engine.globals.delete("__create_artifact__");
                 this.pool.release(engine);

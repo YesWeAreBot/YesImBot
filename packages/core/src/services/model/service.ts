@@ -8,7 +8,7 @@ import { GenerateTextResult } from "@xsai/generate-text";
 import { EvaluationModel } from "./evaluation-model";
 import { BaseModel } from "./base-model";
 import { ChatRequestOptions, IChatModel } from "./chat-model";
-import { CircuitBreakerPolicy, ContentFailureAction, ModelAbility, ModelDescriptor, ModelSwitchingStrategy } from "./config";
+import { CircuitBreakerPolicy, ContentFailureAction, ModelAbility, ModelDescriptor, ModelSwitchingStrategy, TaskType } from "./config";
 import { IEmbedModel } from "./embed-model";
 import { ProviderFactoryRegistry } from "./factories";
 import { ProviderInstance } from "./provider-instance";
@@ -210,7 +210,7 @@ export class ModelService extends Service<Config> {
 
         const defaultGroup = this.config.modelGroups.find((g) => g.models.length > 0);
 
-        for (const task in this.config.task) {
+        for (const task of new Set([...Object.keys(this.config.task), TaskType.Chat, TaskType.Embedding])) {
             const groupName = this.config.task[task];
             if (!this.config.modelGroups.some((group) => group.name === groupName)) {
                 this.config.task[task] = defaultGroup.name;
