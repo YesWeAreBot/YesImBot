@@ -49,7 +49,7 @@ export class PromptService extends Service<Config> {
      * @param key - 片段的唯一键 (e.g., "user.name")
      * @param snippetFn - 在渲染时执行以提供动态数据的函数
      */
-    public registerSnippet(key: string, snippetFn: Snippet): void {
+    public registerSnippet(key: string, snippetFn: Snippet): () => void {
         if (isEmpty(key)) {
             throw new Error("Snippet key cannot be empty");
         }
@@ -57,6 +57,9 @@ export class PromptService extends Service<Config> {
             this._logger.warn(`覆盖已存在的片段 "${key}"`);
         }
         this.snippets.set(key, snippetFn);
+        return () => {
+            if (this.snippets.get(key) === snippetFn) this.snippets.delete(key);
+        };
     }
 
     /**

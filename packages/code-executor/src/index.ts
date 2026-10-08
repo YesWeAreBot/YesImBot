@@ -18,6 +18,7 @@ export default class MultiEngineCodeExecutor {
     static readonly Config = Config;
     private readonly logger: Logger;
     private executors: CodeExecutor[] = [];
+    private toolDisposers: (() => void)[] = [];
 
     private toolService: ToolService;
 
@@ -54,7 +55,15 @@ export default class MultiEngineCodeExecutor {
     private registerExecutor(executor: CodeExecutor) {
         try {
             const toolDefinition = executor.getToolDefinition();
-            this.toolService.registerTool(toolDefinition);
+            const unregister = this.toolService.registerTool(toolDefinition);
+            this.toolDisposers.push(
+                typeof unregister === "function"
+                    ? unregister
+                    : () => {
+                          if (this.toolService.getTool(toolDefinition.name) === toolDefinition)
+                              this.toolService.unregisterTool(toolDefinition.name);
+                      }
+            );
             this.executors.push(executor);
             this.logger.info(`Successfully registered tool: ${toolDefinition.name}`);
         } catch (error) {
@@ -63,10 +72,7 @@ export default class MultiEngineCodeExecutor {
     }
 
     private unregisterAllTools() {
-        for (const executor of this.executors) {
-            const toolName = executor.getToolDefinition().name;
-            this.toolService.unregisterTool(toolName);
-        }
+        for (const unregister of this.toolDisposers.splice(0)) unregister();
         this.executors = [];
     }
 }

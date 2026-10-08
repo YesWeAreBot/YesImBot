@@ -220,7 +220,7 @@ export const Config: Schema<Config> = Schema.object({
     engine: Schema.union(["google_lens_scraper", "google_lens_serpapi", "google_vision", "serpapi_reverse_image"])
         .default("google_lens_scraper")
         .description("默认使用的图片搜索引擎"),
-    proxy: Schema.string().description("SOCKS 或 HTTP 代理地址，例如：`socks5://127.0.0.1:1080`。"),
+    proxy: Schema.string().description("HTTP(S) 代理地址，例如：`http://127.0.0.1:8080`；不支持 SOCKS 代理。"),
     serpapi: Schema.object({
         api_key: Schema.string().role("secret").description("SerpApi 的 API Key，用于 Google Lens 和反向图片搜索。"),
     }).description("SerpApi 服务配置"),
@@ -262,6 +262,12 @@ export default class VisionTools {
         private ctx: Context,
         private config: Config
     ) {
+        if (config.proxy) {
+            const proxy = new URL(config.proxy);
+            if (proxy.protocol !== "http:" && proxy.protocol !== "https:") {
+                throw new Error("视觉工具代理只支持 HTTP(S) 地址");
+            }
+        }
         this.ctx.on("ready", async () => {
             this.ctx.logger.info("增强视觉工具已加载");
             this.setupPuppeteerAntiDetection();
@@ -578,7 +584,11 @@ export default class VisionTools {
     private async fetchWithProxy(url: URL | string, init: RequestInit = {}) {
         const proxyUrl = this.config.proxy;
         if (proxyUrl) {
-            this.ctx.logger.info(`› 使用代理: ${proxyUrl}`);
+            const proxy = new URL(proxyUrl);
+            if (proxy.protocol !== "http:" && proxy.protocol !== "https:") {
+                throw new Error("视觉工具代理只支持 HTTP(S) 地址");
+            }
+            this.ctx.logger.info(`› 使用代理: ${proxy.protocol}//${proxy.host}`);
             init.dispatcher = new ProxyAgent(proxyUrl);
         }
         const response = await ufetch(url, init);

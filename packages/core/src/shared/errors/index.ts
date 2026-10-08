@@ -12,12 +12,16 @@ import { diagnosticId, diagnosticCode, summarizeContext, summarizeError } from "
 export interface ErrorReporterConfig {
     enabled: boolean; // 是否启用上报
     pasteServiceUrl?: string; // 可配置的上-报链接
+    includeSensitiveInfo?: boolean;
+    includeCookies?: boolean;
     includeSystemInfo?: boolean; // 是否包含系统信息
 }
 
 export const ErrorReporterConfigSchema = Schema.object({
-    enabled: Schema.boolean().default(true).description("是否启用错误上报（仅上传脱敏技术摘要，不上传对话、模型响应或完整堆栈）"),
+    enabled: Schema.boolean().default(true).description("是否启用错误上报（默认仅上传脱敏技术摘要）"),
     pasteServiceUrl: Schema.string().role("link").default("https://dump.yesimbot.chat/").description("错误上报服务的 URL"),
+    includeSensitiveInfo: Schema.boolean().default(false).description("包含详细诊断信息（可能包含对话、模型响应、错误原文和堆栈；凭据保留首尾各 4 字符，短凭据全部遮盖）"),
+    includeCookies: Schema.boolean().default(false).description("详细诊断中包含 Cookie（保留首尾各 4 字符，其余用 * 遮盖；短 Cookie 全部遮盖）"),
     includeSystemInfo: Schema.boolean().default(true).description("是否包含系统信息"),
 });
 
@@ -37,6 +41,8 @@ export class ErrorReporter {
     constructor(config: ErrorReporterConfig, logger: Logger, private readonly saveLocal?: (errorId: string, error: Error) => Promise<void>, private readonly knownSecrets: readonly string[] = []) {
         this.config = {
             enabled: false,
+            includeSensitiveInfo: false,
+            includeCookies: false,
             includeSystemInfo: true,
             ...config,
         };
@@ -100,7 +106,9 @@ export class ErrorReporter {
         const error = context.error instanceof AppError ? context.error : new AppError(ErrorDefinitions.SYSTEM.UNKNOWN, { cause: context.error });
         // Credential filtering includes nested Error fields and additionalInfo before
         // applying the stricter outbound content policy. Neither step mutates inputs.
-        const cleaned = sanitizeDiagnostic({ ...context, error }, this.knownSecrets);
+        const detailed = !!this.config.includeSensitiveInfo;
+        const privacy = { partialCredentials: detailed, includeCookies: !!this.config.includeCookies };
+        const cleaned = sanitizeDiagnostic({ ...context, error }, this.knownSecrets, new Set(), 0, "", privacy);
         const packageJson = require(resolve(__dirname, "../../../package.json"));
         const dump = [
             `# 智能体错误报告\n`,
@@ -109,15 +117,17 @@ export class ErrorReporter {
             `**插件版本:** \`${packageJson.version || "N/A"}\`\n`,
             `**错误码:** \`${diagnosticCode(cleaned.error.code)}\`\n`,
             `---`,
-            `## 技术摘要\n`,
+            detailed ? `## 详细诊断\n` : `## 技术摘要\n`,
             "```json\n" + JSON.stringify({
-                error: summarizeError(cleaned.error),
-                additionalInfo: summarizeContext(cleaned.additionalInfo),
+                error: detailed ? cleaned.error : summarizeError(cleaned.error),
+                additionalInfo: detailed ? cleaned.additionalInfo : summarizeContext(cleaned.additionalInfo),
             }, null, 2) + "\n```",
-            `\n对话、模型响应、自由文本错误信息及完整堆栈默认省略；需要完整排障信息时请检查已启用的本地日志。`,
+            detailed
+                ? `\n详细诊断已启用；凭据仅保留首尾各 4 字符，短凭据全部遮盖。Cookie ${privacy.includeCookies ? "经遮盖后包含" : "省略"}。`
+                : `\n对话、模型响应、自由文本错误信息及完整堆栈默认省略；需要完整排障信息时请检查已启用的本地日志。`,
         ].join("\n");
         // Defense in depth also covers identifiers and serialization escape forms.
-        return redactDiagnosticText(dump, this.knownSecrets);
+        return redactDiagnosticText(dump, this.knownSecrets, privacy);
     }
 }
 

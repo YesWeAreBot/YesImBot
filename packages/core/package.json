@@ -18,10 +18,10 @@
     "Touch-Night <1762918301@qq.com>"
   ],
   "scripts": {
-    "build": "tsc && tsc-alias && node scripts/bundle.mjs",
+    "build": "tsc && tsc-alias && node scripts/bundle.mjs && node scripts/build-client.mjs",
     "dev": "tsc -w --preserveWatchOutput",
     "lint": "eslint . --ext .ts",
-    "clean": "rm -rf lib .turbo tsconfig.tsbuildinfo",
+    "clean": "rm -rf lib dist .turbo tsconfig.tsbuildinfo",
     "pack": "bun pm pack"
   },
   "license": "MIT",
@@ -44,12 +44,12 @@
     "./package.json": "./package.json",
     "./services": {
       "types": "./lib/services/index.d.ts",
-      "import": "./lib/services/index.mjs",
+      "import": "./lib/services/index.js",
       "require": "./lib/services/index.js"
     },
     "./shared": {
       "types": "./lib/shared/index.d.ts",
-      "import": "./lib/shared/index.mjs",
+      "import": "./lib/shared/index.js",
       "require": "./lib/shared/index.js"
     }
   },

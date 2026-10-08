@@ -24,6 +24,8 @@ declare module "koishi" {
 }
 
 export class DailyPlannerService {
+    private disposed = false;
+    private pendingGeneration = new Map<string, Promise<DailySchedule>>();
     private readonly memoryService: MemoryService;
     private readonly chatModel: IChatModel;
 
@@ -31,6 +33,9 @@ export class DailyPlannerService {
         private ctx: Context,
         private config: DailyPlannerConfig
     ) {
+        ctx.on("dispose", () => {
+            this.disposed = true;
+        });
         this.memoryService = ctx[Services.Memory];
         this.chatModel = ctx[Services.Model].getChatModel(this.config.model.providerName, config.model.modelId);
         this.registerDatabaseModel();
@@ -57,24 +62,45 @@ export class DailyPlannerService {
         if (!promptService) return;
 
         // 注册当前日程动态片段
-        promptService.registerSnippet("agent.context.currentSchedule", async () => {
+        const removeCurrent: unknown = promptService.registerSnippet("agent.context.currentSchedule", async () => {
+            if (this.disposed) return "";
             const currentSegment = await this.getCurrentTimeSegment();
             return currentSegment
                 ? `${currentSegment.start}-${currentSegment.end}: ${currentSegment.content}`
                 : "当前没有特别安排（自由时间）";
         });
+        this.ctx.on("dispose", () => {
+            if (typeof removeCurrent === "function") removeCurrent();
+        });
 
         // 注册今日日程概览
-        promptService.registerSnippet("agent.context.dailySchedule", async () => {
+        const removeDaily: unknown = promptService.registerSnippet("agent.context.dailySchedule", async () => {
+            if (this.disposed) return "";
             const schedule = await this.getTodaysSchedule();
             return schedule.segments.map((s) => `${s.start}-${s.end}: ${s.content}`).join("\n");
+        });
+        this.ctx.on("dispose", () => {
+            if (typeof removeDaily === "function") removeDaily();
         });
     }
 
     // 生成今日日程
     public async generateDailySchedule(): Promise<DailySchedule> {
-        const today = new Date().toISOString().split("T")[0];
+        const today = formatDate(new Date());
 
+        if (this.disposed) throw new Error("日程服务已停止");
+        const pending = this.pendingGeneration.get(today);
+        if (pending) return pending;
+        const generation = this.generateScheduleForDate(today);
+        this.pendingGeneration.set(today, generation);
+        try {
+            return await generation;
+        } finally {
+            if (this.pendingGeneration.get(today) === generation) this.pendingGeneration.delete(today);
+        }
+    }
+
+    private async generateScheduleForDate(today: string): Promise<DailySchedule> {
         // 1. 获取核心记忆和近期事件
         const coreMemories = await this.getCoreMemories();
 
@@ -87,6 +113,7 @@ export class DailyPlannerService {
         );
 
         // 3. 调用模型生成日程
+        if (this.disposed) throw new Error("日程服务已停止");
         const generatedSchedule = await this.generateWithModel(prompt);
 
         // 4. 解析并存储日程
@@ -103,7 +130,8 @@ export class DailyPlannerService {
 
     // 获取今日日程
     public async getTodaysSchedule(): Promise<DailySchedule> {
-        const today = new Date().toISOString().split("T")[0];
+        if (this.disposed) throw new Error("日程服务已停止");
+        const today = formatDate(new Date());
         const schedule = await this.ctx.database.get("yesimbot.daily_schedules", { date: today });
 
         if (!schedule.length) {
@@ -225,6 +253,7 @@ export class DailyPlannerService {
     private parseScheduleOutput(text: string): TimeSegment[] {
         this.ctx.logger.debug("解析日程文本:", text);
 
+        let parsed: unknown;
         try {
             // 尝试提取JSON部分
             const jsonStart = text.indexOf("[");
@@ -236,7 +265,7 @@ export class DailyPlannerService {
             const jsonStr = text.slice(jsonStart, jsonEnd + 1);
             this.ctx.logger.debug("提取的JSON字符串:", jsonStr);
 
-            const parsed = JSON.parse(jsonStr);
+            parsed = JSON.parse(jsonStr);
             if (!Array.isArray(parsed)) {
                 throw new Error("JSON中缺少数组");
             }
@@ -244,7 +273,13 @@ export class DailyPlannerService {
             // 验证每个时间段
             const segments: TimeSegment[] = [];
             for (const item of parsed) {
-                if (!item.start || !item.end || !item.content) {
+                if (
+                    !item ||
+                    typeof item.start !== "string" ||
+                    typeof item.end !== "string" ||
+                    typeof item.content !== "string" ||
+                    !item.content.trim()
+                ) {
                     throw new Error("时间段缺少必要字段");
                 }
 
@@ -260,19 +295,13 @@ export class DailyPlannerService {
                 });
             }
 
-            // 按开始时间排序
-            segments.sort((a, b) => this.compareTime(a.start, b.start));
-
-            // 验证时间段是否有重叠
-            for (let i = 0; i < segments.length - 1; i++) {
-                if (this.compareTime(segments[i].end, segments[i + 1].start) > 0) {
-                    throw new Error(`时间段重叠: ${segments[i].end} > ${segments[i + 1].start}`);
-                }
-            }
+            this.validateSegments(segments);
 
             return segments;
         } catch (error) {
             this.ctx.logger.error("JSON解析失败:", error.message);
+            // A parsed array with invalid intervals is not an alternate text format.
+            if (Array.isArray(parsed)) throw error;
             return this.fallbackParse(text);
         }
     }
@@ -282,7 +311,7 @@ export class DailyPlannerService {
         const segments: TimeSegment[] = [];
 
         // 尝试匹配时间模式：HH:mm-HH:mm 内容
-        const timeRegex = /(\d{1,2}:\d{2})\s*[-—]?\s*(\d{1,2}:\d{2})\s*[:：]?\s*(.+)/g;
+        const timeRegex = /(\d{1,2}:\d{2})[ \t]*[-—]?[ \t]*(\d{1,2}:\d{2})[ \t]*[:：]?[ \t]*(.+)/g;
         let match;
 
         while ((match = timeRegex.exec(text)) !== null) {
@@ -296,12 +325,12 @@ export class DailyPlannerService {
         // 如果找到了时间段，返回它们
         if (segments.length > 0) {
             // 按开始时间排序
-            segments.sort((a, b) => this.compareTime(a.start, b.start));
+            this.validateSegments(segments);
             return segments;
         }
 
         // 尝试匹配仅包含时间的行
-        const simpleTimeRegex = /(\d{1,2}:\d{2})\s*[-—]?\s*(\d{1,2}:\d{2})/g;
+        const simpleTimeRegex = /(\d{1,2}:\d{2})\s*[-—]?\s*(\d{1,2}:\d{2})/;
         const contentLines = text.split("\n");
         let currentContent = "";
 
@@ -348,7 +377,24 @@ export class DailyPlannerService {
             ];
         }
 
+        this.validateSegments(segments);
         return segments;
+    }
+
+    private validateSegments(segments: TimeSegment[]) {
+        for (const segment of segments) {
+            if (
+                !/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(segment.start) ||
+                !/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(segment.end) ||
+                this.compareTime(segment.start, segment.end) >= 0
+            ) {
+                throw new Error(`无效的时间段: ${segment.start}-${segment.end}`);
+            }
+        }
+        segments.sort((a, b) => this.compareTime(a.start, b.start));
+        for (let i = 1; i < segments.length; i++) {
+            if (this.compareTime(segments[i - 1].end, segments[i].start) > 0) throw new Error("时间段重叠");
+        }
     }
 
     // 比较两个时间字符串 (HH:mm)
@@ -371,6 +417,7 @@ export class DailyPlannerService {
         const maxRetries = 2;
 
         while (retryCount <= maxRetries) {
+            if (this.disposed) throw new Error("日程服务已停止");
             try {
                 const response = await this.chatModel.chat({
                     messages: [
@@ -414,6 +461,8 @@ export class DailyPlannerService {
     }
 
     private async saveSchedule(schedule: DailySchedule): Promise<void> {
+        if (this.disposed) throw new Error("日程服务已停止");
+        this.validateSegments(schedule.segments);
         await this.ctx.database.upsert("yesimbot.daily_schedules", [schedule], ["date"]);
     }
 }
@@ -424,7 +473,7 @@ function truncate(text: string, maxLength: number): string {
 }
 
 function formatDate(date: Date): string {
-    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 // 辅助函数：格式化时间
 function formatTime(date: Date): string {

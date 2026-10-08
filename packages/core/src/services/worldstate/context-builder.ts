@@ -74,7 +74,7 @@ export class ContextBuilder {
         } else {
             let selfInGuild: Awaited<ReturnType<Bot["getGuildMember"]>>;
             try {
-                selfInGuild = await session.bot.getGuildMember(channelId, session.selfId);
+                if (session.guildId) selfInGuild = await session.bot.getGuildMember(session.guildId, session.selfId);
             } catch (error) {
                 this.logger.error(`获取机器人自身信息失败 for id ${session.selfId}: ${error.message}`);
             }
@@ -82,7 +82,7 @@ export class ContextBuilder {
             users.push({
                 id: session.selfId,
                 name: selfInGuild?.nick || selfInGuild?.name || selfInfo.name,
-                roles: ["self", ...(selfInGuild?.roles || [])],
+                roles: ["self", ...(selfInGuild?.roles || []).map(role => typeof role === "string" ? role : role.id)],
             });
 
             l1_history.forEach((item) => {

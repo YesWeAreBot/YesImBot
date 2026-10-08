@@ -33,7 +33,9 @@ export const LoggingConfigSchema: Schema<LoggingConfig> = Schema.object({
         maxFileSizeMB: Schema.number().min(1).max(1024).default(10).description("单文件轮换大小（MB），一条完整记录可超出此值"),
         maxFiles: Schema.natural().min(1).max(1000).default(20).description("最多保留的日志文件数"),
         retentionDays: Schema.natural().max(3650).default(7).description("保留天数，0 表示仅按文件数清理"),
-    }).description("本地日志（可能包含对话内容，请妥善保管）"),
+    })
+        .collapse()
+        .description("本地日志（可能包含对话内容，请妥善保管）"),
     level: Schema.union([
         Schema.const(LogLevel.SILENT).description("SILENT"),
         Schema.const(LogLevel.ERROR).description("ERROR"),

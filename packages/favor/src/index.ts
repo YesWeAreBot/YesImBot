@@ -13,12 +13,17 @@ export interface FavorSystemConfig {
 declare module "koishi" {
     interface Tables {
         favor: FavorTable;
+        favor_scoped: ScopedFavorTable;
     }
 }
 
 export interface FavorTable {
     user_id: string;
     amount: number;
+}
+
+export interface ScopedFavorTable extends FavorTable {
+    platform: string;
 }
 
 /**
@@ -51,6 +56,7 @@ export default class FavorExtension {
     // --- 依赖注入 ---
     static readonly inject = ["database", Services.Prompt];
 
+    private disposed = false;
     private logger: ReturnType<Context["logger"]>;
 
     constructor(
@@ -69,6 +75,16 @@ export default class FavorExtension {
             { primary: "user_id", autoInc: false }
         );
 
+        // Legacy rows have no trustworthy platform; preserve them without assigning ownership.
+        this.ctx.model.extend(
+            "favor_scoped",
+            { platform: "string", user_id: "string", amount: "integer" },
+            { primary: ["platform", "user_id"], autoInc: false }
+        );
+        this.ctx.on("dispose", () => {
+            this.disposed = true;
+        });
+
         // 在 onMount 中执行异步初始化逻辑
         this.ctx.on("ready", () => this.onMount());
     }
@@ -77,6 +93,7 @@ export default class FavorExtension {
      * 扩展挂载时的生命周期钩子
      */
     private async onMount() {
+        if (this.disposed) return;
         // 对好感度阶段按阈值降序排序，确保匹配逻辑正确
         this.config.stage.sort((a, b) => b.threshold - a.threshold);
         this.logger.info("好感度阶段已排序");
@@ -86,19 +103,45 @@ export default class FavorExtension {
         // 注入 Koishi 的 Prompt 服务 (来自 yesimbot)
         const promptService: PromptService = this.ctx[Services.Prompt];
 
-        promptService.inject("roleplay.favor", 10, async (context) => {
-            const { session } = context;
-            // 仅在私聊中注入好感度信息
-            if (!(session as Session)?.isDirect) return "";
-            const favorEntry = await this._getOrCreateFavorEntry(session.userId);
-            const stageDescription = this._getFavorStage(favorEntry.amount);
-            return `## 好感度设定
+        this.ctx.on(
+            "dispose",
+            promptService.inject("roleplay.favor", 10, async (context) => {
+                const { session } = context;
+                // 仅在私聊中注入好感度信息
+                if (this.disposed || !(session as Session)?.isDirect || !session.platform) return "";
+                const favorEntry = await this._getOrCreateFavorEntry(session.platform, session.userId);
+                if (this.disposed) return "";
+                const stageDescription = this._getFavorStage(favorEntry.amount);
+                return `## 好感度设定
 当前你与用户 ${session.username} (ID: ${session.userId}) 的好感度为 ${favorEntry.amount}，关系阶段是：${stageDescription}。
 请时刻参考这些信息，并根据当前的好感度和关系阶段，以合适的语气和内容与用户互动。`;
+            })
+        );
+
+        const removeSnippet: unknown = promptService.registerSnippet("roleplay.config.maxFavor", () => this.config.maxFavor);
+        this.ctx.on("dispose", () => {
+            if (typeof removeSnippet === "function") removeSnippet();
         });
 
-        promptService.registerSnippet("roleplay.config.maxFavor", () => this.config.maxFavor);
-
+        const legacy = await this.ctx.database.get("favor", {});
+        if (this.disposed) return;
+        if (legacy.length) this.logger.warn("存在未指定平台的旧好感度记录。请使用 favor.migrate <platform> 显式迁移；原记录将保留。");
+        this.ctx
+            .command("favor.migrate <platform:string>", "将旧好感度记录复制到指定平台，保留已有平台记录", { authority: 3 })
+            .action(async (_, platform) => {
+                if (!platform || this.disposed) return "请指定平台，且确保好感度服务运行。";
+                const rows = await this.ctx.database.get("favor", {});
+                let copied = 0;
+                for (const row of rows) {
+                    const query = { platform, user_id: row.user_id };
+                    const existing = await this.ctx.database.get("favor_scoped", query);
+                    if (this.disposed) return "好感度服务已停止。";
+                    if (existing.length) continue;
+                    await this.ctx.database.create("favor_scoped", { ...query, amount: row.amount });
+                    copied++;
+                }
+                return `已复制 ${copied} 条记录到平台 ${platform}，原记录和已有平台记录均已保留。`;
+            });
         this.logger.info("好感度系统扩展已加载。");
     }
 
@@ -113,18 +156,19 @@ export default class FavorExtension {
         }),
         isSupported: (session) => session.isDirect,
     })
-    async addFavor({ user_id, amount }: Infer<{ user_id: string; amount: number }>) {
+    async addFavor({ user_id, amount, session }: Infer<{ user_id: string; amount: number }>) {
         if (!user_id) return Failed("必须提供 user_id。");
+        if (this.disposed || !session?.platform) return Failed("好感度服务未运行或缺少平台信息。");
         try {
-            await this.ctx.database.get("favor", { user_id }).then((res) => {
-                if (res.length > 0) {
-                    const newAmount = this._clampFavor(res[0].amount + amount);
-                    this.ctx.database.set("favor", { user_id }, { amount: newAmount });
-                } else {
-                    const newAmount = this._clampFavor(this.config.initialFavor + amount);
-                    this.ctx.database.create("favor", { user_id, amount: newAmount });
-                }
-            });
+            const query = { platform: session.platform, user_id };
+            const rows = await this.ctx.database.get("favor_scoped", query);
+            if (this.disposed) return Failed("好感度服务已停止。");
+            const newAmount = this._clampFavor((rows[0]?.amount ?? this.config.initialFavor) + amount);
+            if (rows.length) {
+                await this.ctx.database.set("favor_scoped", query, { amount: newAmount });
+            } else {
+                await this.ctx.database.create("favor_scoped", { ...query, amount: newAmount });
+            }
             this.logger.info(`为用户 ${user_id} 调整了 ${amount} 点好感度。`);
             return Success(`成功为用户 ${user_id} 调整了 ${amount} 点好感度。`);
         } catch (e) {
@@ -142,11 +186,12 @@ export default class FavorExtension {
         }),
         isSupported: (session) => session.isDirect,
     })
-    async setFavor({ user_id, amount }: Infer<{ user_id: string; amount: number }>) {
+    async setFavor({ user_id, amount, session }: Infer<{ user_id: string; amount: number }>) {
         if (!user_id) return Failed("必须提供 user_id。");
+        if (this.disposed || !session?.platform) return Failed("好感度服务未运行或缺少平台信息。");
         try {
             const finalAmount = this._clampFavor(amount);
-            await this.ctx.database.upsert("favor", [{ user_id, amount: finalAmount }]);
+            await this.ctx.database.upsert("favor_scoped", [{ platform: session.platform, user_id, amount: finalAmount }]);
             this.logger.info(`将用户 ${user_id} 的好感度设置为 ${finalAmount}。`);
             return Success(`成功将用户 ${user_id} 的好感度设置为 ${finalAmount}。`);
         } catch (e) {
@@ -162,14 +207,15 @@ export default class FavorExtension {
      * @param user_id 用户ID
      * @returns 对应的好感度数据库条目
      */
-    private async _getOrCreateFavorEntry(user_id: string): Promise<FavorTable> {
-        const result = await this.ctx.database.get("favor", { user_id });
+    private async _getOrCreateFavorEntry(platform: string, user_id: string): Promise<ScopedFavorTable> {
+        const result = await this.ctx.database.get("favor_scoped", { platform, user_id });
         if (result.length > 0) {
             return result[0];
         }
         // 如果不存在，则创建并返回初始记录
-        const newEntry: FavorTable = { user_id, amount: this.config.initialFavor };
-        await this.ctx.database.create("favor", newEntry);
+        if (this.disposed) throw new Error("好感度服务已停止。");
+        const newEntry: ScopedFavorTable = { platform, user_id, amount: this.config.initialFavor };
+        await this.ctx.database.create("favor_scoped", newEntry);
         this.logger.info(`为新用户 ${user_id} 创建了好感度记录，初始值为 ${this.config.initialFavor}。`);
         return newEntry;
     }

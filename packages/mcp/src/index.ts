@@ -39,45 +39,56 @@ export async function apply(ctx: Context, config: Config) {
 
     const toolService = ctx["yesimbot.tool"];
     const mcpManager = new MCPManager(ctx, logger, commandResolver, toolService, config);
+    let disposed = false;
+    let initialization: Promise<void> | undefined;
 
     // 启动时初始化
-    ctx.on("ready", async () => {
-        logger.info("开始初始化 MCP 扩展插件");
+    ctx.on("ready", () => {
+        if (disposed) return;
+        initialization = (async () => {
+            logger.info("开始初始化 MCP 扩展插件");
 
-        try {
-            // 创建必要目录
-            await fs.mkdir(path.join(dataDir, "mcp-ext", "bin"), { recursive: true });
-            await fs.mkdir(cacheDir, { recursive: true });
-        } catch (error) {
-            logger.error("目录创建失败");
-        }
+            try {
+                // 创建必要目录
+                await fs.mkdir(path.join(dataDir, "mcp-ext", "bin"), { recursive: true });
+                await fs.mkdir(cacheDir, { recursive: true });
+            } catch (error) {
+                logger.error("目录创建失败");
+            }
+            if (disposed) return;
 
-        // 安装二进制文件
-        if (config.uvSettings?.autoDownload) {
-            logger.info("开始安装 UV...");
-            installedUVPath = await binaryInstaller.installUV(config.uvSettings.uvVersion || "latest", config.globalSettings?.githubMirror);
-        }
+            // 安装二进制文件
+            if (config.uvSettings?.autoDownload) {
+                logger.info("开始安装 UV...");
+                installedUVPath = await binaryInstaller.installUV(config.uvSettings.uvVersion || "latest", config.globalSettings?.githubMirror);
+            }
+            if (disposed) return;
 
-        if (config.bunSettings?.autoDownload) {
-            logger.info("开始安装 Bun...");
-            installedBunPath = await binaryInstaller.installBun(
-                config.bunSettings.bunVersion || "latest",
-                config.globalSettings?.githubMirror
-            );
-        }
+            if (config.bunSettings?.autoDownload) {
+                logger.info("开始安装 Bun...");
+                installedBunPath = await binaryInstaller.installBun(
+                    config.bunSettings.bunVersion || "latest",
+                    config.globalSettings?.githubMirror
+                );
+            }
+            if (disposed) return;
 
-        // 更新命令解析器的二进制路径
-        commandResolver.updateInstalledPaths(installedUVPath, installedBunPath);
+            // 更新命令解析器的二进制路径
+            commandResolver.updateInstalledPaths(installedUVPath, installedBunPath);
 
-        // 连接 MCP 服务器
-        await mcpManager.connectServers();
+            // 连接 MCP 服务器
+            await mcpManager.connectServers();
 
-        logger.success("MCP 扩展插件初始化完成");
+            logger.success("MCP 扩展插件初始化完成");
+        })();
+        return initialization;
     });
 
     // 清理资源
     ctx.on("dispose", async () => {
+        disposed = true;
         await mcpManager.cleanup();
+        await initialization?.catch((error) => logger.error(`初始化失败: ${error.message}`));
         await fileManager.cleanup([cacheDir]);
         logger.success("插件清理完成");
     });

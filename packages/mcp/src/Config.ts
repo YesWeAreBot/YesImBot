@@ -36,7 +36,7 @@ export interface PlatformMapping {
 
 export interface Config {
     timeout: number;
-    activeTools?: string[];
+    activeTools?: string[] | null;
     mcpServers: Record<string, Server>;
     uvSettings?: {
         autoDownload?: boolean;

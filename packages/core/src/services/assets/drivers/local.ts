@@ -10,13 +10,17 @@ import { StorageDriver, FileStats } from "../types";
  */
 export class LocalStorageDriver implements StorageDriver {
     private readonly logger: Logger;
+    private initialization?: Promise<void>;
 
     constructor(
         private readonly ctx: Context,
         public readonly baseDir: string
     ) {
         this.logger = ctx.logger("[本地存储驱动]");
-        this.ensureDirectory();
+    }
+
+    public ready(): Promise<void> {
+        return (this.initialization ??= this.ensureDirectory());
     }
 
     private async ensureDirectory() {
@@ -34,6 +38,7 @@ export class LocalStorageDriver implements StorageDriver {
     }
 
     async write(id: string, buffer: Buffer): Promise<void> {
+        await this.ready();
         const filePath = this.getPath(id);
         try {
             await fs.writeFile(filePath, buffer);
