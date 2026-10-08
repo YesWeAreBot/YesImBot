@@ -1,3 +1,5 @@
+import { sanitizeDiagnostic } from "../../shared/diagnostic-sanitizer";
+import { recallStoredMemories, type StoredRecallOptions } from "./recall";
 import { Context, Service, Session } from "koishi";
 import { createHash } from "node:crypto";
 
@@ -17,6 +19,7 @@ declare module "koishi" {
     }
     interface Events {
         "yesimbot/before-user-stimulus": (session: Session) => void | Promise<void>;
+        "yesimbot/filter-recalled-memory": (session: Session, state: any) => void | Promise<void>;
         "agent/stimulus": (stimulus: AgentStimulus<any>) => void;
         "agent/bot-muted": (target: { platform: string; selfId: string; channelId: string }) => void;
     }
@@ -32,7 +35,7 @@ declare module "koishi" {
 
 export class WorldStateService extends Service<Config> {
     /** Extension contract v1; feature detection also supports source checkouts. */
-    public get capabilities() { return Object.freeze({ beforeUserStimulus: 1 as const }); }
+    public get capabilities() { return Object.freeze({ beforeUserStimulus: 1 as const, memoryCorrectionFilter: 1 as const, memoryRecall: 1 as const, frameworkEventDetails: 1 as const }); }
 
     static readonly inject = [Services.Model, Services.Asset, Services.Logger, Services.Prompt, Services.Memory, "database"];
 
@@ -88,8 +91,17 @@ export class WorldStateService extends Service<Config> {
         this.logger.info("服务已停止");
     }
 
+    public async getFrameworkEvents(memoryDomain: string) {
+        const events = await this.ctx.database.get(TableName.SystemEvents, { eventScope: "mind", botKey: memoryDomain }, { limit: 8, sort: { timestamp: "desc" } });
+        return events.map(e => ({ id: e.id, type: e.type, timestamp: e.timestamp, platform: e.platform, channelId: e.channelId, eventScope: e.eventScope, payload: JSON.stringify(sanitizeDiagnostic(e.payload)).slice(0, 1600) }));
+    }
+
+    public recallMemory(options: StoredRecallOptions) { return recallStoredMemories(this.ctx.database, options); }
+
     public async buildWorldState(session: Session): Promise<WorldState> {
-        return await this.contextBuilder.build(session);
+        const state = await this.contextBuilder.build(session);
+        await this.ctx.parallel("yesimbot/filter-recalled-memory", session, state);
+        return state;
     }
 
     public async recordMessage(message: MessageData): Promise<void> {
@@ -311,6 +323,8 @@ export class WorldStateService extends Service<Config> {
                 channelId: "string(255)",
                 type: "string(255)",
                 timestamp: "timestamp",
+                eventScope: "string(16)",
+                botKey: "string(255)",
                 payload: "json",
                 message: "text",
             },

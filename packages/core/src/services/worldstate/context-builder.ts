@@ -24,7 +24,7 @@ export class ContextBuilder {
     public async build(session: Session): Promise<WorldState> {
         const { platform, channelId, isDirect } = session;
 
-        const raw_l1_history = await this.interactionManager.getL1History(platform, channelId, this.config.l1_memory.maxMessages);
+        const raw_l1_history = await this.interactionManager.getL1History(platform, channelId, this.config.l1_memory.maxMessages, session.selfId);
 
         const isL1Overloaded = raw_l1_history.length >= this.config.l1_memory.maxMessages * 0.8;
 
@@ -176,6 +176,8 @@ export class ContextBuilder {
                 endTimestamp: filter?.endTimestamp,
             });
             return retrieved.map((chunk) => ({
+                platform: chunk.platform,
+                participantIds: chunk.participantIds,
                 content: chunk.content,
                 relevance: chunk.similarity,
                 timestamp: chunk.startTimestamp,

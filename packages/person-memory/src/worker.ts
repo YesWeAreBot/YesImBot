@@ -76,7 +76,7 @@ export class SummaryWorker {
         const a = found?.accounts.find(a => a.userId === userId), p = found?.person;
         if (!a || !p) throw new Error("当前场景没有此账号");
         if (p.locked) throw new Error("画像已被管理员锁定");
-        const evidence = await this.store.sources(scope, userId, 10);
+        const evidence = (await this.store.sources(scope, userId, 20)).filter(e => !e.provenance || (e.provenance.personId === p.id && e.provenance.accountRevision === (a.bindingRevision ?? 0) && (!p.memoryChangedAt || e.timestamp > p.memoryChangedAt))).slice(0, 10);
         if (!evidence.length) throw new Error("当前账号没有可用的消息来源");
         const expected = { personId: p.id, personRevision: p.revision, accountRevision: a.revision };
         const messages: Parameters<SummaryModel>[0] = [

@@ -17,6 +17,7 @@ function boundedProfile(value: string, budget: number) {
 export async function renderPeople(store: PersonStore, view: Record<string, any>) {
     if (!view.session) return "";
     const scope = sceneKey(view.session), state = await store.read(scope);
+    if (state.settings.mode === "off") return "";
     const memory = view.WORLD_STATE?.l1_working_memory;
     const ids = [view.session.userId, ...[...(memory?.processed_events || []), ...(memory?.new_events || [])].reverse().filter(e => e.type === "message").map(e => e.sender?.id)];
     const active = [...new Set<string>(ids.filter(id => typeof id === "string" && id !== view.session.bot.selfId))].slice(0, 6);

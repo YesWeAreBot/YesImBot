@@ -53,6 +53,8 @@ export interface SystemEventData {
     channelId: string;
     type: string; // 例如 'guild-member-ban', 'command-invoked'
     timestamp: Date;
+    eventScope?: string; // channel, bot, mind or global
+    botKey?: string;
     payload: object; // 事件具体内容
     message?: string; // 预渲染的自然语言消息
 }
@@ -145,6 +147,7 @@ export interface SystemEventLog {
     id: string;
     timestamp: string; // ISO 8601 格式
     eventType: string;
+    eventDetails?: string;
     message: string;
 }
 
@@ -194,6 +197,7 @@ export interface ContextualMessage {
 export interface ContextualSystemEvent {
     id: string;
     eventType: string;
+    eventDetails?: string;
     message: string; // 直接可读的事件描述
     timestamp: Date;
     is_new?: boolean; // 是否是自上次 Agent 响应以来的新事件
@@ -223,6 +227,7 @@ export interface ContextualAgentAction {
 
 /** 上下文中的 Agent 观察对象 */
 export interface ContextualAgentObservation {
+    error?: string;
     type: "agent_observation";
     turnId: string;
     timestamp: Date;
@@ -252,6 +257,8 @@ export type L1HistoryItem =
 
 /** 从 L2 语义索引中检索出的记忆片段 */
 export interface RetrievedMemoryChunk {
+    platform?: string;
+    participantIds?: string[];
     content: string;
     relevance: number; // 相似度得分
     timestamp: Date;
@@ -307,6 +314,7 @@ export interface UserMessagePayload {
 /** 系统事件刺激的载荷 */
 export interface SystemEventPayload {
     eventType: string;
+    eventDetails?: string;
     details: object;
     message: string;
 }

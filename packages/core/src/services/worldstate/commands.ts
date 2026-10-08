@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Context, Logger, Query } from "koishi";
 
 import { Services, TableName } from "@/shared/constants";
@@ -84,6 +85,11 @@ export class HistoryCommandManager {
             .action(async ({ session, options }) => {
                 const results: string[] = [];
 
+                const recordClear = async (target: object, status: string, receipt: object) => {
+                    try { await this.service.recordSystemEvent({ id: randomUUID(), platform: session.platform, channelId: session.channelId, eventScope: options.all ? "global" : "channel", type: "history-cleared", timestamp: new Date(), payload: { actor: `admin:${session.platform}:${session.userId}`, operation: "history.clear", status, scope: options.all ? "global" : "channel", origin: { platform: session.platform, selfId: session.selfId, channelId: session.channelId, adapter: session.bot?.platform }, target, receipt, time: new Date().toISOString() }, message: "框架历史清理回执；人物记忆插件的资料、来源与审计不在核心 history.clear 删除范围。" }); }
+                    catch (error) { this.logger.warn(`历史清理事件投递失败：${String(error)}`); }
+                };
+
                 // 优化后的核心操作函数
                 const performClear = async (
                     query: Query.Expr<MessageData>,
@@ -115,6 +121,7 @@ export class HistoryCommandManager {
                             }
                         );
 
+                        await recordClear(target || { historyType: options.all }, "success", { messagesRemoved, eventsRemoved, l2ChunksRemoved, diariesRemoved, agentLogRemoved, agentLogPreserved });
                         results.push(
                             `✅ ${description} - 操作成功，共删除了 ${messagesRemoved} 条消息, ${eventsRemoved} 个系统事件, ${l2ChunksRemoved} 个L2记忆片段, ${diariesRemoved} 篇L3日记。${
                                 agentLogRemoved ? `匹配的Agent日志已清理。${agentLogPreserved ? `有 ${agentLogPreserved} 条归属不明的旧记录已保留，请查看日志。` : ""}` : ""
@@ -122,6 +129,7 @@ export class HistoryCommandManager {
                         );
                     } catch (error) {
                         this.ctx.logger.warn(`为 ${description} 清理历史记录时失败:`, error);
+                        await recordClear(target || { historyType: options.all }, "failed", { error: String(error).slice(0, 300), partialEffects: "可能已有部分数据删除，未声称回滚" });
                         results.push(`❌ ${description} - 操作失败`);
                     }
                 };

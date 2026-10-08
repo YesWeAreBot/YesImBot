@@ -1,3 +1,4 @@
+import { applySharedMemory } from "./shared-runtime";
 import { Context, Schema, h, type Session } from "koishi";
 import { PersonStore, registerModels, sceneKey, type Mode, type Person, type Proposal, type LinkProposal, type SceneInput, type Audit } from "./store";
 import { renderPeople, identityWarning } from "./context";
@@ -5,16 +6,22 @@ import { SummaryWorker, type SummaryModel } from "./worker";
 
 declare module "koishi" {
     interface Events {
+        "yesimbot/filter-recalled-memory": (session: Session, state: any) => void | Promise<void>;
         "yesimbot/before-user-stimulus": (session: Session) => void | Promise<void>;
     }
 }
 
 export const name = "yesimbot-person-memory";
 export const inject = { required: ["database", "yesimbot.prompt", "yesimbot.tool", "yesimbot.world-state"], optional: ["yesimbot.model"] };
-export interface Config { enabled: boolean; mode: Mode; modelGroup: string; summaryThreshold: number; cooldownSeconds: number; timeoutSeconds: number; maxQueue: number }
+export interface Config { enabled: boolean; mode: Mode; modelGroup: string; summaryThreshold: number; cooldownSeconds: number; timeoutSeconds: number; maxQueue: number; sharedMemory?: boolean; memoryDomain?: string; recallScope?: "current" | "mind"; automaticRecall?: boolean; memoryRetentionDays?: number }
 export const Config: Schema<Config> = Schema.object({
+    sharedMemory: Schema.boolean().default(false).description("实验性共同记忆：跨上下文复用人物认识，支持主动回忆与自动关联"),
+    memoryDomain: Schema.string().default("").description("共同记忆域；留空按机器人账号区分。相同域名可显式连接同一人格的不同平台账号"),
+    recallScope: Schema.union([Schema.const("current"), Schema.const("mind")]).default("mind").description("回忆范围：当前会话或共同域内当前配置允许的会话"),
+    automaticRecall: Schema.boolean().default(true).description("明确提及往事时自动查找相关记忆；也可通过 person_recall 主动查询"),
+    memoryRetentionDays: Schema.number().min(0).max(3650).step(1).default(0).description("共同经历保留天数；0 不定期清理。仅清理原始经历召回表；人物画像来源与审计不受影响"),
     enabled: Schema.boolean().default(true).description("启用当前场景的人物记忆与账号关联"),
-    mode: Schema.union([Schema.const("off"), Schema.const("review"), Schema.const("auto")]).default("review").description("默认画像维护模式：关闭、人工审核或自动接受；每个场景可用命令覆盖"),
+    mode: Schema.union([Schema.const("off"), Schema.const("review"), Schema.const("auto")]).default("review").description("默认模式：off 停止新记忆功能；review 人工审核；共同记忆 auto 可自动接受画像与账号关联"),
     modelGroup: Schema.string().default("").description("后台总结使用的 YIB 模型组；留空不调用后台模型，仍可人工编辑和审核模型工具提交的候选"),
     summaryThreshold: Schema.number().min(2).max(100).step(1).default(6).description("同一账号累计多少条新消息后尝试总结"),
     cooldownSeconds: Schema.number().min(30).max(86400).default(600).description("同一场景账号两次自动总结至少间隔的秒数"),
@@ -24,7 +31,7 @@ export const Config: Schema<Config> = Schema.object({
 interface Tools { capabilities?: { trustedToolSession?: number }; registerTool(tool: unknown): void; unregisterTool(name: string): void }
 interface Prompt { inject(name: string, priority: number, fn: (scope: Record<string, any>) => Promise<string>): void | (() => void) }
 interface Models { useChatGroup(name: string): { chat(options: any): Promise<{ text?: string }> } | undefined }
-interface Dependencies { "yesimbot.tool": Tools; "yesimbot.prompt": Prompt; "yesimbot.world-state": { capabilities?: { beforeUserStimulus?: number }; isChannelAllowed(session: Session): boolean }; "yesimbot.model"?: Models }
+interface Dependencies { "yesimbot.tool": Tools; "yesimbot.prompt": Prompt; "yesimbot.world-state": { capabilities?: { beforeUserStimulus?: number; memoryCorrectionFilter?: number }; isChannelAllowed(session: Session): boolean }; "yesimbot.model"?: Models }
 const Success = (result: unknown) => ({ status: "success", result });
 const Failed = (error: unknown) => ({ status: "error", error: { name: "PersonMemoryError", message: error instanceof Error ? error.message : String(error) } });
 const key = (session: Session) => sceneKey(session as unknown as SceneInput);
@@ -70,14 +77,19 @@ function candidate(p: Proposal | LinkProposal) {
 }
 
 export function apply(ctx: Context, config: Config) {
-    if (!config.enabled) return;
+    if (!config.enabled || config.mode === "off") return;
     const deps = ctx as unknown as Dependencies;
     if (deps["yesimbot.world-state"].capabilities?.beforeUserStimulus !== 1 || deps["yesimbot.tool"].capabilities?.trustedToolSession !== 1) {
         throw new Error("人物记忆需要 YesImBot 3.0.4 或包含 beforeUserStimulus v1 与 trustedToolSession v1 能力的源码核心，请升级核心后重新启用插件");
     }
+    if (config.sharedMemory) {
+        if (deps["yesimbot.world-state"].capabilities?.memoryCorrectionFilter !== 1) throw new Error("共同记忆需要同时更新本试开发的核心和人物插件；旧核心缺少旧摘要纠错过滤能力");
+        return applySharedMemory(ctx, config);
+    }
     registerModels(ctx);
     const logger = ctx.logger(name), store = new PersonStore(ctx.database, config.mode);
     let active = true;
+    const modes = new Map<string, Mode>(), generations = new Map<string, number>();
     const allowed = (session: Session) => active && deps["yesimbot.world-state"].isChannelAllowed(session);
     let model: SummaryModel | undefined;
     if (config.modelGroup) model = async (messages, signal) => {
@@ -87,15 +99,21 @@ export function apply(ctx: Context, config: Config) {
         return result.text || "";
     };
     const worker = new SummaryWorker(store, model, { threshold: config.summaryThreshold, cooldownMs: config.cooldownSeconds * 1000, timeoutMs: config.timeoutSeconds * 1000, maxQueue: config.maxQueue }, error => logger.warn(`后台人物总结未接受：${String(error)}`));
-    const removeInjection = deps["yesimbot.prompt"].inject("person_memory", 35, view => view.session && allowed(view.session) ? renderPeople(store, view) : Promise.resolve(""));
+    const removeInjection = deps["yesimbot.prompt"].inject("person_memory", 35, async view => {
+        if (!view.session || !allowed(view.session)) return "";
+        const scope = key(view.session), state = await store.read(scope); modes.set(scope, state.settings.mode);
+        return state.settings.mode === "off" ? "" : renderPeople(store, view);
+    });
 
     ctx.on("yesimbot/before-user-stimulus", async (session: Session) => {
         if (!allowed(session) || !session.userId || session.author?.isBot || session.userId === session.bot.selfId || (session as any).__commandHandled || !session.messageId || !session.content?.trim()) return;
         try {
             const scope = key(session);
-            await store.recognize(scope, session.userId, session.author?.nick || session.author?.name || session.userId, () => active);
+            const mode = (await store.read(scope)).settings.mode; modes.set(scope, mode); if (mode === "off") return;
+            const generation = generations.get(scope) ?? 0, current = () => active && generation === (generations.get(scope) ?? 0) && modes.get(scope) !== "off";
+            await store.recognize(scope, session.userId, session.author?.nick || session.author?.name || session.userId, current);
             if (!active) return;
-            await store.capture(scope, { id: session.messageId, userId: session.userId, name: session.author?.nick || session.author?.name || session.userId, text: session.content, timestamp: Number(session.timestamp) || Date.now() }, () => active);
+            await store.capture(scope, { id: session.messageId, userId: session.userId, name: session.author?.nick || session.author?.name || session.userId, text: session.content, timestamp: Number(session.timestamp) || Date.now() }, current);
             if (active) await worker.observe(scope, session.userId);
         } catch (error) { logger.warn(`人物资料记录失败：${String(error)}`); }
     });
@@ -104,11 +122,12 @@ export function apply(ctx: Context, config: Config) {
         name: "person_memory",
         description: "仅操作当前场景。read(account_id) 读取账号 ID 或人物 UUID 的画像与版本；search(query) 最多返回 5 个摘要；history(account_id) 读取该账号或人物最近 10 次修改的元数据和有限变更摘要，详细证据由管理员核对。propose 提交完整画像，需 account_id、profile、message_ids、person_id、person_revision、account_revision；auto 模式可接受画像。propose_link 提交账号关联建议，另需 target_person_id、target_revision、confidence、reason；即使 auto 模式也始终待管理员审核。两种候选都需 1–10 个当前账号的实际消息 ID 和最新版本。资料是可修正信念，确信度不代表身份认证。不能跨群、直接关联、合并、审批或覆盖人工锁定。",
         parameters: Schema.object({ action: Schema.union([Schema.const("read"), Schema.const("search"), Schema.const("history"), Schema.const("propose"), Schema.const("propose_link")]).required(), account_id: Schema.string().description("read/history 必填；当前场景的平台账号 ID 或人物 UUID；候选须平台账号 ID"), query: Schema.string().description("search 必填；1–80 字的关键词"), profile: Schema.string().description("propose 必填；不超过 2000 字的完整画像候选"), message_ids: Schema.array(Schema.string()).description("两种候选必填；实际来源消息 ID，1 到 10 个"), person_id: Schema.string().description("两种候选必填；来源人物 UUID"), person_revision: Schema.number().min(0).step(1).description("两种候选必填；读到的来源画像 revision"), account_revision: Schema.number().min(0).step(1).description("两种候选必填；读到的账号关联 revision"), target_person_id: Schema.string().description("propose_link 必填；当前场景目标人物 UUID"), target_revision: Schema.number().min(0).step(1).description("propose_link 必填；目标人物画像 revision"), confidence: Schema.number().min(0).max(1).description("propose_link 必填；0–1 的关联确信度"), reason: Schema.string().description("propose_link 必填；不超过 500 字的关联依据") }),
-        isSupported: (session: Session) => !!session && allowed(session),
+        isSupported: (session: Session) => !!session && allowed(session) && (modes.get(key(session)) ?? config.mode) !== "off",
         execute: async (args: { session: Session; action: string; account_id?: string; query?: string; profile?: string; message_ids?: string[]; person_id?: string; person_revision?: number; account_revision?: number; target_person_id?: string; target_revision?: number; confidence?: number; reason?: string }) => {
             try {
                 if (!args.session || !allowed(args.session)) throw new Error("当前场景未启用人物记忆");
                 const scope = key(args.session);
+                if ((await store.read(scope)).settings.mode === "off") throw new Error("人物记忆已关闭");
                 if (args.action === "read" || args.action === "history") {
                     if (typeof args.account_id !== "string" || !args.account_id.trim()) throw new Error("请提供 account_id");
                     const found = await store.find(scope, args.account_id);
@@ -203,6 +222,6 @@ export function apply(ctx: Context, config: Config) {
     }).option("page", "--page <page:natural>", { fallback: 1 }).option("account", "--account <account:string>").option("person", "--person <person:string>").option("action", "--action <action:string>");
     command("people.revert <id:string>", "条件回滚一次修改，存在后续冲突则拒绝", async (scope, actor, [id]) => { await store.revert(scope, id, actor); return `已回滚 ${id}；画像/关联版本继续递增`; });
     for (const paused of [true, false]) command(`people.${paused ? "pause" : "resume"}`, paused ? "暂停当前场景模型维护，仍可查询和人工修改" : "恢复当前场景模型维护", async (scope, actor) => { await store.settings(scope, { paused }, actor); if (paused) worker.cancel(scope); return `当前场景已${paused ? "暂停" : "恢复"}维护`; });
-    command("people.mode <mode:string>", "设置当前场景 off/review/auto，不自动接受既有候选", async (scope, actor, [mode]) => { await store.settings(scope, { mode }, actor); worker.cancel(scope); return `当前场景维护模式：${mode}`; });
+    command("people.mode <mode:string>", "设置当前场景 off/review/auto，不自动接受既有候选", async (scope, actor, [mode]) => { await store.settings(scope, { mode }, actor); modes.set(scope, mode); generations.set(scope, (generations.get(scope) ?? 0) + 1); worker.cancel(scope); return `当前场景维护模式：${mode}`; });
     command("people.summarize <account:string>", "手动触发当前账号总结，仍遵循审核模式与锁定", async (scope, _actor, [id]) => `总结结果：${await worker.summarize(scope, id)}；用 people.pending 查看候选`);
 }
