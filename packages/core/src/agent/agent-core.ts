@@ -14,6 +14,8 @@ import { StimulusScheduler } from "./scheduler";
 import { ReplyControl, ReplyCategory, ReplyTarget, messageCategories, replyKey } from "./reply-control";
 import { registerReplyCommands } from "./reply-commands";
 import { guardReplySession, withReplyTurn } from "./reply-turn";
+import { isBotMention } from "./mention";
+import { TopicManager, TopicSnapshot } from "./topics";
 import { TypeSafeEvaluator } from "./typesafe";
 import { WillingnessManager } from "./willing";
 import { DecisionRecord, DecisionRecords, formatDecision, describeDecisionStage } from "./decision-record";
@@ -21,7 +23,7 @@ import { registerDecisionCommands } from "./decision-commands";
 import { DecisionJournal } from "./decision-journal";
 import path from "node:path";
 
-type TracedStimulus = AgentStimulus<any> & { decisionId?: string };
+type TracedStimulus = AgentStimulus<any> & { decisionId?: string; topic?: TopicSnapshot };
 
 declare module "koishi" {
     interface Tables {
@@ -53,6 +55,8 @@ export class AgentCore extends Service<Config> {
     private scheduler: StimulusScheduler;
     private contextBuilder: PromptContextBuilder;
     private processor: HeartbeatProcessor;
+    private topics?: TopicManager;
+    private topicScores = new Map<string, Set<string>>();
 
     private activeTurns = new Map<string, AbortController>();
     private replyControl: ReplyControl;
@@ -70,11 +74,15 @@ export class AgentCore extends Service<Config> {
     public queryDecision(session: Session): string {
         const target = this.replyTarget(session);
         const key = replyKey(target);
-        return formatDecision(this.decisions.latest(target), {
-            score: this.willing.getCurrentWillingness(key), busy: this.scheduler.isBusy(key),
+        const diagnostic = formatDecision(this.decisions.latest(target), {
+            score: this.willing.getCurrentWillingness(this.topics?.getTopics(key).find(topic => topic.id === this.topics?.getFocus(key)?.id)?.scoreKey ?? key), busy: this.scheduler.isBusy(key),
             assessing: this.pendingAssessments.has(key), muted: this.worldState.peekBotMuted(session.cid, session.selfId),
             participation: this.willing.getParticipation(key), suppression: this.replyControl.peek(target),
         });
+        const topics = this.topics?.getTopics(key) ?? [];
+        return topics.length ? diagnostic + "\n话题意愿：" + topics.map(topic =>
+            `${JSON.stringify(topic.label)} ${this.willing.getCurrentWillingness(topic.scoreKey).toFixed(2)}（占比 ${(topic.share * 100).toFixed(0)}%）`
+        ).join("；") : diagnostic;
     }
 
     public async queryDecisionRecords(session: Session, filter: { limit: number; from?: number; to?: number }): Promise<string> {
@@ -110,40 +118,40 @@ export class AgentCore extends Service<Config> {
             this.recordDecision(stimulus, { stage: "blocked", reason: "muted" });
             return;
         }
-        if (type === "user_message") this.scheduler.noteUserMessage(channelCid);
+        if (type === "user_message") {
+            this.topics?.noteMessage(session, channelCid);
+            this.scheduler.noteUserMessage(channelCid);
+        }
         this.cancelAssessment(channelCid);
         const config = this.config.typesafe;
-        const addressed =
-            session?.isDirect ||
-            session?.stripped?.atSelf ||
-            session?.elements?.some((e) => e.type === "at" && e.attrs.id === session.bot.selfId);
-        if (
-            type !== "user_message" ||
-            !config ||
-            config.mode === "off" ||
-            addressed ||
-            this.scheduler.isBusy(channelCid) ||
-            !config.evaluationModel?.providerName ||
-            !config.evaluationModel.modelId
-        ) {
+        const addressed = session?.isDirect || isBotMention(session);
+        const useTypeSafe = config && config.mode !== "off" && config.evaluationModel?.providerName && config.evaluationModel.modelId;
+        const useTopics = this.config.topics?.enabled && this.config.topics.model?.providerName && this.config.topics.model.modelId;
+        if (type !== "user_message" || addressed || this.scheduler.isBusy(channelCid) || (!useTypeSafe && !useTopics)) {
             this.recordDecision(stimulus, { assessment: { mode: config?.mode ?? "off", multiplier: null, status: "bypassed" } });
-            this.processStimulus(stimulus);
+            const cachedTopic = type === "user_message" && !addressed && useTopics ? this.topics?.getCurrent(channelCid) : undefined;
+            this.processStimulus(cachedTopic ? { ...stimulus, topic: cachedTopic } : stimulus);
             return;
         }
         const target = this.replyTarget(session);
         const pending = { controller: new AbortController(), stimulus, token: this.replyControl.token(target) };
         this.pendingAssessments.set(channelCid, pending);
         let answers: { addressed: number; interested: number; others: number } | undefined;
-        this.recordDecision(stimulus, { stage: "assessing", assessment: { mode: config.mode, multiplier: null, status: "pending" } });
-        const finish = (multiplier: number | null) => {
-            if (this.stopped || this.pendingAssessments.get(channelCid) !== pending) return;
-            if (!this.replyControl.valid(target, pending.token)) return;
+        this.recordDecision(stimulus, { stage: "assessing", assessment: { mode: config?.mode ?? "off", multiplier: null, status: "pending" } });
+        const semantic = useTypeSafe
+            ? new TypeSafeEvaluator(this.ctx, this.config).evaluate(session, pending.controller.signal, value => { answers = value; })
+            : Promise.resolve(null);
+        const topic = useTopics ? this.topics!.assess(session, channelCid, pending.controller.signal, false) : Promise.resolve(undefined);
+        void Promise.all([semantic, topic]).then(([multiplier, snapshot]) => {
+            if (this.stopped || this.pendingAssessments.get(channelCid) !== pending || !this.replyControl.valid(target, pending.token)) return;
             this.pendingAssessments.delete(channelCid);
-            this.recordDecision(stimulus, { assessment: { mode: config.mode, multiplier, answers, status: multiplier === null ? "unavailable" : "completed" } });
-            this.logger.debug(`[${channelCid}] TypeSafe 增益乘数: ${multiplier ?? "不可用，沿用原计算"}`);
-            this.processStimulus(stimulus, config.mode === "adjust" ? (multiplier ?? 1) : 1);
-        };
-        void new TypeSafeEvaluator(this.ctx, this.config).evaluate(session, pending.controller.signal, value => { answers = value; }).then(finish, () => finish(null));
+            this.recordDecision(stimulus, { assessment: { mode: config?.mode ?? "off", multiplier, answers, status: multiplier === null ? "unavailable" : "completed" } });
+            this.processStimulus({ ...stimulus, topic: snapshot }, config?.mode === "adjust" ? (multiplier ?? 1) : 1);
+        }, () => {
+            if (this.pendingAssessments.get(channelCid) !== pending || this.stopped || !this.replyControl.valid(target, pending.token)) return;
+            this.pendingAssessments.delete(channelCid);
+            this.processStimulus(stimulus);
+        });
     }
 
     constructor(ctx: Context, config: Config) {
@@ -171,6 +179,9 @@ export class AgentCore extends Service<Config> {
         }
 
         this.willing = new WillingnessManager(ctx, config);
+        if (config.topics?.enabled) this.topics = new TopicManager(ctx, config.topics,
+            session => config.typesafe?.interests?.trim() || session.resolve(config.interest.keywords).join("、"),
+            key => this.clearTopicScores(key));
 
         this.contextBuilder = new PromptContextBuilder(ctx, config, this.modelSwitcher);
         this.processor = new HeartbeatProcessor(
@@ -198,7 +209,7 @@ export class AgentCore extends Service<Config> {
                 this.cancelAssessment(key, false);
                 this.activeTurns.get(key)?.abort(new Error("聊天任务已取消"));
                 this.decisions.update(this.activeDecisionIds.get(key), { stage: "cancelled", reason, success: false });
-                this.willing.reset(key);
+                this.resetWillingness(key);
                 this.scheduler?.cancel(key);
             },
             async (target, reason, rule) => {
@@ -265,17 +276,19 @@ export class AgentCore extends Service<Config> {
                 this.activeDecisionIds.delete(channelCid);
             }
 
-            if (success && valid()) {
-                const willingnessBeforeReply = this.willing.getCurrentWillingness(channelCid);
-                this.willing.handlePostReply(stimulus.session, channelCid);
-                const willingnessAfterReply = this.willing.getCurrentWillingness(channelCid);
+            const replyTopic = (stimulus as TracedStimulus).topic;
+            if (success && valid() && (!replyTopic || this.topicScores.get(channelCid)?.has(replyTopic.scoreKey))) {
+                const scoreKey = replyTopic?.scoreKey ?? channelCid;
+                const willingnessBeforeReply = this.willing.getCurrentWillingness(scoreKey);
+                this.willing.handlePostReply(stimulus.session, scoreKey, 0, channelCid);
+                const willingnessAfterReply = this.willing.getCurrentWillingness(scoreKey);
 
                 /* prettier-ignore */
                 this.logger.debug(`[${channelCid}] 回复成功，意愿值已更新: ${willingnessBeforeReply.toFixed(2)} -> ${willingnessAfterReply.toFixed(2)}`);
             }
             const completed = valid();
             this.recordDecision(stimulus, { stage: completed ? "completed" : "cancelled", reason: !completed ? "invalid_generation" : success ? undefined : "no_reply", success: success && completed,
-                score: this.willing.getCurrentWillingness(channelCid), participation: this.willing.getParticipation(channelCid) });
+                score: this.willing.getCurrentWillingness((stimulus as TracedStimulus).topic?.scoreKey ?? channelCid), participation: this.willing.getParticipation(channelCid) });
         }, (stimulus, stage, reason) => this.recordDecision(stimulus, { stage, reason }));
 
         this.ctx.on("agent/bot-muted", (target) => {
@@ -283,7 +296,7 @@ export class AgentCore extends Service<Config> {
             this.cancelAssessment(key, false, "muted");
             this.activeTurns.get(key)?.abort(new Error("机器人已被禁言"));
             this.decisions.update(this.activeDecisionIds.get(key), { stage: "cancelled", reason: "muted", success: false });
-            this.willing.reset(key);
+            this.resetWillingness(key);
             this.scheduler.cancel(key, "muted");
         });
     }
@@ -313,7 +326,7 @@ export class AgentCore extends Service<Config> {
         this.willing.startDecayCycle();
     }
 
-    private processStimulus(stimulus: AgentStimulus<any>, assessmentMultiplier = 1, allowSchedule = true): void {
+    private processStimulus(stimulus: TracedStimulus, assessmentMultiplier = 1, allowSchedule = true): void {
         const { type, session } = stimulus;
         const allowed = this.allowedCategories(stimulus);
         if (!allowed.length) { this.recordDecision(stimulus, { stage: "blocked", reason: "reply_suppressed", allowed: [] }); return; }
@@ -329,18 +342,31 @@ export class AgentCore extends Service<Config> {
 
         if (type === "user_message") {
             try {
+                const topic = (stimulus as TracedStimulus).topic;
+                const candidates = topic ? this.topics?.getTopics(channelCid) ?? [] : [];
+                if (topic) this.trackTopicScores(channelCid, candidates);
                 const willingnessBefore = this.willing.getCurrentWillingness(channelCid);
-                const result = this.willing.shouldReply(
-                    session,
-                    channelCid,
-                    this.replyControl.get(this.replyTarget(session)) ? allowed : undefined,
-                    assessmentMultiplier
-                );
-                const willingnessAfter = this.willing.getCurrentWillingness(channelCid); // 获取衰减后的值
-                decision = result.decision;
-                this.recordDecision(stimulus, { stage: "calculated", allowed, decision, probability: result.probability, roll: result.roll, calculation: result.calculation,
+                const replyRule = this.replyControl.get(this.replyTarget(session));
+                const categories = replyRule ? allowed : undefined;
+                const result = topic
+                    ? this.willing.shouldReply(session, channelCid, categories, assessmentMultiplier,
+                        { currentScoreKey: topic.scoreKey, multiplier: topic.multiplier, candidates,
+                            latestTopicPreference: this.config.topics?.latestTopicPreference })
+                    : this.willing.shouldReply(session, channelCid, categories, assessmentMultiplier);
+                const scoreKey = result.scoreKey ?? channelCid;
+                const willingnessAfter = this.willing.getCurrentWillingness(scoreKey);
+                if (topic) {
+                    const focus = candidates.find(candidate => candidate.scoreKey === scoreKey);
+                    if (focus) {
+                        this.topics?.chooseFocus(channelCid, focus.id);
+                        stimulus = { ...stimulus, topic: focus } as TracedStimulus;
+                    }
+                }
+                const forcedMention = this.config.prioritizeMentions && !replyRule && isBotMention(session) && allowed.includes("at");
+                decision = !!forcedMention || result.decision;
+                this.recordDecision(stimulus, { stage: "calculated", allowed, decision, forcedReply: !!forcedMention, probability: result.probability, roll: result.roll, calculation: result.calculation,
                     score: willingnessAfter, participation: this.willing.getParticipation?.(channelCid),
-                    reason: result.probability === 0 ? "below_threshold" : "probability_roll" });
+                    reason: forcedMention ? "forced_reply_by_mention" : result.probability === 0 ? "below_threshold" : "probability_roll" });
 
                 /* prettier-ignore */
                 this.logger.debug(`[${channelCid}] 意愿计算: ${willingnessBefore.toFixed(2)} -> ${willingnessAfter.toFixed(2)} | 回复概率: ${(result.probability * 100).toFixed(1)}% | 初步决策: ${decision}`);
@@ -378,10 +404,28 @@ export class AgentCore extends Service<Config> {
         this.activeTurns.clear();
         for (const id of this.activeDecisionIds.values()) this.decisions.update(id, { stage: "cancelled", reason: "stopped", success: false });
         this.activeDecisionIds.clear();
+        this.topics?.dispose();
         this.scheduler.dispose();
         this.willing.stopDecayCycle();
         await this.replyControl.flush();
         await this.decisionJournal?.close();
+    }
+
+    private clearTopicScores(channelKey: string): void {
+        for (const key of this.topicScores.get(channelKey) ?? []) this.willing.reset(key);
+        this.topicScores.delete(channelKey);
+    }
+
+    private resetWillingness(channelKey: string): void {
+        this.topics?.reset(channelKey);
+        this.clearTopicScores(channelKey);
+        this.willing.reset(channelKey);
+    }
+
+    private trackTopicScores(channelKey: string, snapshots: TopicSnapshot[]): void {
+        const keys = new Set(snapshots.map(topic => topic.scoreKey));
+        for (const old of this.topicScores.get(channelKey) ?? []) if (!keys.has(old)) this.willing.reset(old);
+        this.topicScores.set(channelKey, keys);
     }
 
     private replyTarget(session: Session): ReplyTarget {

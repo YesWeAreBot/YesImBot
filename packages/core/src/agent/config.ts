@@ -2,6 +2,8 @@ import { readFileSync } from "fs";
 import { Computed, Schema } from "koishi";
 import path from "path";
 
+import type { TopicConfig } from "./topics";
+
 import { SystemConfig } from "@/config";
 import { PROMPTS_DIR } from "@/shared/constants";
 
@@ -55,18 +57,7 @@ export interface TypeSafeConfig {
 }
 
 export interface WillingnessConfig {
-    topics?: {
-        enabled: boolean;
-        model?: { providerName: string; modelId: string };
-        minIntervalMs: number;
-        messagesPerAnalysis: number;
-        historyLimit: number;
-        timeoutMs: number;
-        maxTopics: number;
-        idleTimeoutSeconds: number;
-        influence: number;
-        latestTopicPreference?: number;
-    };
+    topics?: TopicConfig;
     participation?: {
         enabled: boolean;
         durationSeconds: number;

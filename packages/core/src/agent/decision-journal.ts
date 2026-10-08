@@ -39,6 +39,9 @@ const reasons = new Set([
     "reply_suppressed",
     "permission_denied",
     "muted",
+    "forced_reply_by_mention",
+    "mention_priority",
+    "mention_pending",
     "probability_roll",
     "below_threshold",
     "busy",
@@ -99,7 +102,7 @@ export function sanitizeDecisionRecord(value: unknown): DecisionRecord | undefin
         startedAt: finite(value.startedAt) ? value.startedAt : value.time,
     };
     if (typeof value.reason === "string" && reasons.has(value.reason)) result.reason = value.reason;
-    for (const field of ["decision", "success"] as const) if (typeof value[field] === "boolean") result[field] = value[field];
+    for (const field of ["decision", "success", "forcedReply"] as const) if (typeof value[field] === "boolean") result[field] = value[field];
     for (const field of ["score", "probability", "roll"] as const) if (finite(value[field])) result[field] = value[field];
     if (object(value.calculation)) {
         const calculation: Record<string, number> = {};
