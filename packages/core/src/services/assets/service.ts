@@ -71,8 +71,12 @@ export class AssetService extends Service<Config> {
 
     protected async start() {
         // 初始化存储驱动
-        this.storage = new LocalStorageDriver(this.ctx, this.config.storagePath);
-        this.cacheStorage = new LocalStorageDriver(this.ctx, this.config.image.processedCachePath);
+        const storage = new LocalStorageDriver(this.ctx, this.config.storagePath);
+        const cacheStorage = new LocalStorageDriver(this.ctx, this.config.image.processedCachePath);
+        await Promise.all([storage.ready(), cacheStorage.ready()]);
+        if (!this.ctx.scope.isActive) return;
+        this.storage = storage;
+        this.cacheStorage = cacheStorage;
 
         // 扩展数据库表
         this.ctx.model.extend(
