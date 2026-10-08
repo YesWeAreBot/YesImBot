@@ -1,6 +1,7 @@
 import { Services } from "./shared/constants";
 import {} from "@koishijs/plugin-notifier";
-import { Context, ForkScope, Service, sleep } from "koishi";
+import { Context, ForkScope, Service } from "koishi";
+import path from "node:path";
 
 import { AgentCore } from "./agent";
 import * as ConfigCommand from "./commands/config";
@@ -28,6 +29,11 @@ export default class YesImBot extends Service<Config> {
     constructor(ctx: Context, config: Config) {
         super(ctx, "yesimbot", true);
 
+        ctx.console.addEntry({
+            dev: path.resolve(__dirname, "../client/index.js"),
+            prod: path.resolve(__dirname, "../dist"),
+        });
+
         let version = config.version;
         const hasLegacyV1Field = Object.hasOwn(config, "modelService");
 
@@ -51,7 +57,7 @@ export default class YesImBot extends Service<Config> {
 
                 const validatedConfig = Config(newConfig, { autofix: true });
                 ctx.scope.update(validatedConfig, false);
-                this.config = validatedConfig;
+                config = validatedConfig;
                 ctx.logger.success("配置迁移成功");
             } catch (error) {
                 ctx.logger.error("配置迁移失败:", error.message);
@@ -59,6 +65,8 @@ export default class YesImBot extends Service<Config> {
             }
         } else {
         }
+
+        this.config = config;
 
         try {
             ctx.plugin(ConfigCommand, config);
@@ -99,8 +107,9 @@ export default class YesImBot extends Service<Config> {
 
             initializeErrorReporter(config.errorReporting, this.ctx.logger("[错误报告]"), (id, error) => this.ctx[Services.Logger].recordError(id, error), config.providers?.map(provider => provider.apiKey).filter(Boolean));
 
-            waitForServices(services)
-                .then(() => {
+            waitForServices(ctx, services)
+                .then((ready) => {
+                    if (!ready) return;
                     this.ctx.logger.info("所有服务已就绪");
                     this.ctx.logger.info(`Version: ${require("../package.json").version}`);
                 })
@@ -124,31 +133,43 @@ export default class YesImBot extends Service<Config> {
     }
 }
 
-async function waitForServices(services: ForkScope[]) {
-    await sleep(1000);
-
+function waitForServices(ctx: Context, services: ForkScope[]): Promise<boolean> {
     // 未就绪服务
     const notReadyServices = new Set(services.map((service) => service.ctx.name));
 
-    return new Promise<void>((resolve, reject) => {
-        setTimeout(() => {
-            if (!services.every((service) => service.ready)) {
-                reject(new Error(`服务初始化超时: ${Array.from(notReadyServices).join(", ")}`));
-            }
-        }, 10000);
+    return new Promise<boolean>((resolve, reject) => {
+        let finished = false;
+        let cancelDeadline: () => void;
+        let cancelPoll: () => void;
+        let removeDisposeListener: () => void;
+        const finish = (ready: boolean, error?: Error) => {
+            if (finished) return;
+            finished = true;
+            cancelDeadline?.();
+            cancelPoll?.();
+            removeDisposeListener?.();
+            if (error) reject(error);
+            else resolve(ready);
+        };
+        removeDisposeListener = ctx.on("dispose", () => finish(false));
+        cancelDeadline = ctx.setTimeout(() => {
+            if (services.every((service) => service.ready)) finish(true);
+            else finish(false, new Error(`服务初始化超时: ${Array.from(notReadyServices).join(", ")}`));
+        }, 11000);
         const check = () => {
+            if (finished) return;
             for (const service of services) {
                 if (service.ready && notReadyServices.has(service.ctx.name)) {
                     notReadyServices.delete(service.ctx.name);
                 }
             }
             if (notReadyServices.size === 0) {
-                resolve();
+                finish(true);
             } else {
-                setTimeout(check, 100);
+                cancelPoll = ctx.setTimeout(check, 100);
             }
         };
-        check();
+        cancelPoll = ctx.setTimeout(check, 1000);
     });
 }
 

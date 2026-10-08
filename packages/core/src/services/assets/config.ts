@@ -38,7 +38,9 @@ export const AssetServiceConfigSchema: Schema<AssetServiceConfig> = Schema.objec
         enabled: Schema.boolean().default(true).description("是否启用自动清理过期资源"),
         intervalHours: Schema.number().min(1).default(24).description("自动清理周期（小时）"),
         maxAgeDays: Schema.number().min(1).default(7).description("资源最长保留天数"),
-    }).description("自动清理配置"),
+    })
+        .collapse()
+        .description("自动清理"),
 
     image: Schema.object({
         processedCachePath: Schema.path({ allowCreate: true, filters: ["directory"] })
@@ -51,7 +53,9 @@ export const AssetServiceConfigSchema: Schema<AssetServiceConfig> = Schema.objec
             .default("stitch")
             .description("GIF 动图处理策略：'firstFrame' (提取第一帧) 或 'stitch' (拼接多帧)"),
         gifFramesToExtract: Schema.number().min(2).max(16).default(6).description("当策略为 'stitch' 时，提取并拼接的 GIF 关键帧数量"),
-    }).description("图片处理配置"),
+    })
+        .collapse()
+        .description("图片处理"),
 
     recoveryEnabled: Schema.boolean().default(true).description("是否启用资源恢复机制"),
 });

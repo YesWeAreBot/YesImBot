@@ -43,31 +43,40 @@ export interface HistoryConfig {
     cleanupIntervalSec: number;
 }
 
-export const HistoryConfigSchema: Schema<HistoryConfig> = Schema.object({
-    l1_memory: Schema.object({
-        maxMessages: Schema.number().default(50).description("L1工作记忆中最多包含的消息数量，超出部分将被平滑裁剪"),
-        pendingTurnTimeoutSec: Schema.number().default(1800).description("等待处理的交互轮次在多长时间无新消息后被强制关闭（秒）"),
-        keepFullTurnCount: Schema.number().default(2).description("保留完整 Agent 响应（思考、行动、观察）的最新轮次数"),
-    }),
+export const HistoryConfigSchema: Schema<HistoryConfig> = Schema.intersect([
+    Schema.object({
+        l1_memory: Schema.object({
+            maxMessages: Schema.number().default(50).description("L1工作记忆中最多包含的消息数量，超出部分将被平滑裁剪"),
+            pendingTurnTimeoutSec: Schema.number().default(1800).description("等待处理的交互轮次在多长时间无新消息后被强制关闭（秒）"),
+            keepFullTurnCount: Schema.number().default(2).description("保留完整 Agent 响应（思考、行动、观察）的最新轮次数"),
+        })
+            .collapse()
+            .description("L1 工作记忆"),
 
-    l2_memory: Schema.object({
-        enabled: Schema.boolean().default(true).description("启用 L2 语义记忆检索功能 (RAG)"),
-        retrievalK: Schema.number().default(8).description("每次从 L2 检索的最大记忆片段数量"),
-        retrievalMinSimilarity: Schema.number().default(0.55).description("向量相似度搜索的最低置信度阈值，低于此值的结果将被过滤"),
-        messagesPerChunk: Schema.number().default(4).description("每个语义记忆片段包含的消息数量"),
-        includeNeighborChunks: Schema.boolean().default(true).description("是否扩展前后相邻的记忆片段"),
-    }).description("语义索引设置"),
+        l2_memory: Schema.object({
+            enabled: Schema.boolean().default(true).description("启用 L2 语义记忆检索功能 (RAG)"),
+            retrievalK: Schema.number().default(8).description("每次从 L2 检索的最大记忆片段数量"),
+            retrievalMinSimilarity: Schema.number().default(0.55).description("向量相似度搜索的最低置信度阈值，低于此值的结果将被过滤"),
+            messagesPerChunk: Schema.number().default(4).description("每个语义记忆片段包含的消息数量"),
+            includeNeighborChunks: Schema.boolean().default(true).description("是否扩展前后相邻的记忆片段"),
+        })
+            .collapse()
+            .description("L2 语义记忆检索"),
 
-    l3_memory: Schema.object({
-        enabled: Schema.boolean().default(false).description("启用 L3 长期日记功能"),
-        diaryGenerationTime: Schema.string().default("04:00").description("每日生成日记的时间（HH:mm 格式）"),
+        l3_memory: Schema.object({
+            enabled: Schema.boolean().default(false).description("启用 L3 长期日记功能"),
+            diaryGenerationTime: Schema.string().default("04:00").description("每日生成日记的时间（HH:mm 格式，使用服务器本地时区）"),
+        })
+            .collapse()
+            .description("L3 长期日记"),
+
+        ignoreSelfMessage: Schema.boolean().default(false).description("是否忽略自身发送的消息"),
+    }).description("历史记录与上下文"),
+    Schema.object({
+        logLengthLimit: Schema.number().default(100).description("Agent 内部日志的最大长度"),
+        dataRetentionDays: Schema.number().default(30).description("历史数据在被永久删除前的最大保留天数"),
+        cleanupIntervalSec: Schema.number().default(1800).description("后台清理任务的执行频率（秒）"),
     })
-        .hidden()
-        .description("长期存档设置"),
-
-    ignoreSelfMessage: Schema.boolean().default(false).description("是否忽略自身发送的消息"),
-
-    logLengthLimit: Schema.number().default(100).description("Agent 内部日志的最大长度"),
-    dataRetentionDays: Schema.number().default(30).description("历史数据在被永久删除前的最大保留天数"),
-    cleanupIntervalSec: Schema.number().default(1800).description("后台清理任务的执行频率（秒）"),
-});
+        .collapse()
+        .description("历史维护"),
+]);

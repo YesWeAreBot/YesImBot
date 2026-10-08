@@ -11,16 +11,27 @@ declare module "koishi" {
 
 export const name = "yesimbot-person-memory";
 export const inject = { required: ["database", "yesimbot.prompt", "yesimbot.tool", "yesimbot.world-state"], optional: ["yesimbot.model"] };
-export interface Config { enabled: boolean; mode: Mode; modelGroup: string; summaryThreshold: number; cooldownSeconds: number; timeoutSeconds: number; maxQueue: number }
-export const Config: Schema<Config> = Schema.object({
-    enabled: Schema.boolean().default(true).description("启用当前场景的人物记忆与账号关联"),
-    mode: Schema.union([Schema.const("off"), Schema.const("review"), Schema.const("auto")]).default("review").description("默认画像维护模式：关闭、人工审核或自动接受；每个场景可用命令覆盖"),
-    modelGroup: Schema.string().default("").description("后台总结使用的 YIB 模型组；留空不调用后台模型，仍可人工编辑和审核模型工具提交的候选"),
-    summaryThreshold: Schema.number().min(2).max(100).step(1).default(6).description("同一账号累计多少条新消息后尝试总结"),
-    cooldownSeconds: Schema.number().min(30).max(86400).default(600).description("同一场景账号两次自动总结至少间隔的秒数"),
-    timeoutSeconds: Schema.number().min(5).max(120).default(30).description("一次后台总结超时秒数"),
-    maxQueue: Schema.number().min(1).max(100).step(1).default(32).description("待总结任务上限；全局同时运行一个任务"),
-});
+export interface Config { enabled: boolean; mode: Mode; modelGroup: string; summaryThreshold: number; cooldownSeconds: number; timeoutSeconds: number; maxQueue: number; sharedMemory?: boolean; memoryDomain?: string; recallScope?: "current" | "mind"; automaticRecall?: boolean; memoryRetentionDays?: number }
+export const Config: Schema<Config> = Schema.intersect([
+    Schema.object({
+        enabled: Schema.boolean().default(true).description("启用当前场景的人物记忆与账号关联"),
+        mode: Schema.union([Schema.const("off"), Schema.const("review"), Schema.const("auto")]).default("review").description("默认模式：off 停止新记忆功能；review 人工审核；共同记忆 auto 可自动接受画像与账号关联"),
+    }).description("人物记忆与维护模式").role("yib-section"),
+    Schema.object({
+        sharedMemory: Schema.boolean().default(false).description("实验性共同记忆：跨上下文复用人物认识，支持主动回忆与自动关联"),
+        memoryDomain: Schema.string().default("").description("共同记忆域；留空按机器人账号区分。相同域名可显式连接同一人格的不同平台账号"),
+        recallScope: Schema.union([Schema.const("current"), Schema.const("mind")]).default("mind").description("回忆范围：当前会话或共同域内当前配置允许的会话"),
+        automaticRecall: Schema.boolean().default(true).description("明确提及往事时自动查找相关记忆；也可通过 person_recall 主动查询"),
+        memoryRetentionDays: Schema.number().min(0).max(3650).step(1).default(0).description("共同经历保留天数；0 不定期清理。仅清理原始经历召回表；人物画像来源与审计不受影响"),
+    }).collapse().experimental().description("共同记忆与主动召回（实验性）").role("yib-section"),
+    Schema.object({
+        modelGroup: Schema.string().default("").description("后台总结使用的 YIB 模型组；留空不调用后台模型，仍可人工编辑和审核模型工具提交的候选"),
+        summaryThreshold: Schema.number().min(2).max(100).step(1).default(6).description("同一账号累计多少条新消息后尝试总结"),
+        cooldownSeconds: Schema.number().min(30).max(86400).default(600).description("同一场景账号两次自动总结至少间隔的秒数"),
+        timeoutSeconds: Schema.number().min(5).max(120).default(30).description("一次后台总结超时秒数"),
+        maxQueue: Schema.number().min(1).max(100).step(1).default(32).description("待总结任务上限；全局同时运行一个任务"),
+    }).collapse().description("后台总结").role("yib-section"),
+]);
 interface Tools { capabilities?: { trustedToolSession?: number }; registerTool(tool: unknown): void; unregisterTool(name: string): void }
 interface Prompt { inject(name: string, priority: number, fn: (scope: Record<string, any>) => Promise<string>): void | (() => void) }
 interface Models { useChatGroup(name: string): { chat(options: any): Promise<{ text?: string }> } | undefined }
