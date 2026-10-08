@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { sanitizeDiagnostic } from "@/shared/diagnostic-sanitizer";
 import { assertReplyTurn } from "@/agent/reply-turn";
 import { Context, ForkScope, h, Logger, resolveConfig, Schema, Service, Session } from "koishi";
 
@@ -201,6 +203,7 @@ export class ToolService extends Service<Config> {
             .action(async ({ session }, name) => {
                 if (!name) return "未指定要删除的工具名称";
                 const result = this.unregisterTool(name);
+                await this.recordFrameworkChange(session, "tool.delete", name, result ? "success" : "failed");
                 return result ? `工具 "${name}" 已成功删除。` : `删除失败：未找到名为 "${name}" 的工具。`;
             });
 
@@ -249,6 +252,7 @@ export class ToolService extends Service<Config> {
                 const config = resolveConfig(ext, this.config.extra[name] || {});
                 this.register(ext, true, config);
                 this.ctx.scope.update({ [name]: { enabled: true } }, false);
+                await this.recordFrameworkChange(session, "extension.enable", name, "success");
                 return `启用成功`;
             } catch (error) {
                 return `启用失败: ${error.message}`;
@@ -258,6 +262,7 @@ export class ToolService extends Service<Config> {
         this.ctx.command("extension.disable <name:string>", "禁用扩展", { authority: 3 }).action(async ({ session }, name) => {
             const result = this.unregister(name);
             this.ctx.scope.update({ [name]: { enabled: false } }, false);
+            await this.recordFrameworkChange(session, "extension.disable", name, result ? "success" : "failed");
             return result ? `禁用成功` : `禁用失败`;
         });
     }
@@ -447,7 +452,28 @@ export class ToolService extends Service<Config> {
         return this.tools.delete(name);
     }
 
+    private async recordFrameworkChange(session: Session, operation: string, name: string, status: string) {
+        const world = this.ctx[Services.WorldState]; if (!world?.recordSystemEvent || !session?.channelId) return;
+        try { await world.recordSystemEvent({ id: randomUUID(), platform: session.platform, channelId: session.channelId, eventScope: "global", type: "framework-maintenance", timestamp: new Date(), payload: { actor: `admin:${session.platform}:${session.userId}`, operation, status, scope: "global", origin: { platform: session.platform, selfId: session.selfId, channelId: session.channelId, adapter: session.bot?.platform }, target: { service: Services.Tool, name }, time: new Date().toISOString() }, message: "工具服务全局维护结果；只影响当前运行进程，重启后按配置重新加载。" }); }
+        catch (error) { this._logger.warn(`框架维护事件投递失败：${String(error)}`); }
+    }
+
     public async invoke(functionName: string, params: Record<string, unknown>, session?: Session): Promise<ToolCallResult> {
+        const startedAt = new Date(), requestId = randomUUID();
+        const result = await this.executeInvocation(functionName, params, session);
+        const world = this.ctx[Services.WorldState];
+        if (session?.platform && session.channelId && world?.recordSystemEvent) {
+            try {
+                const admin = session.argv?.command?.name === "tool.call";
+                await world.recordSystemEvent({ id: requestId, platform: session.platform, channelId: session.channelId, eventScope: "channel", type: "tool-result", timestamp: new Date(),
+                    payload: { requestId, actor: admin ? `admin:${session.platform}:${session.userId}` : "model", requester: session.userId, operation: functionName, scope: "channel", origin: { platform: session.platform, selfId: session.selfId, adapter: session.bot?.platform, channelId: session.channelId }, target: { platform: session.platform, selfId: session.selfId, channelId: session.channelId }, startedAt: startedAt.toISOString(), finishedAt: new Date().toISOString(), status: result.status, receipt: JSON.stringify(sanitizeDiagnostic(result)).slice(0, 2000) },
+                    message: "框架工具调用已返回；记录的状态是工具回执，不代表所有外部副作用均已核实。" });
+            } catch (error) { this._logger.warn(`工具结果事件投递失败：${String(error)}`); }
+        }
+        return result;
+    }
+
+    private async executeInvocation(functionName: string, params: Record<string, unknown>, session?: Session): Promise<ToolCallResult> {
         // 1. 获取工具，这里已经包含了 isSupported 的检查
         const tool = this.getTool(functionName, session);
         if (!tool) {

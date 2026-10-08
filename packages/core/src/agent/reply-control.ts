@@ -8,6 +8,7 @@ export interface ReplyTarget {
     channelId: string;
     isDirect?: boolean;
 }
+export interface ReplyActor { id: string; origin: { platform: string; selfId: string; channelId: string; adapter?: string } }
 export interface ReplyRule extends ReplyTarget {
     id: string;
     blocked: string[];
@@ -32,7 +33,7 @@ export class ReplyControl {
     constructor(
         private storage: { load(): Promise<ReplyRule[]>; save(rule: ReplyRule): Promise<void>; remove(id: string): Promise<void> },
         private changed: (target: ReplyTarget, reason: string) => void,
-        private record: (target: ReplyTarget, reason: string, rule?: ReplyRule) => Promise<void>,
+        private record: (target: ReplyTarget, reason: string, rule?: ReplyRule, actor?: ReplyActor) => Promise<void>,
         private now = Date.now,
         private backgroundError: (error: unknown) => void = () => {}
     ) {}
@@ -94,7 +95,7 @@ export class ReplyControl {
         if (!rule) return categories;
         return categories.filter((c) => !rule.blocked.includes("all") && !rule.blocked.includes(c));
     }
-    public async set(target: ReplyTarget, blocked: string[], duration: number | null): Promise<void> {
+    public async set(target: ReplyTarget, blocked: string[], duration: number | null, actor?: ReplyActor): Promise<void> {
         if (blocked.some((c) => c !== "all" && !REPLY_CATEGORIES.includes(c as ReplyCategory))) throw new Error("无效的抑制类别");
         if (duration !== null && (!Number.isFinite(duration) || duration <= 0 || !Number.isSafeInteger(this.now() + duration)))
             throw new Error("无效的暂停时长");
@@ -109,16 +110,16 @@ export class ReplyControl {
         this.invalidate(target, reason);
         await this.enqueue(async () => {
             await this.storage.save(rule);
-            await this.record(target, reason, rule);
+            await this.record(target, reason, rule, actor);
         });
     }
-    public async resume(target: ReplyTarget): Promise<boolean> {
+    public async resume(target: ReplyTarget, actor?: ReplyActor): Promise<boolean> {
         const rule = this.get(target);
         this.rules.delete(replyKey(target));
         this.invalidate(target, "resume");
         await this.enqueue(async () => {
             await this.storage.remove(replyKey(target));
-            await this.record(target, "resume", rule);
+            await this.record(target, "resume", rule, actor);
         });
         return !!rule;
     }

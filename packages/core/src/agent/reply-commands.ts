@@ -150,7 +150,7 @@ export function registerReplyCommands(ctx: Context, control: ReplyControl, defau
                     blocked = categories.filter((category) => !allowed.includes(category));
                 }
                 const target = await resolveTarget(ctx, control, session, options);
-                await control.set(target, blocked, milliseconds);
+                await control.set(target, blocked, milliseconds, { id: `admin:${session.platform}:${session.userId}`, origin: { platform: session.platform, selfId: session.selfId, channelId: session.channelId, adapter: session.bot?.platform } });
                 const rule = control.get(target);
                 const ending =
                     rule?.expiresAt === null
@@ -165,7 +165,7 @@ export function registerReplyCommands(ctx: Context, control: ReplyControl, defau
     addTargetOptions(root.subcommand(".resume", "解除聊天回复抑制", { authority: 3 })).action(async ({ session, options }) => {
         try {
             const target = await resolveTarget(ctx, control, session, options);
-            const resumed = await control.resume(target);
+            const resumed = await control.resume(target, { id: `admin:${session.platform}:${session.userId}`, origin: { platform: session.platform, selfId: session.selfId, channelId: session.channelId, adapter: session.bot?.platform } });
             return resumed
                 ? `已解除 ${describe(target)} 的回复抑制，意愿从零开始积累。`
                 : `${describe(target)} 当前没有生效的回复抑制规则。`;

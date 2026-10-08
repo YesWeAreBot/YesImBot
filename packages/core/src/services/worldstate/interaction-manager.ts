@@ -1,3 +1,4 @@
+import { sanitizeDiagnostic } from "../../shared/diagnostic-sanitizer";
 import { Context, h, Logger } from "koishi";
 import fs from "fs/promises";
 import path from "path";
@@ -217,10 +218,10 @@ export class InteractionManager {
      * @param limit 检索的事件数量上限
      * @returns 按时间升序排列的事件数组
      */
-    public async getL1History(platform: string, channelId: string, limit: number): Promise<L1HistoryItem[]> {
+    public async getL1History(platform: string, channelId: string, limit: number, selfId?: string): Promise<L1HistoryItem[]> {
         const [messages, systemEvents, agentEvents] = await Promise.all([
             this.ctx.database.get(TableName.Messages, { platform, channelId }, { limit, sort: { timestamp: "desc" } }),
-            this.ctx.database.get(TableName.SystemEvents, { platform, channelId }, { limit, sort: { timestamp: "desc" } }),
+            this.ctx.database.get(TableName.SystemEvents, selfId ? { $or: [{ platform, channelId, eventScope: { $nin: ["bot", "mind", "global"] } }, { eventScope: "bot", botKey: JSON.stringify([platform, selfId]) }, { eventScope: "global" }] } : { platform, channelId, eventScope: { $nin: ["bot", "mind", "global"] } }, { limit, sort: { timestamp: "desc" } }),
             this.getAgentHistoryFromFile(platform, channelId, limit),
         ]);
 
@@ -239,6 +240,7 @@ export class InteractionManager {
                 id: s.id,
                 eventType: s.type,
                 message: s.message,
+                eventDetails: escapeEventData({ eventId: s.id, type: s.type, occurredAt: s.timestamp.toISOString(), platform: s.platform, channelId: s.channelId, scope: s.eventScope || "channel", botKey: s.botKey, details: s.payload }),
                 timestamp: s.timestamp,
             })),
             ...agentEvents,
@@ -277,6 +279,7 @@ export class InteractionManager {
                     function: entry.function,
                     status: entry.status,
                     result: entry.result,
+                    error: entry.error ? escapeEventData(entry.error) : undefined,
                 };
             case "agent_heartbeat":
                 return {
@@ -505,4 +508,9 @@ export class InteractionManager {
             return [];
         }
     }
+}
+
+function escapeEventData(value: unknown): string {
+    const text = JSON.stringify(sanitizeDiagnostic(value)) ?? "";
+    return text.slice(0, 5000).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }

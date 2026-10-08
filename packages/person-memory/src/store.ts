@@ -10,12 +10,22 @@ export function sceneKey(s: SceneInput): string {
     return digest(JSON.stringify([s.platform, bot, s.isDirect ? "private" : "channel", channel]));
 }
 function digest(value: string) { return createHash("sha256").update(value).digest("hex"); }
-export interface Evidence { id: string; userId: string; name: string; text: string; timestamp: number }
-export interface Person { id: string; name: string; provisional: boolean; profile: string; evidence: Evidence[]; locked: boolean; stale: boolean; revision: number; identityChanged?: boolean; identityChangedAt?: number }
-export interface Account { userId: string; name: string; personId: string; confidence: number; revision: number }
+export function mindScope(s: SceneInput, namespace = ""): string {
+    const bot = s.selfId || s.bot?.selfId;
+    if (!s.platform || !bot) throw new Error("缺少平台或机器人账号");
+    return `mind:${digest(namespace ? JSON.stringify(["named", namespace]) : JSON.stringify([s.platform, bot]))}`;
+}
+export function accountRef(platform: string, id: string): string {
+    if (!platform || !id) throw new Error("缺少平台或账号 ID");
+    return JSON.stringify([platform, id]);
+}
+export interface Provenance { platform: string; selfId: string; channelId: string; messageId: string; personId: string; accountRevision: number; scene?: string }
+export interface Evidence { id: string; userId: string; name: string; text: string; timestamp: number; provenance?: Provenance }
+export interface Person { id: string; name: string; provisional: boolean; profile: string; evidence: Evidence[]; locked: boolean; stale: boolean; revision: number; identityChanged?: boolean; identityChangedAt?: number; memoryChangedAt?: number }
+export interface Account { userId: string; name: string; personId: string; confidence: number; revision: number; bindingRevision?: number }
 export interface Proposal { id: string; userId: string; personId: string; personRevision: number; accountRevision: number; profile: string; evidence: Evidence[]; createdAt: number }
 export interface LinkProposal { id: string; userId: string; sourcePersonId: string; sourcePersonRevision: number; accountRevision: number; targetPersonId: string; targetPersonRevision: number; confidence: number; reason: string; evidence: Evidence[]; createdAt: number }
-export interface State { people: Record<string, Person>; accounts: Record<string, Account>; proposals: Record<string, Proposal>; linkProposals: Record<string, LinkProposal>; settings: { mode: Mode; paused: boolean } }
+export interface State { people: Record<string, Person>; accounts: Record<string, Account>; proposals: Record<string, Proposal>; linkProposals: Record<string, LinkProposal>; settings: { mode: Mode; paused: boolean; correctionAt?: number } }
 export interface HistoryFilter { offset?: number; userId?: string; personId?: string; action?: string }
 interface StateRow { scope: string; revision: number; state: State }
 interface SourceRow { key: string; scope: string; userId: string; timestamp: number; source: Evidence }
@@ -99,7 +109,7 @@ async function serial<T>(db: object, key: string, fn: () => Promise<T>): Promise
 }
 
 export class PersonStore {
-    constructor(private db: Context["database"], private defaultMode: Mode) {}
+    constructor(private db: Context["database"], private defaultMode: Mode, private options: { autoLinks?: boolean; active?: () => boolean; onCommit?: (audit: Audit) => Promise<void> } = {}) {}
     private async snapshot(scope: string): Promise<StateRow & { firstCommit: boolean }> {
         const cached = (await this.db.get(STATE, { scope }))[0];
         const first = (await this.db.get(AUDIT, { scope, format: 1 }, { sort: { revision: "asc" }, limit: 1 }))[0];
@@ -134,18 +144,24 @@ export class PersonStore {
         return serial(this.db, scope, async () => {
             for (let attempt = 0; attempt < 16; attempt++) {
                 const row = await this.snapshot(scope);
-                if (!active()) throw new Error("任务已取消");
+                if (!active() || this.options.active?.() === false) throw new Error("任务已取消");
                 const state = normalize(structuredClone(row.state));
                 const result = await fn(state, this.db);
                 // Revisions never roll back, including after undo and recreation.
+                for (const [id, value] of Object.entries(state.accounts)) {
+                    const previous = row.state.accounts[id];
+                    value.bindingRevision = previous?.personId === value.personId ? previous.bindingRevision ?? 0 : row.revision + 1;
+                }
                 for (const collection of ["people", "accounts"] as const) {
                     for (const [id, value] of Object.entries(state[collection])) {
                         if (!equal(value, row.state[collection][id])) value.revision = row.revision + 1;
                     }
                 }
+                const correctionAt = Math.max(row.state.settings.correctionAt ?? 0, ...Object.values(state.people).map(p => Math.max(p.identityChangedAt ?? 0, p.memoryChangedAt ?? 0)), action === "archive" ? Date.now() : 0);
+                if (correctionAt) state.settings.correctionAt = correctionAt;
                 validate(state);
                 const delta = changes(row.state, state);
-                if (!active()) throw new Error("任务已取消");
+                if (!active() || this.options.active?.() === false) throw new Error("任务已取消");
                 if (!delta.length) return structuredClone(result);
                 if (!row.revision) {
                     // The first commit must also preserve defaults if its cache is
@@ -172,6 +188,9 @@ export class PersonStore {
                     continue;
                 }
                 await this.cache({ scope, revision, state });
+                // The audit is the accepted commit. A diagnostic delivery failure
+                // must not turn it into a failed mutation or invite a duplicate.
+                try { await this.options.onCommit?.({ id, format: 1, scope, revision, timestamp: Date.now(), actor, action, changes: delta }); } catch { /* audit remains recoverable */ }
                 return structuredClone(result);
             }
             throw new Conflict("状态更新失败");
@@ -208,12 +227,13 @@ export class PersonStore {
         }, active);
     }
     async capture(scope: string, input: Evidence, active = () => true) {
-        const source = { id: text(input.id, 256, "消息 ID"), userId: text(input.userId, 256, "来源账号"), name: String(input.name || "").slice(0, 80), text: String(input.text).slice(0, 1000), timestamp: input.timestamp };
+        const source: Evidence = { id: text(input.id, 256, "消息 ID"), userId: text(input.userId, 256, "来源账号"), name: String(input.name || "").slice(0, 80), text: String(input.text).slice(0, 1000), timestamp: input.timestamp,
+            ...(input.provenance ? { provenance: structuredClone(input.provenance) } : {}) };
         if (!Number.isFinite(source.timestamp) || !source.text.trim()) return;
         await serial(this.db, scope, async () => {
             const key = digest(JSON.stringify([scope, source.id]));
             if ((await this.db.get(SOURCE, { key })).length) return; // Never rewrite original evidence.
-            if (!active()) throw new Error("任务已取消");
+            if (!active() || this.options.active?.() === false) throw new Error("任务已取消");
             try { await this.db.create(SOURCE, { key, scope, userId: source.userId, timestamp: source.timestamp, source }); }
             catch (error) { if (!(await this.db.get(SOURCE, { key })).length) throw error; }
             // Retention is an idempotent projection cleanup after acceptance. A
@@ -235,8 +255,27 @@ export class PersonStore {
     async create(scope: string, name: string, actor: string) {
         return this.edit(scope, actor, "create", state => { const p = createPerson(name); p.provisional = false; state.people[p.id] = p; return p; });
     }
+    async importScene(scope: string, platform: string, old: State, actor: string) {
+        return this.edit(scope, actor, "import", state => {
+            const imported: { rawId: string; ref: string; personId: string }[] = []; let conflicts = 0;
+            for (const oldPerson of Object.values(old.people)) {
+                const accounts = Object.values(old.accounts).filter(a => a.personId === oldPerson.id);
+                const fresh = accounts.filter(a => { if (state.accounts[digest(accountRef(platform, a.userId))]) { conflicts++; return false; } return true; });
+                if (!fresh.length) continue;
+                const p = createPerson(oldPerson.name); p.provisional = false; p.locked = oldPerson.locked;
+                p.profile = oldPerson.stale ? "" : oldPerson.profile; p.memoryChangedAt = Date.now();
+                state.people[p.id] = p;
+                for (const a of fresh) {
+                    const ref = accountRef(platform, a.userId);
+                    state.accounts[digest(ref)] = { userId: ref, name: a.name, personId: p.id, confidence: a.confidence, revision: 0 };
+                    imported.push({ rawId: a.userId, ref, personId: p.id });
+                }
+            }
+            return { imported, conflicts };
+        });
+    }
     async setProfile(scope: string, ref: string, profile: string, actor: string) {
-        return this.edit(scope, actor, "profile", state => { const p = person(state, ref); p.profile = profile ? text(profile, 2000, "画像") : ""; p.evidence = []; p.stale = false; p.revision++; return p; });
+        return this.edit(scope, actor, "profile", state => { const p = person(state, ref); p.profile = profile ? text(profile, 2000, "画像") : ""; p.evidence = []; p.stale = false; p.memoryChangedAt = Date.now(); p.revision++; return p; });
     }
     async lock(scope: string, ref: string, locked: boolean, actor: string) {
         return this.edit(scope, actor, locked ? "lock" : "unlock", state => { const p = person(state, ref); p.locked = locked; p.revision++; return p; });
@@ -314,15 +353,21 @@ export class PersonStore {
         return this.edit(scope, actor, "link-proposal", state => {
             if (state.settings.paused || state.settings.mode === "off") throw new Error("维护已暂停或关闭");
             const a = account(state, userId), source = state.people[a.personId];
+            if (evidence.some(e => e.provenance && (e.provenance.personId !== a.personId || e.provenance.accountRevision !== (a.bindingRevision ?? 0) || !!source.memoryChangedAt && e.timestamp <= source.memoryChangedAt))) throw new Error("来源身份已过期，请使用纠错后新消息");
             const target = Object.hasOwn(state.people, targetPersonId) ? state.people[targetPersonId] : undefined;
             if (!target) throw new Error("当前场景不存在目标人物");
             if (source.id === target.id) throw new Error("账号已关联到此人物");
             if (source.locked || target.locked) throw new Error("人物已被管理员锁定");
             if (!expected || source.id !== expected.personId || source.revision !== expected.personRevision || a.revision !== expected.accountRevision || target.revision !== expected.targetRevision) throw new Error("身份或画像版本已变化，关联候选已过期");
-            if (Object.keys(state.proposals).length + Object.keys(state.linkProposals).length >= 50) throw new Error("待审核候选已达 50 个，请先处理");
+            const automatic = this.options.autoLinks && state.settings.mode === "auto";
+            if (!automatic && Object.keys(state.proposals).length + Object.keys(state.linkProposals).length >= 50) throw new Error("待审核候选已达 50 个，请先处理");
             const candidate: LinkProposal = { id: randomUUID(), userId, sourcePersonId: source.id, sourcePersonRevision: source.revision, accountRevision: a.revision,
                 targetPersonId: target.id, targetPersonRevision: target.revision, confidence, reason, evidence, createdAt: Date.now() };
-            // Identity beliefs always require a human, including in automatic profile mode.
+            if (automatic) {
+                bindAccount(state, userId, target, confidence);
+                return { ...candidate, state: "accepted" as const };
+            }
+            // Legacy scene mode keeps its original administrator approval rule.
             state.linkProposals[candidate.id] = candidate;
             return { ...candidate, state: "pending" as const };
         }, active);
@@ -331,10 +376,11 @@ export class PersonStore {
         profile = text(profile, 2000, "画像");
         const sources = await this.evidence(scope, userId, messageIds);
         return this.edit(scope, actor, "proposal", state => {
-            if (!active()) throw new Error("任务已取消");
+            if (!active() || this.options.active?.() === false) throw new Error("任务已取消");
             if (state.settings.paused || state.settings.mode === "off") throw new Error("维护已暂停或关闭");
             const a = account(state, userId), p = state.people[a.personId];
             if (p.locked) throw new Error("画像已被管理员锁定");
+            if (sources.some(e => e.provenance && (e.provenance.personId !== p.id || e.provenance.accountRevision !== (a.bindingRevision ?? 0) || !!p.memoryChangedAt && e.timestamp <= p.memoryChangedAt))) throw new Error("来源身份已过期，请使用纠错后新消息");
             if (expected && (p.id !== expected.personId || p.revision !== expected.personRevision || a.revision !== expected.accountRevision)) throw new Error("总结期间发生人工修改或身份变更，候选已过期");
             if (state.settings.mode !== "auto" && Object.keys(state.proposals).length + Object.keys(state.linkProposals).length >= 50) throw new Error("待审核候选已达 50 个，请先处理");
             const combined = [...sources, ...(p.stale ? [] : p.evidence)];
@@ -410,16 +456,19 @@ export class PersonStore {
         const record = (await this.db.get(AUDIT, { scope, id }))[0];
         if (!record) throw new Error("当前场景没有此历史记录");
         return this.edit(scope, actor, `revert:${id}`, state => {
+            const memoryBarriers = new Map(Object.values(state.people).filter(p => p.memoryChangedAt).map(p => [p.id, p.memoryChangedAt!]));
             const corrected = new Map(Object.values(state.people).filter(p => p.identityChanged).map(p => [p.id, p.identityChangedAt]));
             const remapped = new Set<string>();
             for (const change of record.changes) if (change.collection === "accounts") {
                 for (const value of [change.before, change.after] as (Account | null)[]) if (value) remapped.add(value.personId);
             }
             for (const change of record.changes) {
+                if (change.collection === "settings" && change.key === "correctionAt") continue; // derived, monotonic safety watermark
                 const collection = state[change.collection] as any;
                 if (!equal(collection[change.key] ?? null, change.after)) throw new Error("存在后续修改，不能直接回滚；请查看差异后手动修正");
             }
             for (const change of record.changes) {
+                if (change.collection === "settings" && change.key === "correctionAt") continue;
                 const collection = state[change.collection] as any;
                 if (change.before === null) delete collection[change.key];
                 else collection[change.key] = structuredClone(change.before);
@@ -442,6 +491,10 @@ export class PersonStore {
             for (const p of Object.values(state.people)) if (corrected.has(p.id) || remapped.has(p.id)) {
                 p.identityChanged = true;
                 p.identityChangedAt = remapped.has(p.id) ? Date.now() : corrected.get(p.id);
+            }
+            for (const change of record.changes) if (change.collection === "people" && state.people[change.key]) {
+                const p = state.people[change.key];
+                p.memoryChangedAt = Math.max(p.memoryChangedAt ?? 0, memoryBarriers.get(p.id) ?? 0, (!equal((change.before as any)?.profile, (change.after as any)?.profile) || !equal((change.before as any)?.evidence, (change.after as any)?.evidence)) ? Date.now() : 0) || undefined;
             }
             return record;
         });

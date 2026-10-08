@@ -212,7 +212,7 @@ export class AgentCore extends Service<Config> {
                 this.resetWillingness(key);
                 this.scheduler?.cancel(key);
             },
-            async (target, reason, rule) => {
+            async (target, reason, rule, actor) => {
                 const names = { pause: "暂停", replace: "替换暂停规则", resume: "解除暂停", expired: "暂停到期自动解除" };
                 await this.worldState.recordSystemEvent({
                     id: `reply_control_${Random.id()}`,
@@ -220,7 +220,7 @@ export class AgentCore extends Service<Config> {
                     channelId: target.channelId,
                     type: "reply-control",
                     timestamp: new Date(),
-                    payload: { selfId: target.selfId, reason, rule },
+                    payload: { selfId: target.selfId, reason, rule, actor: actor?.id || (reason === "expired" ? "framework-timer" : "unknown"), origin: actor?.origin, operation: `reply.${reason}`, scope: "channel", target, status: "success", time: new Date().toISOString() },
                     message: `系统提示：机器人 ${target.selfId} ${names[reason]}。${rule ? `抑制类别：${rule.blocked.join(", ")}；截止：${rule.expiresAt === null ? "永久" : new Date(rule.expiresAt).toISOString()}。` : ""}意愿归零，消息和事件继续记录，不补发旧回复。`,
                 });
             },

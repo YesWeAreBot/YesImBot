@@ -259,6 +259,12 @@ export class EventListenerManager {
             type: "command-invoked",
             timestamp: new Date(),
             payload: {
+                actor: `user:${session.platform}:${session.userId}`,
+                authority: (session.user as any)?.authority ?? null,
+                operation: command.name, status: "invoked", scope: "channel",
+                origin: { platform: session.platform, selfId: session.selfId, adapter: session.bot?.platform, channelId: session.channelId },
+                target: { platform: session.platform, selfId: session.selfId, channelId: session.channelId },
+                invokedAt: new Date().toISOString(),
                 name: command.name,
                 source,
                 invoker: { pid: session.userId, name: session.author.nick || session.author.name },
@@ -306,7 +312,7 @@ export class EventListenerManager {
 
         const [existingEvent] = await this.ctx.database.get(TableName.SystemEvents, { id: pendingCmd.commandEventId });
         if (existingEvent) {
-            const updatedPayload = { ...existingEvent.payload, result: session.content };
+            const updatedPayload = { ...existingEvent.payload, status: "response-observed", returnedAt: new Date().toISOString(), result: session.content };
             await this.ctx.database.set(TableName.SystemEvents, { id: pendingCmd.commandEventId }, { payload: updatedPayload });
         }
     }
