@@ -44,6 +44,7 @@ export type Config = {
 
 export class TTSService {
     private adapter: TTSAdapter;
+    private stopped = false;
 
     constructor(
         private ctx: Context,
@@ -52,8 +53,9 @@ export class TTSService {
         this.adapter = this.createAdapter();
 
         ctx.on("dispose", async () => {
+            this.stopped = true;
             try {
-                this.adapter?.stop();
+                await this.adapter?.stop();
             } catch (error) {
                 ctx.logger.error(error);
             }
@@ -97,6 +99,7 @@ export class TTSService {
 
     private async execute(args: Infer<BaseTTSParams>) {
         const { session, text } = args;
+        if (this.stopped) return Failed("TTS service stopped");
 
         if (!text?.trim()) {
             return Failed("text is required");
@@ -107,6 +110,7 @@ export class TTSService {
             // if (result && result.audio) {
             //     writeFileSync(path.join(this.ctx.baseDir, "cache", `${Random.id(6)}.wav`), result.audio);
             // }
+            if (this.stopped) return Failed("TTS service stopped");
             await session.send(h.audio(result.audio, result.mimeType));
             return Success();
         } catch (err) {
