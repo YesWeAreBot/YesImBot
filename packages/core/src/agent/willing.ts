@@ -7,6 +7,7 @@ import type { WillingnessCalculation } from "./decision-record";
 
 export interface MessageContext {
     chatId: string;
+    participationId?: string;
     content: string;
     //isImage: boolean;
     //isEmoji: boolean;
@@ -14,6 +15,13 @@ export interface MessageContext {
     isQuote: boolean;
     isDirect: boolean;
     allowedCategories?: ReplyCategory[];
+}
+
+export interface TopicWillingnessInput {
+    latestTopicPreference?: number;
+    currentScoreKey: string;
+    multiplier: number;
+    candidates: { scoreKey: string; share: number }[];
 }
 
 type ResolveComputed<T> =
@@ -199,7 +207,7 @@ export class WillingnessManager {
     }
 
     private getParticipationMultiplier(session: Session, context: MessageContext): number {
-        const state = this.getParticipation(context.chatId);
+        const state = this.getParticipation(context.participationId || context.chatId);
         if (!state.active) return 1;
 
         const allowed = (category: ReplyCategory) => !context.allowedCategories || context.allowedCategories.includes(category);
@@ -279,7 +287,7 @@ export class WillingnessManager {
      * @param chatId 聊天ID
      * @param replyContent 回复内容的长度，可以用来决定惩罚力度
      */
-    public handlePostReply(session: Session, chatId: string, replyContentLength: number = 0): void {
+    public handlePostReply(session: Session, chatId: string, replyContentLength: number = 0, participationId: string = chatId): void {
         const config = this._getResolvedConfig(session);
         const { replyCost, maxWillingness } = config.lifecycle;
 
@@ -295,7 +303,7 @@ export class WillingnessManager {
             const durationSeconds = this.baseConfig.participation.durationSeconds ?? 60;
             if (Number.isFinite(durationSeconds) && durationSeconds >= 1 && durationSeconds <= 86400) {
                 const now = Date.now();
-                this.participation.set(chatId, {
+                this.participation.set(participationId, {
                     lastReplyAt: now,
                     expiresAt: now + durationSeconds * 1000,
                     participantId: session.userId || null,
@@ -349,12 +357,15 @@ export class WillingnessManager {
         session: Session,
         chatId: string = session.cid,
         allowedCategories?: ReplyCategory[],
-        assessmentMultiplier = 1
-    ): { decision: boolean; probability: number; roll: number; calculation: WillingnessCalculation } {
-        this.sessions.set(chatId, session);
+        assessmentMultiplier = 1,
+        topic?: TopicWillingnessInput
+    ): { decision: boolean; probability: number; roll: number; calculation: WillingnessCalculation; scoreKey?: string } {
+        const currentScoreKey = topic?.currentScoreKey ?? chatId;
+        this.sessions.set(currentScoreKey, session);
 
         const context: MessageContext = {
-            chatId,
+            chatId: currentScoreKey,
+            participationId: topic ? chatId : undefined,
             allowedCategories,
             content: session.content,
             isMentioned: allowedCategories
@@ -367,12 +378,36 @@ export class WillingnessManager {
         };
 
         let calculation: Omit<WillingnessCalculation, "roll">;
-        const probability = this.calculateReplyProbability(session, context, assessmentMultiplier, value => { calculation = value; });
+        let probability = this.calculateReplyProbability(session, context,
+            assessmentMultiplier * (topic?.multiplier ?? 1), value => { calculation = value; });
+        let scoreKey = currentScoreKey;
+        if (topic) {
+            const configuredPreference = topic.latestTopicPreference ?? 70;
+            const preference = (Number.isFinite(configuredPreference) ? Math.max(0, Math.min(100, configuredPreference)) : 70) / 100;
+            let bestScore = -Infinity;
+            for (const candidate of topic.candidates) {
+                const isCurrent = candidate.scoreKey === currentScoreKey;
+                if (!(candidate.share > 0) && !isCurrent) continue;
+                // Prefer the latest identified topic without changing its reply probability.
+                const attentionWeight = (1 - preference) * candidate.share + (isCurrent ? preference : 0);
+                if (!(attentionWeight > 0)) continue;
+                const weightedScore = this.getCurrentWillingness(candidate.scoreKey) * attentionWeight;
+                if (weightedScore > bestScore || (weightedScore === bestScore && candidate.scoreKey === currentScoreKey)) {
+                    bestScore = weightedScore;
+                    scoreKey = candidate.scoreKey;
+                }
+            }
+            if (scoreKey !== currentScoreKey) {
+                this.sessions.set(scoreKey, session);
+                probability = this.calculateReplyProbability(session, { ...context, chatId: scoreKey }, 0,
+                    value => { calculation = value; });
+            }
+        }
 
         const roll = Math.random();
         const decision = roll < probability;
 
-        return { decision, probability, roll, calculation: { ...calculation, roll } };
+        return { decision, probability, roll, calculation: { ...calculation, roll }, ...(topic ? { scoreKey } : {}) };
     }
 
     /**

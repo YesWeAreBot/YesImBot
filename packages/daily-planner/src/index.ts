@@ -39,6 +39,7 @@ export default class DailyPlannerExtension {
         coreMemoryWeight: Schema.number().default(0.7).min(0).max(1).description("核心记忆在日程生成中的权重"),
     });
 
+    private disposed = false;
     private service: DailyPlannerService;
 
     constructor(
@@ -46,6 +47,9 @@ export default class DailyPlannerExtension {
         public config: DailyPlannerConfig
     ) {
         this.service = new DailyPlannerService(ctx, config);
+        ctx.on("dispose", () => {
+            this.disposed = true;
+        });
 
         // 将 HH:mm 格式转换为 cron 表达式
         const [hours, minutes] = config.scheduleGenerationTime.split(":").map(Number);
@@ -53,17 +57,22 @@ export default class DailyPlannerExtension {
 
         // 注册每日定时任务
         ctx.cron(cronExpression, async () => {
-            await this.service.generateDailySchedule();
+            if (!this.disposed) await this.service.generateDailySchedule();
         });
 
         ctx.on("ready", () => {
+            if (this.disposed) return;
             const promptService: PromptService = ctx.get(Services.Prompt);
 
-            promptService.inject("daily_plan", 0, async () => {
-                const currentSchedule = await this.getCurrentSchedule();
+            ctx.on(
+                "dispose",
+                promptService.inject("daily_plan", 0, async () => {
+                    if (this.disposed) return "";
+                    const currentSchedule = await this.getCurrentSchedule();
 
-                return `现在是 {{ date.now }}，当前时段的安排为：${currentSchedule}。`;
-            });
+                    return `现在是 {{ date.now }}，当前时段的安排为：${currentSchedule}。`;
+                })
+            );
 
             this.registerCommands();
         });

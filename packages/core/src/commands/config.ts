@@ -52,13 +52,11 @@ export function apply(ctx: Context, config: Config) {
                 }
 
                 // 调用更新后的 set 函数
-                const data = set(mutableConfig, parsedKeyChain, value);
+                const data = Config(set(mutableConfig, parsedKeyChain, value));
                 ctx.scope.parent.scope.update(data, Boolean(options.force));
                 config = data; // 更新全局 config 变量
                 return "设置成功";
             } catch (e) {
-                // 恢复原来的配置
-                ctx.scope.update(config, Boolean(options.force)); // 确保作用域恢复到原始配置
                 ctx.logger.error(e);
                 return (e as Error).message;
             }
@@ -98,11 +96,10 @@ export function apply(ctx: Context, config: Config) {
                 if (typeof currentKey === "number" && Array.isArray(currentData)) {
                     // 确保数组有足够的长度来容纳指定索引。不足的部分填充 null。
                     // 这确保了像 `arr[5]` 这种直接索引的设置也能正常工作。
-                    while (currentData.length <= currentKey) {
-                        currentData.push(null); // 或者 undefined
-                    }
-                    // 创建数组的拷贝以实现不可变更新
                     const newArray = [...currentData];
+                    while (newArray.length <= currentKey) {
+                        newArray.push(null);
+                    }
                     newArray[currentKey] = set(nextSegment, keyChain, value);
                     return newArray;
                 } else {

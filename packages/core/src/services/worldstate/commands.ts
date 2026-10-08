@@ -4,6 +4,7 @@ import { Context, Logger, Query } from "koishi";
 import { Services, TableName } from "@/shared/constants";
 import { HistoryConfig } from "./config";
 import { WorldStateService } from "./index";
+import { HISTORY_CHANNELS } from "./channel-metadata";
 import { MessageData } from "./types";
 
 // =================================================================================
@@ -18,6 +19,11 @@ export class HistoryCommandManager {
         private config: HistoryConfig
     ) {
         this.logger = ctx[Services.Logger].getLogger("[世界状态.指令]");
+    }
+
+    private async typedChannelQuery(channelType: "private" | "guild"): Promise<Query.Expr<MessageData>> {
+        const targets = await this.ctx.database.get(HISTORY_CHANNELS, { channelType });
+        return targets.length ? { $or: targets.map(({ platform, channelId }) => ({ platform, channelId })) } : { platform: { $in: [] } };
     }
 
     public register(): void {
@@ -98,33 +104,48 @@ export class HistoryCommandManager {
                     channelType?: "private" | "guild" | "all"
                 ) => {
                     try {
-                        const { messagesRemoved, eventsRemoved, l2ChunksRemoved, diariesRemoved, agentLogRemoved, agentLogPreserved } = await this.service.l2_manager.clearHistory(
-                            target || { type: options.all as "private" | "guild" | "all" },
-                            async () => {
-                                const { removed: messagesRemoved } = await this.ctx.database.remove(TableName.Messages, query);
-                                const { removed: eventsRemoved } = await this.ctx.database.remove(TableName.SystemEvents, query);
-                                const { removed: l2ChunksRemoved } = await this.ctx.database.remove(TableName.L2Chunks, query);
-                                const { removed: diariesRemoved } = await this.ctx.database.remove(TableName.L3Diaries, query);
-                                let agentLogRemoved = false;
-                                let agentLogPreserved = 0;
-                                if (target || options.all) {
-                                    try {
-                                        const preserved = await this.service.l1_manager.clearAgentHistory(target?.platform, target?.channelId, channelType);
-                                        agentLogPreserved = typeof preserved === "number" ? preserved : 0;
-                                        agentLogRemoved = true;
-                                    } catch (error) {
-                                        // 日记的新任务仍需等本次日志清理结束，再读取原始交互。
-                                        if (error.code !== "ENOENT") throw error;
+                        const { messagesRemoved, eventsRemoved, l2ChunksRemoved, diariesRemoved, agentLogRemoved, agentLogPreserved } =
+                            await this.service.l2_manager.clearHistory(
+                                target || { type: options.all as "private" | "guild" | "all" },
+                                async () => {
+                                    if (channelType && channelType !== "all") query = await this.typedChannelQuery(channelType);
+                                    const { removed: messagesRemoved } = await this.ctx.database.remove(TableName.Messages, query);
+                                    const { removed: eventsRemoved } = await this.ctx.database.remove(TableName.SystemEvents, query);
+                                    const { removed: l2ChunksRemoved } = await this.ctx.database.remove(TableName.L2Chunks, query);
+                                    const { removed: diariesRemoved } = await this.ctx.database.remove(TableName.L3Diaries, query);
+                                    let agentLogRemoved = false;
+                                    let agentLogPreserved = 0;
+                                    if (target || options.all) {
+                                        try {
+                                            const preserved = await this.service.l1_manager.clearAgentHistory(
+                                                target?.platform,
+                                                target?.channelId,
+                                                channelType
+                                            );
+                                            agentLogPreserved = typeof preserved === "number" ? preserved : 0;
+                                            agentLogRemoved = true;
+                                        } catch (error) {
+                                            // 日记的新任务仍需等本次日志清理结束，再读取原始交互。
+                                            if (error.code !== "ENOENT") throw error;
+                                        }
                                     }
+                                    return {
+                                        messagesRemoved,
+                                        eventsRemoved,
+                                        l2ChunksRemoved,
+                                        diariesRemoved,
+                                        agentLogRemoved,
+                                        agentLogPreserved,
+                                    };
                                 }
-                                return { messagesRemoved, eventsRemoved, l2ChunksRemoved, diariesRemoved, agentLogRemoved, agentLogPreserved };
-                            }
-                        );
+                            );
 
                         await recordClear(target || { historyType: options.all }, "success", { messagesRemoved, eventsRemoved, l2ChunksRemoved, diariesRemoved, agentLogRemoved, agentLogPreserved });
                         results.push(
                             `✅ ${description} - 操作成功，共删除了 ${messagesRemoved} 条消息, ${eventsRemoved} 个系统事件, ${l2ChunksRemoved} 个L2记忆片段, ${diariesRemoved} 篇L3日记。${
-                                agentLogRemoved ? `匹配的Agent日志已清理。${agentLogPreserved ? `有 ${agentLogPreserved} 条归属不明的旧记录已保留，请查看日志。` : ""}` : ""
+                                agentLogRemoved
+                                    ? `匹配的Agent日志已清理。${agentLogPreserved ? `有 ${agentLogPreserved} 条归属不明的旧记录已保留，请查看日志。` : ""}`
+                                    : ""
                             }`
                         );
                     } catch (error) {
@@ -141,11 +162,11 @@ export class HistoryCommandManager {
                     let description = "";
                     switch (options.all) {
                         case "private":
-                            query = { channelId: { $regex: /^private:/ } };
+                            query = {};
                             description = "所有私聊频道";
                             break;
                         case "guild":
-                            query = { channelId: { $not: { $regex: /^private:/ } } };
+                            query = {};
                             description = "所有群聊频道";
                             break;
                         case "all":

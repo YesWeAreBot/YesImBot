@@ -32,10 +32,20 @@ export interface MemberData {
 }
 
 /** 消息的数据模型 */
+export type HistoryChannelType = "private" | "guild";
+
+export interface HistoryChannelData {
+    platform: string;
+    channelId: string;
+    channelType: HistoryChannelType | "";
+    messageKeyVersion: number;
+}
+
 export interface MessageData {
     id: string; // 消息唯一ID
     platform: string;
     channelId: string;
+    channelType?: HistoryChannelType;
     sender: {
         id: string;
         name?: string;
@@ -51,6 +61,7 @@ export interface SystemEventData {
     id: string; // 事件唯一ID
     platform: string;
     channelId: string;
+    channelType?: HistoryChannelType;
     type: string; // 例如 'guild-member-ban', 'command-invoked'
     timestamp: Date;
     eventScope?: string; // channel, bot, mind or global
@@ -129,6 +140,7 @@ export type AgentLogEntry = (AgentThoughtLog | AgentActionLog | AgentObservation
     /** 新日志保留原始会话编号；旧日志仍可按已有文件路径读取。 */
     platform?: string;
     channelId?: string;
+    channelType?: HistoryChannelType;
 };
 
 /** 交互日志中消息事件的结构 */

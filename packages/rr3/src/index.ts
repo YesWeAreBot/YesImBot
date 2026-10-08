@@ -99,6 +99,7 @@ export default class RR3 {
     static readonly inject = [Services.Asset];
     static readonly Config = ConfigSchema;
     private assetService: AssetService;
+    private readonly lifetime = new AbortController();
 
     // 预设尺寸，便于LLM选择
     private readonly orientationPresets = {
@@ -112,6 +113,7 @@ export default class RR3 {
         public config: Config
     ) {
         this.assetService = ctx[Services.Asset];
+        this.ctx.on("dispose", () => this.lifetime.abort());
         this.ctx.on("ready", () => {
             this.ctx.logger.info("插件已成功启动");
         });
@@ -142,6 +144,7 @@ export default class RR3 {
         this.ctx.logger.info(`开始执行 generateImage 任务, 提示词: "${args.prompt}"`);
 
         try {
+            this.ensureActive();
             // 根据 LLM 选择的 orientation 获取具体尺寸
             const dimensions = this.orientationPresets[args.orientation];
             this.ctx.logger.info(`选择构图: ${args.orientation} (${dimensions.width}x${dimensions.height})`);
@@ -169,6 +172,7 @@ export default class RR3 {
             // 直接调用 getTask 并等待其完成，因为 API 是同步阻塞的
             const finalTask = await this.getTaskResult(submission.task_id);
 
+            this.ensureActive();
             // 检查任务结果
             if (finalTask.code === 0 || finalTask.code === 200) {
                 if (!finalTask.image) {
@@ -179,6 +183,7 @@ export default class RR3 {
                     this.ctx.logger.warn("任务结果被标记为 NSFW");
                 }
                 const imageBuffer = Buffer.from(finalTask.image, "base64");
+                this.ensureActive();
                 const assetId = await this.assetService.create(imageBuffer, { filename: `rr3-${submission.task_id}.png` });
                 this.ctx.logger.info(`图片资源创建成功, Asset ID: ${assetId}`);
                 return Success(assetId);
@@ -202,16 +207,28 @@ export default class RR3 {
         }
     }
 
+    private ensureActive() {
+        if (this.lifetime.signal.aborted) throw new Error("图片生成插件已停用");
+    }
+
     private async fetchWithHandling(url: string, options: RequestInit = {}): Promise<Response> {
-        this.ctx.logger.debug(`发起请求: ${options.method || "GET"} ${url}`);
-        const response = await fetch(url, options);
+        this.ensureActive();
+        const safeUrl = new URL(url);
+        safeUrl.search = "";
+        safeUrl.username = "";
+        safeUrl.password = "";
+        safeUrl.hash = "";
+        this.ctx.logger.debug(`发起请求: ${options.method || "GET"} ${safeUrl}`);
+        const response = await fetch(url, { ...options, signal: this.lifetime.signal });
+        this.ensureActive();
 
         if (!response.ok) {
-            let errorBody;
+            const body = await response.text();
+            let errorBody: unknown = body;
             try {
-                errorBody = await response.json();
+                errorBody = JSON.parse(body);
             } catch {
-                errorBody = await response.text();
+                // Preserve non-JSON error bodies without reading the response twice.
             }
             throw new ApiError(response.status, errorBody, `HTTP error! Status: ${response.status}`);
         }
@@ -244,7 +261,7 @@ export default class RR3 {
 
     private async submitTask(args: GenerateArgs, secret: string): Promise<GenerateResult> {
         this.ctx.logger.debug("向 API 提交 txt2img 任务...");
-        const response = await this.fetchWithHandling(`${this.config.endpoint}/v2/generate/txt2img?token=${this.config.token}`, {
+        const response = await this.fetchWithHandling(`${this.config.endpoint}/v2/generate/txt2img?token=${encodeURIComponent(this.config.token)}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ args, secret }),
@@ -253,7 +270,7 @@ export default class RR3 {
     }
 
     private async getTaskResult(taskId: string): Promise<TaskResult> {
-        const response = await this.fetchWithHandling(`${this.config.endpoint}/v2/generate/task/${taskId}`);
+        const response = await this.fetchWithHandling(`${this.config.endpoint}/v2/generate/task/${encodeURIComponent(taskId)}`);
         return response.json();
     }
 }

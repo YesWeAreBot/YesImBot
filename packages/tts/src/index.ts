@@ -19,7 +19,11 @@ export function apply(ctx: Context, config: Config) {
         const tool = ttsService.getTool();
         if (tool) {
             const toolService: ToolService = ctx.get(Services.Tool);
-            toolService.registerTool(tool);
+            const unregisterTool: unknown = toolService.registerTool(tool);
+            ctx.on("dispose", () => {
+                if (typeof unregisterTool === "function") unregisterTool();
+                else if (toolService.getTool(tool.name) === tool) toolService.unregisterTool(tool.name);
+            });
             logger.info("TTS tool registered successfully.");
         } else {
             logger.warn("No active TTS provider found, tool not registered.");

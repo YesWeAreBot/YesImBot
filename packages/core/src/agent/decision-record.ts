@@ -31,6 +31,7 @@ export interface DecisionRecord {
     stage: string;
     reason?: string;
     decision?: boolean;
+    forcedReply?: boolean;
     calculation?: WillingnessCalculation;
     allowed?: string[];
     assessment?: {
@@ -128,6 +129,9 @@ const reasons: Record<string, string> = {
     reply_suppressed: "回复受到抑制",
     permission_denied: "会话未获许可",
     muted: "机器人被禁言",
+    forced_reply_by_mention: "明确 @ 机器人，优先回复",
+    mention_priority: "明确 @ 消息优先排队",
+    mention_pending: "合并到待回复的 @ 消息",
     probability_roll: "随机判定",
     below_threshold: "意愿未超过阈值",
     busy: "会话正忙",
@@ -181,6 +185,7 @@ export function formatDecision(record: DecisionRecord | undefined, state: Decisi
         const a = record.assessment.answers;
         lines.push(`语义评分：面向机器人 ${a.addressed}；兴趣匹配 ${a.interested}；面向他人 ${a.others}`);
     }
+    if (record.forcedReply) lines.push("明确 @ 优先回复：不依赖随机判定，仍遵守回复控制。");
     if (record.success !== undefined) lines.push(`成功发送回复：${record.success ? "是" : "否"}`);
     return lines.join("\n");
 }

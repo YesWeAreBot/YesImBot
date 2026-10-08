@@ -25,6 +25,9 @@ const reasons = new Set([
     "reply_suppressed",
     "permission_denied",
     "muted",
+    "forced_reply_by_mention",
+    "mention_priority",
+    "mention_pending",
     "probability_roll",
     "below_threshold",
     "busy",
@@ -265,6 +268,7 @@ async function replay(options) {
             continue;
         }
         event.recomputed = recompute(calculation);
+        if (record.forcedReply === true) event.recomputed.decision = true;
         if (
             ![event.recomputed.rawGain, event.recomputed.effectiveGain, event.recomputed.after, event.recomputed.probability].every(
                 finite

@@ -79,9 +79,9 @@ export class EventListenerManager {
                 if (session.author?.isBot) return next();
 
                 await this.recordUserMessage(session);
-                await next();
+                const result = await next();
 
-                if (!session["__commandHandled"]) {
+                if (result === undefined && !session["__commandHandled"]) {
                     // 等待所有前置处理结束；单个插件失败不能提前触发回复。
                     const hooks = this.ctx.lifecycle.filterHooks(
                         this.ctx.lifecycle._hooks["yesimbot/before-user-stimulus"] || [],
@@ -102,6 +102,7 @@ export class EventListenerManager {
                     };
                     this.ctx.emit("agent/stimulus", stimulus);
                 }
+                return result;
             })
         );
 
@@ -137,6 +138,7 @@ export class EventListenerManager {
     }
 
     private async handleNotice(session: Session): Promise<void> {
+        await this.service.observeChannel(session);
         switch (session.subtype) {
             case "poke":
                 const authorId = session.event._data.user_id;
@@ -155,6 +157,7 @@ export class EventListenerManager {
                     id: `sysevt_poke_${Random.id()}`,
                     platform: session.platform,
                     channelId: session.channelId,
+                    channelType: session.isDirect ? "private" : "guild",
                     timestamp: new Date(),
                     ...payload,
                 } as SystemEventData);
@@ -165,6 +168,7 @@ export class EventListenerManager {
 
     private async handleGuildMember(session: Session): Promise<void> {
         if (session.subtype !== "ban") return;
+        await this.service.observeChannel(session);
         const raw = session.event._data;
         if (typeof raw?.duration !== "number" && typeof raw?.duration !== "string") return;
         if (typeof raw.duration === "string" && !raw.duration.trim()) return;
@@ -212,6 +216,7 @@ export class EventListenerManager {
             id: `sysevt_${released ? "unban" : "ban"}_${Random.id()}`,
             platform: session.platform,
             channelId: session.channelId,
+            channelType: session.isDirect ? "private" : "guild",
             timestamp,
             ...payload,
         } as SystemEventData);
@@ -250,6 +255,7 @@ export class EventListenerManager {
             id: commandEventId,
             platform: session.platform,
             channelId: session.channelId,
+            channelType: session.isDirect ? "private" : "guild",
             type: "command-invoked",
             timestamp: new Date(),
             payload: {
@@ -266,6 +272,7 @@ export class EventListenerManager {
             message: `系统提示：用户 "${session.author.name || session.userId}" 调用了指令 "${command.name}"`,
         };
 
+        await this.service.observeChannel(session);
         await this.service.recordSystemEvent(eventPayload);
         if (generation !== this.generation) return;
 
@@ -311,6 +318,7 @@ export class EventListenerManager {
     }
 
     private async recordUserMessage(session: Session): Promise<void> {
+        await this.service.observeChannel(session);
         /* prettier-ignore */
         this.logger.info(`用户消息 | ${session.author.name} | 频道: ${session.cid} | 内容: ${truncate(session.content).replace(/\n/g, " ")}`);
 
@@ -327,6 +335,7 @@ export class EventListenerManager {
             id: session.messageId,
             platform: session.platform,
             channelId: session.channelId,
+            channelType: session.isDirect ? "private" : "guild",
             sender: {
                 id: session.userId,
                 name: session.author.nick || session.author.name,
@@ -342,15 +351,18 @@ export class EventListenerManager {
     private async recordBotSentMessage(session: Session): Promise<void> {
         if (!session.content || !session.messageId) return;
 
+        await this.service.observeChannel(session);
         this.logger.debug(`记录机器人消息 | 频道: ${session.cid} | 消息ID: ${session.messageId}`);
 
         const message: MessageData = {
             id: session.messageId,
             platform: session.platform,
             channelId: session.channelId,
+            channelType: session.isDirect ? "private" : "guild",
             sender: { id: session.bot.selfId, name: session.bot.user.nick || session.bot.user.name },
-            content: session.content,
-            timestamp: new Date(),
+            content: await this.assetService.transform(session.toJSON().message?.content ?? session.content),
+            timestamp: new Date(session.timestamp),
+            quoteId: session.quote?.id,
         };
         await this.service.recordMessage(message);
     }

@@ -5,6 +5,7 @@ import path from "path";
 import { v4 as uuidv4 } from "uuid";
 
 import { Services, TableName } from "@/shared/constants";
+import { HISTORY_CHANNELS } from "./channel-metadata";
 import { HistoryConfig } from "./config";
 import {
     AgentActionLog,
@@ -54,7 +55,7 @@ export class InteractionManager {
         // 下划线可能来自原始冒号、斜线或下划线，平台目录和频道名都不能据此猜测归属。
         return !path.basename(path.dirname(filePath)).includes("_") &&
             (!channelId || !legacyId.includes("_")) &&
-            (!channelType || channelType === "all" || (channelType === "guild" && !legacyId.includes("_")));
+            (!channelType || channelType === "all");
     }
 
     private async ensureDirExists(dirPath: string): Promise<void> {
@@ -81,7 +82,8 @@ export class InteractionManager {
         await this.mutateLogs(async () => {
             const filePath = this.getLogFilePath(platform, channelId);
             await this.ensureDirExists(path.dirname(filePath));
-            const line = JSON.stringify({ ...entry, platform, channelId }) + "\n";
+            const [channel] = await this.ctx.database.get(HISTORY_CHANNELS, { platform, channelId });
+            const line = JSON.stringify({ ...entry, platform, channelId, channelType: channel?.channelType || undefined }) + "\n";
             try {
                 await fs.appendFile(filePath, line);
             } catch (error) {
@@ -181,9 +183,12 @@ export class InteractionManager {
 
     public async recordMessage(message: MessageData): Promise<void> {
         try {
+            if (message.channelType) await this.ctx.database.upsert(HISTORY_CHANNELS, [{
+                platform: message.platform, channelId: message.channelId, channelType: message.channelType,
+            }]);
             await this.ctx.database.create(TableName.Messages, message);
         } catch (error) {
-            if (error?.message === "UNIQUE constraint failed: worldstate.messages.id") {
+            if (error?.code === "duplicate-entry" || /^UNIQUE constraint failed: worldstate\.messages\./.test(error?.message || "")) {
                 this.logger.warn(`存在重复的消息记录: ${message.id} | 若此问题持续发生，考虑开启忽略自身消息`);
                 return;
             }
@@ -194,6 +199,9 @@ export class InteractionManager {
 
     public async recordSystemEvent(event: SystemEventData): Promise<void> {
         try {
+            if (event.channelType) await this.ctx.database.upsert(HISTORY_CHANNELS, [{
+                platform: event.platform, channelId: event.channelId, channelType: event.channelType,
+            }]);
             await this.ctx.database.create(TableName.SystemEvents, event);
             this.logger.debug(`记录系统事件 | ${event.type} | ${event.message}`);
         } catch (error) {
@@ -338,6 +346,12 @@ export class InteractionManager {
                 if (error.code === "ENOENT") return 0;
                 throw error;
             }
+            const channelTypes = new Map<string, string>();
+            if (channelType && channelType !== "all") {
+                for (const channel of await this.ctx.database.get(HISTORY_CHANNELS, {})) {
+                    if (channel.channelType) channelTypes.set(JSON.stringify([channel.platform, channel.channelId]), channel.channelType);
+                }
+            }
             let preserved = 0;
             for (const directory of directories) {
                 let files;
@@ -362,7 +376,7 @@ export class InteractionManager {
                     let unknown = 0;
                     const keep = content.split(/(?<=\n)/).filter(line => {
                         if (!line.trim()) return true;
-                        let entry: { platform?: unknown; channelId?: unknown } = {};
+                        let entry: { platform?: unknown; channelId?: unknown; channelType?: unknown } = {};
                         try { entry = JSON.parse(line) || {}; } catch { /* 无法解析的旧记录沿用同一归属保护。 */ }
                         if (typeof entry.platform === "string" && platform && entry.platform !== platform) return true;
                         if (typeof entry.channelId === "string" && channelId && entry.channelId !== channelId) return true;
@@ -370,9 +384,12 @@ export class InteractionManager {
                             if (!legacyAllowed) unknown++;
                             return !legacyAllowed;
                         }
+                        const knownType = entry.channelType === "private" || entry.channelType === "guild"
+                            ? entry.channelType : channelTypes.get(JSON.stringify([entry.platform, entry.channelId]));
+                        if (channelType && channelType !== "all" && !knownType) unknown++;
                         return !((!platform || entry.platform === platform) &&
                             (!channelId || entry.channelId === channelId) &&
-                            (!channelType || channelType === "all" || entry.channelId.startsWith("private:") === (channelType === "private")));
+                            (!channelType || channelType === "all" || knownType === channelType));
                     }).join("");
                     if (unknown) {
                         preserved += unknown;

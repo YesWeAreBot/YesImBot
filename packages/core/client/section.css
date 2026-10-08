@@ -1,0 +1,50 @@
+.yib-config-section {
+    border: 1px solid var(--k-color-divider);
+    border-radius: 8px;
+    margin: 18px 0;
+    overflow: hidden;
+}
+.yib-config-section > .yib-config-section-heading {
+    margin: 0;
+    font-size: 1rem;
+}
+.yib-config-section-heading > button {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    width: 100%;
+    border: 0;
+    padding: 16px 20px;
+    color: var(--k-text-normal);
+    background: var(--k-card-bg);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.yib-config-section-heading > button:focus-visible {
+    outline: 2px solid var(--k-color-primary);
+    outline-offset: -3px;
+}
+.yib-config-section-toggle {
+    flex-shrink: 0;
+    color: var(--k-color-primary);
+    font-size: .85rem;
+}
+.yib-config-section-body {
+    padding: 4px 20px 20px;
+    border-top: 1px solid var(--k-color-divider);
+}
+.yib-config-section-body[hidden] {
+    display: none;
+}
+.yib-config-section-body .k-schema-group {
+    border-left: 2px solid var(--k-color-divider);
+    padding-left: 16px;
+    margin: 0 0 24px 8px;
+}
+@media (max-width: 600px) {
+    .yib-config-section-heading > button { padding: 14px 12px; }
+    .yib-config-section-body { padding: 4px 12px 16px; }
+    .yib-config-section-body .k-schema-group { padding-left: 8px; margin-left: 2px; }
+}

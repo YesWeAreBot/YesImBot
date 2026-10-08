@@ -5,7 +5,7 @@ export const name = "yesimbot-onebot-directory";
 // Match YesImBot’s public tool service; the plugin can compile independently.
 const TOOL_SERVICE = "yesimbot.tool" as const;
 export const inject = ["database", TOOL_SERVICE];
-type ToolRegistry = { registerTool(tool: unknown): void; unregisterTool(name: string): void };
+type ToolRegistry = { registerTool(tool: unknown): void | (() => void); unregisterTool(name: string): void };
 function tools(ctx: Context): ToolRegistry { return (ctx as unknown as Record<string, ToolRegistry>)[TOOL_SERVICE]; }
 const Success = (result: unknown) => ({ status: "success" as const, result });
 const Failed = (message: string) => ({ status: "error" as const, error: { name: "ToolError", message } });
@@ -43,6 +43,8 @@ export function apply(ctx: Context, config: Config) {
     if (!config.enabled) return;
     registerModels(ctx);
     const store = new DirectoryStore(ctx, config.concurrency, config.batchSize);
+    let active = true;
+    const allowed = (session: Session) => active && ctx.filter(session);
     const modelUsage = new Map<string, { since: number; calls: number; entries: number }>();
     const tool = {
         name: "onebot_contacts",
@@ -55,11 +57,12 @@ export function apply(ctx: Context, config: Config) {
             offset: Schema.number().description("page 起始位置，从 0 开始"),
             limit: Schema.number().description("page 返回条数，最多 20，默认 10"),
         }),
-        isSupported: (session: Session) => session.platform === "onebot" && !!session.bot?.internal,
+        isSupported: (session: Session) => !!session && allowed(session) && session.platform === "onebot" && !!session.bot?.internal,
         async execute(args: { kind: Query["kind"]; mode: "count" | "lookup" | "page"; group_id?: string;
             user_id?: string; offset?: number; limit?: number; session?: Session }) {
             try {
                 if (!args.session) throw new Error("缺少会话");
+                if (!allowed(args.session)) throw new Error("当前场景未启用 OneBot 名单查询");
                 if (args.mode === "lookup" && !args.user_id) throw new Error("lookup 需要 user_id");
                 if (args.mode === "page" && args.limit !== undefined && (!Number.isSafeInteger(args.limit) || args.limit < 1 || args.limit > 20))
                     throw new Error("模型每次最多读取 20 条");
@@ -106,8 +109,8 @@ export function apply(ctx: Context, config: Config) {
             } catch (error) { return Failed(`查询 OneBot 名单失败：${String(error)}`); }
         },
     };
-    tools(ctx).registerTool(tool);
-    ctx.on("dispose", () => { store.stop(); tools(ctx).unregisterTool(tool.name); modelUsage.clear(); });
+    const removeTool = tools(ctx).registerTool(tool);
+    ctx.on("dispose", () => { active = false; store.stop(); if (typeof removeTool === "function") removeTool(); else tools(ctx).unregisterTool(tool.name); modelUsage.clear(); });
 
     ctx.command("onebot.contacts", "查询或刷新 OneBot 好友和群成员名单", { authority: 3 });
     function command(kind: Query["kind"]) {
