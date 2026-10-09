@@ -62,8 +62,7 @@ const fields = [
 const finite = (value) => typeof value === "number" && Number.isFinite(value);
 const identifier = (value) => typeof value === "string" && value.length > 0 && value.length <= 512 && !/[\x00-\x1f\x7f]/.test(value);
 const object = (value) => value && typeof value === "object" && !Array.isArray(value);
-const usage =
-    "Usage: node scripts/replay-decisions.cjs <file> [--key KEY] [--from ISO] [--to ISO] [--threshold NUMBER] [--amplifier NUMBER]";
+const usage = "Usage: node scripts/replay-decisions.cjs <file> [--key KEY] [--from ISO] [--to ISO] [--threshold NUMBER] [--amplifier NUMBER]";
 
 function parseOptions(args) {
     if (args.length === 1 && ["--help", "-h"].includes(args[0])) return { help: true };
@@ -90,8 +89,7 @@ function parseOptions(args) {
             options[field] = Number(value);
         }
     }
-    if (options.from !== undefined && options.to !== undefined && options.from > options.to)
-        throw new Error("The from bound must not exceed the to bound.");
+    if (options.from !== undefined && options.to !== undefined && options.from > options.to) throw new Error("The from bound must not exceed the to bound.");
     return options;
 }
 
@@ -124,8 +122,7 @@ async function* lines(filename) {
 }
 
 function recompute(calculation, threshold = calculation.threshold, amplifier = calculation.amplifier) {
-    const rawGain =
-        calculation.baseScore * calculation.interestMultiplier * calculation.participationMultiplier * calculation.marginalMultiplier;
+    const rawGain = calculation.baseScore * calculation.interestMultiplier * calculation.participationMultiplier * calculation.marginalMultiplier;
     const effectiveGain = rawGain * calculation.dynamicMultiplier * calculation.assessmentMultiplier;
     const after = Math.min(calculation.before + effectiveGain, calculation.maxWillingness);
     const probability = after > threshold ? Math.max(0, Math.min(1, (after - threshold) * amplifier)) : 0;
@@ -173,12 +170,7 @@ async function replay(options) {
             (options.to !== undefined && record.time > options.to)
         )
             continue;
-        if (
-            !object(record.calculation) ||
-            fields.some((field) => !finite(record.calculation[field])) ||
-            typeof record.decision !== "boolean"
-        )
-            continue;
+        if (!object(record.calculation) || fields.some((field) => !finite(record.calculation[field])) || typeof record.decision !== "boolean") continue;
         if (!preferred.has(record.id)) {
             if (preferred.size >= 100000) throw Object.assign(new Error(), { code: "REPLAY_INDEX_LIMIT" });
             preferred.set(record.id, { calculated: false, replayed: false });
@@ -270,9 +262,7 @@ async function replay(options) {
         event.recomputed = recompute(calculation);
         if (record.forcedReply === true) event.recomputed.decision = true;
         if (
-            ![event.recomputed.rawGain, event.recomputed.effectiveGain, event.recomputed.after, event.recomputed.probability].every(
-                finite
-            ) ||
+            ![event.recomputed.rawGain, event.recomputed.effectiveGain, event.recomputed.after, event.recomputed.probability].every(finite) ||
             calculation.roll < 0 ||
             calculation.roll >= 1 ||
             calculation.maxWillingness <= 0 ||
@@ -295,8 +285,7 @@ async function replay(options) {
             approximately(calculation.probability, event.recomputed.probability) &&
             record.decision === event.recomputed.decision;
         if (!event.matches) summary.mismatches++;
-        if (scenario)
-            event.scenario = recompute(calculation, options.threshold ?? calculation.threshold, options.amplifier ?? calculation.amplifier);
+        if (scenario) event.scenario = recompute(calculation, options.threshold ?? calculation.threshold, options.amplifier ?? calculation.amplifier);
         await output(event);
     }
     await output({ summary });
@@ -321,7 +310,7 @@ async function main() {
         process.stderr.write(
             error.code === "REPLAY_INDEX_LIMIT"
                 ? "Replay index exceeds 100000 unique decisions; narrow the key/time filters or split the file.\n"
-                : "Unable to read the decision file or write replay output.\n"
+                : "Unable to read the decision file or write replay output.\n",
         );
         process.exitCode = 1;
     }

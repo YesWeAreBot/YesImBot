@@ -2,11 +2,11 @@ import { Context, h, Schema, Session } from "koishi";
 import { CQCode } from "koishi-plugin-adapter-onebot";
 import type { ForwardMessage } from "koishi-plugin-adapter-onebot/lib/types";
 
-import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
-import { Failed, Success } from "@/services/extension/helpers";
-import { Infer } from "@/services/extension/types";
-import { formatDate, isEmpty } from "@/shared";
-import { Services } from "@/shared/constants";
+import { Extension, Tool, withInnerThoughts } from "../../../services/extension/decorators";
+import { Failed, Success } from "../../../services/extension/helpers";
+import { Infer } from "../../../services/extension/types";
+import { formatDate, isEmpty } from "../../../shared";
+import { Services } from "../../../shared/constants";
 
 interface InteractionsConfig {}
 
@@ -24,7 +24,10 @@ export default class InteractionsExtension {
     static readonly Config = InteractionsConfigSchema;
     static readonly inject = [Services.Asset];
 
-    constructor(public ctx: Context, public config: InteractionsConfig) {}
+    constructor(
+        public ctx: Context,
+        public config: InteractionsConfig,
+    ) {}
 
     @Tool({
         name: "reaction_create",
@@ -36,19 +39,20 @@ export default class InteractionsExtension {
         isSupported: (session) => session.platform === "onebot",
     })
     async reactionCreate({ session, message_id, emoji_id }: Infer<{ message_id: string; emoji_id: number }>) {
+        if (!session) return Failed("session 不可用");
         if (isEmpty(message_id) || isEmpty(String(emoji_id))) return Failed("message_id and emoji_id is required");
         try {
-            const result = await session.onebot._request("set_msg_emoji_like", {
+            const result = await session.onebot!._request!("set_msg_emoji_like", {
                 message_id: message_id,
                 emoji_id: emoji_id,
             });
 
-            if (result["status"] === "failed") return Failed(result["message"]);
+            if ((result as any)["status"] === "failed") return Failed((result as any)["message"]);
             this.ctx.logger.info(`Bot[${session.selfId}]对消息 ${message_id} 进行了表态： ${emoji_id}`);
             return Success(result);
-        } catch (e) {
-            this.ctx.logger.error(`Bot[${session.selfId}]执行表态失败: ${message_id}, ${emoji_id} - `, e.message);
-            return Failed(`对消息 ${message_id} 进行表态失败： ${e.message}`);
+        } catch (error) {
+            this.ctx.logger.error(`Bot[${session.selfId}]执行表态失败: ${message_id}, ${emoji_id} - `, error.message);
+            return Failed(`对消息 ${message_id} 进行表态失败： ${error.message}`);
         }
     }
 
@@ -61,14 +65,15 @@ export default class InteractionsExtension {
         isSupported: (session) => session.platform === "onebot",
     })
     async essenceCreate({ session, message_id }: Infer<{ message_id: string }>) {
+        if (!session) return Failed("session 不可用");
         if (isEmpty(message_id)) return Failed("message_id is required");
         try {
-            await session.onebot.setEssenceMsg(message_id);
+            await session.onebot!.setEssenceMsg(message_id);
             this.ctx.logger.info(`Bot[${session.selfId}]将消息 ${message_id} 设置为精华`);
             return Success();
-        } catch (e) {
-            this.ctx.logger.error(`Bot[${session.selfId}]设置精华消息失败: ${message_id} - `, e.message);
-            return Failed(`设置精华消息失败： ${e.message}`);
+        } catch (error) {
+            this.ctx.logger.error(`Bot[${session.selfId}]设置精华消息失败: ${message_id} - `, error.message);
+            return Failed(`设置精华消息失败： ${error.message}`);
         }
     }
 
@@ -81,14 +86,15 @@ export default class InteractionsExtension {
         isSupported: (session) => session.platform === "onebot",
     })
     async essenceDelete({ session, message_id }: Infer<{ message_id: string }>) {
+        if (!session) return Failed("session 不可用");
         if (isEmpty(message_id)) return Failed("message_id is required");
         try {
-            const result = await session.onebot.deleteEssenceMsg(message_id);
+            const result = await session.onebot!.deleteEssenceMsg(message_id);
             this.ctx.logger.info(`Bot[${session.selfId}]将消息 ${message_id} 从精华中移除`);
             return Success();
-        } catch (e) {
-            this.ctx.logger.error(`Bot[${session.selfId}]从精华中移除消息失败: ${message_id} - `, e.message);
-            return Failed(`从精华中移除消息失败： ${e.message}`);
+        } catch (error) {
+            this.ctx.logger.error(`Bot[${session.selfId}]从精华中移除消息失败: ${message_id} - `, error.message);
+            return Failed(`从精华中移除消息失败： ${error.message}`);
         }
     }
 
@@ -102,21 +108,22 @@ export default class InteractionsExtension {
         isSupported: (session) => session.platform === "onebot",
     })
     async sendPoke({ session, user_id, channel }: Infer<{ user_id: string; channel: string }>) {
+        if (!session) return Failed("session 不可用");
         if (isEmpty(String(user_id))) return Failed("user_id is required");
         const targetChannel = isEmpty(channel) ? session.channelId : channel;
         try {
-            const result = await session.onebot._request("group_poke", {
+            const result = await session.onebot!._request!("group_poke", {
                 group_id: targetChannel,
                 user_id: Number(user_id),
             });
 
-            if (result["status"] === "failed") return Failed(result["data"]);
+            if ((result as any)["status"] === "failed") return Failed((result as any)["data"]);
 
             this.ctx.logger.info(`Bot[${session.selfId}]戳了戳 ${user_id}`);
             return Success(result);
-        } catch (e) {
-            this.ctx.logger.error(`Bot[${session.selfId}]戳了戳 ${user_id}，但是失败了 - `, e.message);
-            return Failed(`戳了戳 ${user_id} 失败： ${e.message}`);
+        } catch (error) {
+            this.ctx.logger.error(`Bot[${session.selfId}]戳了戳 ${user_id}，但是失败了 - `, error.message);
+            return Failed(`戳了戳 ${user_id} 失败： ${error.message}`);
         }
     }
 
@@ -129,24 +136,21 @@ export default class InteractionsExtension {
         isSupported: (session) => session.platform === "onebot",
     })
     async getForwardMsg({ session, id }: Infer<{ id: string }>) {
+        if (!session) return Failed("session 不可用");
         if (isEmpty(id)) return Failed("id is required");
         try {
-            const forwardMessages: ForwardMessage[] = await session.onebot.getForwardMsg(id);
+            const forwardMessages: ForwardMessage[] = await session.onebot!.getForwardMsg(id);
             const formattedResult = await formatForwardMessage(this.ctx, session, forwardMessages);
 
             return Success(formattedResult);
-        } catch (e) {
-            this.ctx.logger.error(`Bot[${session.selfId}]获取转发消息失败: ${id} - `, e.message);
-            return Failed(`获取转发消息失败： ${e.message}`);
+        } catch (error) {
+            this.ctx.logger.error(`Bot[${session.selfId}]获取转发消息失败: ${id} - `, error.message);
+            return Failed(`获取转发消息失败： ${error.message}`);
         }
     }
 }
 
-async function formatForwardMessage(
-    ctx: Context,
-    session: Session,
-    formatForwardMessages: ForwardMessage[]
-): Promise<string> {
+async function formatForwardMessage(ctx: Context, session: Session, formatForwardMessages: ForwardMessage[]): Promise<string> {
     try {
         const formattedMessages = await Promise.all(
             formatForwardMessages.map(async (message) => {
@@ -173,17 +177,17 @@ async function formatForwardMessage(
                             default:
                                 return h(element.type, element.attrs).toString();
                         }
-                    })
+                    }),
                 );
 
                 /* prettier-ignore */
                 return `[${formatDate(new Date(time * 1000), "YYYY-MM-DD HH:mm:ss")}|${sender.nickname}(${sender.user_id})]: ${contentParts.join("")}`;
-            })
+            }),
         );
 
         return formattedMessages.filter(Boolean).join("\n") || "无有效消息内容";
-    } catch (e) {
-        ctx.logger.error("格式化转发消息失败:", e);
+    } catch (error) {
+        ctx.logger.error("格式化转发消息失败:", error);
         return "消息格式化失败";
     }
 }

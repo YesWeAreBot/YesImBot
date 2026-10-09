@@ -1,10 +1,10 @@
-import { sanitizeDiagnostic } from "../../shared/diagnostic-sanitizer";
-import { recallStoredMemories, type StoredRecallOptions } from "./recall";
-import { Context, Service, Session } from "koishi";
 import { createHash, randomUUID } from "node:crypto";
 
-import { Config } from "@/config";
-import { Services, TableName } from "@/shared/constants";
+import { Context, Service, Session } from "koishi";
+
+import { Config } from "../../config";
+import { Services, TableName } from "../../shared/constants";
+import { sanitizeDiagnostic } from "../../shared/diagnostic-sanitizer";
 import { HISTORY_CHANNELS, MESSAGE_KEY_MIGRATION, registerChannelModel, sessionChannelType } from "./channel-metadata";
 import { HistoryCommandManager } from "./commands";
 import { ContextBuilder } from "./context-builder";
@@ -12,6 +12,7 @@ import { EventListenerManager } from "./event-listener";
 import { InteractionManager } from "./interaction-manager";
 import { SemanticMemoryManager } from "./l2-semantic-memory";
 import { ArchivalMemoryManager } from "./l3-archival-memory";
+import { recallStoredMemories, type StoredRecallOptions } from "./recall";
 import { AgentStimulus, BotMuteStateData, DiaryEntryData, MemberData, MemoryChunkData, MessageData, SystemEventData, WorldState } from "./types";
 
 declare module "koishi" {
@@ -36,7 +37,14 @@ declare module "koishi" {
 
 export class WorldStateService extends Service<Config> {
     /** Extension contract v1; feature detection also supports source checkouts. */
-    public get capabilities() { return Object.freeze({ beforeUserStimulus: 1 as const, memoryCorrectionFilter: 1 as const, memoryRecall: 1 as const, frameworkEventDetails: 1 as const }); }
+    public get capabilities() {
+        return Object.freeze({
+            beforeUserStimulus: 1 as const,
+            memoryCorrectionFilter: 1 as const,
+            memoryRecall: 1 as const,
+            frameworkEventDetails: 1 as const,
+        });
+    }
 
     static readonly inject = [Services.Model, Services.Asset, Services.Logger, Services.Prompt, Services.Memory, "database"];
 
@@ -97,11 +105,25 @@ export class WorldStateService extends Service<Config> {
     }
 
     public async getFrameworkEvents(memoryDomain: string) {
-        const events = await this.ctx.database.get(TableName.SystemEvents, { eventScope: "mind", botKey: memoryDomain }, { limit: 8, sort: { timestamp: "desc" } });
-        return events.map(e => ({ id: e.id, type: e.type, timestamp: e.timestamp, platform: e.platform, channelId: e.channelId, eventScope: e.eventScope, payload: JSON.stringify(sanitizeDiagnostic(e.payload)).slice(0, 1600) }));
+        const events = await this.ctx.database.get(
+            TableName.SystemEvents,
+            { eventScope: "mind", botKey: memoryDomain },
+            { limit: 8, sort: { timestamp: "desc" } },
+        );
+        return events.map((e) => ({
+            id: e.id,
+            type: e.type,
+            timestamp: e.timestamp,
+            platform: e.platform,
+            channelId: e.channelId,
+            eventScope: e.eventScope,
+            payload: JSON.stringify(sanitizeDiagnostic(e.payload)).slice(0, 1600),
+        }));
     }
 
-    public recallMemory(options: StoredRecallOptions) { return recallStoredMemories(this.ctx.database, options); }
+    public recallMemory(options: StoredRecallOptions) {
+        return recallStoredMemories(this.ctx.database, options);
+    }
 
     public async buildWorldState(session: Session): Promise<WorldState> {
         const state = await this.contextBuilder.build(session);
@@ -148,9 +170,7 @@ export class WorldStateService extends Service<Config> {
     /** 查询使用纯读取，不清除到期状态。 */
     public peekBotMuted(channelCid: string, selfId?: string): boolean {
         const now = Date.now();
-        return this.muteKeys(channelCid, selfId).some(key =>
-            (this.mutedChannels.get(key) || 0) > now || (this.allMutedChannels.get(key) || 0) > now
-        );
+        return this.muteKeys(channelCid, selfId).some((key) => (this.mutedChannels.get(key) || 0) > now || (this.allMutedChannels.get(key) || 0) > now);
     }
 
     public isBotMuted(channelCid: string, selfId?: string): boolean {
@@ -168,7 +188,7 @@ export class WorldStateService extends Service<Config> {
         if (selfId !== undefined) return [JSON.stringify([cid, selfId]), cid];
         // 保留旧 API 的频道级查询；内部回复路径始终传入机器人身份。
         const prefix = JSON.stringify([cid]).slice(0, -1) + ",";
-        return [cid, ...new Set([...this.mutedChannels.keys(), ...this.allMutedChannels.keys()].filter(key => key.startsWith(prefix)))];
+        return [cid, ...new Set([...this.mutedChannels.keys(), ...this.allMutedChannels.keys()].filter((key) => key.startsWith(prefix)))];
     }
 
     public updateMuteStatus(cid: string, expiresAt: number, selfId?: string, kind: "individual" | "all" = "individual"): Promise<void> {
@@ -178,7 +198,9 @@ export class WorldStateService extends Service<Config> {
 
     private muteState(cid: string, expiresAt: number, selfId: string | undefined, kind: "individual" | "all"): BotMuteStateData {
         return {
-            id: createHash("sha256").update(JSON.stringify([cid, selfId ?? null, kind])).digest("hex"),
+            id: createHash("sha256")
+                .update(JSON.stringify([cid, selfId ?? null, kind]))
+                .digest("hex"),
             channelCid: cid,
             selfId: selfId ?? "",
             kind,
@@ -189,11 +211,13 @@ export class WorldStateService extends Service<Config> {
 
     private persistMuteStates(states: BotMuteStateData[]): Promise<void> {
         // 失败仍由当前调用方观察；后续更新可以恢复队列，不能永久被一次故障阻塞。
-        const task = (this.muteWrites || Promise.resolve()).catch(() => {}).then(async () => {
-            await this.ctx.database.upsert(TableName.BotMuteState, states, ["id"]);
-        });
+        const task = (this.muteWrites || Promise.resolve())
+            .catch(() => {})
+            .then(async () => {
+                await this.ctx.database.upsert(TableName.BotMuteState, states, ["id"]);
+            });
         this.muteWrites = task;
-        void task.catch(error => this.logger.error("持久化机器人禁言状态失败", error));
+        void task.catch((error) => this.logger.error("持久化机器人禁言状态失败", error));
         return task;
     }
 
@@ -202,11 +226,13 @@ export class WorldStateService extends Service<Config> {
         const states = kind === "all" ? this.allMutedChannels : this.mutedChannels;
         if (expiresAt > Date.now()) {
             states.set(key, expiresAt);
-            this.logger.debug(`[${cid}] Bot[${selfId ?? "*"}] | 已被禁言 | 解封时间: ${expiresAt === Infinity ? "永久" : new Date(expiresAt).toLocaleString()}`);
+            this.logger.debug(
+                `[${cid}] Bot[${selfId ?? "*"}] | 已被禁言 | 解封时间: ${expiresAt === Infinity ? "永久" : new Date(expiresAt).toLocaleString()}`,
+            );
             const separator = cid.indexOf(":");
             const platform = cid.slice(0, separator);
             const channelId = cid.slice(separator + 1);
-            const ids = selfId === undefined ? this.ctx.bots.filter(bot => bot.platform === platform).map(bot => bot.selfId) : [selfId];
+            const ids = selfId === undefined ? this.ctx.bots.filter((bot) => bot.platform === platform).map((bot) => bot.selfId) : [selfId];
             for (const id of ids) this.ctx.emit("agent/bot-muted", { platform, selfId: id, channelId });
         } else {
             states.delete(key);
@@ -217,7 +243,7 @@ export class WorldStateService extends Service<Config> {
     private async initializeMuteStatus(): Promise<void> {
         this.logger.info("正在初始化机器人禁言状态...");
         const states = await this.ctx.database.get(TableName.BotMuteState, {});
-        const persisted = new Set(states.map(state => state.id));
+        const persisted = new Set(states.map((state) => state.id));
         for (const state of states) {
             this.applyMuteStatus(state.channelCid, state.permanent ? Infinity : state.expiresAt, state.selfId || undefined, state.kind);
         }
@@ -236,18 +262,17 @@ export class WorldStateService extends Service<Config> {
             if (!details) continue;
             const cid = `${event.platform}:${event.channelId}`;
             const userId = details.user?.id === undefined ? undefined : String(details.user.id);
-            const allMembers = event.type.startsWith("guild-all-member-") ||
-                (event.type === "guild-member-unban" && (userId === undefined || userId === "0"));
+            const allMembers = event.type.startsWith("guild-all-member-") || (event.type === "guild-member-unban" && (userId === undefined || userId === "0"));
             if (allMembers) {
                 // 旧全体记录没有接收账号，按该平台的在用机器人恢复；新记录保留账号。
-                const bots = this.ctx.bots.filter(bot => bot.platform === event.platform &&
-                    (details.selfId === undefined || bot.selfId === String(details.selfId)));
+                const bots = this.ctx.bots.filter(
+                    (bot) => bot.platform === event.platform && (details.selfId === undefined || bot.selfId === String(details.selfId)),
+                );
                 const until = event.type.endsWith("-unban") ? 0 : Infinity;
                 for (const bot of bots) migrate(cid, until, bot.selfId, "all");
-            } else if (this.ctx.bots.some(bot => bot.platform === event.platform && bot.selfId === userId)) {
-                if (event.type === "guild-member-unban") migrate(cid, 0, userId);
-                else if (Number.isFinite(details.duration) && details.duration > 0)
-                    migrate(cid, event.timestamp.getTime() + details.duration, userId);
+            } else if (this.ctx.bots.some((bot) => bot.platform === event.platform && bot.selfId === userId)) {
+                if (event.type === "guild-member-unban") migrate(cid, 0, userId!);
+                else if (Number.isFinite(details.duration) && details.duration > 0) migrate(cid, event.timestamp.getTime() + details.duration, userId!);
             }
         }
         if (migrated.size) {
@@ -298,7 +323,7 @@ export class WorldStateService extends Service<Config> {
                 expiresAt: "double",
                 permanent: "boolean",
             },
-            { primary: "id" }
+            { primary: "id" },
         );
         this.ctx.model.extend(
             TableName.Members,
@@ -312,7 +337,7 @@ export class WorldStateService extends Service<Config> {
                 joinedAt: "timestamp",
                 lastActive: "timestamp",
             },
-            { autoInc: false, primary: ["pid", "platform", "guildId"] }
+            { autoInc: false, primary: ["pid", "platform", "guildId"] },
         );
 
         this.ctx.model.extend(
@@ -327,7 +352,7 @@ export class WorldStateService extends Service<Config> {
                 content: "text",
                 quoteId: "string(255)",
             },
-            { primary: ["platform", "channelId", "id"] }
+            { primary: ["platform", "channelId", "id"] },
         );
 
         this.ctx.model.extend(
@@ -342,7 +367,7 @@ export class WorldStateService extends Service<Config> {
                 startTimestamp: "timestamp",
                 endTimestamp: "timestamp",
             },
-            { primary: "id" }
+            { primary: "id" },
         );
 
         this.ctx.model.extend(
@@ -356,7 +381,7 @@ export class WorldStateService extends Service<Config> {
                 keywords: "json",
                 mentionedUserIds: "json",
             },
-            { primary: "id" }
+            { primary: "id" },
         );
 
         this.ctx.model.extend(
@@ -373,7 +398,7 @@ export class WorldStateService extends Service<Config> {
                 payload: "json",
                 message: "text",
             },
-            { primary: "id" }
+            { primary: "id" },
         );
     }
 
@@ -400,8 +425,8 @@ export class WorldStateService extends Service<Config> {
 
             await this.l1_manager.pruneOldData();
             this.logger.info("历史数据清理完成");
-        } catch (err) {
-            this.logger.error("历史数据清理失败", err);
+        } catch (error) {
+            this.logger.error("历史数据清理失败", error);
         }
     }
 }

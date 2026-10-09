@@ -1,20 +1,25 @@
 {
   "name": "koishi-plugin-yesimbot-extension-sticker-manager",
-  "description": "YesImBot 表情包管理扩展",
   "version": "1.2.1",
-  "main": "lib/index.js",
-  "typings": "lib/index.d.ts",
+  "description": "YesImBot 表情包管理扩展",
+  "keywords": [
+    "emoji",
+    "koishi",
+    "plugin",
+    "sticker",
+    "yesimbot"
+  ],
+  "homepage": "https://github.com/HydroGest/YesImBot",
   "contributors": [
     "HydroGest <2445691453@qq.com>"
   ],
-  "homepage": "https://github.com/HydroGest/YesImBot",
-  "scripts": {
-    "build": "tsc && node esbuild.config.mjs",
-    "dev": "tsc -w --preserveWatchOutput",
-    "lint": "eslint . --ext .ts",
-    "clean": "rm -rf lib .turbo tsconfig.tsbuildinfo",
-    "pack": "bun pm pack"
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HydroGest/YesImBot.git",
+    "directory": "packages/sticker-manager"
   },
+  "main": "lib/index.js",
+  "typings": "lib/index.d.ts",
   "devDependencies": {
     "koishi": "^4.18.7",
     "koishi-plugin-yesimbot": "^3.0.2"
@@ -36,17 +41,5 @@
         "yesimbot-extension-sticker-manager"
       ]
     }
-  },
-  "keywords": [
-    "koishi",
-    "plugin",
-    "sticker",
-    "emoji",
-    "yesimbot"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/HydroGest/YesImBot.git",
-    "directory": "packages/sticker-manager"
   }
 }

@@ -1,12 +1,13 @@
-import { Services } from "./shared/constants";
+import path from "node:path";
+
 import {} from "@koishijs/plugin-notifier";
 import { Context, ForkScope, Service } from "koishi";
-import path from "node:path";
 
 import { AgentCore } from "./agent";
 import * as ConfigCommand from "./commands/config";
 import { Config, CONFIG_VERSION, migrateConfig } from "./config";
 import { AssetService, LoggerService, MemoryService, ModelService, PromptService, ToolService, WorldStateService } from "./services";
+import { Services } from "./shared/constants";
 import { handleError, initializeErrorReporter } from "./shared/errors";
 
 declare module "koishi" {
@@ -94,18 +95,14 @@ export default class YesImBot extends Service<Config> {
 
             const agentCore = ctx.plugin(AgentCore, config);
 
-            const services = [
-                loggerService,
-                assetService,
-                promptService,
-                toolService,
-                modelService,
-                memoryService,
-                worldStateService,
-                agentCore,
-            ];
+            const services = [loggerService, assetService, promptService, toolService, modelService, memoryService, worldStateService, agentCore];
 
-            initializeErrorReporter(config.errorReporting, this.ctx.logger("[错误报告]"), (id, error) => this.ctx[Services.Logger].recordError(id, error), config.providers?.map(provider => provider.apiKey).filter(Boolean));
+            initializeErrorReporter(
+                config.errorReporting,
+                this.ctx.logger("[错误报告]"),
+                (id, error) => this.ctx[Services.Logger].recordError(id, error),
+                config.providers?.map((provider) => provider.apiKey).filter(Boolean),
+            );
 
             waitForServices(ctx, services)
                 .then((ready) => {
@@ -113,8 +110,8 @@ export default class YesImBot extends Service<Config> {
                     this.ctx.logger.info("所有服务已就绪");
                     this.ctx.logger.info(`Version: ${require("../package.json").version}`);
                 })
-                .catch((err) => {
-                    this.ctx.logger.error(err.message);
+                .catch((error) => {
+                    this.ctx.logger.error(error.message);
                     ctx.notifier.create("初始化时发生错误");
                     // services.forEach((service) => {
                     //     try {

@@ -1,44 +1,40 @@
 {
   "name": "@yesimbot/koishi-plugin-tts",
-  "description": "为 YesImBot 提供TTS(文本转语音)功能",
   "version": "0.2.2",
-  "main": "lib/index.js",
-  "typings": "lib/index.d.ts",
-  "homepage": "https://github.com/YesWeAreBot/YesImBot",
-  "files": [
-    "lib",
-    "dist",
-    "resources"
-  ],
-  "contributors": [
-    "MiaowFISH <neko-project@outlook.com>"
-  ],
-  "scripts": {
-    "build": "tsc && tsc-alias && node esbuild.config.mjs",
-    "dev": "tsc -w --preserveWatchOutput",
-    "lint": "eslint . --ext .ts",
-    "clean": "rm -rf lib .turbo tsconfig.tsbuildinfo",
-    "pack": "bun pm pack"
-  },
-  "license": "MIT",
+  "description": "为 YesImBot 提供TTS(文本转语音)功能",
   "keywords": [
+    "ai",
     "chatbot",
     "koishi",
     "plugin",
-    "ai",
     "yesimbot"
+  ],
+  "homepage": "https://github.com/YesWeAreBot/YesImBot",
+  "bugs": {
+    "url": "https://github.com/YesWeAreBot/YesImBot/issues"
+  },
+  "license": "MIT",
+  "contributors": [
+    "MiaowFISH <neko-project@outlook.com>"
   ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/YesWeAreBot/YesImBot.git",
     "directory": "packages/tts"
   },
-  "bugs": {
-    "url": "https://github.com/YesWeAreBot/YesImBot/issues"
-  },
+  "files": [
+    "lib",
+    "dist",
+    "resources"
+  ],
+  "main": "lib/index.js",
+  "typings": "lib/index.d.ts",
   "exports": {
     ".": "./lib/index.js",
     "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
     "@msgpack/msgpack": "^3.1.2",
@@ -47,15 +43,13 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "@types/ws": "^8.18.0",
     "koishi": "^4.18.7",
     "koishi-plugin-yesimbot": "^3.0.2"
   },
   "peerDependencies": {
     "koishi": "^4.18.7",
     "koishi-plugin-yesimbot": "^3.0.2"
-  },
-  "publishConfig": {
-    "access": "public"
   },
   "koishi": {
     "description": {

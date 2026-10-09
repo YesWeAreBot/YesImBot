@@ -101,7 +101,7 @@ export const ModelConfigSchema: Schema<ModelConfig> = Schema.object({
             ModelAbility.FunctionCalling,
             ModelAbility.Embedding,
             ModelAbility.Evaluation,
-        ])
+        ]),
     )
         .role("checkbox")
         .default([ModelAbility.Chat, ModelAbility.FunctionCalling])
@@ -116,7 +116,7 @@ export const ModelConfigSchema: Schema<ModelConfig> = Schema.object({
                 key: Schema.string().required(),
                 type: Schema.union(["string", "number", "boolean", "object"]).default("string"),
                 value: Schema.string().required(),
-            })
+            }),
         )
             .role("table")
             .description("自定义参数"),
@@ -221,7 +221,7 @@ export const ProviderConfigSchema: Schema<ProviderConfig> = Schema.intersect([
                 proxy: Schema.string().description("代理地址"),
                 models: Schema.array(ModelConfigSchema).required().description("模型列表"),
             });
-        })
+        }),
     ),
 ])
     .collapse()
@@ -229,7 +229,7 @@ export const ProviderConfigSchema: Schema<ProviderConfig> = Schema.intersect([
 
 export interface ModelServiceConfig {
     providers: ProviderConfig[];
-    modelGroups: { name: string; models: ModelDescriptor[]; strategy: ModelSwitchingStrategy }[];
+    modelGroups: Array<{ name: string; models: ModelDescriptor[]; strategy: ModelSwitchingStrategy }>;
     task: {
         [TaskType.Chat]: string;
         [TaskType.Embedding]: string;
@@ -250,7 +250,7 @@ export const ModelServiceConfigSchema: Schema<ModelServiceConfig> = Schema.objec
             models: Schema.array(Schema.dynamic("modelService.selectableModels")).required().description("此模型组包含的模型"),
         })
             .collapse()
-            .description("模型组")
+            .description("模型组"),
     ).description("模型组，用于故障转移或分类。修改提供商或模型后，先启动/重载插件以更新可选模型"),
     task: Schema.object({
         [TaskType.Chat]: Schema.dynamic("modelService.availableGroups").description("聊天任务使用的模型组"),

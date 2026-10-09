@@ -1,20 +1,27 @@
 import { Context, Logger } from "koishi";
 import { v4 as uuidv4 } from "uuid";
 
-import { IEmbedModel, TaskType } from "@/services/model";
-import { Services, TableName } from "@/shared/constants";
-import { cosineSimilarity } from "@/shared/utils";
+import { IEmbedModel, TaskType } from "../../services/model";
+import { Services, TableName } from "../../shared/constants";
+import { cosineSimilarity } from "../../shared/utils";
 import { HistoryConfig } from "./config";
 import { ContextualMessage, HistoryChannelType, MemoryChunkData, MessageData } from "./types";
 
 export type SemanticMemoryScope = { platform: string; channelId: string } | { type: "private" | "guild" | "all" };
 export type MemoryTarget = { platform: string; channelId: string; channelType?: HistoryChannelType };
 
+function splitContent(content: string, takeFirstHalf: boolean): string {
+    const lines = content.split("\n").filter((line) => line.trim() !== "");
+    if (lines.length <= 1) return content;
+    const midPoint = Math.ceil(lines.length / 2);
+    return takeFirstHalf ? lines.slice(0, midPoint).join("\n") : lines.slice(midPoint).join("\n");
+}
+
 export class SemanticMemoryManager {
     private ctx: Context;
     private config: HistoryConfig;
     private logger: Logger;
-    private embedModel: IEmbedModel;
+    private embedModel: IEmbedModel | null = null;
     private messageBuffer: Map<string, MessageData[]> = new Map();
     private isRebuilding: boolean = false;
     private channelTypes = new Map<string, HistoryChannelType>();
@@ -35,7 +42,7 @@ export class SemanticMemoryManager {
         this.stopped = false;
         this.stopTask = undefined;
         try {
-            this.embedModel = this.ctx[Services.Model].useEmbeddingGroup(TaskType.Embedding).getModels()[0];
+            this.embedModel = this.ctx[Services.Model].useEmbeddingGroup(TaskType.Embedding)?.getModels()[0] ?? null;
         } catch {
             this.embedModel = null;
         }
@@ -49,7 +56,7 @@ export class SemanticMemoryManager {
                 await this.flushAllBuffers();
             } finally {
                 // 达到分块阈值的任务已不在缓冲中，也要等其嵌入和写入完成。
-                while (this.pendingBatches.size) await Promise.allSettled([...this.pendingBatches]);
+                while (this.pendingBatches.size) await Promise.allSettled(this.pendingBatches);
             }
         })());
     }
@@ -112,9 +119,7 @@ export class SemanticMemoryManager {
         this.activeClears.add(barrier);
         try {
             await Promise.all(previousClears.map((entry) => entry.done));
-            await Promise.allSettled(
-                [...this.pendingWrites].filter((entry) => this.matchesScope(entry.target, scope)).map((entry) => entry.done)
-            );
+            await Promise.allSettled([...this.pendingWrites].filter((entry) => this.matchesScope(entry.target, scope)).map((entry) => entry.done));
             return await clear();
         } finally {
             this.activeClears.delete(barrier);
@@ -145,7 +150,7 @@ export class SemanticMemoryManager {
         if (this.stopped || !this.config.l2_memory.enabled) return;
         const key = this.targetKey(message);
         if (!this.messageBuffer.has(key)) this.messageBuffer.set(key, []);
-        const buffer = this.messageBuffer.get(key);
+        const buffer = this.messageBuffer.get(key)!;
         buffer.push(message);
 
         if (buffer.length >= this.config.l2_memory.messagesPerChunk) {
@@ -225,8 +230,8 @@ export class SemanticMemoryManager {
      */
     public async search(
         queryText: string,
-        options?: { platform?: string; channelId?: string; k?: number; startTimestamp?: Date; endTimestamp?: Date }
-    ): Promise<(MemoryChunkData & { similarity: number })[]> {
+        options?: { platform?: string; channelId?: string; k?: number; startTimestamp?: Date; endTimestamp?: Date },
+    ): Promise<Array<MemoryChunkData & { similarity: number }>> {
         const k = options?.k ?? 5;
         if (!this.embedModel || k <= 0) return [];
         const minAllowedSim = this.config.l2_memory.retrievalMinSimilarity ?? 0.5;
@@ -298,7 +303,7 @@ export class SemanticMemoryManager {
                     similarity: similarityMap.get(id) || 0, // 无效块或非候选块的邻居相似度为0
                 };
             })
-            .filter(Boolean) as (MemoryChunkData & { similarity: number })[];
+            .filter(Boolean) as Array<MemoryChunkData & { similarity: number }>;
 
         finalChunks.sort((a, b) => new Date(a.startTimestamp).getTime() - new Date(b.startTimestamp).getTime());
 
@@ -313,14 +318,14 @@ export class SemanticMemoryManager {
      * @returns 合并后的记忆块列表
      */
     private groupAndMergeChunks(
-        chunks: (MemoryChunkData & { similarity: number })[],
+        chunks: Array<MemoryChunkData & { similarity: number }>,
         chunkIndexMap: Map<string, number>,
-        candidateIds: Set<string>
-    ): (MemoryChunkData & { similarity: number })[] {
+        candidateIds: Set<string>,
+    ): Array<MemoryChunkData & { similarity: number }> {
         if (chunks.length === 0) return [];
 
-        const groups: (MemoryChunkData & { similarity: number })[][] = [];
-        const conversations = new Map<string, (MemoryChunkData & { similarity: number })[]>();
+        const groups: Array<Array<MemoryChunkData & { similarity: number }>> = [];
+        const conversations = new Map<string, Array<MemoryChunkData & { similarity: number }>>();
         for (const chunk of chunks) {
             const key = this.targetKey(chunk);
             const conversation = conversations.get(key) || [];
@@ -329,7 +334,7 @@ export class SemanticMemoryManager {
         }
 
         for (const conversation of conversations.values()) {
-            let currentGroup: (MemoryChunkData & { similarity: number })[] = [];
+            let currentGroup: Array<MemoryChunkData & { similarity: number }> = [];
             for (const chunk of conversation) {
                 if (currentGroup.length === 0) {
                     currentGroup.push(chunk);
@@ -351,7 +356,7 @@ export class SemanticMemoryManager {
             if (currentGroup.length > 0) groups.push(currentGroup);
         }
 
-        const mergedResults: (MemoryChunkData & { similarity: number })[] = [];
+        const mergedResults: Array<MemoryChunkData & { similarity: number }> = [];
 
         for (const group of groups) {
             // 如果分组只有一个块，或者说它是一个孤立的上下文片段，则不进行内容裁切，直接保留
@@ -364,14 +369,6 @@ export class SemanticMemoryManager {
             const firstChunk = group[0];
             const lastChunk = group[group.length - 1];
             const middleChunks = group.slice(1, -1);
-
-            // 定义内容分割函数
-            const splitContent = (content: string, takeFirstHalf: boolean): string => {
-                const lines = content.split("\n").filter((line) => line.trim() !== "");
-                if (lines.length <= 1) return content;
-                const midPoint = Math.ceil(lines.length / 2);
-                return takeFirstHalf ? lines.slice(0, midPoint).join("\n") : lines.slice(midPoint).join("\n");
-            };
 
             const mergedContentParts: string[] = [];
             mergedContentParts.push(candidateIds.has(firstChunk.id) ? firstChunk.content : splitContent(firstChunk.content, false));
@@ -395,7 +392,7 @@ export class SemanticMemoryManager {
         return mergedResults.sort((a, b) => new Date(a.startTimestamp).getTime() - new Date(b.startTimestamp).getTime());
     }
 
-    public compileEventsToText(messages: (MessageData | ContextualMessage)[]): string {
+    public compileEventsToText(messages: Array<MessageData | ContextualMessage>): string {
         return messages.map((m) => `${m.sender.name || m.sender.id}: ${m.content}`).join("\n");
     }
 
@@ -439,10 +436,10 @@ export class SemanticMemoryManager {
                 try {
                     const generation = this.generation(chunk, generations);
                     if (this.generation(chunk) !== generation) continue;
-                    const result = await this.embedModel.embed(chunk.content);
+                    const result = await this.embedModel!.embed(chunk.content);
                     if (
                         await this.writeMemory(chunk, generation, () =>
-                            this.ctx.database.set(TableName.L2Chunks, { id: chunk.id }, { embedding: result.embedding })
+                            this.ctx.database.set(TableName.L2Chunks, { id: chunk.id }, { embedding: result.embedding }),
                         )
                     ) {
                         successCount++;

@@ -1,9 +1,10 @@
-import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
-import { Failed, Success } from "@/services/extension/helpers";
-import { Infer } from "@/services/extension/types";
-import { isEmpty } from "@/shared";
 import { Context, Schema } from "koishi";
 import {} from "koishi-plugin-puppeteer";
+
+import { Extension, Tool, withInnerThoughts } from "../../../../services/extension/decorators";
+import { Failed, Success } from "../../../../services/extension/helpers";
+import { Infer } from "../../../../services/extension/types";
+import { isEmpty } from "../../../../shared";
 
 interface SearchConfig {
     endpoint: string;
@@ -46,7 +47,7 @@ export default class SearchExtension {
 
     constructor(
         public ctx: Context,
-        public config: SearchConfig
+        public config: SearchConfig,
     ) {
         // 检查Puppeteer服务是否可用
         if (config.usePuppeteer && !ctx.puppeteer) {
@@ -83,7 +84,7 @@ export default class SearchExtension {
             include_links: boolean;
             max_links: number;
             use_dynamic: boolean;
-        }>
+        }>,
     ) {
         const { url, format, max_length, include_links, max_links, use_dynamic } = args;
         if (isEmpty(url)) return Failed("url is required");
@@ -104,11 +105,7 @@ export default class SearchExtension {
             const useDynamicLoading = use_dynamic || this.config.usePuppeteer;
 
             // 使用统一的Puppeteer方法获取和解析内容
-            const { title, content, textContent, links } = await this._fetchAndExtractWithPuppeteer(
-                url,
-                useDynamicLoading,
-                include_links ? max_links : 0
-            );
+            const { title, content, textContent, links } = await this._fetchAndExtractWithPuppeteer(url, useDynamicLoading, include_links ? max_links : 0);
 
             let resultContent = format === "text" ? textContent : content;
             if (!resultContent) {
@@ -250,7 +247,7 @@ export default class SearchExtension {
 
             return extractedData;
         } finally {
-            await page.close().catch((e) => this.ctx.logger.warn(`关闭Puppeteer页面时出错: ${e.message}`));
+            await page.close().catch((error) => this.ctx.logger.warn(`关闭Puppeteer页面时出错: ${error.message}`));
         }
     }
 

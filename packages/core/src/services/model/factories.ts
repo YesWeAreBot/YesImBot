@@ -1,11 +1,4 @@
-import type {
-    ChatProvider,
-    EmbedProvider,
-    ImageProvider,
-    ModelProvider,
-    SpeechProvider,
-    TranscriptionProvider,
-} from "@xsai-ext/shared-providers";
+import type { ChatProvider, EmbedProvider, ImageProvider, ModelProvider, SpeechProvider, TranscriptionProvider } from "@xsai-ext/shared-providers";
 
 import {
     createAnthropic,
@@ -19,7 +12,6 @@ import {
     createSiliconFlow,
     createWorkersAI,
     createZhipu,
-    createAzure,
     createCerebras,
     createDeepInfra,
     createFatherless,
@@ -35,9 +27,8 @@ import {
     createTencentHunyuan,
     createTogetherAI,
     createXAI,
-} from "@/dependencies/xsai";
+} from "../../dependencies/xsai";
 import type { ProviderConfig, ProviderType } from "./config";
-
 import type { EvaluationRequestOptions } from "./evaluation-client";
 
 // --- 接口定义 ---
@@ -319,7 +310,7 @@ class XAIFactory implements IProviderFactory {
 
 class TypeSafeFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
-        return { evaluate: model => ({ model, apiKey: config.apiKey, baseURL: config.baseURL || "https://api.typesafe.ai/v1" }) };
+        return { evaluate: (model) => ({ model, apiKey: config.apiKey, baseURL: config.baseURL || "https://api.typesafe.ai/v1" }) };
     }
 }
 

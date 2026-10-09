@@ -1,11 +1,11 @@
 import { readFileSync } from "fs";
-import { Computed, Schema } from "koishi";
 import path from "path";
 
-import type { TopicConfig } from "./topics";
+import { Computed, Schema } from "koishi";
 
-import { SystemConfig } from "@/config";
-import { PROMPTS_DIR } from "@/shared/constants";
+import { SystemConfig } from "../config";
+import { PROMPTS_DIR } from "../shared/constants";
+import type { TopicConfig } from "./topics";
 
 export const SystemBaseTemplate = readFileSync(path.resolve(PROMPTS_DIR, "memgpt_v2_chat.txt"), "utf-8");
 export const UserBaseTemplate = readFileSync(path.resolve(PROMPTS_DIR, "user_base.txt"), "utf-8");
@@ -37,7 +37,7 @@ export const ArousalConfigSchema: Schema<ArousalConfig> = Schema.object({
                 .default("guild")
                 .description("频道类型"),
             id: Schema.string().required().description("频道或用户 ID"),
-        }).description("响应频道")
+        }).description("响应频道"),
     )
         .default([{ platform: "onebot", type: "guild", id: "*" }])
         .description("允许 Agent 响应的频道。使用 * 作为通配符"),
@@ -107,10 +107,7 @@ export interface WillingnessConfig {
 
 const WillingnessConfigSchema: Schema<WillingnessConfig> = Schema.object({
     topics: Schema.object({
-        enabled: Schema.boolean()
-            .default(false)
-            .experimental()
-            .description("启用实验性话题意愿，默认关闭；识别可能滞后或不准确，请按实际聊天效果调整"),
+        enabled: Schema.boolean().default(false).experimental().description("启用实验性话题意愿，默认关闭；识别可能滞后或不准确，请按实际聊天效果调整"),
         model: Schema.dynamic("modelService.selectableModels").description("话题总结模型（需具备对话能力；启用后会发送近期聊天内容）"),
         minIntervalMs: Schema.number().min(1000).max(3600000).default(30000).description("两次话题分析的最短间隔（毫秒）"),
         messagesPerAnalysis: Schema.natural().min(1).max(100).default(6).description("再次分析前至少收到的新消息数"),
@@ -139,8 +136,7 @@ const WillingnessConfigSchema: Schema<WillingnessConfig> = Schema.object({
         .description("对话参与保持（不强制回复，沿用回复控制规则）"),
     typesafe: Schema.object({
         mode: Schema.union(["off", "observe", "adjust"]).default("off").description("TypeSafe 接话判断：关闭 / 仅记录 / 调整意愿"),
-        evaluationModel:
-            Schema.dynamic("modelService.evaluationModels").description("判断模型，请在模型服务中配置 TypeSafe 提供商和评估能力"),
+        evaluationModel: Schema.dynamic("modelService.evaluationModels").description("判断模型，请在模型服务中配置 TypeSafe 提供商和评估能力"),
         timeoutMs: Schema.number().min(100).max(30000).default(3000).description("判断超时（毫秒），失败后沿用原意愿"),
         historyLimit: Schema.natural().max(30).default(8).description("判断时参考的近期消息数"),
         interests: Schema.string().role("textarea").default("").description("角色兴趣，留空使用高兴趣关键词"),
@@ -163,9 +159,7 @@ const WillingnessConfigSchema: Schema<WillingnessConfig> = Schema.object({
         .collapse()
         .description("消息属性加成"),
     interest: Schema.object({
-        keywords: Schema.computed<Schema<string[]>>(Schema.array(Schema.string()).role("table").default([]))
-            .default([])
-            .description("触发高兴趣的关键词"),
+        keywords: Schema.computed<Schema<string[]>>(Schema.array(Schema.string()).role("table").default([])).default([]).description("触发高兴趣的关键词"),
         keywordMultiplier: Schema.computed<Schema<number>>(Schema.number().default(1.2)).default(1.2).description("包含关键词时的乘数"),
         defaultMultiplier: Schema.computed<Schema<number>>(Schema.number().default(1)).default(1).description("默认乘数"),
     })
@@ -173,18 +167,10 @@ const WillingnessConfigSchema: Schema<WillingnessConfig> = Schema.object({
         .description("兴趣关键词与乘数"),
     lifecycle: Schema.object({
         maxWillingness: Schema.computed<Schema<number>>(Schema.number().min(10).default(100)).default(100).description("意愿值的最大上限"),
-        decayHalfLifeSeconds: Schema.computed<Schema<number>>(Schema.number().min(5).default(600))
-            .default(600)
-            .description("意愿值衰减到一半所需的时间（秒）"),
-        probabilityThreshold: Schema.computed<Schema<number>>(Schema.number().min(0).default(55))
-            .default(55)
-            .description("将意愿值转换为回复概率的激活门槛"),
-        probabilityAmplifier: Schema.computed<Schema<number>>(Schema.number().min(0.01).max(1).default(0.04))
-            .default(0.04)
-            .description("概率放大系数"),
-        replyCost: Schema.computed<Schema<number>>(Schema.number().min(0).default(35))
-            .default(35)
-            .description('决定回复后，扣除的"发言精力惩罚"'),
+        decayHalfLifeSeconds: Schema.computed<Schema<number>>(Schema.number().min(5).default(600)).default(600).description("意愿值衰减到一半所需的时间（秒）"),
+        probabilityThreshold: Schema.computed<Schema<number>>(Schema.number().min(0).default(55)).default(55).description("将意愿值转换为回复概率的激活门槛"),
+        probabilityAmplifier: Schema.computed<Schema<number>>(Schema.number().min(0.01).max(1).default(0.04)).default(0.04).description("概率放大系数"),
+        replyCost: Schema.computed<Schema<number>>(Schema.number().min(0).default(35)).default(35).description('决定回复后，扣除的"发言精力惩罚"'),
         // refractoryPeriodMs: Schema.computed<Schema<number>>(Schema.number())
         //     .min(0)
         //     .default(3000)

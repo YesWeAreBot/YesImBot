@@ -1,8 +1,9 @@
+import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { chmod, lstat, mkdir, open, rename, unlink } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
-import { join } from "node:path";
-import { randomUUID } from "node:crypto";
+import path from "node:path";
+
 import type { DecisionRecord } from "./decision-record";
 
 export interface DecisionJournalOptions {
@@ -74,8 +75,7 @@ const calculationFields = [
     "roll",
 ] as const;
 const categories = new Set(["text", "at", "quote", "direct", "system", "scheduled", "background"]);
-const identifier = (value: unknown): value is string =>
-    typeof value === "string" && value.length > 0 && value.length <= 512 && !/[\x00-\x1f\x7f]/.test(value);
+const identifier = (value: unknown): value is string => typeof value === "string" && value.length > 0 && value.length <= 512 && !/[\x00-\x1f\x7f]/.test(value);
 const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 
@@ -115,12 +115,7 @@ export function sanitizeDecisionRecord(value: unknown): DecisionRecord | undefin
             (result.calculation as Record<string, unknown>).gains = gains;
         }
     }
-    if (
-        object(value.target) &&
-        identifier(value.target.platform) &&
-        identifier(value.target.selfId) &&
-        identifier(value.target.channelId)
-    ) {
+    if (object(value.target) && identifier(value.target.platform) && identifier(value.target.selfId) && identifier(value.target.channelId)) {
         result.target = {
             platform: value.target.platform,
             selfId: value.target.selfId,
@@ -128,8 +123,7 @@ export function sanitizeDecisionRecord(value: unknown): DecisionRecord | undefin
             ...(typeof value.target.isDirect === "boolean" ? { isDirect: value.target.isDirect } : {}),
         };
     }
-    if (Array.isArray(value.allowed))
-        result.allowed = [...new Set(value.allowed.filter((item) => typeof item === "string" && categories.has(item)))];
+    if (Array.isArray(value.allowed)) result.allowed = [...new Set(value.allowed.filter((item) => typeof item === "string" && categories.has(item)))];
     if (
         object(value.assessment) &&
         ["off", "observe", "adjust"].includes(value.assessment.mode as string) &&
@@ -150,8 +144,7 @@ export function sanitizeDecisionRecord(value: unknown): DecisionRecord | undefin
     }
     if (object(value.participation) && typeof value.participation.active === "boolean") {
         const participation: Record<string, unknown> = { active: value.participation.active };
-        for (const field of ["lastReplyAt", "expiresAt"] as const)
-            if (finite(value.participation[field])) participation[field] = value.participation[field];
+        for (const field of ["lastReplyAt", "expiresAt"] as const) if (finite(value.participation[field])) participation[field] = value.participation[field];
         if (identifier(value.participation.participantId)) participation.participantId = value.participation.participantId;
         result.participation = participation;
     }
@@ -196,15 +189,15 @@ export class DecisionJournal {
     constructor(
         private readonly directory: string,
         options: DecisionJournalOptions,
-        private readonly warn?: (message: string) => void
+        private readonly warn?: (message: string) => void,
     ) {
         this.options = {
             maxEntries: finite(options.maxEntries) ? Math.max(1, Math.floor(options.maxEntries)) : 1000,
             maxBytes: finite(options.maxBytes) ? Math.max(1, Math.floor(options.maxBytes)) : 1048576,
             retentionHours: finite(options.retentionHours) ? Math.max(0, options.retentionHours) : 24,
         };
-        this.filePath = join(directory, "decisions.jsonl");
-        this.lockPath = join(directory, ".decisions.lock");
+        this.filePath = path.join(directory, "decisions.jsonl");
+        this.lockPath = path.join(directory, ".decisions.lock");
         this.queue = this.recover().catch(async () => {
             this.ready = false;
             await this.releaseLock();
@@ -274,7 +267,9 @@ export class DecisionJournal {
             this.lock = await open(this.lockPath, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
         } catch (error) {
             if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-            this.warning("Decision journal directory is locked by another writer or an interrupted process; this instance's recording and queries are disabled. Stop all instances before manually removing .decisions.lock after an abnormal exit.");
+            this.warning(
+                "Decision journal directory is locked by another writer or an interrupted process; this instance's recording and queries are disabled. Stop all instances before manually removing .decisions.lock after an abnormal exit.",
+            );
             return;
         }
         await this.lock.writeFile(JSON.stringify({ pid: process.pid }) + "\n");
@@ -302,8 +297,8 @@ export class DecisionJournal {
                         if (!record) throw new Error("invalid record");
                         if (
                             object(value) &&
-                            object(value.calculation) &&
-                            calculationFields.some((field) => !finite(value.calculation[field]))
+                            object((value as any).calculation) &&
+                            calculationFields.some((field) => !finite((value as any).calculation[field]))
                         )
                             this.warning("Decision journal calculation metadata is incomplete; offline replay will report missing fields.");
                         const entry = this.add(record);
@@ -365,7 +360,7 @@ export class DecisionJournal {
 
     private async compact(): Promise<void> {
         if (!this.ready) return;
-        const temporary = join(this.directory, `.decisions-${randomUUID()}.tmp`);
+        const temporary = path.join(this.directory, `.decisions-${randomUUID()}.tmp`);
         const handle = await open(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
         try {
             for (const entry of this.entries) await handle.writeFile(entry.line);
@@ -393,8 +388,7 @@ export class DecisionJournal {
             this.warning("Decision journal rejected a record with invalid or missing metadata.");
             return Promise.resolve();
         }
-        if (record.stage === "unknown" || record.stimulusType === "unknown")
-            this.warning("Decision journal normalized unknown stage or stimulus metadata.");
+        if (record.stage === "unknown" || record.stimulusType === "unknown") this.warning("Decision journal normalized unknown stage or stimulus metadata.");
         const size = Buffer.byteLength(JSON.stringify(record) + "\n");
         if (size > Math.min(this.options.maxBytes, 1024 * 1024)) {
             this.counts.oversizedRecords++;
@@ -418,11 +412,7 @@ export class DecisionJournal {
                 const entry = this.add(record!);
                 if (this.dirty) await this.compact();
                 else {
-                    const handle = await open(
-                        this.filePath,
-                        constants.O_WRONLY | constants.O_APPEND | constants.O_CREAT | constants.O_NOFOLLOW,
-                        0o600
-                    );
+                    const handle = await open(this.filePath, constants.O_WRONLY | constants.O_APPEND | constants.O_CREAT | constants.O_NOFOLLOW, 0o600);
                     try {
                         await handle.chmod(0o600);
                         await handle.writeFile(entry.line);
@@ -445,7 +435,7 @@ export class DecisionJournal {
                 ({ record }) =>
                     (filter.key === undefined || record.key === filter.key) &&
                     (filter.from === undefined || record.time >= filter.from) &&
-                    (filter.to === undefined || record.time <= filter.to)
+                    (filter.to === undefined || record.time <= filter.to),
             )
             .map((entry) => entry.record);
         const limit = filter.limit === undefined ? records.length : Math.max(0, Math.floor(filter.limit));
@@ -477,7 +467,9 @@ export class DecisionJournal {
             await unlink(this.lockPath);
         } catch {
             this.counts.writeFailures++;
-            this.warning("Decision journal lock release failed; recording may remain disabled on restart. Stop all instances before manually removing .decisions.lock.");
+            this.warning(
+                "Decision journal lock release failed; recording may remain disabled on restart. Stop all instances before manually removing .decisions.lock.",
+            );
         }
     }
 

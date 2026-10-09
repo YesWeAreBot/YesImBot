@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
+
 import type { Context } from "koishi";
+
 import { accountRef, sceneKey, type Account, type Person, type PersonStore, type SceneInput, type Evidence, type State } from "./store";
 
 export interface RecallTarget {
@@ -54,7 +56,7 @@ export function registerContinuityModels(ctx: Context) {
             bindingRevision: "unsigned",
             timestamp: "double",
         },
-        { primary: "id" }
+        { primary: "id" },
     );
     ctx.model.extend(
         SCENES,
@@ -68,7 +70,7 @@ export function registerContinuityModels(ctx: Context) {
             userId: "string",
             guildId: "string",
         },
-        { primary: "id" }
+        { primary: "id" },
     );
 }
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -83,8 +85,8 @@ export function recallTokens(query: string): string[] {
             words.flatMap((word) =>
                 /^[\u3400-\u9fff]+$/.test(word) && word.length > 2
                     ? [word, ...Array.from({ length: word.length - 1 }, (_, i) => word.slice(i, i + 2))]
-                    : [word]
-            )
+                    : [word],
+            ),
         ),
     ].slice(0, 24);
 }
@@ -103,15 +105,9 @@ export interface RecallOptions {
 export class ContinuityStore {
     constructor(
         private db: Context["database"],
-        private people: PersonStore
+        private people: PersonStore,
     ) {}
-    async capture(
-        scope: string,
-        session: SceneInput,
-        source: Evidence,
-        identity: { person: Person; account: Account },
-        active = () => true
-    ) {
+    async capture(scope: string, session: SceneInput, source: Evidence, identity: { person: Person; account: Account }, active = () => true) {
         const selfId = session.selfId || session.bot!.selfId;
         const location = {
             platform: session.platform,
@@ -191,7 +187,7 @@ export class ContinuityStore {
                       }
                     : {}),
             },
-            { limit: 200, sort: { timestamp: "desc" } }
+            { limit: 200, sort: { timestamp: "desc" } },
         );
         const state = await this.people.read(scope),
             accounts = new Map(Object.values(state.accounts).map((a) => [a.userId, a]));
@@ -215,8 +211,7 @@ export function summaryUnsafeIn(state: State, platform: string, participants: st
     for (const id of participants) {
         const current = Object.values(state.accounts).find((a) => a.userId === accountRef(platform, id));
         const person = current && state.people[current.personId];
-        if (!person ? before(state.settings.correctionAt) : before(Math.max(person.identityChangedAt ?? 0, person.memoryChangedAt ?? 0)))
-            return true;
+        if (!person ? before(state.settings.correctionAt) : before(Math.max(person.identityChangedAt ?? 0, person.memoryChangedAt ?? 0))) return true;
     }
     return false;
 }

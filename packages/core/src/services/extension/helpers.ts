@@ -1,4 +1,5 @@
 import { Schema } from "koishi";
+
 import { Param, Properties, ToolCallResult, ToolError } from "./types";
 
 /**
@@ -18,7 +19,7 @@ export function Success<T>(result?: T, metadata?: ToolCallResult["metadata"]): T
  * @param metadata - 附加元数据
  */
 export function Failed(error: ToolError | string, metadata?: ToolCallResult["metadata"]): ToolCallResult {
-    if (typeof error === 'string') {
+    if (typeof error === "string") {
         // 如果只提供一个字符串，自动包装成基础的 ToolError
         return {
             status: "error",
@@ -85,9 +86,11 @@ export function extractMetaFromSchema(schema: Schema): Properties {
                 // case 'array':
                 //   param.items = extractSingleParam(valueSchema.inner); // 需要一个辅助函数来处理非 object 的 schema
                 //   break;
+                default:
+                    break;
             }
 
             return [key, param];
-        })
+        }),
     );
 }

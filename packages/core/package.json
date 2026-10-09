@@ -1,44 +1,37 @@
 {
   "name": "koishi-plugin-yesimbot",
-  "description": "Yes! I'm Bot! 机械壳，人类心",
   "version": "3.0.3",
-  "main": "lib/index.js",
-  "typings": "lib/index.d.ts",
-  "homepage": "https://github.com/YesWeAreBot/YesImBot",
-  "files": [
-    "lib",
-    "dist",
-    "resources",
-    "scripts/replay-decisions.cjs"
+  "description": "Yes! I'm Bot! 机械壳，人类心",
+  "keywords": [
+    "ai",
+    "chatbot",
+    "koishi",
+    "plugin"
   ],
+  "homepage": "https://github.com/YesWeAreBot/YesImBot",
+  "bugs": {
+    "url": "https://github.com/YesWeAreBot/YesImBot/issues"
+  },
+  "license": "MIT",
   "contributors": [
     "HydroGest <2445691453@qq.com>",
     "Dispure <3116716016@qq.com>",
     "Miaowfish <1293865264@qq.com>",
     "Touch-Night <1762918301@qq.com>"
   ],
-  "scripts": {
-    "build": "tsc && tsc-alias && node scripts/bundle.mjs && node scripts/build-client.mjs",
-    "dev": "tsc -w --preserveWatchOutput",
-    "lint": "eslint . --ext .ts",
-    "clean": "rm -rf lib dist .turbo tsconfig.tsbuildinfo",
-    "pack": "bun pm pack"
-  },
-  "license": "MIT",
-  "keywords": [
-    "chatbot",
-    "koishi",
-    "plugin",
-    "ai"
-  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/YesWeAreBot/YesImBot.git",
     "directory": "packages/core"
   },
-  "bugs": {
-    "url": "https://github.com/YesWeAreBot/YesImBot/issues"
-  },
+  "files": [
+    "lib",
+    "dist",
+    "resources",
+    "scripts/replay-decisions.cjs"
+  ],
+  "main": "lib/index.js",
+  "typings": "lib/index.d.ts",
   "exports": {
     ".": "./lib/index.js",
     "./package.json": "./package.json",
@@ -59,26 +52,35 @@
     "jimp": "^1.6.0",
     "jsonrepair": "^3.12.0",
     "mustache": "^4.2.0",
+    "qface": "^1.4.1",
     "semver": "^7.7.2",
     "uuid": "^11.1.0"
   },
   "devDependencies": {
-    "@minatojs/driver-sqlite": "^4.7.0",
     "@koishijs/plugin-notifier": "^1.2.1",
+    "@minatojs/driver-sqlite": "^4.7.0",
     "@types/semver": "^7",
     "@xsai-ext/providers-cloud": "^0.3.2",
     "@xsai-ext/providers-local": "^0.3.2",
     "@xsai-ext/shared-providers": "^0.3.2",
     "@xsai/embed": "^0.3.2",
     "@xsai/generate-text": "^0.3.2",
+    "@xsai/shared": "^0.3.2",
     "@xsai/shared-chat": "^0.3.2",
     "@xsai/stream-text": "^0.3.2",
     "@xsai/utils-chat": "^0.3.2",
     "koishi": "^4.18.7",
-    "koishi-plugin-adapter-onebot": "^6.8.0"
+    "koishi-plugin-adapter-onebot": "^6.8.0",
+    "koishi-plugin-puppeteer": "^3.9.0",
+    "undici": "^6.29.0"
   },
   "peerDependencies": {
-    "koishi": "^4.18.7"
+    "@koishijs/plugin-notifier": "^1.2.1",
+    "@minatojs/driver-sqlite": "^4.7.0",
+    "koishi": "^4.18.7",
+    "koishi-plugin-adapter-onebot": "^6.8.0",
+    "koishi-plugin-puppeteer": "^3.9.0",
+    "undici": "^6.29.0"
   },
   "koishi": {
     "description": {

@@ -14,39 +14,41 @@ MCP(Model Context Protocol)扩展插件为YesImBot提供了与外部MCP服务器
 ## 🌈 使用方法
 
 ### 安装
+
 ```bash
 npm install koishi-plugin-yesimbot-extension-mcp
 ```
 
 ### 配置示例
+
 ```yaml
 # koishi.yml
 plugins:
-  yesimbot-extension-mcp:
-    mcpServers:
-      - name: local-sse
-        type: sse
-        url: http://localhost:8080/sse
-        environment:
-          API_KEY: your-api-key
-      - name: local-stdio
-        type: stdio
-        command: python
-        args:
-          - server.py
-          - --port=8080
+    yesimbot-extension-mcp:
+        mcpServers:
+            - name: local-sse
+              type: sse
+              url: http://localhost:8080/sse
+              environment:
+                  API_KEY: your-api-key
+            - name: local-stdio
+              type: stdio
+              command: python
+              args:
+                  - server.py
+                  - --port=8080
 ```
 
 ## 🔧 配置解析
 
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| name | string | 是 | 服务器名称 |
-| type | enum | 是 | 连接类型(sse/http/stdio) |
-| url | string | 条件 | 当type为sse或http时必填 |
-| command | string | 条件 | 当type为stdio时必填 |
-| args | array | 否 | 当type为stdio时的命令行参数 |
-| environment | object | 否 | 环境变量键值对 |
+| 参数        | 类型   | 必填 | 说明                        |
+| ----------- | ------ | ---- | --------------------------- |
+| name        | string | 是   | 服务器名称                  |
+| type        | enum   | 是   | 连接类型(sse/http/stdio)    |
+| url         | string | 条件 | 当type为sse或http时必填     |
+| command     | string | 条件 | 当type为stdio时必填         |
+| args        | array  | 否   | 当type为stdio时的命令行参数 |
+| environment | object | 否   | 环境变量键值对              |
 
 ## 📦 依赖
 

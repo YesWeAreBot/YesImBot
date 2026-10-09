@@ -1,17 +1,18 @@
-import { Context, Schema } from "koishi";
+import { readFileSync } from "fs";
+import path from "path";
+
 import { encode } from "@msgpack/msgpack";
+import { Context, Schema } from "koishi";
 
 import { BaseTTSConfig, BaseTTSParams, SynthesisResult } from "../../types";
 import { TTSAdapter } from "../base";
 import { ServerTTSRequest, ServerReferenceAudio } from "./types";
-import { readFileSync } from "fs";
-import path from "path";
 
 export interface OpenAudioConfig extends BaseTTSConfig, Omit<ServerTTSRequest, "text" | "references" | "reference_id"> {
     baseURL: string;
     apiKey?: string;
 
-    references?: { audio: string; text: string }[];
+    references?: Array<{ audio: string; text: string }>;
 
     toolDesc: string;
 }
@@ -50,7 +51,7 @@ export const OpenAudioConfig: Schema<OpenAudioConfig> = Schema.object({
                 .default("")
                 .role("textarea", { rows: [1, 2] })
                 .description("参考音频对应的文本内容"),
-        })
+        }),
     )
         .description("参考音频列表")
         .default([]),
@@ -101,7 +102,7 @@ export const OpenAudioConfig: Schema<OpenAudioConfig> = Schema.object({
 1.  **严格遵守规则**: 尤其是情感标签必须置于句首的规则。
 2.  **优先使用官方标签**: 上述列表中的标签拥有最高的准确率。
 3.  **避免自创组合标签**: 不要使用 \`(in a sad and quiet voice)\` 这种形式，模型会直接读出。应组合使用标准标签，如 \`(sad)(soft tone)\`。
-4.  **避免标签滥用**: 在短句中过多使用标签可能会干扰模型效果。`
+4.  **避免标签滥用**: 在短句中过多使用标签可能会干扰模型效果。`,
         )
         .description("工具描述文本，用于指导AI使用情感控制标签生成高质量的文本"),
 }).description("Fish Audio 配置");
@@ -118,14 +119,14 @@ export class OpenAudioAdapter extends TTSAdapter<OpenAudioConfig, OpenAudioTTSPa
 
         this.baseURL = config.baseURL;
 
-        for (let refer of config.references) {
+        for (let refer of config.references ?? []) {
             try {
                 const reference_audio = readFileSync(path.join(ctx.baseDir, refer.audio));
                 this.references.push({
                     audio: Buffer.from(reference_audio),
                     text: refer.text?.trim() || "",
                 });
-            } catch (err) {
+            } catch {
                 ctx.logger.error("参考音频读取失败");
             }
         }
@@ -152,16 +153,15 @@ export class OpenAudioAdapter extends TTSAdapter<OpenAudioConfig, OpenAudioTTSPa
             body: encode(request) as BodyInit,
         });
 
-        if (response.ok) {
-            const mimeType = response.headers;
-            console.log(mimeType);
-            const result = await response.arrayBuffer();
-
-            return {
-                audio: Buffer.from(result),
-                mimeType: response.headers.get("content-type") || "audio/wav",
-            };
+        if (!response.ok) {
+            throw new Error(`TTS 请求失败: HTTP ${response.status}`);
         }
+        const result = await response.arrayBuffer();
+
+        return {
+            audio: Buffer.from(result),
+            mimeType: response.headers.get("content-type") || "audio/wav",
+        };
     }
 
     getToolSchema(): Schema {

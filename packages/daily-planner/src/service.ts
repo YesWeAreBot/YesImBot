@@ -1,6 +1,7 @@
-import { Context, Logger } from "koishi";
+import { Context } from "koishi";
 import { IChatModel, MemoryBlockData, MemoryService } from "koishi-plugin-yesimbot/services";
 import { Services } from "koishi-plugin-yesimbot/shared";
+
 import { DailyPlannerConfig } from ".";
 
 // 时间段接口
@@ -27,11 +28,11 @@ export class DailyPlannerService {
     private disposed = false;
     private pendingGeneration = new Map<string, Promise<DailySchedule>>();
     private readonly memoryService: MemoryService;
-    private readonly chatModel: IChatModel;
+    private readonly chatModel: IChatModel | null;
 
     constructor(
         private ctx: Context,
-        private config: DailyPlannerConfig
+        private config: DailyPlannerConfig,
     ) {
         ctx.on("dispose", () => {
             this.disposed = true;
@@ -53,7 +54,7 @@ export class DailyPlannerService {
             },
             {
                 primary: "date",
-            }
+            },
         );
     }
 
@@ -65,9 +66,7 @@ export class DailyPlannerService {
         const removeCurrent: unknown = promptService.registerSnippet("agent.context.currentSchedule", async () => {
             if (this.disposed) return "";
             const currentSegment = await this.getCurrentTimeSegment();
-            return currentSegment
-                ? `${currentSegment.start}-${currentSegment.end}: ${currentSegment.content}`
-                : "当前没有特别安排（自由时间）";
+            return currentSegment ? `${currentSegment.start}-${currentSegment.end}: ${currentSegment.content}` : "当前没有特别安排（自由时间）";
         });
         this.ctx.on("dispose", () => {
             if (typeof removeCurrent === "function") removeCurrent();
@@ -109,7 +108,7 @@ export class DailyPlannerService {
         // 2. 构建提示词
         const prompt = this.buildSchedulePrompt(
             coreMemories,
-            recentEvents.map((e) => e.content)
+            recentEvents.map((e) => e.content),
         );
 
         // 3. 调用模型生成日程
@@ -273,13 +272,7 @@ export class DailyPlannerService {
             // 验证每个时间段
             const segments: TimeSegment[] = [];
             for (const item of parsed) {
-                if (
-                    !item ||
-                    typeof item.start !== "string" ||
-                    typeof item.end !== "string" ||
-                    typeof item.content !== "string" ||
-                    !item.content.trim()
-                ) {
+                if (!item || typeof item.start !== "string" || typeof item.end !== "string" || typeof item.content !== "string" || !item.content.trim()) {
                     throw new Error("时间段缺少必要字段");
                 }
 
@@ -433,20 +426,21 @@ export class DailyPlannerService {
                     temperature: 0.3,
                 });
 
-                this.ctx.logger.debug("模型原始响应:", response.text);
+                const rawText = response.text ?? "";
+                this.ctx.logger.debug("模型原始响应:", rawText);
 
                 // 验证响应是否为JSON数组格式
                 try {
-                    const jsonStart = response.text.indexOf("[");
-                    const jsonEnd = response.text.lastIndexOf("]");
+                    const jsonStart = rawText.indexOf("[");
+                    const jsonEnd = rawText.lastIndexOf("]");
                     if (jsonStart === -1 || jsonEnd === -1) {
                         throw new Error("响应中未找到JSON数组");
                     }
 
-                    const jsonStr = response.text.slice(jsonStart, jsonEnd + 1);
+                    const jsonStr = rawText.slice(jsonStart, jsonEnd + 1);
                     JSON.parse(jsonStr); // 验证是否能解析
-                    return response.text;
-                } catch (error) {
+                    return rawText;
+                } catch {
                     this.ctx.logger.warn("响应不是有效的JSON数组，将重试");
                     retryCount++;
                     continue;

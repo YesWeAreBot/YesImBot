@@ -1,10 +1,12 @@
-import { Context, Schema, h, type Session } from "koishi";
 import { createHash, randomUUID } from "node:crypto";
-import { PersonStore, registerModels, mindScope, accountRef, sceneKey, type Mode, type Audit, type SceneInput } from "./store";
-import { summaryUnsafeIn, ContinuityStore, registerContinuityModels, sourceRef, type RecallTarget } from "./continuity";
+
+import { Context, Schema, h, type Session } from "koishi";
+
 import { escapeContext } from "./context";
-import { SummaryWorker, type SummaryModel } from "./worker";
+import { summaryUnsafeIn, ContinuityStore, registerContinuityModels, sourceRef, type RecallTarget } from "./continuity";
 import type { Config } from "./index";
+import { PersonStore, registerModels, mindScope, accountRef, sceneKey, type Mode, type Audit, type SceneInput } from "./store";
+import { SummaryWorker, type SummaryModel } from "./worker";
 
 const success = (result: unknown) => ({ status: "success", result });
 const failed = (error: unknown) => ({
@@ -16,6 +18,17 @@ const boundedData = (value: unknown, size: number) => {
     return escaped.length > size ? escaped.slice(0, size) + "…（内容已截断）" : escaped;
 };
 const isUuid = (value: string) => /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(value);
+const refOf = (session: Session, ref: string) => {
+    if (typeof ref !== "string" || !ref.trim()) throw new Error("请提供账号 ID 或人物 UUID");
+    if (isUuid(ref)) return ref;
+    if (ref.startsWith("[")) {
+        const pair = JSON.parse(ref);
+        if (!Array.isArray(pair) || pair.length !== 2 || pair.some((x) => typeof x !== "string" || !x)) throw new Error("跨平台账号须为 [平台,账号ID]");
+        return accountRef(pair[0], pair[1]);
+    }
+    return accountRef(session.platform, ref);
+};
+const actor = (s: Session) => `admin:${s.platform}:${s.userId}`;
 export function applySharedMemory(ctx: Context, config: Config) {
     const deps = ctx as any,
         world = deps["yesimbot.world-state"],
@@ -55,7 +68,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
                         .filter(Boolean)
                         .slice(0, 10),
                 }),
-                audit.id
+                audit.id,
             );
         },
     });
@@ -72,17 +85,6 @@ export function applySharedMemory(ctx: Context, config: Config) {
         return state;
     };
     const readable = (session: Session) => baseAllowed(session) && (modes.get(scopeOf(session)) ?? config.mode) !== "off";
-    const refOf = (session: Session, ref: string) => {
-        if (typeof ref !== "string" || !ref.trim()) throw new Error("请提供账号 ID 或人物 UUID");
-        if (isUuid(ref)) return ref;
-        if (ref.startsWith("[")) {
-            const pair = JSON.parse(ref);
-            if (!Array.isArray(pair) || pair.length !== 2 || pair.some((x) => typeof x !== "string" || !x))
-                throw new Error("跨平台账号须为 [平台,账号ID]");
-            return accountRef(pair[0], pair[1]);
-        }
-        return accountRef(session.platform, ref);
-    };
     const details = (session: Session, actor: string, operation: string, status: string, extra: object = {}) => ({
         actor,
         operation,
@@ -133,7 +135,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
                             .map((c) => ({ type: c.collection, id: c.key }))
                             .slice(0, 20),
                     }),
-                    audit.id
+                    audit.id,
                 );
             },
         });
@@ -182,10 +184,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
         }
         return new Set([...kinds].filter(([, kinds]) => kinds.size > 1).map(([key]) => key));
     };
-    const recallImpl = async (
-        session: Session,
-        args: { query: string; account_id?: string; start?: string; end?: string; limit?: number }
-    ) => {
+    const recallImpl = async (session: Session, args: { query: string; account_id?: string; start?: string; end?: string; limit?: number }) => {
         const { scope } = await assertEnabled(session);
         const start = args.start === undefined ? undefined : Date.parse(args.start),
             end = args.end === undefined ? undefined : Date.parse(args.end);
@@ -212,12 +211,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
                       end,
                       limit: args.limit ?? 6,
                       accept: async (item: any) => {
-                          if (
-                              found &&
-                              !item.participants.some((id: string) =>
-                                  found.accounts.some((a) => a.userId === accountRef(item.platform, id))
-                              )
-                          )
+                          if (found && !item.participants.some((id: string) => found.accounts.some((a) => a.userId === accountRef(item.platform, id))))
                               return false;
                           return !(await memories.summaryUnsafe(scope, item.platform, item.participants, item.startedAt ?? item.timestamp));
                       },
@@ -236,11 +230,8 @@ export function applySharedMemory(ctx: Context, config: Config) {
         });
         const safeSummaries = [];
         for (const item of summaries)
-            if (!(await memories.summaryUnsafe(scope, item.platform, item.participants, item.startedAt ?? item.timestamp)))
-                safeSummaries.push(item);
-        const allowed = new Set(
-            (await targetsFor(session, scope)).map((t) => JSON.stringify([t.platform, t.selfId, !!t.isDirect, t.channelId]))
-        );
+            if (!(await memories.summaryUnsafe(scope, item.platform, item.participants, item.startedAt ?? item.timestamp))) safeSummaries.push(item);
+        const allowed = new Set((await targetsFor(session, scope)).map((t) => JSON.stringify([t.platform, t.selfId, !!t.isDirect, t.channelId])));
         const sources = fresh.items.filter((t) => allowed.has(JSON.stringify([t.platform, t.selfId, !!t.isDirect, t.channelId])));
         const allowedChannels = new Set((await targetsFor(session, scope)).map((t) => JSON.stringify([t.platform, t.channelId])));
         const { state: finalState } = await assertEnabled(session);
@@ -253,7 +244,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
             summaries: safeSummaries.filter(
                 (t) =>
                     allowedChannels.has(JSON.stringify([t.platform, t.channelId])) &&
-                    !summaryUnsafeIn(finalState, t.platform, t.participants, t.startedAt ?? t.timestamp)
+                    !summaryUnsafeIn(finalState, t.platform, t.participants, t.startedAt ?? t.timestamp),
             ),
             omitted: Math.max(sourceResult.omitted, fresh.omitted),
             limits: { sources: 200, summariesPerChannel: 50, channels: 20 },
@@ -268,26 +259,20 @@ export function applySharedMemory(ctx: Context, config: Config) {
                     return await Promise.race([
                         recallImpl(session, args),
                         new Promise<never>((_resolve, reject) => {
-                            timer = setTimeout(
-                                () => reject(new Error("回忆查询超时")),
-                                Math.min(10000, (config.timeoutSeconds || 30) * 1000)
-                            );
+                            timer = setTimeout(() => reject(new Error("回忆查询超时")), Math.min(10000, (config.timeoutSeconds || 30) * 1000));
                         }),
                     ]);
                 } finally {
                     clearTimeout(timer!);
                 }
-            })()
+            })(),
         );
     let model: SummaryModel | undefined;
     if (config.modelGroup)
         model = async (messages, signal) => {
             const group = deps["yesimbot.model"]?.useChatGroup(config.modelGroup);
             if (!group) throw new Error("总结模型组不存在");
-            return (
-                (await group.chat({ messages, abortSignal: signal, singleStep: true, stream: false, temperature: 0.2, maxTokens: 1800 }))
-                    .text || ""
-            );
+            return (await group.chat({ messages, abortSignal: signal, singleStep: true, stream: false, temperature: 0.2, maxTokens: 1800 })).text || "";
         };
     const worker = new SummaryWorker(
         store,
@@ -298,7 +283,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
             timeoutMs: config.timeoutSeconds * 1000,
             maxQueue: config.maxQueue,
         },
-        (error) => logger.warn(String(error))
+        (error) => logger.warn(String(error)),
     );
     ctx.on("yesimbot/before-user-stimulus", async (session: Session) =>
         track(
@@ -343,15 +328,9 @@ export function applySharedMemory(ctx: Context, config: Config) {
                                 accountRevision: identity.account.bindingRevision ?? 0,
                             },
                         },
-                        current
+                        current,
                     );
-                    await memories.capture(
-                        scope,
-                        session as any,
-                        { ...source, id: session.messageId, userId: session.userId },
-                        identity,
-                        current
-                    );
+                    await memories.capture(scope, session as any, { ...source, id: session.messageId, userId: session.userId }, identity, current);
                     if (current()) {
                         await memories.prune(scope, config.memoryRetentionDays ?? 0);
                         await worker.observe(scope, userId);
@@ -359,8 +338,8 @@ export function applySharedMemory(ctx: Context, config: Config) {
                 } catch (error) {
                     logger.warn(`共同记忆采集失败：${String(error)}`);
                 }
-            })()
-        )
+            })(),
+        ),
     );
     const inject = deps["yesimbot.prompt"].inject("person_memory", 35, async (view: Record<string, any>) => {
         const session: Session = view.session;
@@ -373,10 +352,8 @@ export function applySharedMemory(ctx: Context, config: Config) {
             ...new Set<string>(
                 [
                     session.userId,
-                    ...[...(recent?.new_events || []), ...(recent?.processed_events || [])]
-                        .filter((e) => e.type === "message")
-                        .map((e) => e.sender?.id),
-                ].filter(Boolean)
+                    ...[...(recent?.new_events || []), ...(recent?.processed_events || [])].filter((e) => e.type === "message").map((e) => e.sender?.id),
+                ].filter(Boolean),
             ),
         ].slice(0, 6);
         const profiles = [];
@@ -430,22 +407,11 @@ export function applySharedMemory(ctx: Context, config: Config) {
                 return;
             }
             state.l2_retrieved_memories = (state.l2_retrieved_memories || []).filter(
-                (item: any) =>
-                    !summaryUnsafeIn(
-                        current,
-                        item.platform || session.platform,
-                        item.participantIds || [],
-                        new Date(item.timestamp).getTime()
-                    )
+                (item: any) => !summaryUnsafeIn(current, item.platform || session.platform, item.participantIds || [], new Date(item.timestamp).getTime()),
             );
             state.l3_diary_entries = (state.l3_diary_entries || []).filter(
                 (item: any) =>
-                    !summaryUnsafeIn(
-                        current,
-                        item.platform || session.platform,
-                        item.mentionedUserIds || [],
-                        new Date(`${item.date}T00:00:00`).getTime()
-                    )
+                    !summaryUnsafeIn(current, item.platform || session.platform, item.mentionedUserIds || [], new Date(`${item.date}T00:00:00`).getTime()),
             );
         } catch (error) {
             state.l2_retrieved_memories = [];
@@ -476,13 +442,12 @@ export function applySharedMemory(ctx: Context, config: Config) {
             try {
                 const { scope, state } = await assertEnabled(args.session);
                 if (args.action === "search") {
-                    if (typeof args.query !== "string" || !args.query.trim() || args.query.length > 80)
-                        throw new Error("请提供 1–80 字关键词");
+                    if (typeof args.query !== "string" || !args.query.trim() || args.query.length > 80) throw new Error("请提供 1–80 字关键词");
                     return success(
                         Object.values(state.people)
                             .filter((p) => p.name.includes(args.query) || (!p.stale && p.profile.includes(args.query)))
                             .slice(0, 5)
-                            .map((p) => ({ ...p, profile: p.stale ? "" : p.profile.slice(0, 600), evidence: [] }))
+                            .map((p) => ({ ...p, profile: p.stale ? "" : p.profile.slice(0, 600), evidence: [] })),
                     );
                 }
                 const ref = refOf(args.session, args.account_id),
@@ -492,9 +457,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
                     const latest = (await assertEnabled(args.session)).state;
                     if (
                         latest.people[found.person.id]?.revision !== found.person.revision ||
-                        found.accounts.some(
-                            (a) => !Object.values(latest.accounts).some((b) => b.userId === a.userId && b.revision === a.revision)
-                        )
+                        found.accounts.some((a) => !Object.values(latest.accounts).some((b) => b.userId === a.userId && b.revision === a.revision))
                     )
                         throw new Error("认识已改变，请重新读取");
                     return success({
@@ -512,9 +475,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
                 if (args.action === "history") {
                     const rows = await store.history(scope, 10, { personId: found.person.id });
                     await assertEnabled(args.session);
-                    return success(
-                        rows.map((e) => ({ id: e.id, action: e.action, timestamp: e.timestamp, actor: e.actor, revision: e.revision }))
-                    );
+                    return success(rows.map((e) => ({ id: e.id, action: e.action, timestamp: e.timestamp, actor: e.actor, revision: e.revision })));
                 }
                 if (args.action !== "propose" && args.action !== "propose_link") throw new Error("不支持的模型操作");
                 if (
@@ -537,16 +498,12 @@ export function applySharedMemory(ctx: Context, config: Config) {
                 const sourceRows = await store.sources(scope, ref, 200);
                 for (const id of ids) {
                     const provenance = sourceRows.find((e) => e.id === id)?.provenance;
-                    if (
-                        !provenance ||
-                        !targets.some((t) => provenance.scene === sceneKey({ ...t, userId: t.userId || args.session.userId } as SceneInput))
-                    )
+                    if (!provenance || !targets.some((t) => provenance.scene === sceneKey({ ...t, userId: t.userId || args.session.userId } as SceneInput)))
                         throw new Error("候选来源不在当前允许的回忆范围");
                 }
                 const writing = writingStore(args.session),
                     expected = { personId: args.person_id, personRevision: args.person_revision, accountRevision: args.account_revision };
-                if (args.action === "propose")
-                    return success(await writing.propose(scope, ref, args.profile, ids, "main-model", expected, () => active));
+                if (args.action === "propose") return success(await writing.propose(scope, ref, args.profile, ids, "main-model", expected, () => active));
                 if (!Number.isSafeInteger(args.target_revision) || args.target_revision < 0) throw new Error("请提供目标人物版本");
                 return success(
                     await writing.proposeLink(
@@ -558,8 +515,8 @@ export function applySharedMemory(ctx: Context, config: Config) {
                         ids,
                         "main-model",
                         { ...expected, targetRevision: args.target_revision },
-                        () => active
-                    )
+                        () => active,
+                    ),
                 );
             } catch (error) {
                 return failed(error);
@@ -585,11 +542,14 @@ export function applySharedMemory(ctx: Context, config: Config) {
             }
         },
     };
-    const removers = [toolService.registerTool({ ...personTool, execute: (args: any) => track(personTool.execute(args)) }), toolService.registerTool({ ...recallTool, execute: (args: any) => track(recallTool.execute(args)) })];
+    const removers = [
+        toolService.registerTool({ ...personTool, execute: (args: any) => track(personTool.execute(args)) }),
+        toolService.registerTool({ ...recallTool, execute: (args: any) => track(recallTool.execute(args)) }),
+    ];
     function command(
         declaration: string,
         description: string,
-        fn: (session: Session, writing: PersonStore, scope: string, args: any[], options?: any) => Promise<unknown>
+        fn: (session: Session, writing: PersonStore, scope: string, args: any[], options?: any) => Promise<unknown>,
     ) {
         const cmd = ctx.command(declaration, description, { authority: 3 });
         if (declaration.startsWith("people.history"))
@@ -614,7 +574,6 @@ export function applySharedMemory(ctx: Context, config: Config) {
             }
         });
     }
-    const actor = (s: Session) => `admin:${s.platform}:${s.userId}`;
     command("people", "共同人物记忆：查询、纠错、审核、回忆和维护模式", async () => "使用 help people 查看命令");
     command("people.status", "查看共同域与维护状态", async (s, _w, scope) => ({
         memoryDomain: config.memoryDomain || `${s.platform}:${s.selfId}`,
@@ -624,7 +583,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
     command("people.list [offset:natural]", "分页列出共同人物（每页 20 人）", async (_s, _w, scope, [offset = 0]) =>
         Object.values((await store.read(scope)).people)
             .slice(offset, offset + 20)
-            .map((p) => ({ id: p.id, name: p.name, revision: p.revision, locked: p.locked }))
+            .map((p) => ({ id: p.id, name: p.name, revision: p.revision, locked: p.locked })),
     );
     command("people.show <ref:string>", "查看人物画像、版本与账号关联", async (s, _w, scope, [ref]) => {
         const found = await store.find(scope, refOf(s, ref));
@@ -633,18 +592,12 @@ export function applySharedMemory(ctx: Context, config: Config) {
     });
     command("people.create <name:text>", "建立共同人物档案", async (s, w, scope, [name]) => w.create(scope, name, actor(s)));
     command("people.edit <ref:string> <profile:text>", "人工纠正完整画像", async (s, w, scope, [ref, profile]) =>
-        w.setProfile(scope, refOf(s, ref), profile, actor(s))
+        w.setProfile(scope, refOf(s, ref), profile, actor(s)),
     );
-    command("people.rename <ref:string> <name:text>", "修改共同称呼", async (s, w, scope, [ref, name]) =>
-        w.rename(scope, refOf(s, ref), name, actor(s))
-    );
-    command("people.clear <ref:string>", "清空画像，保留来源与审计", async (s, w, scope, [ref]) =>
-        w.setProfile(scope, refOf(s, ref), "", actor(s))
-    );
-    command(
-        "people.bind <account:string> <target:string> [confidence:number]",
-        "纠正账号归属",
-        async (s, w, scope, [account, target, confidence = 1]) => w.bind(scope, refOf(s, account), refOf(s, target), confidence, actor(s))
+    command("people.rename <ref:string> <name:text>", "修改共同称呼", async (s, w, scope, [ref, name]) => w.rename(scope, refOf(s, ref), name, actor(s)));
+    command("people.clear <ref:string>", "清空画像，保留来源与审计", async (s, w, scope, [ref]) => w.setProfile(scope, refOf(s, ref), "", actor(s)));
+    command("people.bind <account:string> <target:string> [confidence:number]", "纠正账号归属", async (s, w, scope, [account, target, confidence = 1]) =>
+        w.bind(scope, refOf(s, account), refOf(s, target), confidence, actor(s)),
     );
     command("people.unbind <account:string>", "解除旧关联，建立独立临时档案", async (s, w, scope, [account]) => {
         const ref = refOf(s, account),
@@ -653,19 +606,15 @@ export function applySharedMemory(ctx: Context, config: Config) {
         return w.split(scope, ref, found.accounts.find((a) => a.userId === ref)?.name || account, actor(s));
     });
     command("people.split <account:string> <name:text>", "拆分认错的账号", async (s, w, scope, [account, name]) =>
-        w.split(scope, refOf(s, account), name, actor(s))
+        w.split(scope, refOf(s, account), name, actor(s)),
     );
-    command("people.unbind <account:string>", "解除账号关联", async (s, w, scope, [account]) =>
-        w.unbind(scope, refOf(s, account), actor(s))
-    );
+    command("people.unbind <account:string>", "解除账号关联", async (s, w, scope, [account]) => w.unbind(scope, refOf(s, account), actor(s)));
     command("people.merge <from:string> <into:string>", "合并共同人物并标为待复核", async (s, w, scope, [from, into]) =>
-        w.merge(scope, refOf(s, from), refOf(s, into), actor(s))
+        w.merge(scope, refOf(s, from), refOf(s, into), actor(s)),
     );
     for (const locked of [true, false])
-        command(
-            `people.${locked ? "lock" : "unlock"} <ref:string>`,
-            locked ? "锁定画像和自动关联" : "解除锁定",
-            async (s, w, scope, [ref]) => w.lock(scope, refOf(s, ref), locked, actor(s))
+        command(`people.${locked ? "lock" : "unlock"} <ref:string>`, locked ? "锁定画像和自动关联" : "解除锁定", async (s, w, scope, [ref]) =>
+            w.lock(scope, refOf(s, ref), locked, actor(s)),
         );
     command("people.mode <mode:string>", "off 完全关闭、review 管理员维护、auto 自动维护", async (s, w, scope, [mode]) => {
         await w.settings(scope, { mode }, actor(s));
@@ -674,18 +623,12 @@ export function applySharedMemory(ctx: Context, config: Config) {
         return `共同记忆模式：${mode}`;
     });
     for (const paused of [true, false])
-        command(
-            `people.${paused ? "pause" : "resume"}`,
-            paused ? "暂停模型维护，读取和人工修改继续" : "恢复模型维护",
-            async (s, w, scope) => {
-                await w.settings(scope, { paused }, actor(s));
-                if (paused) worker.cancel(scope);
-                return `维护${paused ? "已暂停" : "已恢复"}`;
-            }
-        );
-    command("people.sources <account:string>", "查看有原始定位的近期证据", async (s, _w, scope, [account]) =>
-        store.sources(scope, refOf(s, account), 10)
-    );
+        command(`people.${paused ? "pause" : "resume"}`, paused ? "暂停模型维护，读取和人工修改继续" : "恢复模型维护", async (s, w, scope) => {
+            await w.settings(scope, { paused }, actor(s));
+            if (paused) worker.cancel(scope);
+            return `维护${paused ? "已暂停" : "已恢复"}`;
+        });
+    command("people.sources <account:string>", "查看有原始定位的近期证据", async (s, _w, scope, [account]) => store.sources(scope, refOf(s, account), 10));
     command("people.pending [id:string]", "查看待审候选", async (_s, _w, scope, [id]) => {
         const state = await store.read(scope),
             all = { ...state.proposals, ...state.linkProposals };
@@ -693,7 +636,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
     });
     for (const approve of [true, false])
         command(`people.${approve ? "approve" : "reject"} <id:string>`, approve ? "接受新鲜候选" : "拒绝候选", async (s, w, scope, [id]) =>
-            w.review(scope, id, approve, actor(s))
+            w.review(scope, id, approve, actor(s)),
         );
     command("people.history [id:string]", "分页查看审计或指定完整记录", async (s, _w, scope, [id], options = {}) => {
         if (id) return store.audit(scope, id);
@@ -714,9 +657,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
         if (revision === undefined) return store.find(scope, refOf(s, ref));
         return w.archive(scope, refOf(s, ref), actor(s), revision);
     });
-    command("people.summarize <account:string>", "触发有来源和版本约束的总结", async (s, _w, scope, [account]) =>
-        worker.summarize(scope, refOf(s, account))
-    );
+    command("people.summarize <account:string>", "触发有来源和版本约束的总结", async (s, _w, scope, [account]) => worker.summarize(scope, refOf(s, account)));
     command("people.recall <query:text>", "按关键词翻查配置允许的旧经历", async (s, _w, _scope, [query]) => recall(s, { query }));
     command("people.import", "将当前场景旧档案导入共同域；不覆盖已有画像", async (s, w, scope) => {
         const oldStore = new PersonStore(ctx.database, "review"),
@@ -742,7 +683,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
                             accountRevision: current.accounts.find((a) => a.userId === account.ref)!.bindingRevision ?? 0,
                         },
                     },
-                    () => active
+                    () => active,
                 );
         }
         return `已导入 ${result.imported.length} 个新账号，跳过 ${result.conflicts} 个已有账号；旧分组和可用画像保留，旧场景记录未覆盖。`;

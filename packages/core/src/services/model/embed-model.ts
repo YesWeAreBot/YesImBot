@@ -2,7 +2,7 @@ import type { EmbedProvider } from "@xsai-ext/shared-providers";
 import type { EmbedManyOptions, EmbedManyResult, EmbedOptions, EmbedResult } from "@xsai/embed";
 import { Context } from "koishi";
 
-import { embed, embedMany } from "@/dependencies/xsai";
+import { embed, embedMany } from "../../dependencies/xsai";
 import { BaseModel } from "./base-model";
 import { ModelConfig } from "./config";
 
@@ -16,7 +16,7 @@ export class EmbedModel extends BaseModel implements IEmbedModel {
         ctx: Context,
         private readonly embedProvider: EmbedProvider["embed"],
         modelConfig: ModelConfig,
-        private readonly fetch: typeof globalThis.fetch
+        private readonly fetch: typeof globalThis.fetch,
     ) {
         super(ctx, modelConfig, `[嵌入模型] [${modelConfig.modelId}]`);
     }

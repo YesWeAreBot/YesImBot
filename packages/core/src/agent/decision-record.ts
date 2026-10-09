@@ -1,5 +1,6 @@
-import { replyKey, ReplyTarget } from "./reply-control";
 import { randomUUID } from "node:crypto";
+
+import { replyKey, ReplyTarget } from "./reply-control";
 
 /** 实际参与本条消息计算的值；不包含消息正文或模型配置中的凭据。 */
 export interface WillingnessCalculation {
@@ -56,7 +57,7 @@ export class DecisionRecords {
     constructor(
         private readonly capacity = 1000,
         private readonly now = Date.now,
-        private readonly recorded?: (record: DecisionRecord) => void
+        private readonly recorded?: (record: DecisionRecord) => void,
     ) {}
 
     public begin(target: ReplyTarget, stimulusType: string): string {
@@ -76,7 +77,7 @@ export class DecisionRecords {
         this.records.set(id, record);
         this.latestIds.set(key, id);
         while (this.records.size > this.capacity) {
-            const oldest = this.records.keys().next().value;
+            const oldest = this.records.keys().next().value as string;
             const removed = this.records.get(oldest)!;
             this.records.delete(oldest);
             if (this.latestIds.get(removed.key) === oldest) this.latestIds.delete(removed.key);
@@ -86,7 +87,7 @@ export class DecisionRecords {
     }
 
     public update(id: string | undefined, update: Partial<Omit<DecisionRecord, "id" | "key" | "version" | "target" | "startedAt">>): void {
-        const record = this.records.get(id);
+        const record = this.records.get(id!);
         if (!record || record.stage === "cancelled") return;
         const defined = Object.fromEntries(Object.entries(update).filter(([, value]) => value !== undefined));
         Object.assign(record, structuredClone(defined), { time: this.now() });
@@ -95,7 +96,7 @@ export class DecisionRecords {
     }
 
     public latest(target: ReplyTarget): DecisionRecord | undefined {
-        const record = this.records.get(this.latestIds.get(replyKey(target)));
+        const record = this.records.get(this.latestIds.get(replyKey(target))!);
         return record ? structuredClone(record) : undefined;
     }
 }
@@ -105,7 +106,7 @@ export interface DecisionState {
     busy: boolean;
     assessing: boolean;
     muted: boolean;
-    participation: { active: boolean; expiresAt?: number };
+    participation: { active: boolean; expiresAt?: number | null };
     suppression?: { blocked: string[]; expiresAt: number | null };
 }
 
@@ -155,14 +156,14 @@ export function describeDecisionStage(stage: string): string {
 export function formatDecision(record: DecisionRecord | undefined, state: DecisionState): string {
     const lines = [
         `当前意愿：${state.score.toFixed(2)}；回复任务：${state.busy ? "忙" : "空闲"}；语义判断：${state.assessing ? "进行中" : "无"}；禁言：${state.muted ? "是" : "否"}`,
-        `参与保持：${state.participation.active ? `生效至 ${new Date(state.participation.expiresAt).toISOString()}` : "未生效"}`,
+        `参与保持：${state.participation.active ? `生效至 ${new Date(state.participation.expiresAt ?? Date.now()).toISOString()}` : "未生效"}`,
         `回复抑制：${state.suppression ? `${state.suppression.blocked.join(", ") || "无"}；${state.suppression.expiresAt === null ? "永久" : new Date(state.suppression.expiresAt).toISOString()}` : "无"}`,
         "冷却：当前意愿系统未启用回复不应期。",
     ];
     if (!record) return [...lines, "本次启动以来尚无该会话的决策记录。"].join("\n");
     lines.push(
         `最近决策：${record.id}（${new Date(record.startedAt).toISOString()}）`,
-        `状态：${stages[record.stage] || record.stage}${record.reason ? `；原因：${reasons[record.reason] || record.reason}` : ""}`
+        `状态：${stages[record.stage] || record.stage}${record.reason ? `；原因：${reasons[record.reason] || record.reason}` : ""}`,
     );
     const c = record.calculation;
     if (c) {
@@ -170,17 +171,15 @@ export function formatDecision(record: DecisionRecord | undefined, state: Decisi
         lines.push(
             `意愿：${c.before.toFixed(2)} → ${c.after.toFixed(2)}；增益：${c.effectiveGain.toFixed(2)}；阈值：${c.threshold}`,
             `基础分：${c.baseScore}；兴趣乘数：${c.interestMultiplier}；边际乘数：${c.marginalMultiplier.toFixed(3)}；动态乘数：${c.dynamicMultiplier.toFixed(3)}`,
-            `语义乘数：${c.assessmentMultiplier.toFixed(3)}；参与乘数：${c.participationMultiplier.toFixed(3)}`
+            `语义乘数：${c.assessmentMultiplier.toFixed(3)}；参与乘数：${c.participationMultiplier.toFixed(3)}`,
         );
     }
     if (record.probability !== undefined || record.roll !== undefined)
         lines.push(
-            `回复概率：${record.probability === undefined ? "未计算" : `${(record.probability * 100).toFixed(1)}%`}；随机数：${record.roll ?? "未抽取"}；判定：${record.decision === undefined ? "未判定" : record.decision ? "回复" : "不回复"}`
+            `回复概率：${record.probability === undefined ? "未计算" : `${(record.probability * 100).toFixed(1)}%`}；随机数：${record.roll ?? "未抽取"}；判定：${record.decision === undefined ? "未判定" : record.decision ? "回复" : "不回复"}`,
         );
     if (record.assessment)
-        lines.push(
-            `语义判断：${record.assessment.mode} / ${record.assessment.status}；已有结果乘数：${record.assessment.multiplier ?? "不可用"}`
-        );
+        lines.push(`语义判断：${record.assessment.mode} / ${record.assessment.status}；已有结果乘数：${record.assessment.multiplier ?? "不可用"}`);
     if (record.assessment?.answers) {
         const a = record.assessment.answers;
         lines.push(`语义评分：面向机器人 ${a.addressed}；兴趣匹配 ${a.interested}；面向他人 ${a.others}`);

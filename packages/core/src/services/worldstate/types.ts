@@ -8,8 +8,9 @@
  * - L3 (长期存档): 以“日记”形式存在的、对每日交互的高度概括和总结，提供长周期的时间感和叙事记忆。
  */
 
-import { TableName } from "@/shared/constants";
 import { Element, Session } from "koishi";
+
+import { TableName } from "../../shared/constants";
 
 // =================================================================================
 // #region 核心数据模型 (对应数据库表结构)
@@ -86,8 +87,8 @@ export interface BotMuteStateData {
  */
 export interface AgentResponse {
     thoughts: { observe: string; analyze_infer: string; plan: string };
-    actions: { function: string; params: Record<string, unknown> }[];
-    observations?: { function: string; status: "success" | "failed" | string; result?: any; error?: any }[];
+    actions: Array<{ function: string; params: Record<string, unknown> }>;
+    observations?: Array<{ function: string; status: "success" | "failed" | string; result?: any; error?: any }>;
     request_heartbeat: boolean;
 }
 
@@ -210,7 +211,7 @@ export interface ContextualSystemEvent {
     id: string;
     eventType: string;
     eventDetails?: string;
-    message: string; // 直接可读的事件描述
+    message?: string; // 直接可读的事件描述
     timestamp: Date;
     is_new?: boolean; // 是否是自上次 Agent 响应以来的新事件
 }
@@ -301,12 +302,12 @@ export interface WorldState {
     /** L3: 相关的历史日记条目 */
     l3_diary_entries?: DiaryEntryData[];
     // 其他动态信息，如用户画像等
-    users?: {
+    users?: Array<{
         id: string;
         name: string;
         roles?: string[];
-        description: string;
-    }[];
+        description?: string;
+    }>;
 }
 
 // #endregion

@@ -1,4 +1,5 @@
 import { Context, Session, Universal } from "koishi";
+
 import { HistoryChannelData, HistoryChannelType } from "./types";
 
 export const HISTORY_CHANNELS = "worldstate.history_channels";
@@ -18,10 +19,14 @@ export function sessionChannelType(session: Session): HistoryChannelType | undef
 }
 
 export function registerChannelModel(ctx: Context): void {
-    ctx.model.extend(HISTORY_CHANNELS, {
-        platform: "string(255)",
-        channelId: "string(255)",
-        channelType: "string(16)",
-        messageKeyVersion: { type: "unsigned", initial: 0 },
-    }, { primary: ["platform", "channelId"] });
+    ctx.model.extend(
+        HISTORY_CHANNELS,
+        {
+            platform: "string(255)",
+            channelId: "string(255)",
+            channelType: "string(16)",
+            messageKeyVersion: { type: "unsigned", initial: 0 },
+        },
+        { primary: ["platform", "channelId"] },
+    );
 }

@@ -8,7 +8,10 @@ export interface ReplyTarget {
     channelId: string;
     isDirect?: boolean;
 }
-export interface ReplyActor { id: string; origin: { platform: string; selfId: string; channelId: string; adapter?: string } }
+export interface ReplyActor {
+    id: string;
+    origin: { platform: string; selfId: string; channelId: string; adapter?: string };
+}
 export interface ReplyRule extends ReplyTarget {
     id: string;
     blocked: string[];
@@ -35,7 +38,7 @@ export class ReplyControl {
         private changed: (target: ReplyTarget, reason: string) => void,
         private record: (target: ReplyTarget, reason: string, rule?: ReplyRule, actor?: ReplyActor) => Promise<void>,
         private now = Date.now,
-        private backgroundError: (error: unknown) => void = () => {}
+        private backgroundError: (error: unknown) => void = () => {},
     ) {}
     public async initialize(): Promise<void> {
         for (const rule of await this.storage.load()) this.rules.set(rule.id, rule);
