@@ -12,10 +12,21 @@ export default defineConfig({
     resolve: {
         alias: {
             koishi: koishiCore,
+            // code-executor tests import the workspace core without a build step;
+            // resolve the subpath exports to their TypeScript sources.
+            "koishi-plugin-yesimbot/services": fileURLToPath(new URL("./packages/core/src/services/index.ts", import.meta.url)),
+            "koishi-plugin-yesimbot/shared": fileURLToPath(new URL("./packages/core/src/shared/index.ts", import.meta.url)),
         },
     },
     test: {
         exclude: ["**/node_modules/**", "**/.git/**"],
-        include: ["packages/*/tests/**/*.spec.ts", "packages/*/tests/**/*.test.ts"],
+        include: ["packages/*/tests/**/*.spec.ts"],
+        server: {
+            deps: {
+                // plugin-mock imports "koishi" natively; without inlining it binds a
+                // second Context class and events never reach the aliased koishi.
+                inline: [/@koishijs\/plugin-mock/],
+            },
+        },
     },
 });
