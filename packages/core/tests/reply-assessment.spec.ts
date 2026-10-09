@@ -1,9 +1,9 @@
 // Build the core package before running this integration test.
 import { expect, it } from "vitest";
 
-import { AgentCore } from "../lib/agent/agent-core";
-import { ReplyControl } from "../lib/agent/reply-control";
-import { Services } from "../lib/shared/constants";
+import { AgentCore } from "../src/agent/agent-core";
+import { ReplyControl } from "../src/agent/reply-control";
+import { Services } from "../src/shared/constants";
 
 async function setup() {
     let now = 0;

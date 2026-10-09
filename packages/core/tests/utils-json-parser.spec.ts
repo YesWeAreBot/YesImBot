@@ -326,7 +326,7 @@ describe("JsonParser", () => {
                 isStudent: false,
                 courses: [],
             });
-            expect(result.logs).toContain("检测到 Markdown 代码块，且原始字符串不以 JSON 开头，优先提取块内容。");
+            expect(result.logs).toContain("检测到 Markdown 代码块，且原始字符串不以 JSON 开头，优先提取块内容");
         });
 
         it("应该能处理无 `json` 标识的 Markdown 代码块", () => {
@@ -351,7 +351,7 @@ describe("JsonParser", () => {
                 isStudent: true,
                 courses: ["History"],
             });
-            expect(result.logs).toContain("在索引 30 处找到 JSON 起始符号，丢弃了前面的 30 个字符。");
+            expect(result.logs).toContain("在索引 30 处找到 JSON 起始符号，丢弃了前面的 30 个字符");
         });
 
         it("应该能裁剪掉 JSON 后的多余文本（结语）", () => {
@@ -359,7 +359,7 @@ describe("JsonParser", () => {
             const result = parser.parse(input);
             expect(result.error).toBeNull();
             expect(result.data).toEqual({ name: "小明", age: 20 });
-            expect(result.logs).toContainValue("JSON 结构平衡，裁剪了结束符号之后的多余文本。");
+            expect(result.logs).toContain("JSON 结构平衡，裁剪了结束符号之后的多余文本");
         });
 
         it("应该能同时处理前言和结语", () => {
@@ -367,8 +367,8 @@ describe("JsonParser", () => {
             const result = parserForAny.parse(input);
             expect(result.error).toBeNull();
             expect(result.data).toEqual([1, 2, 3]);
-            expect(result.logs).toContain("在索引 5 处找到 JSON 起始符号，丢弃了前面的 5 个字符。");
-            expect(result.logs).toContain("JSON 结构平衡，裁剪了结束符号之后的多余文本。");
+            expect(result.logs).toContain("在索引 5 处找到 JSON 起始符号，丢弃了前面的 5 个字符");
+            expect(result.logs).toContain("JSON 结构平衡，裁剪了结束符号之后的多余文本");
         });
 
         it("当 JSON 字符串值中包含 Markdown 代码块时不应错误提取", () => {
@@ -493,8 +493,8 @@ describe("JsonParser", () => {
             const input = "这是一个完全无关的字符串，没有JSON。";
             const result = parser.parse(input);
             expect(result.data).toBeNull();
-            expect(result.error).toBe("无法解析为有效的 JSON 对象或数组。");
-            expect(result.logs).toContain("未找到 JSON 起始符号，将尝试直接修复整个字符串。");
+            expect(result.error).toBe("无法解析为有效的 JSON 对象或数组");
+            expect(result.logs).toContain("未找到 JSON 起始符号，将尝试直接修复整个字符串");
         });
 
         // it("对于只包含 JSON 符号的无关文本，应该返回错误", () => {
@@ -518,8 +518,8 @@ describe("JsonParser", () => {
             const input = `"just a string"`; // jsonrepair会修复为 "just a string"
             const result = parser.parse(input);
             expect(result.data).toBeNull();
-            expect(result.error).toBe("无法解析为有效的 JSON 对象或数组。");
-            expect(result.logs).toContain("解析结果为非对象类型，但原始输入不像独立的JSON值，判定为解析失败。");
+            expect(result.error).toBe("无法解析为有效的 JSON 对象或数组");
+            expect(result.logs).toContain("解析结果为非对象类型，但原始输入不像独立的JSON值，判定为解析失败");
         });
 
         it("对于解析结果为数字的输入，也应该判定为失败", () => {

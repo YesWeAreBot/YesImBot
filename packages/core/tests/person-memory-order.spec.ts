@@ -36,6 +36,7 @@ function fixture() {
     world.recordMessage = async () => {
         trace.push("message-recorded");
     };
+    world.observeChannel = async () => {};
     const manager = new EventListenerManager(ctx, world, {} as any);
     const initialHooks = new Set(ctx.$processor._hooks);
     ctx.on("agent/stimulus", (stimulus) => {

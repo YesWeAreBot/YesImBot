@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { afterEach, expect, it } from "vitest";
 
+import { HISTORY_CHANNELS } from "../src/services/worldstate/channel-metadata";
 import { HistoryCommandManager } from "../src/services/worldstate/commands";
 import { InteractionManager } from "../src/services/worldstate/interaction-manager";
 import { SemanticMemoryManager } from "../src/services/worldstate/l2-semantic-memory";
@@ -29,6 +30,13 @@ async function fixture() {
     const removals: any[] = [];
     const actions = new Map<string, Function>();
     const logger = { info() {}, error() {}, warn() {} };
+    // src 依据 HISTORY_CHANNELS 表判定频道类型（history.clear -a 与 Agent 日志归属保护）。
+    const channels = [
+        { platform: "qq", channelId: "private:alice", channelType: "private" },
+        { platform: "qq", channelId: "group", channelType: "guild" },
+        { platform: "onebot", channelId: "private:bob", channelType: "private" },
+        { platform: "onebot", channelId: "group", channelType: "guild" },
+    ];
     const command = (name: string): any => {
         const instance = {
             subcommand: (suffix: string) => command(name + suffix),
@@ -48,6 +56,8 @@ async function fixture() {
         logger,
         command,
         database: {
+            get: async (table: string, query: { channelType?: string } = {}) =>
+                (table === HISTORY_CHANNELS ? channels : []).filter((row) => !query.channelType || row.channelType === query.channelType),
             remove: async (table: string, query: any) => {
                 removals.push({ table, query });
                 return { removed: 1 };
@@ -76,8 +86,20 @@ for (const type of ["private", "guild", "all"]) {
         }
         if (type !== "all") expect(await exists("qq/keep.txt")).toBe(true);
         expect(removals).toHaveLength(4);
-        if (type === "private") expect(removals[0].query.channelId.$regex.test("private:alice")).toBe(true);
-        if (type === "guild") expect(removals[0].query.channelId.$not.$regex.test("private:alice")).toBe(true);
+        if (type === "private")
+            expect(removals[0].query.$or).toEqual(
+                expect.arrayContaining([
+                    { platform: "qq", channelId: "private:alice" },
+                    { platform: "onebot", channelId: "private:bob" },
+                ]),
+            );
+        if (type === "guild")
+            expect(removals[0].query.$or).toEqual(
+                expect.arrayContaining([
+                    { platform: "qq", channelId: "group" },
+                    { platform: "onebot", channelId: "group" },
+                ]),
+            );
     });
 }
 

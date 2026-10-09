@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import CoreUtilExtension from "../lib/services/extension/builtin/core-util";
+import CoreUtilExtension from "../src/services/extension/builtin/core-util";
 import { Services } from "../src/shared/constants";
 
 function setup(send: (...args: any[]) => Promise<string[]> = async () => ["sent"]) {

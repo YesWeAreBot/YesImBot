@@ -21,6 +21,7 @@ it("records mixed adapter role formats as IDs while keeping message XML", async 
             recordMessage: async (value: any) => {
                 messages.push(value);
             },
+            observeChannel: async () => {},
         } as any,
         {} as any,
     );

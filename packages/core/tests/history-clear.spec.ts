@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 
+import { HISTORY_CHANNELS } from "../src/services/worldstate/channel-metadata";
 import { HistoryCommandManager } from "../src/services/worldstate/commands";
 import { SemanticMemoryManager } from "../src/services/worldstate/l2-semantic-memory";
 import { MessageData, MemoryChunkData } from "../src/services/worldstate/types";
@@ -19,18 +20,29 @@ function message(content: string, platform = "onebot", channelId = "same"): Mess
     return { id: content, platform, channelId, content, sender: { id: "user", name: "User" }, timestamp: new Date(1000) };
 }
 function matches(row: any, query: any): boolean {
+    if (query.$or) return query.$or.some((candidate: unknown) => matches(row, candidate));
     return Object.entries(query).every(([key, value]: [string, any]) => {
         if (value?.$regex) return value.$regex.test(row[key]);
         if (value?.$not) return !value.$not.$regex.test(row[key]);
+        if (value?.$in) return value.$in.includes(row[key]);
         return row[key] === value;
     });
 }
 function fixture(chunkSize = 2) {
+    // src 通过 HISTORY_CHANNELS 表把频道判定为 private/guild；测试绕过了
+    // WorldStateService，需要自行提供该表并把类型登记给 L2 管理器。
+    const channelRows: Array<{ platform: string; channelId: string; channelType: "private" | "guild" }> = [
+        { platform: "onebot", channelId: "private:u", channelType: "private" },
+        { platform: "onebot", channelId: "group", channelType: "guild" },
+        { platform: "discord", channelId: "private:u", channelType: "private" },
+        { platform: "discord", channelId: "group", channelType: "guild" },
+    ];
     const rows = new Map<string, any[]>([
         [TableName.Messages, []],
         [TableName.SystemEvents, []],
         [TableName.L2Chunks, []],
         [TableName.L3Diaries, []],
+        [HISTORY_CHANNELS, channelRows.map((row) => ({ ...row }))],
     ]);
     const actions = new Map<string, any>();
     const operations: string[] = [];
@@ -91,6 +103,7 @@ function fixture(chunkSize = 2) {
     };
     const config: any = { l2_memory: { enabled: true, messagesPerChunk: chunkSize }, l1_memory: { maxMessages: 10 } };
     const memory = new SemanticMemoryManager(ctx, config);
+    for (const { platform, channelId, channelType } of channelRows) memory.observeChannel({ platform, channelId }, channelType);
     memory.start();
     new HistoryCommandManager(ctx, { l2_manager: memory, l1_manager: { clearAgentHistory: async () => {} } } as any, config).register();
     return {

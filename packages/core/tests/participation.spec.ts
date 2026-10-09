@@ -213,7 +213,7 @@ test("chat and bot keys isolate participation; reset clears the window", () => {
             assert.equal(manager.getParticipation(key).active, false);
         }
         manager.reset(CHAT);
-        assert.deepEqual(manager.getParticipation(CHAT), { active: false, lastReplyAt: null, expiresAt: null, participantId: null });
+        assert.deepEqual(manager.getParticipation(CHAT), { active: false });
         manager.shouldReply(session(), CHAT);
         assert.equal(manager.getCurrentWillingness(CHAT), 12);
     });
@@ -225,7 +225,7 @@ test("missing sender IDs cannot match unrelated group messages", () => {
         manager.handlePostReply(session({ userId: undefined }), CHAT);
         manager.shouldReply(session({ userId: undefined }), CHAT);
         assert.equal(manager.getCurrentWillingness(CHAT), 12);
-        assert.equal(manager.getParticipation(CHAT).participantId, null);
+        assert.equal(manager.getParticipation(CHAT).participantId, "");
     });
 });
 

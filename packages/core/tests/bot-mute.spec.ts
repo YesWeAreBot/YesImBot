@@ -2,10 +2,10 @@ import { Bot, Context, MessageEncoder } from "koishi";
 // Agent reply regressions use built core; state/event methods are tested from source.
 import { expect, it, vi } from "vitest";
 
-import { AgentCore } from "../lib/agent/agent-core";
-import { replyTurnSignal } from "../lib/agent/reply-turn";
-import { Config } from "../lib/config";
-import CoreUtilExtension from "../lib/services/extension/builtin/core-util";
+import { AgentCore } from "../src/agent/agent-core";
+import { replyTurnSignal } from "../src/agent/reply-turn";
+import { Config } from "../src/config";
+import CoreUtilExtension from "../src/services/extension/builtin/core-util";
 import { EventListenerManager } from "../src/services/worldstate/event-listener";
 import { WorldStateService } from "../src/services/worldstate/service";
 import { Services, TableName } from "../src/shared/constants";
@@ -44,6 +44,7 @@ export function muteFixture(rows: any[] = []) {
         mutedChannels: new Map(),
         allMutedChannels: new Map(),
         l2_manager: {
+            observeChannel: () => {},
             getHistoryGeneration: () => 0,
             writeMemory: async (_target: any, _generation: number, write: Function) => {
                 await write();

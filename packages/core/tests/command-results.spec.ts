@@ -21,6 +21,7 @@ async function fixture() {
             events.push(event);
         },
         isChannelAllowed: () => true,
+        observeChannel: async () => {},
     };
     const manager: any = new EventListenerManager(ctx, service as any, {} as any);
     // Exercise the actual command + encoder hooks, without database observation on Session.execute.

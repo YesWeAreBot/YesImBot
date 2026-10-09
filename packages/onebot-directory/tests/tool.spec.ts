@@ -20,6 +20,7 @@ async function setup(t, config = {}) {
         },
         logger: { warn() {} },
         on() {},
+        filter: () => true,
         "yesimbot.tool": {
             registerTool(item) {
                 tool = item;

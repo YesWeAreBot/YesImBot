@@ -19,7 +19,25 @@ async function fixture() {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "yib-log-clear-"));
     roots.push(root);
     const logger = { info() {}, error() {}, debug() {}, warn() {} };
-    const manager = new InteractionManager({ baseDir: root, [Services.Logger]: { getLogger: () => logger } } as any, {} as any);
+    const manager = new InteractionManager(
+        {
+            baseDir: root,
+            [Services.Logger]: { getLogger: () => logger },
+            database: {
+                get: async (_table: string, query: { platform?: string; channelId?: string }) => {
+                    // 频道类型只来自适配器注册的元数据，文件名不可推断。
+                    const channels = [
+                        { platform: "qq", channelId: "private:u", channelType: "private" },
+                        { platform: "qq", channelId: "private_u", channelType: "guild" },
+                    ];
+                    return channels.filter(
+                        (channel) => (!query.platform || channel.platform === query.platform) && (!query.channelId || channel.channelId === query.channelId),
+                    );
+                },
+            },
+        } as any,
+        {} as any,
+    );
     const logFile = path.join(root, "data/yesimbot/interactions/qq/private_u.agent.jsonl");
     await fs.mkdir(path.dirname(logFile), { recursive: true });
     const seed = () => fs.writeFile(logFile, [row("private:u"), row("private_u"), '{"type":"agent_heartbeat","id":"unowned"}', "broken row"].join("\n") + "\n");

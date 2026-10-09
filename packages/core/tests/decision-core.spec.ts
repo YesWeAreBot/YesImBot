@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 
-import { AgentCore } from "../lib/agent/agent-core";
+import { AgentCore } from "../src/agent/agent-core";
 import { DecisionRecords } from "../src/agent/decision-record";
 import { ReplyControl } from "../src/agent/reply-control";
 import { WillingnessManager } from "../src/agent/willing";

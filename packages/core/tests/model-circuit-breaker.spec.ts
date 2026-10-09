@@ -3,11 +3,11 @@ import type { Context } from "koishi";
 // Build the core package before running this integration test.
 import { afterEach, expect, it, vi, type MockInstance } from "vitest";
 
-import { BaseModel } from "../lib/services/model/base-model";
-import type { ChatRequestOptions, IChatModel } from "../lib/services/model/chat-model";
-import { ModelAbility } from "../lib/services/model/config";
-import { ChatModelSwitcher } from "../lib/services/model/service";
-import { Services } from "../lib/shared/constants";
+import { BaseModel } from "../src/services/model/base-model";
+import type { ChatRequestOptions, IChatModel } from "../src/services/model/chat-model";
+import { ModelAbility } from "../src/services/model/config";
+import { ChatModelSwitcher } from "../src/services/model/service";
+import { Services } from "../src/shared/constants";
 
 const logger = { extend: () => logger, debug() {}, info() {}, success() {}, warn() {}, error() {} };
 const ctx = { [Services.Logger]: { getLogger: () => logger } } as unknown as Context;

@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { afterEach, expect, it, vi } from "vitest";
 
+import { HISTORY_CHANNELS } from "../src/services/worldstate/channel-metadata";
 import { HistoryCommandManager } from "../src/services/worldstate/commands";
 import { ContextBuilder } from "../src/services/worldstate/context-builder";
 import { InteractionManager } from "../src/services/worldstate/interaction-manager";
@@ -33,10 +34,12 @@ const settle = async () => {
     for (let i = 0; i < 16; i++) await Promise.resolve();
 };
 function matches(row: any, query: any): boolean {
+    if (query.$or) return query.$or.some((part) => matches(row, part));
     return Object.entries(query).every(([key, value]: [string, any]) => {
         if (value && typeof value === "object") {
             if (value.$gte !== undefined && row[key] < value.$gte) return false;
             if (value.$lt !== undefined && row[key] >= value.$lt) return false;
+            if (value.$in !== undefined) return value.$in.some((candidate) => row[key] === candidate);
             if (value.$regex) return value.$regex.test(row[key]);
             if (value.$not) return !value.$not.$regex.test(row[key]);
             return true;
@@ -47,7 +50,9 @@ function matches(row: any, query: any): boolean {
 async function fixture() {
     const baseDir = await fs.mkdtemp(path.join(os.tmpdir(), "yib-l3-"));
     directories.push(baseDir);
-    const rows = new Map<string, any[]>([TableName.Messages, TableName.SystemEvents, TableName.L2Chunks, TableName.L3Diaries].map((table) => [table, []]));
+    const rows = new Map<string, any[]>(
+        [TableName.Messages, TableName.SystemEvents, TableName.L2Chunks, TableName.L3Diaries, HISTORY_CHANNELS].map((table) => [table, []]),
+    );
     const actions = new Map<string, Function>();
     const queries: any[] = [];
     const prompts: any[] = [];
@@ -149,6 +154,7 @@ async function fixture() {
             beforeGet = fn;
         },
         diaries: () => rows.get(TableName.L3Diaries)!,
+        channels: () => rows.get(HISTORY_CHANNELS)!,
         clear: (options: any = {}) => actions.get("history.clear")!({ session: { platform: "onebot", channelId: "same" }, options }),
     };
 }
@@ -322,6 +328,10 @@ it("clears L3 diaries by the same platform and channel scope as L1/L2", async ()
 for (const type of ["private", "guild", "all"])
     it(`clears L3 diaries with -a ${type}`, async () => {
         const f = await fixture();
+        f.channels().push(
+            { platform: "onebot", channelId: "private:u", channelType: "private" },
+            { platform: "discord", channelId: "group", channelType: "guild" },
+        );
         f.diaries().push({ id: "p", platform: "onebot", channelId: "private:u" }, { id: "g", platform: "discord", channelId: "group" });
         await f.clear({ all: type });
         expect(f.diaries().map((row) => row.id)).toEqual(type === "private" ? ["g"] : type === "guild" ? ["p"] : []);

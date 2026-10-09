@@ -241,11 +241,11 @@ it("uses only the successful model after a transport failure switches providers"
     const calls: string[] = [];
     const processor = streamingFixture(
         async (options: any) => {
-            options.validation.validator(modelText("failed provider"), false);
+            options.validation.validator(modelResponse("failed provider"), false);
             await new Promise((resolve) => setTimeout(resolve, 0));
             // 模型切换可能没有经过失败批次的 final 校验回调。
-            options.validation.validator(modelText("fallback"), true);
-            return { text: modelText("fallback") };
+            options.validation.validator(modelResponse("fallback"), true);
+            return { text: modelResponse("fallback") };
         },
         async (_name: string, params: any) => {
             calls.push(params.message);
