@@ -1,10 +1,11 @@
+import path from "path";
+
 import { Logger, Schema } from "koishi";
-import { resolve } from "path";
 import { v4 as uuidv4 } from "uuid";
 
-import { truncate } from "@/shared/utils";
+import { sanitizeDiagnostic, redactDiagnosticText } from "../../shared/diagnostic-sanitizer";
+import { truncate } from "../../shared/utils";
 import { ErrorDefinitions } from "./definitions";
-import { sanitizeDiagnostic, redactDiagnosticText } from "@/shared/diagnostic-sanitizer";
 import { diagnosticId, diagnosticCode, summarizeContext, summarizeError } from "./report-summary";
 
 // --- 错误上报模块 ---
@@ -20,7 +21,9 @@ export interface ErrorReporterConfig {
 export const ErrorReporterConfigSchema = Schema.object({
     enabled: Schema.boolean().default(true).description("是否启用错误上报（默认仅上传脱敏技术摘要）"),
     pasteServiceUrl: Schema.string().role("link").default("https://dump.yesimbot.chat/").description("错误上报服务的 URL"),
-    includeSensitiveInfo: Schema.boolean().default(false).description("包含详细诊断信息（可能包含对话、模型响应、错误原文和堆栈；凭据保留首尾各 4 字符，短凭据全部遮盖）"),
+    includeSensitiveInfo: Schema.boolean()
+        .default(false)
+        .description("包含详细诊断信息（可能包含对话、模型响应、错误原文和堆栈；凭据保留首尾各 4 字符，短凭据全部遮盖）"),
     includeCookies: Schema.boolean().default(false).description("详细诊断中包含 Cookie（保留首尾各 4 字符，其余用 * 遮盖；短 Cookie 全部遮盖）"),
     includeSystemInfo: Schema.boolean().default(true).description("是否包含系统信息"),
 });
@@ -38,13 +41,18 @@ export class ErrorReporter {
     private readonly config: ErrorReporterConfig;
     private readonly logger: Logger;
 
-    constructor(config: ErrorReporterConfig, logger: Logger, private readonly saveLocal?: (errorId: string, error: Error) => Promise<void>, private readonly knownSecrets: readonly string[] = []) {
+    constructor(
+        config: ErrorReporterConfig,
+        logger: Logger,
+        private readonly saveLocal?: (errorId: string, error: Error) => Promise<void>,
+        private readonly knownSecrets: readonly string[] = [],
+    ) {
         this.config = {
-            enabled: false,
             includeSensitiveInfo: false,
             includeCookies: false,
             includeSystemInfo: true,
             ...config,
+            enabled: config.enabled ?? false,
         };
         this.logger = logger;
 
@@ -57,10 +65,14 @@ export class ErrorReporter {
      * 格式化并上报错误
      * @param context 包含错误和附加上下文的对象
      */
-    public async report(context: ReportContext): Promise<string> {
+    public async report(context: ReportContext): Promise<string | null> {
         // 本地保存不依赖远程上报开关，也不等待远程服务。
         if (this.saveLocal) {
-            try { await this.saveLocal(context.errorId, context.error); } catch { this.logger.warn("本地错误报告保存失败"); }
+            try {
+                await this.saveLocal(context.errorId, context.error);
+            } catch {
+                this.logger.warn("本地错误报告保存失败");
+            }
         }
         if (!this.config.enabled || !this.config.pasteServiceUrl) {
             return null;
@@ -75,6 +87,7 @@ export class ErrorReporter {
             return url;
         } catch (uploadError) {
             this.logger.error(`上报失败: ${(uploadError as Error).message}`);
+            return null;
         }
     }
 
@@ -109,7 +122,7 @@ export class ErrorReporter {
         const detailed = !!this.config.includeSensitiveInfo;
         const privacy = { partialCredentials: detailed, includeCookies: !!this.config.includeCookies };
         const cleaned = sanitizeDiagnostic({ ...context, error }, this.knownSecrets, new Set(), 0, "", privacy);
-        const packageJson = require(resolve(__dirname, "../../../package.json"));
+        const packageJson = require(path.resolve(__dirname, "../../../package.json"));
         const dump = [
             `# 智能体错误报告\n`,
             `**ID:** \`${diagnosticId(cleaned.errorId)}\`\n`,
@@ -118,10 +131,16 @@ export class ErrorReporter {
             `**错误码:** \`${diagnosticCode(cleaned.error.code)}\`\n`,
             `---`,
             detailed ? `## 详细诊断\n` : `## 技术摘要\n`,
-            "```json\n" + JSON.stringify({
-                error: detailed ? cleaned.error : summarizeError(cleaned.error),
-                additionalInfo: detailed ? cleaned.additionalInfo : summarizeContext(cleaned.additionalInfo),
-            }, null, 2) + "\n```",
+            "```json\n" +
+                JSON.stringify(
+                    {
+                        error: detailed ? cleaned.error : summarizeError(cleaned.error),
+                        additionalInfo: detailed ? cleaned.additionalInfo : summarizeContext(cleaned.additionalInfo),
+                    },
+                    null,
+                    2,
+                ) +
+                "\n```",
             detailed
                 ? `\n详细诊断已启用；凭据仅保留首尾各 4 字符，短凭据全部遮盖。Cookie ${privacy.includeCookies ? "经遮盖后包含" : "省略"}。`
                 : `\n对话、模型响应、自由文本错误信息及完整堆栈默认省略；需要完整排障信息时请检查已启用的本地日志。`,
@@ -135,7 +154,12 @@ export class ErrorReporter {
 
 let globalErrorReporter: ErrorReporter | null = null;
 
-export function initializeErrorReporter(config: ErrorReporterConfig, logger: Logger, saveLocal?: (errorId: string, error: Error) => Promise<void>, knownSecrets: readonly string[] = []) {
+export function initializeErrorReporter(
+    config: ErrorReporterConfig,
+    logger: Logger,
+    saveLocal?: (errorId: string, error: Error) => Promise<void>,
+    knownSecrets: readonly string[] = [],
+) {
     globalErrorReporter = new ErrorReporter(config, logger, saveLocal, knownSecrets);
 }
 
@@ -158,19 +182,19 @@ export class AppError extends Error {
             context?: Record<string, any>;
             cause?: Error;
             args?: any[];
-        }
+        },
     ) {
         let message: string;
         let suggestion: string;
 
         if (typeof definition.message === "function") {
-            message = definition.message.apply(null, options?.args || []);
+            message = (definition.message as any).apply(null, options?.args || []);
         } else {
             message = definition.message;
         }
 
         if (typeof definition.suggestion === "function") {
-            suggestion = definition.suggestion.apply(null, options?.args || []);
+            suggestion = (definition.suggestion as any).apply(null, options?.args || []);
         } else {
             suggestion = definition.suggestion;
         }

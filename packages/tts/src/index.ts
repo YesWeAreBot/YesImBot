@@ -1,13 +1,14 @@
 import { Context } from "koishi";
 import { ToolService } from "koishi-plugin-yesimbot/services";
 import { Services } from "koishi-plugin-yesimbot/shared";
-import { Config, TTSService } from "./service";
 
+import { Config, TTSService } from "./service";
+export { Config } from "./service";
 export const name = "tts";
 export const inject = {
     required: [Services.Tool],
 };
-export { Config };
+
 export function apply(ctx: Context, config: Config) {
     const logger = ctx.logger("tts");
 
@@ -18,7 +19,7 @@ export function apply(ctx: Context, config: Config) {
         const ttsService = new TTSService(ctx, config);
         const tool = ttsService.getTool();
         if (tool) {
-            const toolService: ToolService = ctx.get(Services.Tool);
+            const toolService: ToolService = ctx.get(Services.Tool)!;
             const unregisterTool: unknown = toolService.registerTool(tool);
             ctx.on("dispose", () => {
                 if (typeof unregisterTool === "function") unregisterTool();

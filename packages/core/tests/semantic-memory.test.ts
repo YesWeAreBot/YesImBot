@@ -1,7 +1,11 @@
 import { expect, it } from "bun:test";
+
 import { SemanticMemoryManager } from "../src/services/worldstate/l2-semantic-memory";
-import { Services } from "../src/shared/constants";
 import type { MemoryChunkData, MessageData } from "../src/services/worldstate/types";
+import { Services } from "../src/shared/constants";
+
+const defaultEmbed = async (_text: string) => ({ embedding: [1, 0] });
+const noop = async () => {};
 
 function deferred<T = void>() {
     let resolve!: (value: T | PromiseLike<T>) => void;
@@ -27,12 +31,12 @@ function message(content: string): MessageData {
 }
 function fixture(chunks: MemoryChunkData[] = [], options: Record<string, unknown> = {}) {
     const written: MemoryChunkData[] = [];
-    let embed = async (_text: string) => ({ embedding: [1, 0] });
+    let embed = defaultEmbed;
     let create = async (row: MemoryChunkData) => {
         written.push(row);
     };
-    let beforeGet = async () => {};
-    let beforeSet = async () => {};
+    let beforeGet = noop;
+    let beforeSet = noop;
     const log = { info() {}, debug() {}, warn() {}, error() {} };
     const ctx: any = {
         [Services.Logger]: { getLogger: () => log },
@@ -44,7 +48,7 @@ function fixture(chunks: MemoryChunkData[] = [], options: Record<string, unknown
                         (!query.platform || typeof query.platform !== "string" || row.platform === query.platform) &&
                         (!query.channelId || typeof query.channelId !== "string" || row.channelId === query.channelId) &&
                         (!query.startTimestamp || row.startTimestamp >= query.startTimestamp.$gte) &&
-                        (!query.endTimestamp || row.endTimestamp <= query.endTimestamp.$lte)
+                        (!query.endTimestamp || row.endTimestamp <= query.endTimestamp.$lte),
                 );
                 await beforeGet();
                 return result;
@@ -109,7 +113,7 @@ it("merges selected blocks separately when conversations interleave", async () =
             chunk("a-last", 3, "A3\nA4", true),
             chunk("b-last", 4, "B3\nB4", true, "discord"),
         ],
-        { includeNeighborChunks: false }
+        { includeNeighborChunks: false },
     );
     const result = await f.memory.search("matched", { k: 4 });
     expect(result.map((row) => [row.platform, row.content, row.participantIds])).toEqual([
@@ -206,7 +210,7 @@ it("shares clear generations and write barriers with external memory writers", a
     expect(
         await memory.writeMemory(target, oldGeneration, async () => {
             throw new Error("stale write executed");
-        })
+        }),
     ).toBe(false);
     let waited = false,
         written = false;

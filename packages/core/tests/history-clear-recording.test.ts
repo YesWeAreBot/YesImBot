@@ -1,12 +1,13 @@
 import { expect, it } from "bun:test";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
 import { HistoryCommandManager } from "../src/services/worldstate/commands";
 import { InteractionManager } from "../src/services/worldstate/interaction-manager";
 import { SemanticMemoryManager } from "../src/services/worldstate/l2-semantic-memory";
 import { WorldStateService } from "../src/services/worldstate/service";
 import { Services, TableName } from "../src/shared/constants";
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
 
 function deferred() {
     let resolve!: () => void;

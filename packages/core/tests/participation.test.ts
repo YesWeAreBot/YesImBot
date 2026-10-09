@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+
 import { WillingnessManager } from "../src/agent/willing";
 import { Services } from "../src/shared/constants";
 

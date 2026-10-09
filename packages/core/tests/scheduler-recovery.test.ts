@@ -1,4 +1,5 @@
 import { expect, it } from "bun:test";
+
 import { StimulusScheduler } from "../src/agent/scheduler";
 import { Services } from "../src/shared/constants";
 
@@ -14,7 +15,7 @@ function recoveryFixture(strategy: string) {
     const active = new Map<string, number>();
     const maxActive = new Map<string, number>();
     const waiting = new Map<string, ReturnType<typeof barrier>>();
-    const debounceTasks: { fire(): Promise<void> | undefined; pending(): boolean }[] = [];
+    const debounceTasks: Array<{ fire(): Promise<void> | undefined; pending(): boolean }> = [];
     const ctx = {
         [Services.Logger]: { getLogger: () => ({ debug() {}, warn() {} }) },
         // Control the debounce boundary without waiting for wall-clock delays.
@@ -34,23 +35,19 @@ function recoveryFixture(strategy: string) {
             return task;
         },
     };
-    const scheduler = new StimulusScheduler(
-        ctx as any,
-        { debounceMs: 2, newMessageStrategy: strategy, deferredProcessingTime: 1 } as any,
-        async (stimulus) => {
-            const { channelCid, id } = stimulus as any;
-            const count = (active.get(channelCid) || 0) + 1;
-            active.set(channelCid, count);
-            maxActive.set(channelCid, Math.max(maxActive.get(channelCid) || 0, count));
-            calls.push(id);
-            waiting.get(id)?.resolve();
-            try {
-                if (id === "A") await releaseA.promise;
-            } finally {
-                active.set(channelCid, count - 1);
-            }
+    const scheduler = new StimulusScheduler(ctx as any, { debounceMs: 2, newMessageStrategy: strategy, deferredProcessingTime: 1 } as any, async (stimulus) => {
+        const { channelCid, id } = stimulus as any;
+        const count = (active.get(channelCid) || 0) + 1;
+        active.set(channelCid, count);
+        maxActive.set(channelCid, Math.max(maxActive.get(channelCid) || 0, count));
+        calls.push(id);
+        waiting.get(id)?.resolve();
+        try {
+            if (id === "A") await releaseA.promise;
+        } finally {
+            active.set(channelCid, count - 1);
         }
-    );
+    });
     return {
         scheduler,
         calls,

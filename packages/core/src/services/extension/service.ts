@@ -1,12 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { sanitizeDiagnostic } from "@/shared/diagnostic-sanitizer";
-import { assertReplyTurn } from "@/agent/reply-turn";
+
 import { Context, ForkScope, h, Logger, resolveConfig, Schema, Service, Session } from "koishi";
 
-import { Config } from "@/config";
-import { PromptService } from "@/services/prompt";
-import { Services } from "@/shared/constants";
-import { isEmpty, stringify, truncate } from "@/shared/utils";
+import { assertReplyTurn } from "../../agent/reply-turn";
+import { Config } from "../../config";
+import { PromptService } from "../../services/prompt";
+import { Services } from "../../shared/constants";
+import { sanitizeDiagnostic } from "../../shared/diagnostic-sanitizer";
+import { isEmpty, stringify, truncate } from "../../shared/utils";
 import CommandExtension from "./builtin/command";
 import CoreUtilExtension from "./builtin/core-util";
 import InteractionsExtension from "./builtin/interactions";
@@ -15,6 +16,28 @@ import QManagerExtension from "./builtin/qmanager";
 import SearchExtension from "./builtin/search";
 import { extractMetaFromSchema, Failed } from "./helpers";
 import { IExtension, Properties, ToolCallResult, ToolDefinition, ToolSchema } from "./types";
+
+function processParams(params: Properties, indent = ""): any[] {
+    return Object.entries(params).map(([key, param]) => {
+        const processedParam: any = { ...param, key, indent };
+        if (param.properties) {
+            processedParam.properties = processParams(param.properties, indent + "    ");
+        }
+        if (param.items) {
+            processedParam.items = [
+                {
+                    ...param.items,
+                    key: "item",
+                    indent: indent + "    ",
+                    ...(param.items.properties && {
+                        properties: processParams(param.items.properties, indent + "        "),
+                    }),
+                },
+            ];
+        }
+        return processedParam;
+    });
+}
 
 declare module "koishi" {
     interface Context {
@@ -47,21 +70,14 @@ export class ToolService extends Service<Config> {
     }
 
     protected async start() {
-        const builtinExtensions = [
-            CoreUtilExtension,
-            CommandExtension,
-            MemoryExtension,
-            QManagerExtension,
-            SearchExtension,
-            InteractionsExtension,
-        ];
+        const builtinExtensions = [CoreUtilExtension, CommandExtension, MemoryExtension, QManagerExtension, SearchExtension, InteractionsExtension];
         const loadedExtensions = new Map<string, ForkScope>();
 
         for (const Ext of builtinExtensions) {
             //@ts-ignore
             // 不能在这里判断是否启用，否则无法生成配置
             const name = Ext.prototype.metadata.name;
-            const config = this.config.extra[name];
+            const config = this.config.extra?.[name];
             // if (config && !config.enabled) {
             //     this._logger.info(`跳过内置扩展: ${name}`);
             //     continue;
@@ -90,18 +106,17 @@ export class ToolService extends Service<Config> {
                     `tool.list -f search            # 查找所有名称或描述中包含 "search" 的工具`,
                     "tool.list --page 2 --size 5    # 显示第 2 页，每页 5 个工具",
                     `tool.list -f memory --size 3   # 查找 "memory" 相关工具并每页显示 3 个`,
-                ].join("\n")
+                ].join("\n"),
             )
             .action(async ({ session, options }) => {
+                if (!session || !options) return;
                 // 1. 获取所有可用工具
                 let allTools = this.getAvailableTools(session);
 
                 // 2. 应用过滤器（如果提供了 filter 选项）
                 const filterKeyword = options.filter?.toLowerCase();
                 if (filterKeyword) {
-                    allTools = allTools.filter(
-                        (t) => t.name.toLowerCase().includes(filterKeyword) || t.description.toLowerCase().includes(filterKeyword)
-                    );
+                    allTools = allTools.filter((t) => t.name.toLowerCase().includes(filterKeyword) || t.description.toLowerCase().includes(filterKeyword));
                 }
 
                 const totalCount = allTools.length;
@@ -112,7 +127,8 @@ export class ToolService extends Service<Config> {
                 }
 
                 // 4. 计算分页参数
-                const { page, size } = options;
+                const page = options.page ?? 1;
+                const size = options.size ?? 20;
                 const totalPages = Math.ceil(totalCount / size);
 
                 if (page > totalPages) {
@@ -155,7 +171,7 @@ export class ToolService extends Service<Config> {
                     "调用指定的工具并传递参数",
                     '参数格式为 "key=value"，多个参数用空格分隔。',
                     '如果 value 包含空格，请使用引号将其包裹，例如：key="some value',
-                ].join("\n")
+                ].join("\n"),
             )
             .example(["tool.invoke search_web keyword=koishi"].join("\n"))
             .action(async ({ session }, name, ...params) => {
@@ -201,6 +217,7 @@ export class ToolService extends Service<Config> {
             .usage("根据工具名称，从工具服务中卸载一个工具。此操作是临时的，服务重启后可能会被重新加载")
             .example("tool.delete web_search")
             .action(async ({ session }, name) => {
+                if (!session) return "会话不可用";
                 if (!name) return "未指定要删除的工具名称";
                 const result = this.unregisterTool(name);
                 await this.recordFrameworkChange(session, "tool.delete", name, result ? "success" : "failed");
@@ -223,6 +240,7 @@ export class ToolService extends Service<Config> {
             });
 
         this.ctx.command("extension.enable <name:string>", "启用扩展", { authority: 3 }).action(async ({ session }, name) => {
+            if (!session) return "会话不可用";
             try {
                 const ext = (await import(name)) as IExtension;
                 if (!ext) {
@@ -249,7 +267,7 @@ export class ToolService extends Service<Config> {
                 if (!ext.metadata.display) {
                     return `扩展元数据中缺少显示名称`;
                 }
-                const config = resolveConfig(ext, this.config.extra[name] || {});
+                const config = resolveConfig(ext, this.config.extra?.[name] || {});
                 this.register(ext, true, config);
                 this.ctx.scope.update({ [name]: { enabled: true } }, false);
                 await this.recordFrameworkChange(session, "extension.enable", name, "success");
@@ -260,6 +278,7 @@ export class ToolService extends Service<Config> {
         });
 
         this.ctx.command("extension.disable <name:string>", "禁用扩展", { authority: 3 }).action(async ({ session }, name) => {
+            if (!session) return "会话不可用";
             const result = this.unregister(name);
             this.ctx.scope.update({ [name]: { enabled: false } }, false);
             await this.recordFrameworkChange(session, "extension.disable", name, result ? "success" : "failed");
@@ -324,28 +343,6 @@ export class ToolService extends Service<Config> {
             const tool = this.getSchema(toolName, session);
             if (!tool) return null;
 
-            const processParams = (params: Properties, indent = ""): any[] => {
-                return Object.entries(params).map(([key, param]) => {
-                    const processedParam: any = { ...param, key, indent };
-                    if (param.properties) {
-                        processedParam.properties = processParams(param.properties, indent + "    ");
-                    }
-                    if (param.items) {
-                        processedParam.items = [
-                            {
-                                ...param.items,
-                                key: "item",
-                                indent: indent + "    ",
-                                ...(param.items.properties && {
-                                    properties: processParams(param.items.properties, indent + "        "),
-                                }),
-                            },
-                        ];
-                    }
-                    return processedParam;
-                });
-            };
-
             return {
                 ...tool,
                 parameters: tool.parameters ? processParams(tool.parameters) : [],
@@ -359,7 +356,7 @@ export class ToolService extends Service<Config> {
      * @param extConfig 传递给扩展实例的配置
      */
     public register(extensionInstance: IExtension, enabled: boolean, extConfig: any) {
-        const validate: Schema<any> = extensionInstance.constructor["Config"];
+        const validate: Schema<any> = (extensionInstance.constructor as any)["Config"];
         const validatedConfig = validate ? validate(extConfig) : extConfig;
 
         let availableExtensions = this.ctx.schema.get("toolService.availableExtensions");
@@ -390,12 +387,10 @@ export class ToolService extends Service<Config> {
                                     enabled: Schema.const(true),
                                     ...(validate ? validate.default(validatedConfig) : Schema.object({})).dict,
                                 }),
-                                Schema.object(Object.fromEntries(
-                                    Object.entries(validate?.dict || {}).map(([key, schema]) => [key, schema.hidden()])
-                                )),
+                                Schema.object(Object.fromEntries(Object.entries(validate?.dict || {}).map(([key, schema]) => [key, schema.hidden()]))),
                             ]),
-                        ])
-                    )
+                        ]),
+                    ),
                 );
             }
 
@@ -453,22 +448,65 @@ export class ToolService extends Service<Config> {
     }
 
     private async recordFrameworkChange(session: Session, operation: string, name: string, status: string) {
-        const world = this.ctx[Services.WorldState]; if (!world?.recordSystemEvent || !session?.channelId) return;
-        try { await world.recordSystemEvent({ id: randomUUID(), platform: session.platform, channelId: session.channelId, eventScope: "global", type: "framework-maintenance", timestamp: new Date(), payload: { actor: `admin:${session.platform}:${session.userId}`, operation, status, scope: "global", origin: { platform: session.platform, selfId: session.selfId, channelId: session.channelId, adapter: session.bot?.platform }, target: { service: Services.Tool, name }, time: new Date().toISOString() }, message: "工具服务全局维护结果；只影响当前运行进程，重启后按配置重新加载。" }); }
-        catch (error) { this._logger.warn(`框架维护事件投递失败：${String(error)}`); }
+        const world = this.ctx[Services.WorldState];
+        if (!world?.recordSystemEvent || !session?.channelId) return;
+        try {
+            await world.recordSystemEvent({
+                id: randomUUID(),
+                platform: session.platform,
+                channelId: session.channelId,
+                eventScope: "global",
+                type: "framework-maintenance",
+                timestamp: new Date(),
+                payload: {
+                    actor: `admin:${session.platform}:${session.userId}`,
+                    operation,
+                    status,
+                    scope: "global",
+                    origin: { platform: session.platform, selfId: session.selfId, channelId: session.channelId, adapter: session.bot?.platform },
+                    target: { service: Services.Tool, name },
+                    time: new Date().toISOString(),
+                },
+                message: "工具服务全局维护结果；只影响当前运行进程，重启后按配置重新加载。",
+            });
+        } catch (error) {
+            this._logger.warn(`框架维护事件投递失败：${String(error)}`);
+        }
     }
 
     public async invoke(functionName: string, params: Record<string, unknown>, session?: Session): Promise<ToolCallResult> {
-        const startedAt = new Date(), requestId = randomUUID();
+        const startedAt = new Date(),
+            requestId = randomUUID();
         const result = await this.executeInvocation(functionName, params, session);
         const world = this.ctx[Services.WorldState];
         if (session?.platform && session.channelId && world?.recordSystemEvent) {
             try {
                 const admin = session.argv?.command?.name === "tool.call";
-                await world.recordSystemEvent({ id: requestId, platform: session.platform, channelId: session.channelId, eventScope: "channel", type: "tool-result", timestamp: new Date(),
-                    payload: { requestId, actor: admin ? `admin:${session.platform}:${session.userId}` : "model", requester: session.userId, operation: functionName, scope: "channel", origin: { platform: session.platform, selfId: session.selfId, adapter: session.bot?.platform, channelId: session.channelId }, target: { platform: session.platform, selfId: session.selfId, channelId: session.channelId }, startedAt: startedAt.toISOString(), finishedAt: new Date().toISOString(), status: result.status, receipt: JSON.stringify(sanitizeDiagnostic(result)).slice(0, 2000) },
-                    message: "框架工具调用已返回；记录的状态是工具回执，不代表所有外部副作用均已核实。" });
-            } catch (error) { this._logger.warn(`工具结果事件投递失败：${String(error)}`); }
+                await world.recordSystemEvent({
+                    id: requestId,
+                    platform: session.platform,
+                    channelId: session.channelId,
+                    eventScope: "channel",
+                    type: "tool-result",
+                    timestamp: new Date(),
+                    payload: {
+                        requestId,
+                        actor: admin ? `admin:${session.platform}:${session.userId}` : "model",
+                        requester: session.userId,
+                        operation: functionName,
+                        scope: "channel",
+                        origin: { platform: session.platform, selfId: session.selfId, adapter: session.bot?.platform, channelId: session.channelId },
+                        target: { platform: session.platform, selfId: session.selfId, channelId: session.channelId },
+                        startedAt: startedAt.toISOString(),
+                        finishedAt: new Date().toISOString(),
+                        status: result.status,
+                        receipt: JSON.stringify(sanitizeDiagnostic(result)).slice(0, 2000),
+                    },
+                    message: "框架工具调用已返回；记录的状态是工具回执，不代表所有外部副作用均已核实。",
+                });
+            } catch (error) {
+                this._logger.warn(`工具结果事件投递失败：${String(error)}`);
+            }
         }
         return result;
     }
@@ -498,11 +536,11 @@ export class ToolService extends Service<Config> {
         this._logger.info(`→ 调用: ${functionName} | 参数: ${stringifyParams}`);
         let lastResult: ToolCallResult = Failed("Tool call did not execute.");
 
-        for (let attempt = 1; attempt <= this.config.advanced.maxRetry + 1; attempt++) {
+        for (let attempt = 1; attempt <= (this.config.advanced?.maxRetry ?? 0) + 1; attempt++) {
             try {
                 if (attempt > 1) {
-                    this._logger.info(`  - 重试 (${attempt - 1}/${this.config.advanced.maxRetry})`);
-                    await new Promise((resolve) => setTimeout(resolve, this.config.advanced.retryDelay));
+                    this._logger.info(`  - 重试 (${attempt - 1}/${this.config.advanced?.maxRetry ?? 0})`);
+                    await new Promise((resolve) => setTimeout(resolve, this.config.advanced?.retryDelay ?? 1000));
                 }
 
                 assertReplyTurn();

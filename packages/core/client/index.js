@@ -1,4 +1,5 @@
 import { computed, defineComponent, h, ref, resolveComponent } from "vue";
+
 import "./section.css";
 
 let nextSectionId = 0;
@@ -17,31 +18,33 @@ export const ConfigSection = defineComponent({
             const { role, description, collapse, ...meta } = props.schema.meta;
             return { ...props.schema, meta };
         });
-        return () => h("section", { ...attrs, class: ["yib-config-section", attrs.class] }, [
-            h("h2", { class: "yib-config-section-heading" }, [
-                h("button", {
-                    type: "button",
-                    "aria-expanded": !collapsed.value,
-                    "aria-controls": bodyId,
-                    onClick: () => collapsed.value = !collapsed.value,
-                }, [
-                    h("span", props.schema.meta.description),
-                    h("span", { class: "yib-config-section-toggle" }, collapsed.value ? "展开" : "收起"),
+        return () =>
+            h("section", { ...attrs, class: ["yib-config-section", attrs.class] }, [
+                h("h2", { class: "yib-config-section-heading" }, [
+                    h(
+                        "button",
+                        {
+                            type: "button",
+                            "aria-expanded": !collapsed.value,
+                            "aria-controls": bodyId,
+                            onClick: () => (collapsed.value = !collapsed.value),
+                        },
+                        [h("span", props.schema.meta.description), h("span", { class: "yib-config-section-toggle" }, collapsed.value ? "展开" : "收起")],
+                    ),
                 ]),
-            ]),
-            // Keep native children mounted: folding must not discard drafts.
-            h("div", { id: bodyId, class: "yib-config-section-body", hidden: collapsed.value }, [
-                h(resolveComponent("k-schema"), {
-                    schema: inner.value,
-                    modelValue: props.modelValue,
-                    initial: props.initial,
-                    disabled: props.disabled,
-                    prefix: props.prefix,
-                    extra: { ...props.extra, foldable: false },
-                    "onUpdate:modelValue": value => emit("update:modelValue", value),
-                }),
-            ]),
-        ]);
+                // Keep native children mounted: folding must not discard drafts.
+                h("div", { id: bodyId, class: "yib-config-section-body", hidden: collapsed.value }, [
+                    h(resolveComponent("k-schema"), {
+                        schema: inner.value,
+                        modelValue: props.modelValue,
+                        initial: props.initial,
+                        disabled: props.disabled,
+                        prefix: props.prefix,
+                        extra: { ...props.extra, foldable: false },
+                        "onUpdate:modelValue": (value) => emit("update:modelValue", value),
+                    }),
+                ]),
+            ]);
     },
 });
 

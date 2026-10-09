@@ -2,13 +2,14 @@ import { afterEach, expect, it, setSystemTime, spyOn } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { ArchivalMemoryManager } from "../src/services/worldstate/l3-archival-memory";
-import { SemanticMemoryManager } from "../src/services/worldstate/l2-semantic-memory";
-import { InteractionManager } from "../src/services/worldstate/interaction-manager";
+
 import { HistoryCommandManager } from "../src/services/worldstate/commands";
 import { ContextBuilder } from "../src/services/worldstate/context-builder";
-import { Services, TableName } from "../src/shared/constants";
+import { InteractionManager } from "../src/services/worldstate/interaction-manager";
+import { SemanticMemoryManager } from "../src/services/worldstate/l2-semantic-memory";
+import { ArchivalMemoryManager } from "../src/services/worldstate/l3-archival-memory";
 import { diaryDayRange } from "../src/services/worldstate/memory-date";
+import { Services, TableName } from "../src/shared/constants";
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -16,6 +17,9 @@ afterEach(async () => {
     await Promise.all(directories.splice(0).map((directory) => fs.rm(directory, { recursive: true, force: true })));
 });
 const log = { info() {}, debug() {}, warn() {}, error() {} };
+const defaultChat = async (_args: any) => ({ text: "diary" });
+const noop = async () => {};
+const noopWithTable = async (_table: string) => {};
 const day = () => new Date(2026, 9, 1, 12);
 function deferred<T = void>() {
     let resolve!: (value: T | PromiseLike<T>) => void;
@@ -42,15 +46,13 @@ function matches(row: any, query: any): boolean {
 async function fixture() {
     const baseDir = await fs.mkdtemp(path.join(os.tmpdir(), "yib-l3-"));
     directories.push(baseDir);
-    const rows = new Map<string, any[]>(
-        [TableName.Messages, TableName.SystemEvents, TableName.L2Chunks, TableName.L3Diaries].map((table) => [table, []])
-    );
+    const rows = new Map<string, any[]>([TableName.Messages, TableName.SystemEvents, TableName.L2Chunks, TableName.L3Diaries].map((table) => [table, []]));
     const actions = new Map<string, Function>();
     const queries: any[] = [];
     const prompts: any[] = [];
-    let chat = async (_args: any) => ({ text: "diary" });
-    let beforeCreate = async () => {};
-    let beforeGet = async (_table: string) => {};
+    let chat = defaultChat;
+    let beforeCreate = noop;
+    let beforeGet = noopWithTable;
     const database = {
         get: async (table: string, query: any) => {
             queries.push({ table, query });
@@ -195,10 +197,7 @@ for (const concurrent of [false, true])
         const f = await fixture();
         f.seedMessages();
         if (concurrent)
-            await Promise.all([
-                f.memory.generateDiaryForChannel("onebot", "same", day()),
-                f.memory.generateDiaryForChannel("onebot", "same", day()),
-            ]);
+            await Promise.all([f.memory.generateDiaryForChannel("onebot", "same", day()), f.memory.generateDiaryForChannel("onebot", "same", day())]);
         else {
             await f.memory.generateDiaryForChannel("onebot", "same", day());
             await f.memory.generateDiaryForChannel("onebot", "same", day());
@@ -269,8 +268,7 @@ it("rejects legacy logs when an agent-only channel shares the sanitized filename
         params: {},
     };
     await fs.writeFile(path.join(directory, "private_u.agent.jsonl"), JSON.stringify(legacy) + "\n");
-    for (let i = 0; i < 5; i++)
-        await f.interaction.recordAction("turn", "onebot", "private_u", { function: "GUILD_ONLY_SECRET", params: {} });
+    for (let i = 0; i < 5; i++) await f.interaction.recordAction("turn", "onebot", "private_u", { function: "GUILD_ONLY_SECRET", params: {} });
 
     await f.memory.generateDiariesForAllChannels(day());
 
@@ -481,7 +479,7 @@ it("waits for an issued diary database write during stop", async () => {
 it("schedules the previous completed local day and handles exact scheduled times", async () => {
     const f = await fixture();
     setSystemTime(new Date(2026, 8, 30, 23, 30));
-    const tasks: { callback: Function; delay: number }[] = [];
+    const tasks: Array<{ callback: Function; delay: number }> = [];
     const timer = spyOn(globalThis, "setTimeout").mockImplementation(((callback: Function, delay: number) => {
         tasks.push({ callback, delay });
         return {};

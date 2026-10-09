@@ -1,5 +1,6 @@
 // Build the core package before running this integration test.
 import { expect, it } from "bun:test";
+
 import { AgentCore } from "../lib/agent/agent-core";
 import { ReplyControl } from "../lib/agent/reply-control";
 import { Services } from "../lib/shared/constants";
@@ -45,7 +46,7 @@ async function setup() {
         { load: async () => [], save: async () => {}, remove: async () => {} },
         () => core.cancelAssessment(key, false),
         async () => {},
-        () => now
+        () => now,
     );
     await core.replyControl.set(target, ["at", "quote", "direct", "system", "scheduled", "background"], 100);
     const session: any = {

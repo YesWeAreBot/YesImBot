@@ -1,4 +1,5 @@
 import { expect, it } from "bun:test";
+
 import { AgentCore } from "../lib/agent/agent-core";
 import { DecisionRecords } from "../src/agent/decision-record";
 import { ReplyControl } from "../src/agent/reply-control";
@@ -40,7 +41,7 @@ function setup() {
     core.replyControl = new ReplyControl(
         { load: async () => [], save: async () => {}, remove: async () => {} },
         () => {},
-        async () => {}
+        async () => {},
     );
     Object.defineProperty(core, "logger", { value: { debug() {}, info() {}, warn() {} } });
     Object.defineProperty(core, "ctx", { value: ctx });

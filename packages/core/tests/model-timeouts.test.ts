@@ -1,4 +1,5 @@
 import { expect, it } from "bun:test";
+
 import { ChatModel } from "../src/services/model/chat-model";
 import { ModelAbility } from "../src/services/model/config";
 import { ChatModelSwitcher } from "../src/services/model/service";
@@ -6,8 +7,7 @@ import { Services } from "../src/shared/constants";
 import { AppError, ErrorDefinitions } from "../src/shared/errors";
 
 const usage = { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 };
-const frame = (delta: any, finish_reason: string | null = null) =>
-    `data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason }], usage })}\n\n`;
+const frame = (delta: any, finish_reason: string | null = null) => `data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason }], usage })}\n\n`;
 
 function fixture(configStream?: boolean, firstTokenTimeout: number | null = 0.025, totalTimeout = 0.5, responseDelay = 75, streamTailDelay = 0) {
     const logger: any = { extend: () => logger };
@@ -20,34 +20,55 @@ function fixture(configStream?: boolean, firstTokenTimeout: number | null = 0.02
         await new Promise<void>((resolve, reject) => {
             const signal = init!.signal!;
             signal.throwIfAborted();
-            const onAbort = () => { clearTimeout(timer); reject(signal.reason); };
-            const timer = setTimeout(() => { signal.removeEventListener("abort", onAbort); resolve(); }, responseDelay);
+            const onAbort = () => {
+                clearTimeout(timer);
+                reject(signal.reason);
+            };
+            const timer = setTimeout(() => {
+                signal.removeEventListener("abort", onAbort);
+                resolve();
+            }, responseDelay);
             signal.addEventListener("abort", onAbort, { once: true });
         });
         if (stream) {
             const encoder = new TextEncoder();
-            return new Response(new ReadableStream({
-                start(controller) {
-                    const signal = init!.signal!;
-                    signal.throwIfAborted();
-                    controller.enqueue(encoder.encode(frame({ content: "reply" })));
-                    const onAbort = () => { clearTimeout(timer); controller.error(signal.reason); };
-                    const timer = setTimeout(() => {
-                        signal.removeEventListener("abort", onAbort);
-                        controller.enqueue(encoder.encode(frame({}, "stop") + "data: [DONE]\n\n"));
-                        controller.close();
-                    }, streamTailDelay);
-                    signal.addEventListener("abort", onAbort, { once: true });
-                },
-            }), { headers: { "content-type": "text/event-stream" } });
+            return new Response(
+                new ReadableStream({
+                    start(controller) {
+                        const signal = init!.signal!;
+                        signal.throwIfAborted();
+                        controller.enqueue(encoder.encode(frame({ content: "reply" })));
+                        const onAbort = () => {
+                            clearTimeout(timer);
+                            controller.error(signal.reason);
+                        };
+                        const timer = setTimeout(() => {
+                            signal.removeEventListener("abort", onAbort);
+                            controller.enqueue(encoder.encode(frame({}, "stop") + "data: [DONE]\n\n"));
+                            controller.close();
+                        }, streamTailDelay);
+                        signal.addEventListener("abort", onAbort, { once: true });
+                    },
+                }),
+                { headers: { "content-type": "text/event-stream" } },
+            );
         }
-        return new Response(JSON.stringify({ choices: [{ index: 0, message: { role: "assistant", content: "reply" }, finish_reason: "stop" }], usage }),
-            { headers: { "content-type": "application/json" } });
+        return new Response(JSON.stringify({ choices: [{ index: 0, message: { role: "assistant", content: "reply" }, finish_reason: "stop" }], usage }), {
+            headers: { "content-type": "application/json" },
+        });
     }) as typeof globalThis.fetch;
-    const model = new ChatModel(ctx, model => ({ model, baseURL: "https://timeout.invalid/v1/", apiKey: "test" }), {
-        modelId: "test", abilities: [ModelAbility.Chat], parameters: { stream: configStream },
-        timeoutPolicy: { firstTokenTimeout: firstTokenTimeout ?? undefined, totalTimeout }, retryPolicy: { maxRetries: 0 },
-    }, fetch);
+    const model = new ChatModel(
+        ctx,
+        (model) => ({ model, baseURL: "https://timeout.invalid/v1/", apiKey: "test" }),
+        {
+            modelId: "test",
+            abilities: [ModelAbility.Chat],
+            parameters: { stream: configStream },
+            timeoutPolicy: { firstTokenTimeout: firstTokenTimeout ?? undefined, totalTimeout },
+            retryPolicy: { maxRetries: 0 },
+        },
+        fetch,
+    );
     const switcher = new ChatModelSwitcher(ctx, { name: "test", models: [{ providerName: "test", modelId: "test" }] }, () => model);
     return { switcher, streams };
 }
@@ -64,7 +85,11 @@ it("allows a configured non-stream single-step request to finish after the first
     expect(streams).toEqual([false]);
 });
 
-for (const [configStream, runtimeStream] of [[false, true], [true, undefined], [undefined, undefined]] as const) {
+for (const [configStream, runtimeStream] of [
+    [false, true],
+    [true, undefined],
+    [undefined, undefined],
+] as const) {
     it(`keeps first-token timeouts for streaming requests (configured=${configStream}, runtime=${runtimeStream})`, async () => {
         const { switcher, streams } = fixture(configStream);
         try {

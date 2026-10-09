@@ -1,4 +1,3 @@
-import fs from "fs/promises";
 import { Context, Schema } from "koishi";
 
 import { BaseTTSConfig, BaseTTSParams, SynthesisResult } from "../../types";
@@ -13,7 +12,7 @@ export interface IndexTTS2Config extends BaseTTSConfig, Omit<IndexTTS2GenSingleP
     emo_control_method: string;
 }
 
-export const IndexTTS2Config: Schema<IndexTTS2Config> = Schema.intersect([
+export const IndexTTS2Config: Schema<any> = Schema.intersect([
     Schema.object({
         baseURL: Schema.string().default("http://127.0.0.1:7860").description("index-tts2 Gradio API 的地址"),
         apiLang: Schema.union(["en-US", "zh-CN"]).default("en-US").description("API 后端使用的语音"),
@@ -93,21 +92,19 @@ export class IndexTTS2Adapter extends TTSAdapter<IndexTTS2Config, IndexTTS2TTSPa
             ...controlSpecific // 判别联合字段：emo_ref_audio/emo_weight 或 vec_* 等
         } = this.config as any;
 
-        const emo_control_method_text = this.ctx.i18n
-            .render([this.config.apiLang], [`indextts.${this.config.emo_control_method}`], {})
-            .join("");
+        const emo_control_method_text = this.ctx.i18n.render([this.config.apiLang], [`indextts.${this.config.emo_control_method}`], {}).join("");
         const fullParams: GenSingleParams = {
             ...controlSpecific,
             text: params.text,
             prompt_audio,
             emo_control_method: emo_control_method_text,
-            ...(advanced ?? {}),
+            ...advanced,
         };
 
         try {
             const result = await this.api.generateSingleAudio(fullParams);
 
-            const audio = await this.ctx.http(result.url, { responseType: "arraybuffer" });
+            const audio = await this.ctx.http(result.url!, { responseType: "arraybuffer" });
 
             return { audio: Buffer.from(audio.data), mimeType: "audio/wav" };
         } catch (error) {
@@ -127,9 +124,12 @@ export class IndexTTS2Adapter extends TTSAdapter<IndexTTS2Config, IndexTTS2TTSPa
                 return baseSchema;
             case ControlMethod.USE_EMO_VECTOR:
                 return baseSchema;
+            default:
+                break;
             // case ControlMethod.USE_EMO_TEXT:
             //     return baseSchema.set("emo_text", Schema.string().default(this.config.emo_text).description("情感描述文本"));
         }
+        return baseSchema;
     }
 
     public override getToolDescription(): string {

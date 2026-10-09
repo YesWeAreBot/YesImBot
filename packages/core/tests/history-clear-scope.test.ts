@@ -2,6 +2,7 @@ import { afterEach, expect, it } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+
 import { HistoryCommandManager } from "../src/services/worldstate/commands";
 import { InteractionManager } from "../src/services/worldstate/interaction-manager";
 import { SemanticMemoryManager } from "../src/services/worldstate/l2-semantic-memory";
@@ -59,7 +60,7 @@ async function fixture() {
     const exists = async (file: string) =>
         fs.access(path.join(logRoot, file)).then(
             () => true,
-            () => false
+            () => false,
         );
     return { manager, invoke, exists, files, removals, logRoot };
 }
@@ -112,7 +113,7 @@ it("explicit platform and channel cleanup retains same channel on another platfo
     const { invoke, exists, files, removals } = await fixture();
     await invoke({ platform: "onebot", channel: "group" });
     for (const file of files) expect(await exists(file)).toBe(file !== "onebot/group.agent.jsonl");
-    expect(removals.map(({ query }) => query)).toEqual(Array(4).fill({ platform: "onebot", channelId: "group" }));
+    expect(removals.map(({ query }) => query)).toEqual(new Array(4).fill({ platform: "onebot", channelId: "group" }));
 });
 it("explicit private target cleanup leaves other private conversations intact", async () => {
     const { invoke, exists, files } = await fixture();

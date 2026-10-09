@@ -1,7 +1,8 @@
 import { Context, Schema } from "koishi";
 import {} from "koishi-plugin-cron";
-import { Extension, Failed, ModelDescriptor, PromptService, Success, Tool } from "koishi-plugin-yesimbot/services";
+import { Extension, Failed, Infer, ModelDescriptor, PromptService, Success, Tool } from "koishi-plugin-yesimbot/services";
 import { Services } from "koishi-plugin-yesimbot/shared";
+
 import { DailyPlannerService } from "./service";
 
 export interface DailyPlannerConfig {
@@ -20,16 +21,7 @@ export interface DailyPlannerConfig {
     version: "1.0.0",
 })
 export default class DailyPlannerExtension {
-    static readonly inject = [
-        "cron",
-        "database",
-        "yesimbot",
-        Services.Prompt,
-        Services.Tool,
-        Services.Model,
-        Services.Memory,
-        Services.WorldState,
-    ];
+    static readonly inject = ["cron", "database", "yesimbot", Services.Prompt, Services.Tool, Services.Model, Services.Memory, Services.WorldState];
 
     static readonly Config: Schema<DailyPlannerConfig> = Schema.object({
         scheduleGenerationTime: Schema.string().default("03:00").description("每日生成日程的时间 (HH:mm 格式)"),
@@ -44,7 +36,7 @@ export default class DailyPlannerExtension {
 
     constructor(
         public ctx: Context,
-        public config: DailyPlannerConfig
+        public config: DailyPlannerConfig,
     ) {
         this.service = new DailyPlannerService(ctx, config);
         ctx.on("dispose", () => {
@@ -62,7 +54,7 @@ export default class DailyPlannerExtension {
 
         ctx.on("ready", () => {
             if (this.disposed) return;
-            const promptService: PromptService = ctx.get(Services.Prompt);
+            const promptService: PromptService = ctx.get(Services.Prompt)!;
 
             ctx.on(
                 "dispose",
@@ -71,7 +63,7 @@ export default class DailyPlannerExtension {
                     const currentSchedule = await this.getCurrentSchedule();
 
                     return `现在是 {{ date.now }}，当前时段的安排为：${currentSchedule}。`;
-                })
+                }),
             );
 
             this.registerCommands();
@@ -81,6 +73,7 @@ export default class DailyPlannerExtension {
     private registerCommands() {
         // 手动生成今日日程
         this.ctx.command("daily.generate", "手动生成今日日程", { authority: 3 }).action(async ({ session }) => {
+            if (!session) return;
             session.sendQueued("正在生成日程，请稍后...");
             await this.service.generateDailySchedule();
 
@@ -126,7 +119,7 @@ export default class DailyPlannerExtension {
         description: `获取今天的完整日程安排。`,
         parameters: Schema.object({}),
     })
-    public async getFullSchedule() {
+    public async getFullSchedule(args: Infer<{}>) {
         try {
             const schedule = await this.service.getTodaysSchedule();
             return Success(schedule);

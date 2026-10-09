@@ -1,4 +1,5 @@
 import { expect, it } from "bun:test";
+
 import { WillingnessManager } from "../src/agent/willing";
 import { Services } from "../src/shared/constants";
 
@@ -10,7 +11,7 @@ it("records the exact calculation and single random draw used for replying", () 
             attribute: { atMention: 100, isQuote: 15, isDirectMessage: 40 },
             interest: { keywords: ["hi"], keywordMultiplier: 1.2, defaultMultiplier: 1 },
             lifecycle: { maxWillingness: 100, probabilityThreshold: 10, probabilityAmplifier: 0.04, replyCost: 35 },
-        } as any
+        } as any,
     );
     const session: any = {
         cid: "qq:g",

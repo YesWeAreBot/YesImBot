@@ -1,5 +1,7 @@
 import { expect, it } from "bun:test";
+
 import { Bot, Context, Session } from "koishi";
+
 import { EventListenerManager } from "../src/services/worldstate/event-listener";
 import { WorldStateService } from "../src/services/worldstate/service";
 import { Services } from "../src/shared/constants";
@@ -19,7 +21,7 @@ function fixture() {
     const trace: string[] = [];
     const errors: unknown[][] = [];
     const memory = new Map<string, string>();
-    const stimuli: { session: Session; payload: { messageIds: string[] }; memory?: string }[] = [];
+    const stimuli: Array<{ session: Session; payload: { messageIds: string[] }; memory?: string }> = [];
     ctx[Services.Logger] = {
         getLogger: () => ({
             debug() {},

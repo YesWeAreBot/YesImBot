@@ -1,8 +1,10 @@
 import { expect, it } from "bun:test";
+
+import { Schema } from "koishi";
+
 import { HeartbeatProcessor } from "../src/agent/heartbeat-processor";
 import { withReplyTurn } from "../src/agent/reply-turn";
 import { Services } from "../src/shared/constants";
-import { Schema } from "koishi";
 for (const mode of ["normal", "streaming", "native"])
     it(`cancels an in-flight ${mode} model request and stops all actions`, async () => {
         const controller = new AbortController();
@@ -32,13 +34,13 @@ for (const mode of ["normal", "streaming", "native"])
                 },
             } as any,
             { recordThought: async () => {}, recordHeartbeat: async () => {} } as any,
-            {} as any
+            {} as any,
         );
         (processor as any)._prepareLlmRequest = async () => ({ messages: [] });
         const result = withReplyTurn(
             () => !controller.signal.aborted,
             () => processor.runCycle({ session: { platform: "onebot", channelId: "g" } } as any),
-            controller.signal
+            controller.signal,
         );
         await started;
         controller.abort();

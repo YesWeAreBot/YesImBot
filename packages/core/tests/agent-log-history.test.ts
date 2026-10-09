@@ -2,35 +2,45 @@ import { afterEach, expect, it } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+
 import { InteractionManager } from "../src/services/worldstate/interaction-manager";
 import { Services } from "../src/shared/constants";
 
 const roots: string[] = [];
 afterEach(async () => {
-    await Promise.all(roots.splice(0).map(root => fs.rm(root, { recursive: true, force: true })));
+    await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
 });
 
 async function fixture() {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "yib-log-history-"));
     roots.push(root);
     const logger = { info() {}, error() {}, debug() {}, warn() {} };
-    const manager = new InteractionManager({
-        baseDir: root,
-        [Services.Logger]: { getLogger: () => logger },
-        database: { get: async () => [] },
-    } as any, {} as any);
+    const manager = new InteractionManager(
+        {
+            baseDir: root,
+            [Services.Logger]: { getLogger: () => logger },
+            database: { get: async () => [] },
+        } as any,
+        {} as any,
+    );
     const seed = async (relativePath: string, rows: Array<string | Record<string, unknown>>) => {
         const file = path.join(root, "data/yesimbot/interactions", relativePath);
         await fs.mkdir(path.dirname(file), { recursive: true });
-        await fs.writeFile(file, rows.map(row => typeof row === "string" ? row : JSON.stringify(row)).join("\n") + "\n");
+        await fs.writeFile(file, rows.map((row) => (typeof row === "string" ? row : JSON.stringify(row))).join("\n") + "\n");
     };
     const turns = async (platform: string, channelId: string, limit = 10) =>
-        (await manager.getL1History(platform, channelId, limit)).map(item => (item as any).turnId);
+        (await manager.getL1History(platform, channelId, limit)).map((item) => (item as any).turnId);
     return { manager, seed, turns };
 }
 
 const heartbeat = (turnId: string, origin: Record<string, unknown> = {}) => ({
-    type: "agent_heartbeat", id: turnId, turnId, timestamp: "2026-10-01T12:00:00.000Z", current: 1, max: 2, ...origin,
+    type: "agent_heartbeat",
+    id: turnId,
+    turnId,
+    timestamp: "2026-10-01T12:00:00.000Z",
+    current: 1,
+    max: 2,
+    ...origin,
 });
 
 it("L1 reads exact channel metadata when private and guild IDs share a filename", async () => {
@@ -62,8 +72,22 @@ it("L1 filters ownership before taking the latest agent event limit", async () =
 
 for (const scenario of [
     { name: "unique legacy file", platform: "qq", channelId: "group", file: "qq/group.agent.jsonl", origin: {}, want: ["legacy"] },
-    { name: "unique legacy row with matching platform", platform: "qq", channelId: "group", file: "qq/group.agent.jsonl", origin: { platform: "qq" }, want: ["legacy"] },
-    { name: "unique legacy row with matching channel", platform: "qq", channelId: "group", file: "qq/group.agent.jsonl", origin: { channelId: "group" }, want: ["legacy"] },
+    {
+        name: "unique legacy row with matching platform",
+        platform: "qq",
+        channelId: "group",
+        file: "qq/group.agent.jsonl",
+        origin: { platform: "qq" },
+        want: ["legacy"],
+    },
+    {
+        name: "unique legacy row with matching channel",
+        platform: "qq",
+        channelId: "group",
+        file: "qq/group.agent.jsonl",
+        origin: { channelId: "group" },
+        want: ["legacy"],
+    },
     { name: "legacy row with mismatched platform", platform: "qq", channelId: "group", file: "qq/group.agent.jsonl", origin: { platform: "other" }, want: [] },
     { name: "legacy row with mismatched channel", platform: "qq", channelId: "group", file: "qq/group.agent.jsonl", origin: { channelId: "other" }, want: [] },
     { name: "ambiguous legacy private channel", platform: "qq", channelId: "private:u", file: "qq/private_u.agent.jsonl", origin: {}, want: [] },
@@ -93,7 +117,9 @@ it("L1 retains valid rows around malformed and unsupported log entries", async (
     const f = await fixture();
     await f.seed("qq/group.agent.jsonl", [
         heartbeat("before", { platform: "qq", channelId: "group" }),
-        "broken row", "null", { type: "unsupported" },
+        "broken row",
+        "null",
+        { type: "unsupported" },
         heartbeat("bad-date", { platform: "qq", channelId: "group", timestamp: "invalid" }),
         heartbeat("after", { platform: "qq", channelId: "group" }),
     ]);
@@ -106,7 +132,10 @@ it("normal thought, action, observation and heartbeat records continue entering 
     const actionId = await f.manager.recordAction("turn", "qq", "group", { function: "example", params: { value: 1 } });
     await f.manager.recordObservation(actionId, "qq", "group", { turnId: "turn", function: "example", status: "success", result: "done" });
     await f.manager.recordHeartbeat("turn", "qq", "group", 1, 2);
-    expect((await f.manager.getL1History("qq", "group", 10)).map(item => item.type)).toEqual([
-        "agent_thought", "agent_action", "agent_observation", "agent_heartbeat",
+    expect((await f.manager.getL1History("qq", "group", 10)).map((item) => item.type)).toEqual([
+        "agent_thought",
+        "agent_action",
+        "agent_observation",
+        "agent_heartbeat",
     ]);
 });

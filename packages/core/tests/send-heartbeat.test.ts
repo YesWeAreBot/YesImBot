@@ -1,7 +1,12 @@
 import { expect, it } from "bun:test";
+
+import { Schema } from "koishi";
+
 import { HeartbeatProcessor } from "../src/agent/heartbeat-processor";
 import { Services } from "../src/shared/constants";
-import { Schema } from "koishi";
+
+const modelResponse = (message: string) =>
+    JSON.stringify({ thoughts: {}, actions: [{ function: "send_message", params: { message } }], request_heartbeat: false });
 
 for (const scenario of ["success", "error", "query", "legacy"]) {
     it(`native heartbeat counts confirmed replies: ${scenario}`, async () => {
@@ -35,11 +40,11 @@ for (const scenario of ["success", "error", "query", "legacy"]) {
                 recordAction: async () => "action",
                 recordObservation: async () => {},
             } as any,
-            {} as any
+            {} as any,
         );
         (processor as any)._prepareLlmRequest = async () => ({ messages: [] });
         expect(await processor.runCycle({ session: { platform: "qq", channelId: "group", cid: "qq:group" } } as any)).toBe(
-            scenario === "success" || scenario === "legacy"
+            scenario === "success" || scenario === "legacy",
         );
     });
 }
@@ -56,7 +61,7 @@ it("does not execute streamed actions when the model fails", async () => {
         async (name: string) => {
             calls.push(name);
             return { status: "success" };
-        }
+        },
     );
     expect(await processor.runCycle(stimulus())).toBe(false);
     expect(calls).toEqual([]);
@@ -75,7 +80,7 @@ function streamingFixture(chat: any, invoke: any): HeartbeatProcessor {
         {} as any,
         { invoke } as any,
         { recordThought: async () => {}, recordAction: async () => "action", recordObservation: async () => {} } as any,
-        {} as any
+        {} as any,
     );
     (processor as any)._prepareLlmRequest = async () => ({ messages: [] });
     return processor;
@@ -110,7 +115,7 @@ for (const streamAction of [false, true]) {
                     recordAction: async () => "action",
                     recordObservation: async (...args: any[]) => observations.push(args[3]),
                 } as any,
-                {} as any
+                {} as any,
             );
             (processor as any)._prepareLlmRequest = async () => ({ messages: [] });
             const success = await processor.runCycle({ session: { platform: "qq", channelId: "group", cid: "qq:group" } } as any);
@@ -123,22 +128,20 @@ for (const streamAction of [false, true]) {
 
 it("executes only the accepted model response after invalid JSON retries", async () => {
     const calls: string[] = [];
-    const response = (message: string) =>
-        JSON.stringify({ thoughts: {}, actions: [{ function: "send_message", params: { message } }], request_heartbeat: false });
     const processor = streamingFixture(
         async (options: any) => {
-            options.validation.validator(response("discard"), false);
+            options.validation.validator(modelResponse("discard"), false);
             await new Promise((resolve) => setTimeout(resolve, 0));
             expect(options.validation.validator("{invalid", true).valid).toBe(false);
-            options.validation.validator(response("accepted"), true);
+            options.validation.validator(modelResponse("accepted"), true);
             await new Promise((resolve) => setTimeout(resolve, 0));
             expect(calls).toEqual([]);
-            return { text: response("accepted") };
+            return { text: modelResponse("accepted") };
         },
         async (_name: string, params: any) => {
             calls.push(params.message);
             return { status: "success" };
-        }
+        },
     );
     expect(await processor.runCycle(stimulus())).toBe(true);
     expect(calls).toEqual(["accepted"]);
@@ -156,7 +159,7 @@ it("rejects structurally invalid final responses before any action", async () =>
         async (name: string) => {
             calls.push(name);
             return { status: "success" };
-        }
+        },
     );
     expect(await processor.runCycle(stimulus())).toBe(false);
     expect(calls).toEqual([]);
@@ -184,7 +187,7 @@ it("does not replay actions when an accepted response has a tool failure", async
             calls.push(name);
             if (name === "lookup") throw new Error("tool failed");
             return { status: "success" };
-        }
+        },
     );
     expect(await processor.runCycle(stimulus())).toBe(true);
     expect(requests).toBe(1);
@@ -196,14 +199,8 @@ for (const streamAction of [false, true]) {
         [{ actions: [], want: false }],
         [{ actions: [{ function: "lookup", status: "success" }], want: false }],
         [{ actions: [{ function: "send_message", status: "error" }] }, { actions: [], want: false }],
-        [
-            { actions: [{ function: "send_message", status: "error" }] },
-            { actions: [{ function: "send_message", status: "success" }], want: true },
-        ],
-        [
-            { actions: [{ function: "send_message", status: "success" }] },
-            { actions: [{ function: "send_message", status: "error" }], want: true },
-        ],
+        [{ actions: [{ function: "send_message", status: "error" }] }, { actions: [{ function: "send_message", status: "success" }], want: true }],
+        [{ actions: [{ function: "send_message", status: "success" }] }, { actions: [{ function: "send_message", status: "error" }], want: true }],
     ]) {
         it(`${streamAction ? "streaming" : "normal"} cycle counts only confirmed replies: ${JSON.stringify(turns)}`, async () => {
             let turn = 0;
@@ -232,12 +229,10 @@ for (const streamAction of [false, true]) {
                     recordAction: async () => "action",
                     recordObservation: async (...args: any[]) => observations.push(args[3]),
                 } as any,
-                {} as any
+                {} as any,
             );
             (processor as any)._prepareLlmRequest = async () => ({ messages: [] });
-            expect(await processor.runCycle({ session: { platform: "qq", channelId: "group", cid: "qq:group" } } as any)).toBe(
-                turns[turns.length - 1].want
-            );
+            expect(await processor.runCycle({ session: { platform: "qq", channelId: "group", cid: "qq:group" } } as any)).toBe(turns[turns.length - 1].want);
             expect(observations.length).toBe(turns.reduce((count, item) => count + item.actions.length, 0));
         });
     }
@@ -245,20 +240,18 @@ for (const streamAction of [false, true]) {
 
 it("uses only the successful model after a transport failure switches providers", async () => {
     const calls: string[] = [];
-    const text = (message: string) =>
-        JSON.stringify({ thoughts: {}, actions: [{ function: "send_message", params: { message } }], request_heartbeat: false });
     const processor = streamingFixture(
         async (options: any) => {
-            options.validation.validator(text("failed provider"), false);
+            options.validation.validator(modelText("failed provider"), false);
             await new Promise((resolve) => setTimeout(resolve, 0));
             // 模型切换可能没有经过失败批次的 final 校验回调。
-            options.validation.validator(text("fallback"), true);
-            return { text: text("fallback") };
+            options.validation.validator(modelText("fallback"), true);
+            return { text: modelText("fallback") };
         },
         async (_name: string, params: any) => {
             calls.push(params.message);
             return { status: "success" };
-        }
+        },
     );
     expect(await processor.runCycle(stimulus())).toBe(true);
     expect(calls).toEqual(["fallback"]);
@@ -283,7 +276,7 @@ it("waits for delivery started after final validation before ending the cycle", 
             started();
             await delivery;
             return { status: "success" };
-        }
+        },
     );
     let settled = false;
     const cycle = processor.runCycle(stimulus()).then((value) => {
@@ -300,17 +293,14 @@ it("closes every parser stream after malformed partial actions and a transport f
     const calls: string[] = [];
     const processor = streamingFixture(
         async (options: any) => {
-            options.validation.validator(
-                JSON.stringify({ thoughts: {}, actions: [null, { function: "send_message", params: {} }] }),
-                false
-            );
+            options.validation.validator(JSON.stringify({ thoughts: {}, actions: [null, { function: "send_message", params: {} }] }), false);
             await new Promise((resolve) => setTimeout(resolve, 0));
             throw new Error("transport failed");
         },
         async (name: string) => {
             calls.push(name);
             return { status: "success" };
-        }
+        },
     );
     let timer: ReturnType<typeof setTimeout>;
     try {
@@ -339,7 +329,7 @@ for (const topLevel of [undefined, false]) {
                 options.validation.validator(response, true);
                 return { text: response };
             },
-            async () => ({ status: "success" })
+            async () => ({ status: "success" }),
         );
         const result = await (processor as any).performSingleHeartbeatWithStreaming("turn", stimulus(), () => {});
         expect(result.continue).toBe(topLevel ?? true);

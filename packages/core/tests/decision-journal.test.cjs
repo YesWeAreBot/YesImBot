@@ -53,7 +53,7 @@ test("serial writes, restart recovery, filters and private permissions", async (
     ]);
     assert.deepEqual(
         (await journal.list({ key: "onebot:channel", from: now, to: now + 20 })).map((r) => r.id),
-        ["c"]
+        ["c"],
     );
     await journal.close();
     assert.equal((await fs.stat(dir)).mode & 0o777, 0o700);
@@ -62,7 +62,7 @@ test("serial writes, restart recovery, filters and private permissions", async (
     t.after(() => restored.close());
     assert.deepEqual(
         (await restored.list({ limit: 2 })).map((r) => r.id),
-        ["b", "c"]
+        ["b", "c"],
     );
     await restored.close();
     await restored.append(record("closed"));
@@ -101,7 +101,7 @@ test("only structured metadata is persisted; arbitrary errors and nested secrets
             error: "SECRET_ERROR",
             assessment: { reason: "SECRET_ASSESSMENT" },
             target: { content: "SECRET_TARGET" },
-        })
+        }),
     );
     await journal.append(record("badreason", { reason: "SECRET_REASON" }));
     await journal.append(record("badstage", { stage: "SECRET_STAGE" }));
@@ -123,14 +123,14 @@ test("stream recovery reports damaged, incompatible and oversized lines without 
             JSON.stringify({ version: 1 }),
             "x".repeat(100000),
             JSON.stringify(record("b")),
-        ].join("\n") + "\n"
+        ].join("\n") + "\n",
     );
     const warnings = [];
     const journal = new DecisionJournal(dir, options, (message) => warnings.push(message));
     t.after(() => journal.close());
     assert.deepEqual(
         (await journal.list({})).map((r) => r.id),
-        ["a", "b"]
+        ["a", "b"],
     );
     assert.ok(warnings.some((m) => /version/i.test(m)));
     assert.ok(warnings.some((m) => /corrupt|invalid|missing/i.test(m)));
@@ -192,7 +192,7 @@ test("a truncated final line is reported and removed during recovery", async (t)
     t.after(() => journal.close());
     assert.deepEqual(
         (await journal.list({})).map((r) => r.id),
-        ["a"]
+        ["a"],
     );
     assert.ok(warnings.some((message) => message.includes("incomplete final record")));
 });
@@ -233,7 +233,7 @@ test("offline replay reproduces gain and original roll, reports skipped events a
             "broken",
         ]
             .map((r) => (typeof r === "string" ? r : JSON.stringify(r)))
-            .join("\n") + "\n"
+            .join("\n") + "\n",
     );
     const result = replay(filename);
     assert.equal(result.status, 0, result.stderr);
@@ -267,13 +267,9 @@ test("offline replay filters and fails clearly for invalid options or missing fi
     const time = Date.parse("2026-09-30T12:00:00Z");
     await fs.writeFile(
         filename,
-        [
-            record("inside", { time, calculation }),
-            record("other", { key: "other", time, calculation }),
-            record("old", { time: time - 3600000, calculation }),
-        ]
+        [record("inside", { time, calculation }), record("other", { key: "other", time, calculation }), record("old", { time: time - 3600000, calculation })]
             .map((r) => JSON.stringify(r))
-            .join("\n") + "\n"
+            .join("\n") + "\n",
     );
     const result = replay(filename, ["--key", "onebot:channel", "--from", "2026-09-30T11:59:00Z", "--to", "2026-09-30T12:01:00Z"]);
     assert.equal(result.status, 0, result.stderr);
@@ -283,7 +279,7 @@ test("offline replay filters and fails clearly for invalid options or missing fi
         .map((line) => JSON.parse(line));
     assert.deepEqual(
         lines.filter((line) => line.id).map((line) => line.id),
-        ["inside"]
+        ["inside"],
     );
     assert.notEqual(replay(filename, ["--threshold", "NaN"]).status, 0);
     assert.notEqual(replay(filename, ["--from", "invalid"]).status, 0);
@@ -303,7 +299,7 @@ test("replay counts one calculation per decision ID, preferring calculated snaps
             record("fallback", { stage: "completed", calculation }),
         ]
             .map((r) => JSON.stringify(r))
-            .join("\n") + "\n"
+            .join("\n") + "\n",
     );
     const result = replay(filename);
     assert.equal(result.status, 0, result.stderr);
@@ -333,9 +329,9 @@ test("replay bounds oversized lines, hides unapproved metadata and handles zero-
                     stage: "SECRET_STAGE",
                     reason: "SECRET_REASON",
                     content: "SECRET_BODY",
-                })
+                }),
             ) +
-            "\n{partial"
+            "\n{partial",
     );
     const result = replay(filename);
     assert.equal(result.status, 0, result.stderr);
@@ -400,7 +396,13 @@ test("a second writer is explicitly disabled before recovery or compaction", asy
     await first.append(record("c"));
     await first.append(record("d"));
     await second.close();
-    assert.deepEqual((await fs.readFile(first.filePath, "utf8")).trim().split("\n").map((line) => JSON.parse(line).id), ["c", "d"]);
+    assert.deepEqual(
+        (await fs.readFile(first.filePath, "utf8"))
+            .trim()
+            .split("\n")
+            .map((line) => JSON.parse(line).id),
+        ["c", "d"],
+    );
     // Closing the rejected writer must not release the first writer's lock.
     const third = new DecisionJournal(dir, options, (message) => warnings.push(message));
     await third.append(record("e"));
@@ -410,7 +412,10 @@ test("a second writer is explicitly disabled before recovery or compaction", asy
     const restarted = new DecisionJournal(dir, options);
     t.after(() => restarted.close());
     await restarted.append(record("f"));
-    assert.deepEqual((await restarted.list()).map((r) => r.id), ["c", "d", "f"]);
+    assert.deepEqual(
+        (await restarted.list()).map((r) => r.id),
+        ["c", "d", "f"],
+    );
 });
 
 function childJournal(dir, action) {
@@ -440,7 +445,10 @@ test("directory exclusion also applies across processes", async (t) => {
     assert.deepEqual(JSON.parse(child.stdout), []);
     assert.equal((await fs.stat(path.join(dir, ".decisions.lock"))).mode & 0o777, 0o600);
     await first.append(record("still-parent"));
-    assert.deepEqual((await first.list()).map((r) => r.id), ["parent", "still-parent"]);
+    assert.deepEqual(
+        (await first.list()).map((r) => r.id),
+        ["parent", "still-parent"],
+    );
 });
 
 test("abnormal exit keeps history safe and requires explicit stale-lock cleanup", async (t) => {
@@ -459,7 +467,10 @@ test("abnormal exit keeps history safe and requires explicit stale-lock cleanup"
     await fs.unlink(path.join(dir, ".decisions.lock"));
     const restored = new DecisionJournal(dir, options);
     t.after(() => restored.close());
-    assert.deepEqual((await restored.list()).map((r) => r.id), ["before-crash"]);
+    assert.deepEqual(
+        (await restored.list()).map((r) => r.id),
+        ["before-crash"],
+    );
 });
 
 test("initialization failure and immediate close both release the acquired lock", async (t) => {
@@ -478,7 +489,10 @@ test("initialization failure and immediate close both release the acquired lock"
     await restarted.append(record("new"));
     // Older, closed objects may still be queried, but cannot compact without a lock.
     await immediate.flush();
-    assert.deepEqual((await restarted.list()).map((r) => r.id), ["new"]);
+    assert.deepEqual(
+        (await restarted.list()).map((r) => r.id),
+        ["new"],
+    );
 });
 
 test("flush failure cannot strand a live writer's lock on close", async (t) => {

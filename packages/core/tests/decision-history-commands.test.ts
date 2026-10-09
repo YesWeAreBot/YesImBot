@@ -1,4 +1,5 @@
 import { expect, it } from "bun:test";
+
 import { registerDecisionCommands } from "../src/agent/decision-commands";
 
 it("limits history queries to the invoking session and validates time bounds", async () => {
@@ -27,7 +28,7 @@ it("limits history queries to the invoking session and validates time bounds", a
         async (value, filter) => {
             calls.push([value, filter]);
             return "saved events";
-        }
+        },
     );
     const handler = handlers.get("chat.decisions [limit:natural]");
     expect(typeof handler).toBe("function");

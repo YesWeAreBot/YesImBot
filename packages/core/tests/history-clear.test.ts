@@ -1,8 +1,12 @@
 import { expect, it } from "bun:test";
+
 import { HistoryCommandManager } from "../src/services/worldstate/commands";
 import { SemanticMemoryManager } from "../src/services/worldstate/l2-semantic-memory";
-import { Services, TableName } from "../src/shared/constants";
 import { MessageData, MemoryChunkData } from "../src/services/worldstate/types";
+import { Services, TableName } from "../src/shared/constants";
+
+const defaultEmbed = async (_text: string) => ({ embedding: [1, 0] });
+const noop = async () => {};
 
 function deferred<T = void>() {
     let resolve!: (value: T | PromiseLike<T>) => void;
@@ -31,10 +35,10 @@ function fixture(chunkSize = 2) {
     const actions = new Map<string, any>();
     const operations: string[] = [];
     const log = { info() {}, debug() {}, warn() {}, error() {} };
-    let embed = async (_text: string) => ({ embedding: [1, 0] });
-    let beforeCreate = async () => {};
-    let beforeSet = async () => {};
-    let beforeGet = async () => {};
+    let embed = defaultEmbed;
+    let beforeCreate = noop;
+    let beforeSet = noop;
+    let beforeGet = noop;
     const database = {
         get: async (table: string, query: any) => {
             const snapshot = rows
@@ -191,13 +195,13 @@ for (const type of ["private", "guild", "all"]) {
             f.rows
                 .get(TableName.Messages)!
                 .map((row) => row.content)
-                .sort()
+                .sort(),
         ).toEqual([...want].sort());
         expect(
             f
                 .chunks()
                 .map((chunk) => chunk.content)
-                .sort()
+                .sort(),
         ).toEqual(want.map((text) => `User: ${text}`).sort());
     });
 }

@@ -1,4 +1,5 @@
 import { expect, it } from "bun:test";
+
 import { StimulusScheduler } from "../src/agent/scheduler";
 import { Services } from "../src/shared/constants";
 function fixture(strategy = "skip") {
@@ -23,15 +24,11 @@ function fixture(strategy = "skip") {
         finish = r;
     });
     const calls: string[] = [];
-    const scheduler = new StimulusScheduler(
-        ctx as any,
-        { debounceMs: 2, newMessageStrategy: strategy, deferredProcessingTime: 5 } as any,
-        async (s) => {
-            calls.push(s.channelCid);
-            start();
-            await pending;
-        }
-    );
+    const scheduler = new StimulusScheduler(ctx as any, { debounceMs: 2, newMessageStrategy: strategy, deferredProcessingTime: 5 } as any, async (s) => {
+        calls.push(s.channelCid);
+        start();
+        await pending;
+    });
     return { scheduler, calls, started, finish };
 }
 const stimulus = (channelCid: string) => ({ channelCid, type: "user_message" }) as any;

@@ -1,4 +1,5 @@
 import { expect, it } from "bun:test";
+
 import { StimulusScheduler } from "../src/agent/scheduler";
 import { Services } from "../src/shared/constants";
 
@@ -33,7 +34,7 @@ function setup(strategy = "skip") {
             started();
             await waiting;
         },
-        (s: any, stage: string, reason?: string) => events.push(`${s.id}:${stage}:${reason || ""}`)
+        (s: any, stage: string, reason?: string) => events.push(`${s.id}:${stage}:${reason || ""}`),
     );
     return { scheduler, events, calls, release, start };
 }

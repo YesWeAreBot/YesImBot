@@ -1,9 +1,10 @@
 import { format } from "util";
-import { LocalLogWriter, LocalLoggingConfig, sanitizeLog } from "./local-writer";
+
 import { Context, Logger, Schema, Service } from "koishi";
 
-import { Config } from "@/config";
-import { Services } from "@/shared/constants";
+import { Config } from "../../config";
+import { Services } from "../../shared/constants";
+import { LocalLogWriter, LocalLoggingConfig, sanitizeLog } from "./local-writer";
 
 /**
  * 定义日志的详细级别，与 Koishi (reggol) 的模型对齐。
@@ -48,7 +49,11 @@ export const LoggingConfigSchema: Schema<LoggingConfig> = Schema.object({
     - DEBUG: 显示所有信息，包括详细的调试日志`),
 });
 
-function createLevelAwareLoggerProxy(logger: Logger, configuredLevel: LogLevel, write?: (name: string, level: number, method: string, args: any[]) => void): Logger {
+function createLevelAwareLoggerProxy(
+    logger: Logger,
+    configuredLevel: LogLevel,
+    write?: (name: string, level: number, method: string, args: any[]) => void,
+): Logger {
     logger.level = configuredLevel;
 
     // 映射到 reggol 的实际级别值
@@ -79,7 +84,9 @@ function createLevelAwareLoggerProxy(logger: Logger, configuredLevel: LogLevel, 
 
                 const originalMethod = Reflect.get(target, prop, receiver);
                 return (...args: any[]) => {
-                    try { write?.(target.name, methodLevel, propName, args); } catch {}
+                    try {
+                        write?.(target.name, methodLevel, propName, args);
+                    } catch {}
                     if (methodLevel <= configuredLevel) return originalMethod.apply(target, args);
                 };
             }
@@ -104,7 +111,12 @@ export class LoggerService extends Service<Config> {
         this.ctx = ctx;
         this.config = config;
         if (config.logging.local?.enabled) {
-            this.localWriter = new LocalLogWriter(ctx.baseDir, config.logging.local, message => ctx.logger("[本地日志]").warn(message), config.providers?.map(provider => provider.apiKey).filter(Boolean));
+            this.localWriter = new LocalLogWriter(
+                ctx.baseDir,
+                config.logging.local,
+                (message) => ctx.logger("[本地日志]").warn(message),
+                config.providers?.map((provider) => provider.apiKey).filter(Boolean),
+            );
         }
         this._logger = createLevelAwareLoggerProxy(ctx.logger("[日志服务]"), config.logging.level, this.writeLocal.bind(this));
     }
@@ -118,8 +130,14 @@ export class LoggerService extends Service<Config> {
     }
 
     private writeLocal(name: string, level: number, method: string, args: any[]): void {
-        if (!this.localWriter || level > this.config.logging.local.level) return;
-        void this.localWriter.write({ timestamp: new Date().toISOString(), name, level: method, message: format(...args.map(value => sanitizeLog(value))), arguments: args });
+        if (!this.localWriter || level > (this.config.logging.local?.level ?? Infinity)) return;
+        void this.localWriter.write({
+            timestamp: new Date().toISOString(),
+            name,
+            level: method,
+            message: format(...args.map((value) => sanitizeLog(value))),
+            arguments: args,
+        });
     }
 
     public async recordError(errorId: string, error: Error): Promise<void> {
@@ -130,7 +148,7 @@ export class LoggerService extends Service<Config> {
 
     /** @deprecated */
     public getLogger(name?: string): Logger {
-        const originalLogger = this.ctx?.logger(name) || new Logger(name, {});
+        const originalLogger = this.ctx?.logger(name as string) || new Logger(name ?? "", {});
         return createLevelAwareLoggerProxy(originalLogger, this.config.logging.level, this.writeLocal.bind(this));
     }
 }

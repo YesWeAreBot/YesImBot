@@ -1,5 +1,6 @@
 ///<reference types="bun-types" />
 import { describe, it, expect } from "bun:test";
+
 import { JsonParser } from "../src/shared/utils/json-parser";
 
 interface ExpectedOutputType {
@@ -15,10 +16,10 @@ interface ParseResult {
         analyze_infer: string;
         plan: string;
     };
-    actions: {
+    actions: Array<{
         function: string;
         params: any;
-    }[];
+    }>;
     request_heartbeat: boolean;
 }
 
@@ -225,8 +226,7 @@ describe("ParseResult", () => {
                 {
                     function: "send_message",
                     params: {
-                        inner_thoughts:
-                            "先告诉Alice咱收到代码啦，让她知道咱在积极处理，并且用咱可爱的语气让她稍等，因为咱要搞个大动作（创建工具）！",
+                        inner_thoughts: "先告诉Alice咱收到代码啦，让她知道咱在积极处理，并且用咱可爱的语气让她稍等，因为咱要搞个大动作（创建工具）！",
                         message: "代码收到啦！(๑•̀ㅂ•́)و✧ 咱这就去鼓捣个小工具，帮你把代码变得漂漂亮亮哒~ 稍等咱一下下嘛！",
                     },
                 },
@@ -317,8 +317,7 @@ describe("JsonParser", () => {
 
     describe("处理 LLM 特有的脏数据", () => {
         it("应该能从 Markdown 代码块中提取并解析 JSON", () => {
-            const input =
-                '当然，这是您要的 JSON 数据：\n```json\n{"name": "小红", "age": 22, "isStudent": false, "courses": []}\n```\n希望对您有帮助！';
+            const input = '当然，这是您要的 JSON 数据：\n```json\n{"name": "小红", "age": 22, "isStudent": false, "courses": []}\n```\n希望对您有帮助！';
             const result = parser.parse(input);
             expect(result.error).toBeNull();
             expect(result.data).toEqual({
@@ -343,8 +342,7 @@ describe("JsonParser", () => {
         });
 
         it("应该能丢弃 JSON 前的多余文本（前言）", () => {
-            const input =
-                '思考过程：用户需要一个学生信息... 好的，生成JSON。\n{"name": "小刚", "age": 19, "isStudent": true, "courses": ["History"]}';
+            const input = '思考过程：用户需要一个学生信息... 好的，生成JSON。\n{"name": "小刚", "age": 19, "isStudent": true, "courses": ["History"]}';
             const result = parser.parse(input);
             expect(result.error).toBeNull();
             expect(result.data).toEqual({

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { ReplyControl, messageCategories } from "../src/agent/reply-control";
 
 const target = { platform: "onebot", selfId: "bot", channelId: "group" };
@@ -20,7 +21,7 @@ function fixture() {
             changes.push(reason);
         },
         async () => {},
-        () => now
+        () => now,
     );
     return {
         control,
@@ -44,10 +45,7 @@ describe("reply suppression", () => {
         const { control } = fixture();
         await control.set(target, ["text", "quote", "direct", "system"], null);
         expect(control.allowed(target, ["text", "at", "quote"])).toEqual(["at"]);
-        expect(messageCategories({ content: "hello", stripped: {}, elements: [{ type: "at", attrs: { id: "someone" } }] } as any)).toEqual([
-            "text",
-            "at",
-        ]);
+        expect(messageCategories({ content: "hello", stripped: {}, elements: [{ type: "at", attrs: { id: "someone" } }] } as any)).toEqual(["text", "at"]);
     });
     it("expires from zero and never resurrects pre-pause tasks", async () => {
         const { control, advance, changes } = fixture();
@@ -89,7 +87,7 @@ it("reports automatic expiry storage errors without an unhandled rejection", asy
         () => now,
         (e) => {
             failures.push(e);
-        }
+        },
     );
     await control.set(target, ["all"], 10);
     now = 10;
@@ -108,7 +106,7 @@ it("restores permanent and unexpired rules in a fresh instance after restart", a
         { load: async () => [...rows.values()], save: async () => {}, remove: async () => {} },
         () => {},
         async () => {},
-        () => 2000
+        () => 2000,
     );
     await restarted.initialize();
     expect(restarted.get(target)?.expiresAt).toBeNull();

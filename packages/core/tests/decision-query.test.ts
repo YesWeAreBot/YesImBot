@@ -1,7 +1,8 @@
 import { expect, it } from "bun:test";
+
+import { WorldStateService } from "../lib/services/worldstate/service";
 import { registerDecisionCommands } from "../src/agent/decision-commands";
 import { ReplyControl } from "../src/agent/reply-control";
-import { WorldStateService } from "../lib/services/worldstate/service";
 
 it("queries only the current conversation with administrator authority", async () => {
     let action: any;
@@ -58,7 +59,7 @@ it("reading an expired suppression rule does not clear it, cancel tasks, or writ
             changes++;
         },
         async () => {},
-        () => now
+        () => now,
     );
     const target = { platform: "qq", selfId: "bot", channelId: "g" };
     await control.set(target, ["text"], 10);

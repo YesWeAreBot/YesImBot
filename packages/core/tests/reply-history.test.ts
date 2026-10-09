@@ -1,4 +1,5 @@
 import { expect, it } from "bun:test";
+
 import { EventListenerManager } from "../src/services/worldstate/event-listener";
 import { Services } from "../src/shared/constants";
 it("records mixed adapter role formats as IDs while keeping message XML", async () => {
@@ -21,7 +22,7 @@ it("records mixed adapter role formats as IDs while keeping message XML", async 
                 messages.push(value);
             },
         } as any,
-        {} as any
+        {} as any,
     );
     await (listener as any).recordUserMessage({
         author: { name: "user", roles: ["member", { id: "admin" }] },

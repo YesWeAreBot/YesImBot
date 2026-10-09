@@ -45,7 +45,7 @@ function fixture() {
             changes.push(reason);
         },
         async () => {},
-        () => 1000000
+        () => 1000000,
     );
     const session: any = {
         platform: "onebot",
@@ -54,8 +54,7 @@ function fixture() {
         bot: ctx.bots[0],
     };
     registerReplyCommands(ctx as any, control, 60000);
-    const invoke = async (name: string, options: any = {}, duration?: string, from = session) =>
-        actions.get(name)!({ session: from, options }, duration);
+    const invoke = async (name: string, options: any = {}, duration?: string, from = session) => actions.get(name)!({ session: from, options }, duration);
     const target = { platform: "onebot", selfId: "bot", channelId: "group" };
     return { ctx, control, rows, changes, authorities, session, target, invoke };
 }
@@ -181,12 +180,7 @@ it("preserves colons in raw private channel IDs and rejects conflicting shortcut
     const { invoke, control } = fixture();
     await invoke("chat.pause", { target: "onebot:private:alice" });
     expect(control.get({ platform: "onebot", selfId: "bot", channelId: "private:alice" })).toBeDefined();
-    for (const options of [
-        { target: "broken" },
-        { target: "onebot:" },
-        { channel: "a", group: "b" },
-        { target: "onebot:a", platform: "discord" },
-    ]) {
+    for (const options of [{ target: "broken" }, { target: "onebot:" }, { channel: "a", group: "b" }, { target: "onebot:a", platform: "discord" }]) {
         expect(await invoke("chat.pause", options)).toContain("操作失败");
     }
 });

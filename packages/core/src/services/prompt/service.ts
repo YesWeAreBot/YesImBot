@@ -1,9 +1,15 @@
 import { Context, Logger, Service, Session } from "koishi";
 
-import { Config } from "@/config";
-import { Services } from "@/shared/constants";
-import { formatDate, isEmpty } from "@/shared/utils";
+import { Config } from "../../config";
+import { Services } from "../../shared/constants";
+import { formatDate, isEmpty } from "../../shared/utils";
 import { IRenderer, MustacheRenderer } from "./renderer";
+
+declare module "koishi" {
+    interface Context {
+        [Services.Prompt]: PromptService;
+    }
+}
 
 export type Snippet = (currentScope: Record<string, any>) => any | Promise<any>;
 
@@ -132,8 +138,8 @@ export class PromptService extends Service<Config> {
             if (!session) return {};
             return {
                 id: session.bot.selfId,
-                name: session.bot.user.name,
-                nick: session.bot.user.nick || session.bot.user.name,
+                name: session.bot.user?.name ?? "",
+                nick: session.bot.user?.nick || session.bot.user?.name || "",
                 platform: session.platform,
             };
         });
@@ -152,7 +158,7 @@ export class PromptService extends Service<Config> {
 
     private registerDefaultInjections(): void {
         // 注册一个特殊的片段，它的作用是处理所有通过 inject() 注册的内容
-        this.registerSnippet(this.config.injectionPlaceholder, async (scope) => {
+        this.registerSnippet(this.config.injectionPlaceholder ?? "", async (scope) => {
             // 按照优先级排序
             this.injections.sort((a, b) => a.priority - b.priority);
 
@@ -166,7 +172,7 @@ export class PromptService extends Service<Config> {
                         this._logger.error(`执行注入片段 "${injection.name}" 时出错: ${error.message}`);
                         return `<!-- Error in injection: ${injection.name} -->`;
                     }
-                })
+                }),
             );
 
             // 过滤掉空的片段，并用换行符连接
@@ -181,7 +187,7 @@ export class PromptService extends Service<Config> {
             try {
                 const value = await snippetFn(scope);
                 this.setNestedProperty(scope, key, value);
-            } catch (error) {
+            } catch {
                 this.setNestedProperty(scope, key, null);
             }
         }

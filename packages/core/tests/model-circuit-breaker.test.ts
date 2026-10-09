@@ -1,7 +1,9 @@
 // Build the core package before running this integration test.
 import { afterEach, expect, it, spyOn } from "bun:test";
-import type { Context } from "koishi";
+
 import type { GenerateTextResult } from "@xsai/generate-text";
+import type { Context } from "koishi";
+
 import { BaseModel } from "../lib/services/model/base-model";
 import type { ChatRequestOptions, IChatModel } from "../lib/services/model/chat-model";
 import { ModelAbility } from "../lib/services/model/config";
@@ -30,7 +32,7 @@ class ExternalModel extends BaseModel implements IChatModel {
     constructor(
         id: string,
         threshold: number,
-        public reply: (options: ChatRequestOptions) => Promise<GenerateTextResult>
+        public reply: (options: ChatRequestOptions) => Promise<GenerateTextResult>,
     ) {
         super(
             ctx,
@@ -40,7 +42,7 @@ class ExternalModel extends BaseModel implements IChatModel {
                 circuitBreakerPolicy: { failureThreshold: threshold, cooldownSeconds: 10 },
                 timeoutPolicy: { firstTokenTimeout: 60, totalTimeout: 60 },
             },
-            "test"
+            "test",
         );
     }
     isVisionModel() {
@@ -53,7 +55,7 @@ class ExternalModel extends BaseModel implements IChatModel {
     }
 }
 
-function switcher(entries: { provider: string; model: ExternalModel }[]) {
+function switcher(entries: Array<{ provider: string; model: ExternalModel }>) {
     let index = 0;
     return new ChatModelSwitcher(
         ctx,
@@ -61,7 +63,7 @@ function switcher(entries: { provider: string; model: ExternalModel }[]) {
             name: "test",
             models: entries.map(({ provider, model }) => ({ providerName: provider, modelId: model.id })),
         },
-        () => entries[index++].model
+        () => entries[index++].model,
     );
 }
 
@@ -217,7 +219,7 @@ it("releases a cancelled half-open probe without treating caller cancellation as
         () => {
             throw new Error("expected caller cancellation");
         },
-        (error) => error
+        (error) => error,
     );
     await entered.promise;
     controller.abort(reason);

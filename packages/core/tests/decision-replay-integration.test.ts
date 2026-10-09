@@ -1,11 +1,12 @@
 import { expect, it } from "bun:test";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import path from "node:path";
-import os from "node:os";
 import { spawnSync } from "node:child_process";
-import { WillingnessManager } from "../src/agent/willing";
-import { DecisionRecords } from "../src/agent/decision-record";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
 import { DecisionJournal } from "../src/agent/decision-journal";
+import { DecisionRecords } from "../src/agent/decision-record";
+import { WillingnessManager } from "../src/agent/willing";
 import { Services } from "../src/shared/constants";
 
 it("replays recorded live calculations across nonlinear gain and participation without exposing text", async () => {
@@ -22,7 +23,7 @@ it("replays recorded live calculations across nonlinear gain and participation w
             attribute: { atMention: 30, isQuote: 15, isDirectMessage: 40 },
             interest: { keywords: [], keywordMultiplier: 1.2, defaultMultiplier: 1.2 },
             lifecycle: { maxWillingness: 100, probabilityThreshold: 25, probabilityAmplifier: 0.04, replyCost: 35 },
-        } as any
+        } as any,
     );
     const target = { platform: "qq", selfId: "bot", channelId: "g", isDirect: false };
     const session: any = {

@@ -1,10 +1,11 @@
 import { describe, expect, it } from "bun:test";
+
 import CoreUtilExtension from "../lib/services/extension/builtin/core-util";
 import { Services } from "../src/shared/constants";
 
 function setup(send: (...args: any[]) => Promise<string[]> = async () => ["sent"]) {
     const events: any[] = [];
-    const disposers: (() => void)[] = [];
+    const disposers: Array<() => void> = [];
     const logger = { debug() {}, info() {}, warn() {}, error() {} };
     const bot: any = { platform: "qq", selfId: "bot", user: { name: "bot" }, sendMessage: send, session: (event: any) => ({ event }) };
     const ctx: any = {
@@ -143,12 +144,7 @@ describe("send_message delivery", () => {
         expect(events[0][1].event.message.id).toBe("first-sent");
     });
 
-    for (const error of [
-        "plain rejection",
-        new Error("ordinary error"),
-        Object.assign(new Error("wrapper"), { cause: new Error("root cause") }),
-        null,
-    ]) {
+    for (const error of ["plain rejection", new Error("ordinary error"), Object.assign(new Error("wrapper"), { cause: new Error("root cause") }), null]) {
         it(`provides a readable reason for ${String(error)}`, async () => {
             const { tool, session } = setup(async () => {
                 throw error;

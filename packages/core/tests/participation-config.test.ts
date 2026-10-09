@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+
 import { AgentBehaviorConfigSchema } from "../src/agent/config";
 
 test("old configurations receive disabled participation defaults", () => {

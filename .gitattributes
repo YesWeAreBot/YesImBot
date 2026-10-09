@@ -1,7 +1,5 @@
-* text eol=lf
-
-*.png -text
-*.jpg -text
-*.ico -text
-*.gif -text
-*.webp -text
+* text=auto
+*.sh text eol=lf
+*.bat text eol=crlf
+*.png binary
+*.jpg binary

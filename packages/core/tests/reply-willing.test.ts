@@ -1,4 +1,5 @@
 import { expect, it } from "bun:test";
+
 import { WillingnessManager } from "../src/agent/willing";
 import { Services } from "../src/shared/constants";
 it("only counts allowed at gain from a text/at/quote/private message", () => {

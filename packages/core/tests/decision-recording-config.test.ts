@@ -1,4 +1,5 @@
 import { expect, it } from "bun:test";
+
 import { AgentBehaviorConfigSchema } from "../src/agent/config";
 
 it("keeps decision recording off by default with bounded retention", () => {

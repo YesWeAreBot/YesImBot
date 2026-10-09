@@ -1,14 +1,50 @@
 // Outbound diagnostics use an allowlist: arbitrary strings may contain conversations
 // even after credential filtering. Full errors remain available in local logging.
 const numberFields = new Set([
-    "httpStatus", "status", "statusCode", "attempt", "attempts", "attemptNumber", "maxAttempts", "retryCount",
-    "retryAfterMs", "timeoutMs", "durationMs", "elapsedMs", "headersMs", "firstChunkMs", "bytes", "frames",
-    "contentChars", "reasoningChars", "toolFrames", "errorFrames", "malformedFrames", "pendingLineChars",
-    "prompt_tokens", "completion_tokens", "total_tokens", "reasoning_tokens", "cached_tokens",
+    "httpStatus",
+    "status",
+    "statusCode",
+    "attempt",
+    "attempts",
+    "attemptNumber",
+    "maxAttempts",
+    "retryCount",
+    "retryAfterMs",
+    "timeoutMs",
+    "durationMs",
+    "elapsedMs",
+    "headersMs",
+    "firstChunkMs",
+    "bytes",
+    "frames",
+    "contentChars",
+    "reasoningChars",
+    "toolFrames",
+    "errorFrames",
+    "malformedFrames",
+    "pendingLineChars",
+    "prompt_tokens",
+    "completion_tokens",
+    "total_tokens",
+    "reasoning_tokens",
+    "cached_tokens",
 ]);
 const booleanFields = new Set(["isStream", "done", "eof", "oversizedLine"]);
 const containerFields = new Set(["streamDiagnostics", "usage"]);
-const errorNames = new Set(["Error", "AppError", "AggregateError", "TypeError", "SyntaxError", "RangeError", "ReferenceError", "URIError", "EvalError", "AbortError", "TimeoutError", "XSAIError"]);
+const errorNames = new Set([
+    "Error",
+    "AppError",
+    "AggregateError",
+    "TypeError",
+    "SyntaxError",
+    "RangeError",
+    "ReferenceError",
+    "URIError",
+    "EvalError",
+    "AbortError",
+    "TimeoutError",
+    "XSAIError",
+]);
 
 export function diagnosticId(value: unknown): string {
     return typeof value === "string" && (value === "[REDACTED]" || /^[A-Za-z0-9_-]{1,128}$/.test(value)) ? value : "[Omitted]";

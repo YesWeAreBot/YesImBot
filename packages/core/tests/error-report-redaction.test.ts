@@ -2,11 +2,15 @@ import { afterEach, expect, it } from "bun:test";
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
-import { AppError, ErrorDefinitions, ErrorReporter, initializeErrorReporter, handleError } from "../src/shared/errors";
+
 import { LocalLogWriter, sanitizeLog } from "../src/services/logger/local-writer";
+import { AppError, ErrorDefinitions, ErrorReporter, initializeErrorReporter, handleError } from "../src/shared/errors";
 
 const originalFetch = globalThis.fetch;
-afterEach(() => { globalThis.fetch = originalFetch; initializeErrorReporter({ enabled: false }, logger); });
+afterEach(() => {
+    globalThis.fetch = originalFetch;
+    initializeErrorReporter({ enabled: false }, logger);
+});
 const logger = { warn() {}, error() {}, info() {}, debug() {} } as any;
 function capture() {
     const dumps: string[] = [];
@@ -23,7 +27,8 @@ it("redacts structured and textual credentials throughout uploaded errors", asyn
     const dumps = capture();
     const cause = new Error('Authorization: Bearer header-secret\n{"apiKey":"json-secret"}\nCookie: session=cookie-secret');
     const error = new AppError(ErrorDefinitions.LLM.REQUEST_FAILED, {
-        args: ["password=message-secret"], cause,
+        args: ["password=message-secret"],
+        cause,
         context: { apiKey: "structured-secret", proxy: "https://user:url-secret@host.invalid/", httpStatus: 429 },
     });
     await reporter().report({ errorId: "safe-report-id", error, additionalInfo: { secret: "extra-secret" } });
@@ -51,17 +56,42 @@ it("redacts configured bare secrets including escaped values without changing in
 it("omits dialogue, model output, and arbitrary error text while retaining technical diagnostics", async () => {
     const dumps = capture();
     const error = new AppError(ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED, {
-        context: { rawResponse: "private-model-output", messages: [{ content: "private-conversation" }],
-            arbitrary: "private-unknown-context", requestId: "req-safe-42", httpStatus: 502,
-            streamDiagnostics: { frames: 2, contentChars: 100, usage: { total_tokens: 30, extension: "private-usage" } } },
+        context: {
+            rawResponse: "private-model-output",
+            messages: [{ content: "private-conversation" }],
+            arbitrary: "private-unknown-context",
+            requestId: "req-safe-42",
+            httpStatus: 502,
+            streamDiagnostics: { frames: 2, contentChars: 100, usage: { total_tokens: 30, extension: "private-usage" } },
+        },
         cause: new Error("private-cause-message"),
     });
     error.stack = "private-stack-content";
     await reporter().report({ errorId: "safe-id", error, additionalInfo: { requestId: "req-additional", prompt: "private-additional", httpStatus: 503 } });
     expect(dumps).toHaveLength(1);
-    for (const marker of ["private-model-output", "private-conversation", "private-unknown-context", "private-usage", "private-cause-message", "private-stack-content", "private-additional"])
+    for (const marker of [
+        "private-model-output",
+        "private-conversation",
+        "private-unknown-context",
+        "private-usage",
+        "private-cause-message",
+        "private-stack-content",
+        "private-additional",
+    ])
         expect(dumps[0]).not.toContain(marker);
-    for (const marker of ["LLM.OUTPUT_PARSING_FAILED", "req-safe-42", "req-additional", "httpStatus", "502", "503", "frames", "total_tokens", "30", "插件版本", "时间 (UTC)"])
+    for (const marker of [
+        "LLM.OUTPUT_PARSING_FAILED",
+        "req-safe-42",
+        "req-additional",
+        "httpStatus",
+        "502",
+        "503",
+        "frames",
+        "total_tokens",
+        "30",
+        "插件版本",
+        "时间 (UTC)",
+    ])
         expect(dumps[0]).toContain(marker);
 });
 
@@ -91,7 +121,7 @@ it("uses configured secrets through the global reporter initialization path", as
     initializeErrorReporter(config, logger, undefined, [secret]);
     const error = new AppError(ErrorDefinitions.SYSTEM.UNKNOWN, { context: { requestId: secret } });
     handleError(logger, error, "test");
-    await new Promise(resolve => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(dumps).toHaveLength(1);
     expect(dumps[0]).not.toContain(secret);
 });
@@ -103,7 +133,7 @@ it("reports circular context through handleError without crashing the logging st
     context.self = context;
     const error = new AppError(ErrorDefinitions.SYSTEM.UNKNOWN, { context });
     expect(() => handleError(logger, error, "circular-context")).not.toThrow();
-    await new Promise(resolve => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(dumps).toHaveLength(1);
     expect(dumps[0]).toContain("500");
     expect(context.self).toBe(context);
@@ -112,10 +142,17 @@ it("reports circular context through handleError without crashing the logging st
 it("shares credential filtering with real local files while preserving nested Error diagnostics", async () => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), "telemetry-local-redaction-"));
     const secret = 'configured-"local\\key';
-    const writer = new LocalLogWriter(directory, { enabled: true, directory: "logs", level: 3, maxFileSizeMB: 1, maxFiles: 2, retentionDays: 7 }, () => {}, [secret]);
+    const writer = new LocalLogWriter(directory, { enabled: true, directory: "logs", level: 3, maxFileSizeMB: 1, maxFiles: 2, retentionDays: 7 }, () => {}, [
+        secret,
+    ]);
     const cause = new Error('Authorization: Bearer local-header\nCookie: local-cookie\n{"apiKey":"local-json"}\nhttps://u:local-url@host.invalid/');
     Object.defineProperty(cause, "cause", { value: new Error(secret) });
-    const record: any = { error: new AggregateError([cause], "safe-local-message"), apiKey: "local-field", password: "local-password", safe: "local-diagnostic-preserved" };
+    const record: any = {
+        error: new AggregateError([cause], "safe-local-message"),
+        apiKey: "local-field",
+        password: "local-password",
+        safe: "local-diagnostic-preserved",
+    };
     record.self = record;
     const originalStack = cause.stack;
     try {
@@ -124,7 +161,16 @@ it("shares credential filtering with real local files while preserving nested Er
         const names = await fs.readdir(writer.directory);
         const text = await fs.readFile(path.join(writer.directory, names[0]), "utf8");
         const parsed = JSON.parse(text);
-        for (const marker of [secret, JSON.stringify(secret).slice(1, -1), "local-header", "local-cookie", "local-json", "local-url", "local-field", "local-password"])
+        for (const marker of [
+            secret,
+            JSON.stringify(secret).slice(1, -1),
+            "local-header",
+            "local-cookie",
+            "local-json",
+            "local-url",
+            "local-field",
+            "local-password",
+        ])
             expect(text).not.toContain(marker);
         expect(parsed.error.name).toBe("AggregateError");
         expect(parsed.error.errors[0].message).toContain("[REDACTED]");
@@ -135,14 +181,30 @@ it("shares credential filtering with real local files while preserving nested Er
         expect(cause.stack).toBe(originalStack);
         expect(record.apiKey).toBe("local-field");
         expect(record.self).toBe(record);
-    } finally { await writer.close(); await fs.rm(directory, { recursive: true, force: true }); }
+    } finally {
+        await writer.close();
+        await fs.rm(directory, { recursive: true, force: true });
+    }
 });
 
-for (const [label, secret] of [["plain", "configured-tojson-secret"], ["escaped", 'configured-"tojson\\secret']] as const) {
+for (const [label, secret] of [
+    ["plain", "configured-tojson-secret"],
+    ["escaped", 'configured-"tojson\\secret'],
+] as const) {
     it(`redacts ${label} configured secrets returned by custom toJSON in real local files`, async () => {
         const directory = await fs.mkdtemp(path.join(os.tmpdir(), "telemetry-local-tojson-"));
-        const writer = new LocalLogWriter(directory, { enabled: true, directory: "logs", level: 3, maxFileSizeMB: 1, maxFiles: 2, retentionDays: 7 }, () => {}, [secret]);
-        const payload = { apiKey: secret, toJSON() { return { detail: secret, [secret]: "key-preserved", safe: "diagnostic-preserved" }; } };
+        const writer = new LocalLogWriter(
+            directory,
+            { enabled: true, directory: "logs", level: 3, maxFileSizeMB: 1, maxFiles: 2, retentionDays: 7 },
+            () => {},
+            [secret],
+        );
+        const payload = {
+            apiKey: secret,
+            toJSON() {
+                return { detail: secret, [secret]: "key-preserved", safe: "diagnostic-preserved" };
+            },
+        };
         try {
             await writer.write({ arguments: [payload], safe: "record-preserved" });
             await writer.close();
@@ -155,7 +217,10 @@ for (const [label, secret] of [["plain", "configured-tojson-secret"], ["escaped"
             expect(parsed.arguments[0]).toEqual({ detail: "[REDACTED]", "[REDACTED]": "key-preserved", safe: "diagnostic-preserved" });
             expect(parsed.safe).toBe("record-preserved");
             expect(payload.apiKey).toBe(secret);
-        } finally { await writer.close(); await fs.rm(directory, { recursive: true, force: true }); }
+        } finally {
+            await writer.close();
+            await fs.rm(directory, { recursive: true, force: true });
+        }
     });
 }
 
@@ -163,8 +228,13 @@ it("keeps local saving active when remote reporting is disabled, with existing l
     const dumps = capture();
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), "telemetry-local-"));
     const secret = 'local-"configured-secret';
-    const writer = new LocalLogWriter(directory, { enabled: true, directory: "logs", level: 3, maxFileSizeMB: 1, maxFiles: 2, retentionDays: 7 }, () => {}, [secret]);
-    const error = new AppError(ErrorDefinitions.SYSTEM.UNKNOWN, { cause: new Error(secret), context: { rawResponse: "local-response-preserved", apiKey: "local-structured-secret" } });
+    const writer = new LocalLogWriter(directory, { enabled: true, directory: "logs", level: 3, maxFileSizeMB: 1, maxFiles: 2, retentionDays: 7 }, () => {}, [
+        secret,
+    ]);
+    const error = new AppError(ErrorDefinitions.SYSTEM.UNKNOWN, {
+        cause: new Error(secret),
+        context: { rawResponse: "local-response-preserved", apiKey: "local-structured-secret" },
+    });
     try {
         const disabled = new ErrorReporter({ enabled: false }, logger, (errorId, error) => writer.write({ errorId, error }));
         expect(await disabled.report({ errorId: "local-id", error })).toBeNull();
@@ -177,5 +247,8 @@ it("keeps local saving active when remote reporting is disabled, with existing l
         expect(text).not.toContain(JSON.stringify(secret).slice(1, -1));
         expect(text).not.toContain("local-structured-secret");
         expect(text).toContain("[REDACTED]");
-    } finally { await writer.close(); await fs.rm(directory, { recursive: true, force: true }); }
+    } finally {
+        await writer.close();
+        await fs.rm(directory, { recursive: true, force: true });
+    }
 });

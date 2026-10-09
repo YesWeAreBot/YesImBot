@@ -1,4 +1,5 @@
 import { expect, it } from "bun:test";
+
 import { WorldStateService } from "../src/services/worldstate/service";
 
 const group = { platform: "onebot", channelId: "channel", guildId: "guild", userId: "user", isDirect: false };

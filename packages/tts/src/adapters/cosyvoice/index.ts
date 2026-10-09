@@ -1,6 +1,7 @@
 import fs from "fs";
-import { Context, Schema } from "koishi";
 import path from "path";
+
+import { Context, Schema } from "koishi";
 import { v4 as uuid } from "uuid";
 import WebSocket from "ws";
 
@@ -47,7 +48,7 @@ export interface CosyVoiceTTSParams extends BaseTTSParams {}
 export class CosyVoiceAdapter extends TTSAdapter<CosyVoiceConfig, CosyVoiceTTSParams> {
     public readonly name = "cosyvoice";
 
-    private ws: WebSocket;
+    private ws?: WebSocket;
     private taskQueue: VoiceTask[] = [];
     private isBusy = false;
     private currentTask: CurrentTaskState | null = null;
@@ -124,10 +125,14 @@ export class CosyVoiceAdapter extends TTSAdapter<CosyVoiceConfig, CosyVoiceTTSPa
                     break;
                 case "task-finished":
                     task.finishing = true;
-                    task.fileStream.end(() => { void this.completeTask(task); });
+                    task.fileStream.end(() => {
+                        void this.completeTask(task);
+                    });
                     break;
                 case "task-failed":
                     this.failTask(task, new Error(`任务[${task.taskId}]失败: ${message.header.error_message}`));
+                    break;
+                default:
                     break;
             }
         } catch (error) {
@@ -171,7 +176,7 @@ export class CosyVoiceAdapter extends TTSAdapter<CosyVoiceConfig, CosyVoiceTTSPa
     private async ensureConnected(): Promise<void> {
         if (this.stopped) throw new Error("CosyVoice adapter stopped");
         this.connect();
-        const socket = this.ws;
+        const socket = this.ws!;
         if (socket.readyState === WebSocket.OPEN) return;
         if (socket.readyState !== WebSocket.CONNECTING) throw new Error("CosyVoice WebSocket 未连接");
         await new Promise<void>((resolve, reject) => {
@@ -181,8 +186,14 @@ export class CosyVoiceAdapter extends TTSAdapter<CosyVoiceConfig, CosyVoiceTTSPa
                 socket.off("close", closed);
                 if (this.cancelConnect === failed) this.cancelConnect = undefined;
             };
-            const opened = () => { cleanup(); resolve(); };
-            const failed = (error: Error) => { cleanup(); reject(error); };
+            const opened = () => {
+                cleanup();
+                resolve();
+            };
+            const failed = (error: Error) => {
+                cleanup();
+                reject(error);
+            };
             const closed = () => failed(new Error("CosyVoice WebSocket连接已关闭"));
             this.cancelConnect = failed;
             socket.once("open", opened);
@@ -199,21 +210,27 @@ export class CosyVoiceAdapter extends TTSAdapter<CosyVoiceConfig, CosyVoiceTTSPa
     }
 
     private send(message: string, task: CurrentTaskState) {
-        this.ws.send(message, (error) => {
+        this.ws?.send(message, (error) => {
             if (error) this.failTask(task, error);
         });
     }
 
     private sendTextForCurrentTask(task: CurrentTaskState) {
-        this.send(JSON.stringify({
-            header: { action: "continue-task", task_id: task.taskId, streaming: "duplex" },
-            payload: { input: { text: task.params.text } },
-        }), task);
+        this.send(
+            JSON.stringify({
+                header: { action: "continue-task", task_id: task.taskId, streaming: "duplex" },
+                payload: { input: { text: task.params.text } },
+            }),
+            task,
+        );
         if (this.currentTask !== task) return;
-        this.send(JSON.stringify({
-            header: { action: "finish-task", task_id: task.taskId, streaming: "duplex" },
-            payload: { input: {} },
-        }), task);
+        this.send(
+            JSON.stringify({
+                header: { action: "finish-task", task_id: task.taskId, streaming: "duplex" },
+                payload: { input: {} },
+            }),
+            task,
+        );
     }
 
     private async processQueue() {
@@ -222,8 +239,11 @@ export class CosyVoiceAdapter extends TTSAdapter<CosyVoiceConfig, CosyVoiceTTSPa
         this.isBusy = true;
         try {
             await this.ensureConnected();
-            if (this.stopped || !this.taskQueue.length) { this.isBusy = false; return; }
-            if (this.ws.readyState !== WebSocket.OPEN) throw new Error("CosyVoice WebSocket 未连接");
+            if (this.stopped || !this.taskQueue.length) {
+                this.isBusy = false;
+                return;
+            }
+            if (this.ws?.readyState !== WebSocket.OPEN) throw new Error("CosyVoice WebSocket 未连接");
             const task = this.taskQueue.shift()!;
             const taskId = uuid();
             const filePath = path.join(this.tempDir, `${taskId}.mp3`);
@@ -241,17 +261,29 @@ export class CosyVoiceAdapter extends TTSAdapter<CosyVoiceConfig, CosyVoiceTTSPa
             this.streamClosures.add(closure);
             void closure.then(() => this.streamClosures.delete(closure));
             fileStream.on("error", (error) => this.failTask(current, error));
-            this.send(JSON.stringify({
-                header: { action: "run-task", task_id: taskId, streaming: "duplex" },
-                payload: {
-                    task_group: "audio", task: "tts", function: "SpeechSynthesizer", model: this.config.model,
-                    parameters: {
-                        text_type: "PlainText", voice: this.config.voice, format: "mp3", sample_rate: 24000,
-                        volume: 50, rate: 1, pitch: 1, enable_ssml: this.config.enable_ssml,
+            this.send(
+                JSON.stringify({
+                    header: { action: "run-task", task_id: taskId, streaming: "duplex" },
+                    payload: {
+                        task_group: "audio",
+                        task: "tts",
+                        function: "SpeechSynthesizer",
+                        model: this.config.model,
+                        parameters: {
+                            text_type: "PlainText",
+                            voice: this.config.voice,
+                            format: "mp3",
+                            sample_rate: 24000,
+                            volume: 50,
+                            rate: 1,
+                            pitch: 1,
+                            enable_ssml: this.config.enable_ssml,
+                        },
+                        input: {},
                     },
-                    input: {},
-                },
-            }), current);
+                }),
+                current,
+            );
         } catch (error) {
             this.failAll(error instanceof Error ? error : new Error(String(error)));
             this.isBusy = false;

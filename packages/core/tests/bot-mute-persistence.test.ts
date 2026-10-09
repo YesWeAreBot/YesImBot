@@ -1,4 +1,5 @@
 import { expect, it } from "bun:test";
+
 import { WorldStateService } from "../src/services/worldstate/service";
 import { Services, TableName } from "../src/shared/constants";
 

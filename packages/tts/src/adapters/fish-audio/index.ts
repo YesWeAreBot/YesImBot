@@ -1,7 +1,8 @@
-import { encode } from "@msgpack/msgpack";
 import { readFileSync } from "fs";
-import { Context, Schema } from "koishi";
 import path from "path";
+
+import { encode } from "@msgpack/msgpack";
+import { Context, Schema } from "koishi";
 import { ProxyAgent, fetch } from "undici";
 
 import { BaseTTSConfig, BaseTTSParams, SynthesisResult } from "../../types";
@@ -14,7 +15,7 @@ export interface FishAudioConfig extends BaseTTSConfig, Omit<ServerTTSRequest, "
     model: "speech-1.5" | "speech-1.6" | "s1";
     proxy?: string;
 
-    references?: { audio: string; text: string }[];
+    references?: Array<{ audio: string; text: string }>;
 
     toolDesc: string;
 }
@@ -38,11 +39,11 @@ export const FishAudioConfig: Schema<FishAudioConfig> = Schema.object({
                 .default("")
                 .role("textarea", { rows: [1, 2] })
                 .description("参考音频对应的文本内容"),
-        })
+        }),
     )
         .description("参考音频列表")
         .default([]),
-    reference_id: Schema.string().description("参考音频ID").default(null),
+    reference_id: Schema.string().description("参考音频ID"),
     toolDesc: Schema.string()
         .role("textarea", { rows: [3, 6] })
         .default(
@@ -89,7 +90,7 @@ export const FishAudioConfig: Schema<FishAudioConfig> = Schema.object({
 1.  **严格遵守规则**: 尤其是情感标签必须置于句首的规则。
 2.  **优先使用官方标签**: 上述列表中的标签拥有最高的准确率。
 3.  **避免自创组合标签**: 不要使用 \`(in a sad and quiet voice)\` 这种形式，模型会直接读出。应组合使用标准标签，如 \`(sad)(soft tone)\`。
-4.  **避免标签滥用**: 在短句中过多使用标签可能会干扰模型效果。`
+4.  **避免标签滥用**: 在短句中过多使用标签可能会干扰模型效果。`,
         )
         .description("工具描述文本，用于指导AI使用情感控制标签生成高质量的文本"),
 }).description("Fish Audio 配置");
@@ -106,14 +107,14 @@ export class FishAudioAdapter extends TTSAdapter<FishAudioConfig, FishAudioTTSPa
 
         this.baseURL = config.baseURL.endsWith("/v1/tts") ? config.baseURL.replace("/v1/tts", "") : config.baseURL;
 
-        for (let refer of config.references) {
+        for (let refer of config.references ?? []) {
             try {
                 const reference_audio = readFileSync(path.join(ctx.baseDir, refer.audio));
                 this.references.push({
                     audio: Buffer.from(reference_audio),
                     text: refer.text?.trim() || "",
                 });
-            } catch (err) {
+            } catch {
                 ctx.logger.error("参考音频读取失败");
             }
         }
@@ -136,7 +137,7 @@ export class FishAudioAdapter extends TTSAdapter<FishAudioConfig, FishAudioTTSPa
             try {
                 dispatcher = new ProxyAgent({ uri: this.config.proxy });
                 this.ctx.logger.info(`using proxy: ${this.config.proxy}`);
-            } catch (err) {}
+            } catch {}
         }
 
         const response = await fetch(`${this.baseURL}/v1/tts`, {

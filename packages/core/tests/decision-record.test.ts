@@ -1,4 +1,5 @@
 import { expect, it } from "bun:test";
+
 import { DecisionRecords, formatDecision } from "../src/agent/decision-record";
 
 it("keeps the newest message visible when an older asynchronous task finishes", () => {
@@ -34,7 +35,7 @@ it("does not overwrite cancellation with late completion or alter results during
                 assessing: false,
                 muted: false,
                 participation: { active: false },
-            })
+            }),
         ).toContain("0.8");
     } finally {
         Math.random = originalRandom;

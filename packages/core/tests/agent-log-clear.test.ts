@@ -2,13 +2,17 @@ import { afterEach, expect, it, spyOn } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+
 import { InteractionManager } from "../src/services/worldstate/interaction-manager";
 import { Services } from "../src/shared/constants";
 
 const roots: string[] = [];
 afterEach(async () => {
-    await Promise.all(roots.splice(0).map(root => fs.rm(root, { recursive: true, force: true })));
+    await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
 });
+
+const row = (channelId: string, id = channelId) =>
+    JSON.stringify({ type: "agent_heartbeat", platform: "qq", channelId, id, timestamp: new Date().toISOString(), current: 1, max: 2 });
 
 async function fixture() {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "yib-log-clear-"));
@@ -17,7 +21,6 @@ async function fixture() {
     const manager = new InteractionManager({ baseDir: root, [Services.Logger]: { getLogger: () => logger } } as any, {} as any);
     const logFile = path.join(root, "data/yesimbot/interactions/qq/private_u.agent.jsonl");
     await fs.mkdir(path.dirname(logFile), { recursive: true });
-    const row = (channelId: string, id = channelId) => JSON.stringify({ type: "agent_heartbeat", platform: "qq", channelId, id, timestamp: new Date().toISOString(), current: 1, max: 2 });
     const seed = () => fs.writeFile(logFile, [row("private:u"), row("private_u"), '{"type":"agent_heartbeat","id":"unowned"}', "broken row"].join("\n") + "\n");
     return { root, manager, logFile, row, seed, content: () => fs.readFile(logFile, "utf8") };
 }
@@ -49,7 +52,7 @@ it("platform cleanup retains another platform sharing a sanitized directory", as
     const f = await fixture();
     const file = path.join(f.root, "data/yesimbot/interactions/a_b/group.agent.jsonl");
     await fs.mkdir(path.dirname(file), { recursive: true });
-    await fs.writeFile(file, ["a:b", "a_b"].map(platform => JSON.stringify({ platform, channelId: "group" })).join("\n") + "\n");
+    await fs.writeFile(file, ["a:b", "a_b"].map((platform) => JSON.stringify({ platform, channelId: "group" })).join("\n") + "\n");
     await f.manager.clearAgentHistory("a:b");
     expect(await fs.readFile(file, "utf8")).toBe('{"platform":"a_b","channelId":"group"}\n');
 });
@@ -59,12 +62,15 @@ it("new rows carry their exact origin and wait for an in-flight rewrite", async 
     await f.seed();
     const originalRead = fs.readFile.bind(fs);
     let entered!: () => void;
-    const started = new Promise<void>(resolve => entered = resolve);
+    const started = new Promise<void>((resolve) => (entered = resolve));
     let release!: () => void;
-    const gate = new Promise<void>(resolve => release = resolve);
+    const gate = new Promise<void>((resolve) => (release = resolve));
     const read = spyOn(fs, "readFile").mockImplementation(async (...args: any[]) => {
-        const content = await originalRead(...args as Parameters<typeof fs.readFile>);
-        if (args[0] === f.logFile) { entered(); await gate; }
+        const content = await originalRead(...(args as Parameters<typeof fs.readFile>));
+        if (args[0] === f.logFile) {
+            entered();
+            await gate;
+        }
         return content;
     });
     const mkdir = spyOn(fs, "mkdir").mockResolvedValue(undefined);
@@ -79,8 +85,11 @@ it("new rows carry their exact origin and wait for an in-flight rewrite", async 
         expect(append).not.toHaveBeenCalled();
         release();
         await Promise.all([clearing, recording]);
-        const rows = (await f.content()).trim().split("\n").filter(line => line.startsWith("{"));
-        const entry = rows.map(line => JSON.parse(line)).find(entry => entry.turnId === "new");
+        const rows = (await f.content())
+            .trim()
+            .split("\n")
+            .filter((line) => line.startsWith("{"));
+        const entry = rows.map((line) => JSON.parse(line)).find((entry) => entry.turnId === "new");
         expect(entry).toMatchObject({ platform: "qq", channelId: "private_u" });
         expect(await f.content()).toContain('"id":"private_u"');
     } finally {

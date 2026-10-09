@@ -1,12 +1,12 @@
 import { Context, Query, Schema } from "koishi";
 
-import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
-import { Failed, Success } from "@/services/extension/helpers";
-import { Infer } from "@/services/extension/types";
-import { MemoryService } from "@/services/memory";
-import { MessageData } from "@/services/worldstate";
-import { formatDate, truncate } from "@/shared";
-import { Services, TableName } from "@/shared/constants";
+import { Extension, Tool, withInnerThoughts } from "../../../services/extension/decorators";
+import { Failed, Success } from "../../../services/extension/helpers";
+import { Infer } from "../../../services/extension/types";
+import { MemoryService } from "../../../services/memory";
+import { MessageData } from "../../../services/worldstate";
+import { formatDate, truncate } from "../../../shared";
+import { Services, TableName } from "../../../shared/constants";
 
 @Extension({
     name: "memory",
@@ -23,7 +23,10 @@ export default class MemoryExtension {
 
     static readonly inject = [Services.Memory];
 
-    constructor(public ctx: Context, public config: any) {}
+    constructor(
+        public ctx: Context,
+        public config: any,
+    ) {}
 
     private get memoryService(): MemoryService {
         if (!this.ctx[Services.Memory]) {
@@ -116,36 +119,23 @@ export default class MemoryExtension {
         description:
             "Searches your raw conversation history (recall memory). Useful for finding specific keywords, names, or direct quotes from past conversations.",
         parameters: withInnerThoughts({
-            query: Schema.string()
-                .required()
-                .description("The search term to find in past messages. This is a keyword-based search."),
-            limit: Schema.number()
-                .min(1)
-                .default(10)
-                .max(25)
-                .description("Maximum number of messages to return (default: 10, max: 25)."),
+            query: Schema.string().required().description("The search term to find in past messages. This is a keyword-based search."),
+            limit: Schema.number().min(1).default(10).max(25).description("Maximum number of messages to return (default: 10, max: 25)."),
             channel_id: Schema.string().description("Optional: Filter by a specific channel ID."),
-            user_id: Schema.string().description(
-                "Optional: Filter by messages sent by a specific user ID (not the bot's own ID)."
-            ),
+            user_id: Schema.string().description("Optional: Filter by messages sent by a specific user ID (not the bot's own ID)."),
         }),
     })
     async conversationSearch(args: Infer<{ query: string; limit?: number; channel_id?: string; user_id?: string }>) {
         const { query, limit = 10, channel_id, user_id } = args;
 
         try {
-            const whereClauses: Query.Expr<MessageData>[] = [{ content: { $regex: new RegExp(query, "i") } }];
+            const whereClauses: Array<Query.Expr<MessageData>> = [{ content: { $regex: new RegExp(query, "i") } }];
             if (channel_id) whereClauses.push({ channelId: channel_id });
             if (user_id) whereClauses.push({ sender: { id: user_id } });
 
             const finalQuery: Query<MessageData> = { $and: whereClauses };
 
-            const messages = await this.ctx.database
-                .select(TableName.Messages)
-                .where(finalQuery)
-                .limit(limit)
-                .orderBy("timestamp", "desc")
-                .execute();
+            const messages = await this.ctx.database.select(TableName.Messages).where(finalQuery).limit(limit).orderBy("timestamp", "desc").execute();
 
             if (!messages || messages.length === 0) {
                 return Success("No matching messages found in recall memory.");
@@ -157,9 +147,9 @@ export default class MemoryExtension {
                 results_count: messages.length,
                 results: formattedResults,
             });
-        } catch (e: any) {
-            this.ctx.logger.error(`[MemoryTool] Conversation search failed for query "${query}": ${e.message}`);
-            return Failed(`Failed to search conversation history: ${e.message}`);
+        } catch (error: any) {
+            this.ctx.logger.error(`[MemoryTool] Conversation search failed for query "${query}": ${error.message}`);
+            return Failed(`Failed to search conversation history: ${error.message}`);
         }
     }
 }

@@ -1,30 +1,29 @@
 // Agent reply regressions use built core; state/event methods are tested from source.
 import { expect, it, spyOn } from "bun:test";
+
 import { Bot, Context, MessageEncoder } from "koishi";
-import { WorldStateService } from "../src/services/worldstate/service";
-import { EventListenerManager } from "../src/services/worldstate/event-listener";
+
 import { AgentCore } from "../lib/agent/agent-core";
-import { Config } from "../lib/config";
 import { replyTurnSignal } from "../lib/agent/reply-turn";
-import { Services, TableName } from "../src/shared/constants";
+import { Config } from "../lib/config";
 import CoreUtilExtension from "../lib/services/extension/builtin/core-util";
+import { EventListenerManager } from "../src/services/worldstate/event-listener";
+import { WorldStateService } from "../src/services/worldstate/service";
+import { Services, TableName } from "../src/shared/constants";
 
 const logger = { debug() {}, info() {}, warn() {}, error() {} };
 export function muteFixture(rows: any[] = []) {
     const ctx = new Context();
     ctx[Services.Logger] = { getLogger: () => logger } as any;
-    ctx.bots.push(
-        { platform: "onebot", selfId: "a" } as any,
-        { platform: "onebot", selfId: "b" } as any,
-        { platform: "other", selfId: "a" } as any
-    );
+    ctx.bots.push({ platform: "onebot", selfId: "a" } as any, { platform: "onebot", selfId: "b" } as any, { platform: "other", selfId: "a" } as any);
     let reads = 0;
     const states: any[] = [];
     ctx.database = {
         upsert: async (_table: string, values: any[]) => {
             for (const value of values) {
-                const existing = states.find(row => row.id === value.id);
-                if (existing) Object.assign(existing, value); else states.push({ ...value });
+                const existing = states.find((row) => row.id === value.id);
+                if (existing) Object.assign(existing, value);
+                else states.push({ ...value });
             }
         },
         get: async (_table: string, query: any) => {
@@ -35,15 +34,23 @@ export function muteFixture(rows: any[] = []) {
                     (!query.type || (typeof query.type === "string" ? row.type === query.type : query.type.$in.includes(row.type))) &&
                     (!query.platform || row.platform === query.platform) &&
                     (!query.channelId || row.channelId === query.channelId) &&
-                    (!query.timestamp || (row.timestamp >= query.timestamp.$gte && row.timestamp <= query.timestamp.$lte))
+                    (!query.timestamp || (row.timestamp >= query.timestamp.$gte && row.timestamp <= query.timestamp.$lte)),
             );
         },
     } as any;
     const world: any = Object.create(WorldStateService.prototype);
     Object.defineProperty(world, "ctx", { value: ctx });
     Object.defineProperty(world, "logger", { value: logger });
-    Object.assign(world, { mutedChannels: new Map(), allMutedChannels: new Map(),
-        l2_manager: { getHistoryGeneration: () => 0, writeMemory: async (_target: any, _generation: number, write: Function) => { await write(); return true; } },
+    Object.assign(world, {
+        mutedChannels: new Map(),
+        allMutedChannels: new Map(),
+        l2_manager: {
+            getHistoryGeneration: () => 0,
+            writeMemory: async (_target: any, _generation: number, write: Function) => {
+                await write();
+                return true;
+            },
+        },
     });
     const recorded: any[] = [];
     world.l1_manager = {
@@ -278,7 +285,7 @@ it("aborts an in-flight reply and cannot revive it on immediate unmute", async (
     };
     const result = f.core.scheduler.taskCallback(f.stimulus).then(
         () => undefined,
-        (error: Error) => error
+        (error: Error) => error,
     );
     await started;
     f.world.updateMuteStatus("onebot:g", Date.now() + 60000, "a");
@@ -308,7 +315,7 @@ it("checks the actual destination before a tool sends into another muted group",
 
 it("discards pending debounce work so it is not replayed after unmute", async () => {
     const f = replyFixture();
-    const queued: (() => void)[] = [];
+    const queued: Array<() => void> = [];
     f.ctx.debounce = ((callback: Function) => {
         let active = true;
         const invoke: any = (...args: any[]) =>
@@ -477,10 +484,7 @@ for (const mode of ["before-send", "chunks", "upload", "explicit-target"] as con
                 : undefined;
         f.core.processor.runCycle = async (stimulus: any) => {
             if (mode === "explicit-target") {
-                return (
-                    (await tool!.sendMessage({ session: stimulus.session, target: "onebot:destination", message: "reply" } as any))
-                        .status === "success"
-                );
+                return (await tool!.sendMessage({ session: stimulus.session, target: "onebot:destination", message: "reply" } as any)).status === "success";
             }
             await stimulus.session.bot.sendMessage("g", "reply");
             return true;

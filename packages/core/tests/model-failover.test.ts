@@ -1,11 +1,12 @@
 import { describe, expect, it } from "bun:test";
+
 import type { Message } from "@xsai/shared-chat";
 import type { Context } from "koishi";
 
-import { Services } from "../src/shared/constants";
 import { ChatModel, ChatRequestOptions } from "../src/services/model/chat-model";
 import { ContentFailureAction, ModelAbility } from "../src/services/model/config";
 import { ChatModelSwitcher } from "../src/services/model/service";
+import { Services } from "../src/shared/constants";
 
 const malformedResponse = "thoughts observe analyze_infer plan actions function params: incomplete JSON";
 const validResponse = '{"thoughts":{"observe":"hello","analyze_infer":"greeting","plan":"reply"},"actions":[],"request_heartbeat":false}';
@@ -80,13 +81,13 @@ function fixture(responses: Array<string | Error>) {
                     timeoutPolicy: { firstTokenTimeout: 5, totalTimeout: 10 },
                     retryPolicy: { maxRetries: modelId === "primary" ? 1 : 0, onContentFailure: ContentFailureAction.AugmentAndRetry },
                 },
-                fetch
-            )
+                fetch,
+            ),
     );
     const switcher = new ChatModelSwitcher(
         ctx,
         { name: "test", models: models.map((model) => ({ providerName: "test", modelId: model.id })) },
-        (_provider, modelId) => models.find((model) => model.id === modelId) ?? null
+        (_provider, modelId) => models.find((model) => model.id === modelId) ?? null,
     );
     const options: ChatRequestOptions = { messages: originalMessages(), stream: true, validation: { format: "json" } };
     return { switcher, requests, options };

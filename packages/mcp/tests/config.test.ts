@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+
 import { Config } from "../src/Config";
 
 describe("MCP command transformation configuration", () => {

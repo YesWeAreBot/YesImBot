@@ -1,10 +1,11 @@
 import * as fs from "fs/promises";
-import { Context, Logger, Schema, sleep } from "koishi";
+import * as os from "os";
+import path from "path";
+
+import { Context, Schema, sleep } from "koishi";
 import {} from "koishi-plugin-puppeteer";
 import { Extension, Failed, Infer, Success, Tool, ToolCallResult, withInnerThoughts } from "koishi-plugin-yesimbot/services";
 import { Services } from "koishi-plugin-yesimbot/shared";
-import * as os from "os";
-import * as path from "path";
 import type { Page } from "puppeteer-core";
 import { FormData, ProxyAgent, RequestInit, fetch as ufetch } from "undici";
 
@@ -12,8 +13,8 @@ namespace GoogleVisionApi {
     export interface IPageWithMatchingImages {
         url: string;
         pageTitle: string;
-        fullMatchingImages?: { url: string }[];
-        partialMatchingImages?: { url: string }[];
+        fullMatchingImages?: Array<{ url: string }>;
+        partialMatchingImages?: Array<{ url: string }>;
     }
 
     export interface IWebEntity {
@@ -29,16 +30,16 @@ namespace GoogleVisionApi {
 
     export interface IWebDetection {
         webEntities: IWebEntity[];
-        fullMatchingImages: { url: string }[];
-        partialMatchingImages: { url: string }[];
+        fullMatchingImages: Array<{ url: string }>;
+        partialMatchingImages: Array<{ url: string }>;
         pagesWithMatchingImages: IPageWithMatchingImages[];
         bestGuessLabels: IBestGuessLabel[];
     }
 
     export interface IVisionApiResponse {
-        responses: {
+        responses: Array<{
             webDetection: IWebDetection;
-        }[];
+        }>;
     }
 }
 namespace SerpApi {
@@ -186,9 +187,9 @@ namespace GoogleLensApi {
  * 3. relatedSearches: Google 建议的相关搜索词条，通常是对图片内容的高度概括。
  */
 export interface GoogleLensResult {
-    directResults: { title: string; link: string }[];
-    visualMatches: { title: string; link: string }[];
-    relatedSearches: { title: string; link: string }[];
+    directResults: Array<{ title: string; link: string }>;
+    visualMatches: Array<{ title: string; link: string }>;
+    relatedSearches: Array<{ title: string; link: string }>;
 }
 
 /**
@@ -260,7 +261,7 @@ export default class VisionTools {
 
     constructor(
         private ctx: Context,
-        private config: Config
+        private config: Config,
     ) {
         if (config.proxy) {
             const proxy = new URL(config.proxy);
@@ -286,7 +287,7 @@ export default class VisionTools {
                         if (page) {
                             await page.evaluateOnNewDocument(scriptToInject);
                         }
-                    } catch (error) {
+                    } catch {
                         // 目标页面可能在注入前关闭，可以安全忽略
                     }
                 }
@@ -308,7 +309,7 @@ export default class VisionTools {
         const { image_id, method } = args;
         this.ctx.logger.info(`请求使用方法: ${method}`);
 
-        const assetService = this.ctx.get(Services.Asset);
+        const assetService = this.ctx.get(Services.Asset)!;
         const image = (await assetService.read(image_id, { format: "data-url" })) as string;
         const imageInfo = await assetService.getInfo(image_id);
         if (!image || !imageInfo?.mime.startsWith("image/")) {
@@ -513,7 +514,7 @@ export default class VisionTools {
             summaryParts.push(
                 "\n**[✅ 知识图谱]**",
                 `- **名称**: ${knowledge_graph.title} (${knowledge_graph.type || "未知类型"})`,
-                `- **简介**: ${knowledge_graph.description}`
+                `- **简介**: ${knowledge_graph.description}`,
             );
         }
         if (image_results?.length > 0) {
@@ -530,9 +531,7 @@ export default class VisionTools {
         const { visual_matches } = data;
         if (visual_matches && visual_matches.length > 0) {
             summaryParts.push("\n**[📸 视觉匹配结果]**", "以下是网络上找到的高度相似的图片及其来源：");
-            const matches = visual_matches
-                .slice(0, 5)
-                .map((match) => `- **标题**: ${match.title}\n  **来源**: ${match.source}\n  **链接**: ${match.link}`);
+            const matches = visual_matches.slice(0, 5).map((match) => `- **标题**: ${match.title}\n  **来源**: ${match.source}\n  **链接**: ${match.link}`);
             summaryParts.push(...matches);
         } else {
             return "分析完成，但Google Lens未能找到此图片的任何视觉匹配项。";
@@ -607,7 +606,7 @@ export default class VisionTools {
             return null;
         }
 
-        const assetService = this.ctx.get(Services.Asset);
+        const assetService = this.ctx.get(Services.Asset)!;
         const imageBuffer = await assetService.read(image_id);
         //@ts-ignore
         const file = new File([imageBuffer], `image.${image.data.mime.split("/")[1] || "jpeg"}`, {
@@ -649,22 +648,20 @@ export default class VisionTools {
         imagePath: string,
         options: LensScraperOptions = {
             limits: { directResults: 5, visualMatches: 10, relatedSearches: 10 },
-        }
+        },
     ): Promise<GoogleLensResult> {
         this.ctx.logger.info("🚀 启动浏览器抓取...");
         const page = await this.ctx.puppeteer.page();
         try {
             await page.setViewport({ width: 1920, height: 1080 });
-            await page.setUserAgent(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
-            );
+            await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36");
 
             this.ctx.logger.info("🌍 导航到 Google Lens 并准备上传...");
             await page.goto("https://lens.google.com/search?p", { waitUntil: "domcontentloaded" });
 
             const uploadInputSelector = 'input[type="file"]';
             const inputElement = await page.waitForSelector(uploadInputSelector);
-            await inputElement.uploadFile(imagePath);
+            await inputElement!.uploadFile(imagePath);
             this.ctx.logger.info(`🖼️ 图片上传成功: ${imagePath}`);
 
             this.ctx.logger.info("⏳ 等待初始识别结果加载...");
@@ -684,8 +681,8 @@ export default class VisionTools {
             const mainContainerSelector = 'div[role="main"] div[data-snc][data-snm]';
             await page.waitForSelector(mainContainerSelector, { timeout: 10000 });
 
-            const directResults: { title: string; link: string }[] = [];
-            const relatedSearches: { title: string; link: string }[] = [];
+            const directResults: Array<{ title: string; link: string }> = [];
+            const relatedSearches: Array<{ title: string; link: string }> = [];
             let visualMatchesUrl: string | null = null;
 
             const allBlockHandles = await page.$$(`${mainContainerSelector} > div`);
@@ -700,9 +697,7 @@ export default class VisionTools {
                 // 提取相关搜索
                 if (h2Text === "相关搜索" || h2Text === "Related searches") {
                     this.ctx.logger.debug("  -> 识别到“相关搜索”块");
-                    const links = await blockHandle.$$eval("a", (els) =>
-                        els.map((el) => ({ title: (el as HTMLElement).innerText.trim(), link: el.href }))
-                    );
+                    const links = await blockHandle.$$eval("a", (els) => els.map((el) => ({ title: (el as HTMLElement).innerText.trim(), link: el.href })));
                     relatedSearches.push(...links);
                     continue;
                 }
@@ -720,9 +715,7 @@ export default class VisionTools {
                 }
 
                 // 提取直接结果
-                const heading = await mainLinkHandle
-                    .$eval('div[role="heading"]', (el) => (el as HTMLElement).innerText.trim())
-                    .catch(() => null);
+                const heading = await mainLinkHandle.$eval('div[role="heading"]', (el) => (el as HTMLElement).innerText.trim()).catch(() => null);
                 if (heading) {
                     const link = await mainLinkHandle.evaluate((el) => el.href);
                     directResults.push({ title: heading, link });
@@ -737,7 +730,7 @@ export default class VisionTools {
             this.ctx.logger.info(`  - 初始页面找到 ${finalDirectResults.length}/${directResults.length} 条直接结果。`);
             this.ctx.logger.info(`  - 找到 ${finalRelatedSearches.length}/${relatedSearches.length} 个“相关搜索”主题。`);
 
-            let visualMatches: { title: string; link: string }[] = [];
+            let visualMatches: Array<{ title: string; link: string }> = [];
             if (visualMatchesUrl) {
                 this.ctx.logger.info(`  - 找到“完全匹配”页链接，准备跳转抓取最多 ${options.limits.visualMatches} 条结果...`);
                 await page.goto(visualMatchesUrl, { waitUntil: "networkidle2" });
@@ -769,7 +762,7 @@ export default class VisionTools {
      * @returns 包含标题和链接的结果数组。
      */
     // 添加 limit 参数，使其更通用
-    private async scrapeGoogleSearchResultsPage(page: Page, limit: number): Promise<{ title: string; link: string }[]> {
+    private async scrapeGoogleSearchResultsPage(page: Page, limit: number): Promise<Array<{ title: string; link: string }>> {
         this.ctx.logger.info(`🔎 正在抓取页面: ${page.url()}，上限 ${limit} 条`);
         const searchResultLinksSelector = 'div[id="rso"] a';
 
@@ -780,7 +773,7 @@ export default class VisionTools {
             const results = await page.$$eval(
                 `${searchResultLinksSelector}`,
                 (links, titleSelector, limit) => {
-                    const extracted: { title: string; link: string }[] = [];
+                    const extracted: Array<{ title: string; link: string }> = [];
                     const uniqueLinks = new Set<string>();
 
                     for (const link of links) {
@@ -802,7 +795,7 @@ export default class VisionTools {
                     return extracted;
                 },
                 'div[style*="-webkit-line-clamp"]',
-                limit
+                limit,
             );
 
             if (results.length > 0) {

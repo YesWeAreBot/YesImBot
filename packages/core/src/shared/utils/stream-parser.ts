@@ -105,12 +105,7 @@ export class StreamParser {
 
             // 1. 处理对象类型
             if (typeof schemaValue === "object" && !Array.isArray(schemaValue) && schemaValue !== null) {
-                this.processObject(
-                    state,
-                    currentValue as Record<string, JsonValue>,
-                    lastValue as Record<string, JsonValue> | undefined,
-                    schemaValue
-                );
+                this.processObject(state, currentValue as Record<string, JsonValue>, lastValue as Record<string, JsonValue> | undefined, schemaValue);
             }
             // 2. 处理数组类型
             else if (Array.isArray(schemaValue)) {
@@ -128,12 +123,7 @@ export class StreamParser {
         }
     }
 
-    private processObject(
-        state: StreamState,
-        current: Record<string, JsonValue>,
-        last: Record<string, JsonValue> | undefined,
-        subSchema: Schema
-    ): void {
+    private processObject(state: StreamState, current: Record<string, JsonValue>, last: Record<string, JsonValue> | undefined, subSchema: Schema): void {
         const progress = state.progress as Set<string>;
         const subKeys = Object.keys(subSchema);
 
@@ -245,7 +235,7 @@ export class StreamParser {
                 try {
                     // completeStream 应该已经关闭了它，但以防万一
                     state.controller.close();
-                } catch (e) {
+                } catch {
                     /* might already be closed */
                 }
             }

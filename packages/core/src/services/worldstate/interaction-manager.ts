@@ -1,10 +1,11 @@
-import { sanitizeDiagnostic } from "../../shared/diagnostic-sanitizer";
-import { Context, h, Logger } from "koishi";
 import fs from "fs/promises";
 import path from "path";
+
+import { Context, h, Logger } from "koishi";
 import { v4 as uuidv4 } from "uuid";
 
-import { Services, TableName } from "@/shared/constants";
+import { Services, TableName } from "../../shared/constants";
+import { sanitizeDiagnostic } from "../../shared/diagnostic-sanitizer";
 import { HISTORY_CHANNELS } from "./channel-metadata";
 import { HistoryConfig } from "./config";
 import {
@@ -27,13 +28,18 @@ const logMutations = new Map<string, Promise<void>>();
  * 将高频的 Agent 内部事件（思考、动作、观察）记录到本地文件系统，
  * 并提供统一的方法来检索和组合这些来源的数据，以构建线性的历史记录。
  */
+// 移除路径中的特殊字符
+function clear(str: string) {
+    return str.replace(/[:/\\]/g, "_");
+}
+
 export class InteractionManager {
     private logger: Logger;
     private basePath: string;
 
     constructor(
         private ctx: Context,
-        private config: HistoryConfig
+        private config: HistoryConfig,
     ) {
         this.logger = ctx[Services.Logger].getLogger("[L1 记忆]");
         this.basePath = path.join(ctx.baseDir, "data", "yesimbot", "interactions");
@@ -43,19 +49,13 @@ export class InteractionManager {
     // --- 文件日志系统 ---
 
     private getLogFilePath(platform: string, channelId: string): string {
-        // 移除特殊字符
-        function clear(str: string) {
-            return str.replace(/[:/\\]/g, "_");
-        }
         return path.join(this.basePath, clear(platform), `${clear(channelId)}.agent.jsonl`);
     }
 
     private canIdentifyLegacyLogOwner(filePath: string, channelId?: string, channelType?: "private" | "guild" | "all"): boolean {
         const legacyId = path.basename(filePath, ".agent.jsonl");
         // 下划线可能来自原始冒号、斜线或下划线，平台目录和频道名都不能据此猜测归属。
-        return !path.basename(path.dirname(filePath)).includes("_") &&
-            (!channelId || !legacyId.includes("_")) &&
-            (!channelType || channelType === "all");
+        return !path.basename(path.dirname(filePath)).includes("_") && (!channelId || !legacyId.includes("_")) && (!channelType || channelType === "all");
     }
 
     private async ensureDirExists(dirPath: string): Promise<void> {
@@ -69,7 +69,10 @@ export class InteractionManager {
     private async mutateLogs<T>(operation: () => Promise<T>): Promise<T> {
         // 追加、截断和清理共享同一屏障，避免重写覆盖刚追加的记录。
         const result = (logMutations.get(this.basePath) || Promise.resolve()).then(operation);
-        const settled = result.then(() => undefined, () => undefined);
+        const settled = result.then(
+            () => undefined,
+            () => undefined,
+        );
         logMutations.set(this.basePath, settled);
         try {
             return await result;
@@ -108,7 +111,7 @@ export class InteractionManager {
         turnId: string,
         platform: string,
         channelId: string,
-        action: { function: string; params: Record<string, unknown> }
+        action: { function: string; params: Record<string, unknown> },
     ): Promise<string> {
         const actionId = uuidv4();
         const logEntry: AgentActionLog = {
@@ -127,7 +130,7 @@ export class InteractionManager {
         actionId: string,
         platform: string,
         channelId: string,
-        observation: Omit<AgentObservationLog, "id" | "type" | "actionId" | "timestamp">
+        observation: Omit<AgentObservationLog, "id" | "type" | "actionId" | "timestamp">,
     ): Promise<void> {
         const logEntry: AgentObservationLog = {
             type: "agent_observation",
@@ -183,9 +186,14 @@ export class InteractionManager {
 
     public async recordMessage(message: MessageData): Promise<void> {
         try {
-            if (message.channelType) await this.ctx.database.upsert(HISTORY_CHANNELS, [{
-                platform: message.platform, channelId: message.channelId, channelType: message.channelType,
-            }]);
+            if (message.channelType)
+                await this.ctx.database.upsert(HISTORY_CHANNELS, [
+                    {
+                        platform: message.platform,
+                        channelId: message.channelId,
+                        channelType: message.channelType,
+                    },
+                ]);
             await this.ctx.database.create(TableName.Messages, message);
         } catch (error) {
             if (error?.code === "duplicate-entry" || /^UNIQUE constraint failed: worldstate\.messages\./.test(error?.message || "")) {
@@ -199,9 +207,14 @@ export class InteractionManager {
 
     public async recordSystemEvent(event: SystemEventData): Promise<void> {
         try {
-            if (event.channelType) await this.ctx.database.upsert(HISTORY_CHANNELS, [{
-                platform: event.platform, channelId: event.channelId, channelType: event.channelType,
-            }]);
+            if (event.channelType)
+                await this.ctx.database.upsert(HISTORY_CHANNELS, [
+                    {
+                        platform: event.platform,
+                        channelId: event.channelId,
+                        channelType: event.channelType,
+                    },
+                ]);
             await this.ctx.database.create(TableName.SystemEvents, event);
             this.logger.debug(`记录系统事件 | ${event.type} | ${event.message}`);
         } catch (error) {
@@ -221,7 +234,19 @@ export class InteractionManager {
     public async getL1History(platform: string, channelId: string, limit: number, selfId?: string): Promise<L1HistoryItem[]> {
         const [messages, systemEvents, agentEvents] = await Promise.all([
             this.ctx.database.get(TableName.Messages, { platform, channelId }, { limit, sort: { timestamp: "desc" } }),
-            this.ctx.database.get(TableName.SystemEvents, selfId ? { $or: [{ platform, channelId, eventScope: { $nin: ["bot", "mind", "global"] } }, { eventScope: "bot", botKey: JSON.stringify([platform, selfId]) }, { eventScope: "global" }] } : { platform, channelId, eventScope: { $nin: ["bot", "mind", "global"] } }, { limit, sort: { timestamp: "desc" } }),
+            this.ctx.database.get(
+                TableName.SystemEvents,
+                selfId
+                    ? {
+                          $or: [
+                              { platform, channelId, eventScope: { $nin: ["bot", "mind", "global"] } },
+                              { eventScope: "bot", botKey: JSON.stringify([platform, selfId]) },
+                              { eventScope: "global" },
+                          ],
+                      }
+                    : { platform, channelId, eventScope: { $nin: ["bot", "mind", "global"] } },
+                { limit, sort: { timestamp: "desc" } },
+            ),
             this.getAgentHistoryFromFile(platform, channelId, limit),
         ]);
 
@@ -240,7 +265,16 @@ export class InteractionManager {
                 id: s.id,
                 eventType: s.type,
                 message: s.message,
-                eventDetails: escapeEventData({ eventId: s.id, type: s.type, occurredAt: s.timestamp.toISOString(), platform: s.platform, channelId: s.channelId, scope: s.eventScope || "channel", botKey: s.botKey, details: s.payload }),
+                eventDetails: escapeEventData({
+                    eventId: s.id,
+                    type: s.type,
+                    occurredAt: s.timestamp.toISOString(),
+                    platform: s.platform,
+                    channelId: s.channelId,
+                    scope: s.eventScope || "channel",
+                    botKey: s.botKey,
+                    details: s.payload,
+                }),
                 timestamp: s.timestamp,
             })),
             ...agentEvents,
@@ -292,15 +326,18 @@ export class InteractionManager {
             // 下面的 case 理论上不会被这个私有方法调用，因为消息和系统事件直接从数据库转换
             case "message":
             case "system_event":
+            default:
                 // This path should not be taken in the new flow
-                return null;
+                return null as never;
         }
     }
 
     public async pruneOldData(): Promise<void> {
         await this.mutateLogs(async () => {
             let directories: string[];
-            try { directories = await fs.readdir(this.basePath); } catch (error) {
+            try {
+                directories = await fs.readdir(this.basePath);
+            } catch (error) {
                 if (error.code === "ENOENT") return;
                 throw error;
             }
@@ -340,8 +377,8 @@ export class InteractionManager {
                 directories = platform
                     ? [path.dirname(this.getLogFilePath(platform, ""))]
                     : (await fs.readdir(this.basePath, { withFileTypes: true }))
-                          .filter(entry => entry.isDirectory())
-                          .map(entry => path.join(this.basePath, entry.name));
+                          .filter((entry) => entry.isDirectory())
+                          .map((entry) => path.join(this.basePath, entry.name));
             } catch (error) {
                 if (error.code === "ENOENT") return 0;
                 throw error;
@@ -374,23 +411,34 @@ export class InteractionManager {
                         throw error;
                     }
                     let unknown = 0;
-                    const keep = content.split(/(?<=\n)/).filter(line => {
-                        if (!line.trim()) return true;
-                        let entry: { platform?: unknown; channelId?: unknown; channelType?: unknown } = {};
-                        try { entry = JSON.parse(line) || {}; } catch { /* 无法解析的旧记录沿用同一归属保护。 */ }
-                        if (typeof entry.platform === "string" && platform && entry.platform !== platform) return true;
-                        if (typeof entry.channelId === "string" && channelId && entry.channelId !== channelId) return true;
-                        if (typeof entry.platform !== "string" || typeof entry.channelId !== "string") {
-                            if (!legacyAllowed) unknown++;
-                            return !legacyAllowed;
-                        }
-                        const knownType = entry.channelType === "private" || entry.channelType === "guild"
-                            ? entry.channelType : channelTypes.get(JSON.stringify([entry.platform, entry.channelId]));
-                        if (channelType && channelType !== "all" && !knownType) unknown++;
-                        return !((!platform || entry.platform === platform) &&
-                            (!channelId || entry.channelId === channelId) &&
-                            (!channelType || channelType === "all" || knownType === channelType));
-                    }).join("");
+                    const keep = content
+                        .split(/(?<=\n)/)
+                        .filter((line) => {
+                            if (!line.trim()) return true;
+                            let entry: { platform?: unknown; channelId?: unknown; channelType?: unknown } = {};
+                            try {
+                                entry = JSON.parse(line) || {};
+                            } catch {
+                                /* 无法解析的旧记录沿用同一归属保护。 */
+                            }
+                            if (typeof entry.platform === "string" && platform && entry.platform !== platform) return true;
+                            if (typeof entry.channelId === "string" && channelId && entry.channelId !== channelId) return true;
+                            if (typeof entry.platform !== "string" || typeof entry.channelId !== "string") {
+                                if (!legacyAllowed) unknown++;
+                                return !legacyAllowed;
+                            }
+                            const knownType =
+                                entry.channelType === "private" || entry.channelType === "guild"
+                                    ? entry.channelType
+                                    : channelTypes.get(JSON.stringify([entry.platform, entry.channelId]));
+                            if (channelType && channelType !== "all" && !knownType) unknown++;
+                            return !(
+                                (!platform || entry.platform === platform) &&
+                                (!channelId || entry.channelId === channelId) &&
+                                (!channelType || channelType === "all" || knownType === channelType)
+                            );
+                        })
+                        .join("");
                     if (unknown) {
                         preserved += unknown;
                         this.logger.warn(`旧Agent日志归属不明，保留 ${unknown} 条记录: ${filePath}`);
@@ -414,7 +462,7 @@ export class InteractionManager {
         });
     }
 
-    public async getAgentChannels(knownChannels: { platform: string; channelId: string }[] = []): Promise<{ platform: string; channelId: string }[]> {
+    public async getAgentChannels(knownChannels: Array<{ platform: string; channelId: string }> = []): Promise<Array<{ platform: string; channelId: string }>> {
         const channels = new Map<string, { platform: string; channelId: string }>();
         let directories;
         try {
@@ -452,10 +500,12 @@ export class InteractionManager {
                         if (this.getLogFilePath(entry.platform, entry.channelId) !== filePath) continue;
                         add({ platform: entry.platform, channelId: entry.channelId });
                         identified = true;
-                    } catch { /* 空行或损坏记录不参与会话发现。 */ }
+                    } catch {
+                        /* 空行或损坏记录不参与会话发现。 */
+                    }
                 }
                 if (identified) continue;
-                const known = knownChannels.filter(channel => this.getLogFilePath(channel.platform, channel.channelId) === filePath);
+                const known = knownChannels.filter((channel) => this.getLogFilePath(channel.platform, channel.channelId) === filePath);
                 if (known.length === 1) {
                     add(known[0]);
                     continue;
@@ -477,14 +527,19 @@ export class InteractionManager {
         channelId: string,
         startDate: Date,
         endDate: Date,
-        knownChannels?: { platform: string; channelId: string }[]
+        knownChannels?: Array<{ platform: string; channelId: string }>,
     ): Promise<AgentLogEntry[]> {
         const filePath = this.getLogFilePath(platform, channelId);
         try {
-            const knownOwners = knownChannels && new Set(knownChannels
-                .filter(channel => this.getLogFilePath(channel.platform, channel.channelId) === filePath)
-                .map(channel => JSON.stringify([channel.platform, channel.channelId])));
-            const allowLegacy = !knownOwners ||
+            const knownOwners =
+                knownChannels &&
+                new Set(
+                    knownChannels
+                        .filter((channel) => this.getLogFilePath(channel.platform, channel.channelId) === filePath)
+                        .map((channel) => JSON.stringify([channel.platform, channel.channelId])),
+                );
+            const allowLegacy =
+                !knownOwners ||
                 (knownOwners.size === 1 && knownOwners.has(JSON.stringify([platform, channelId]))) ||
                 (knownOwners.size === 0 && !path.basename(filePath, ".agent.jsonl").includes("_"));
             const content = await fs.readFile(filePath, "utf-8");

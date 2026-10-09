@@ -1,24 +1,30 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { ReplyTarget } from "./reply-control";
+
 import type { Bot, Session } from "koishi";
+
+import type { ReplyTarget } from "./reply-control";
 
 const turns = new AsyncLocalStorage<{ valid: () => boolean; signal?: AbortSignal; canSend?: (target: ReplyTarget) => boolean }>();
 // 只在受保护的发送期间替换此 bot 实例的 constructor 读取。适配器方法仍以
 // 原 bot 为 this（包括 JS 私有字段），共享类和普通发送不受影响。
 const encoderScopes = new AsyncLocalStorage<Map<Bot, Function>>();
 const outboundScopes = new AsyncLocalStorage<Map<Bot, () => void>>();
-const activeEncoders = new WeakMap<Bot, { count: number; constructor: typeof Bot; descriptor?: PropertyDescriptor; restoreTransports: (() => void)[] }>();
+const activeEncoders = new WeakMap<Bot, { count: number; constructor: typeof Bot; descriptor?: PropertyDescriptor; restoreTransports: Array<() => void> }>();
 const encoderSendToken = Symbol("reply encoder send");
 
 // 不代理整个 bot，也不改变 transport 方法的 this，兼容 JS 私有字段。
 // 这里只覆盖编码器通过 bot.internal / bot.http 读取的常见出站接口。
 function guardTransport(transport: any, key: "internal" | "http", check: () => void): any {
     if (!transport || !["object", "function"].includes(typeof transport)) return transport;
-    const outbound = (method: PropertyKey) => key === "http"
-        ? ["request", "post", "put", "patch", "delete"].includes(String(method))
-        : /^(send[A-Z_]|createMessage$|execute$|request$)/.test(String(method));
+    const outbound = (method: PropertyKey) =>
+        key === "http"
+            ? ["request", "post", "put", "patch", "delete"].includes(String(method))
+            : /^(send[A-Z_]|createMessage$|execute$|request$)/.test(String(method));
     return new Proxy(transport, {
-        apply(target, _receiver, args) { check(); return Reflect.apply(target, target, args); },
+        apply(target, _receiver, args) {
+            check();
+            return Reflect.apply(target, target, args);
+        },
         get(target, method) {
             const value = Reflect.get(target, method, target);
             if (typeof value !== "function") return value;
@@ -35,14 +41,12 @@ function guardTransport(transport: any, key: "internal" | "http", check: () => v
 function scopeTransport(bot: Bot, key: "internal" | "http"): () => void {
     const own = Object.getOwnPropertyDescriptor(bot, key);
     let source = own;
-    for (let proto = Object.getPrototypeOf(bot); !source && proto; proto = Object.getPrototypeOf(proto))
-        source = Object.getOwnPropertyDescriptor(proto, key);
+    for (let proto = Object.getPrototypeOf(bot); !source && proto; proto = Object.getPrototypeOf(proto)) source = Object.getOwnPropertyDescriptor(proto, key);
     if (!source) return () => {};
-    if (own?.configurable === false || (!own && !Object.isExtensible(bot)))
-        throw new Error(`无法保护回复出站：bot.${key} 属性不可配置`);
+    if (own?.configurable === false || (!own && !Object.isExtensible(bot))) throw new Error(`无法保护回复出站：bot.${key} 属性不可配置`);
     let stored = source.value;
     let assigned = false;
-    const read = () => source.get ? source.get.call(bot) : stored;
+    const read = () => (source.get ? source.get.call(bot) : stored);
     const descriptor: PropertyDescriptor = {
         configurable: true,
         enumerable: source.enumerable,
@@ -52,8 +56,12 @@ function scopeTransport(bot: Bot, key: "internal" | "http"): () => void {
             return check ? guardTransport(value, key, check) : value;
         },
     };
-    if (source.set) descriptor.set = value => source.set.call(bot, value);
-    else if (source.writable) descriptor.set = value => { stored = value; assigned = true; };
+    if (source.set) descriptor.set = (value) => source.set!.call(bot, value);
+    else if (source.writable)
+        descriptor.set = (value) => {
+            stored = value;
+            assigned = true;
+        };
     Object.defineProperty(bot, key, descriptor);
     return () => {
         if (own) Object.defineProperty(bot, key, "value" in own ? { ...own, value: stored } : own);
@@ -62,9 +70,15 @@ function scopeTransport(bot: Bot, key: "internal" | "http"): () => void {
     };
 }
 
-async function withGuardedEncoder<T>(bot: Bot, channelId: string, options: any, check: (channelId: string) => void, task: (options: any) => T): Promise<Awaited<T>> {
+async function withGuardedEncoder<T>(
+    bot: Bot,
+    channelId: string,
+    options: any,
+    check: (channelId: string) => void,
+    task: (options: any) => T,
+): Promise<Awaited<T>> {
     // 内层新 turn 必须从真实适配器类构造，避免嵌套旧代理擦除新 turn 的上下文。
-    const constructor = activeEncoders.get(bot)?.constructor ?? bot.constructor as typeof Bot;
+    const constructor = activeEncoders.get(bot)?.constructor ?? (bot.constructor as typeof Bot);
     const Encoder = constructor.MessageEncoder;
     if (!Encoder) return await task(options);
     const token = {};
@@ -95,7 +109,9 @@ async function withGuardedEncoder<T>(bot: Bot, channelId: string, options: any, 
         },
     });
     const guardedConstructor = new Proxy(constructor, {
-        get(target, key) { return key === "MessageEncoder" ? guardedEncoder : Reflect.get(target, key, target); },
+        get(target, key) {
+            return key === "MessageEncoder" ? guardedEncoder : Reflect.get(target, key, target);
+        },
     });
     let active = activeEncoders.get(bot);
     if (!active) {
@@ -107,7 +123,7 @@ async function withGuardedEncoder<T>(bot: Bot, channelId: string, options: any, 
                 get: () => encoderScopes.getStore()?.get(bot) ?? constructor,
             });
         } catch (error) {
-            active.restoreTransports.reverse().forEach(restore => restore());
+            active.restoreTransports.reverse().forEach((restore) => restore());
             throw error;
         }
         activeEncoders.set(bot, active);
@@ -121,7 +137,7 @@ async function withGuardedEncoder<T>(bot: Bot, channelId: string, options: any, 
         if (--active.count === 0) {
             if (active.descriptor) Object.defineProperty(bot, "constructor", active.descriptor);
             else delete (bot as any).constructor;
-            active.restoreTransports.reverse().forEach(restore => restore());
+            active.restoreTransports.reverse().forEach((restore) => restore());
             activeEncoders.delete(bot);
         }
     }
@@ -148,8 +164,7 @@ export function guardReplyBot(bot: Bot): Bot {
     };
     const destination = (channelId: string, isDirect?: boolean) => {
         check();
-        if (turn.canSend?.({ platform: bot.platform, selfId: bot.selfId, channelId, isDirect }) === false)
-            throw new Error("目标会话的回复已被抑制");
+        if (turn.canSend?.({ platform: bot.platform!, selfId: bot.selfId, channelId, isDirect }) === false) throw new Error("目标会话的回复已被抑制");
     };
     // OneBot 在内容转换、before-send 和分段发送之后才调用这些出站方法。
     // 只代理本次回复，普通指令仍使用原机器人和 internal。
@@ -163,8 +178,7 @@ export function guardReplyBot(bot: Bot): Bot {
                       return (...args: any[]) => {
                           const method = String(key).replace(/Async$/, "");
                           if (["sendGroupMsg", "sendGroupForwardMsg", "uploadGroupFile"].includes(method)) destination(String(args[0]));
-                          else if (["sendPrivateMsg", "sendPrivateForwardMsg", "uploadPrivateFile"].includes(method))
-                              destination(`private:${args[0]}`, true);
+                          else if (["sendPrivateMsg", "sendPrivateForwardMsg", "uploadPrivateFile"].includes(method)) destination(`private:${args[0]}`, true);
                           else if (method === "sendGuildChannelMsg") destination(String(args[1]));
                           else if (method === "sendMsg") {
                               const group = args[1] !== undefined && args[1] !== null;
@@ -192,15 +206,12 @@ export function guardReplyBot(bot: Bot): Bot {
                     if (key === "sendPrivateMessage") {
                         const channel = await target.createDirectChannel(args[0], args[2] ?? args[3]?.session?.guildId);
                         check();
-                        if (
-                            turn?.canSend?.({ platform: target.platform, selfId: target.selfId, channelId: channel.id, isDirect: true }) ===
-                            false
-                        )
+                        if (turn?.canSend?.({ platform: target.platform!, selfId: target.selfId, channelId: channel.id, isDirect: true }) === false)
                             throw new Error("目标会话的回复已被抑制");
                         const send = (options = args[3]) => target.sendMessage.apply(onebot ? receiver : target, [channel.id, args[1], null, options]);
-                        return onebot ? send() : withGuardedEncoder(target, channel.id, args[3], id => destination(id, true), send);
+                        return onebot ? send() : withGuardedEncoder(target, channel.id, args[3], (id) => destination(id, true), send);
                     }
-                    const targetDestination = { platform: target.platform, selfId: target.selfId, channelId: args[0] };
+                    const targetDestination = { platform: target.platform!, selfId: target.selfId, channelId: args[0] as string };
                     if (turn?.canSend?.(targetDestination) === false) throw new Error("目标会话的回复已被抑制");
                     if (onebot || key === "sendUpload") return value.apply(onebot ? receiver : target, args);
                     const send = (options: any) => {
@@ -208,7 +219,7 @@ export function guardReplyBot(bot: Bot): Bot {
                         if (options !== args[3]) sendArgs[3] = options;
                         return value.apply(target, sendArgs);
                     };
-                    return withGuardedEncoder(target, args[0], args[3], id => destination(id), send);
+                    return withGuardedEncoder(target, args[0], args[3], (id) => destination(id), send);
                 };
             }
             return typeof value === "function" ? value.bind(target) : value;

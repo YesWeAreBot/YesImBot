@@ -6,7 +6,7 @@ import { Services } from "koishi-plugin-yesimbot/shared";
 export interface FavorSystemConfig {
     maxFavor: number;
     initialFavor: number;
-    stage: { threshold: number; description: string }[];
+    stage: Array<{ threshold: number; description: string }>;
 }
 
 // --- 数据库表接口定义 ---
@@ -47,7 +47,7 @@ export default class FavorExtension {
                 description: Schema.string()
                     .role("textarea", { rows: [2, 4] })
                     .description("阶段描述"),
-            })
+            }),
         )
             .default([])
             .description("好感度阶段配置。系统会自动匹配，其描述将通过 `{{roleplay.state}}` 片段提供给 AI。"),
@@ -61,7 +61,7 @@ export default class FavorExtension {
 
     constructor(
         public ctx: Context,
-        public config: FavorSystemConfig
+        public config: FavorSystemConfig,
     ) {
         this.logger = ctx.logger("favor-extension");
 
@@ -72,14 +72,14 @@ export default class FavorExtension {
                 user_id: "string",
                 amount: "integer",
             },
-            { primary: "user_id", autoInc: false }
+            { primary: "user_id", autoInc: false },
         );
 
         // Legacy rows have no trustworthy platform; preserve them without assigning ownership.
         this.ctx.model.extend(
             "favor_scoped",
             { platform: "string", user_id: "string", amount: "integer" },
-            { primary: ["platform", "user_id"], autoInc: false }
+            { primary: ["platform", "user_id"], autoInc: false },
         );
         this.ctx.on("dispose", () => {
             this.disposed = true;
@@ -115,7 +115,7 @@ export default class FavorExtension {
                 return `## 好感度设定
 当前你与用户 ${session.username} (ID: ${session.userId}) 的好感度为 ${favorEntry.amount}，关系阶段是：${stageDescription}。
 请时刻参考这些信息，并根据当前的好感度和关系阶段，以合适的语气和内容与用户互动。`;
-            })
+            }),
         );
 
         const removeSnippet: unknown = promptService.registerSnippet("roleplay.config.maxFavor", () => this.config.maxFavor);
@@ -126,22 +126,20 @@ export default class FavorExtension {
         const legacy = await this.ctx.database.get("favor", {});
         if (this.disposed) return;
         if (legacy.length) this.logger.warn("存在未指定平台的旧好感度记录。请使用 favor.migrate <platform> 显式迁移；原记录将保留。");
-        this.ctx
-            .command("favor.migrate <platform:string>", "将旧好感度记录复制到指定平台，保留已有平台记录", { authority: 3 })
-            .action(async (_, platform) => {
-                if (!platform || this.disposed) return "请指定平台，且确保好感度服务运行。";
-                const rows = await this.ctx.database.get("favor", {});
-                let copied = 0;
-                for (const row of rows) {
-                    const query = { platform, user_id: row.user_id };
-                    const existing = await this.ctx.database.get("favor_scoped", query);
-                    if (this.disposed) return "好感度服务已停止。";
-                    if (existing.length) continue;
-                    await this.ctx.database.create("favor_scoped", { ...query, amount: row.amount });
-                    copied++;
-                }
-                return `已复制 ${copied} 条记录到平台 ${platform}，原记录和已有平台记录均已保留。`;
-            });
+        this.ctx.command("favor.migrate <platform:string>", "将旧好感度记录复制到指定平台，保留已有平台记录", { authority: 3 }).action(async (_, platform) => {
+            if (!platform || this.disposed) return "请指定平台，且确保好感度服务运行。";
+            const rows = await this.ctx.database.get("favor", {});
+            let copied = 0;
+            for (const row of rows) {
+                const query = { platform, user_id: row.user_id };
+                const existing = await this.ctx.database.get("favor_scoped", query);
+                if (this.disposed) return "好感度服务已停止。";
+                if (existing.length) continue;
+                await this.ctx.database.create("favor_scoped", { ...query, amount: row.amount });
+                copied++;
+            }
+            return `已复制 ${copied} 条记录到平台 ${platform}，原记录和已有平台记录均已保留。`;
+        });
         this.logger.info("好感度系统扩展已加载。");
     }
 
@@ -171,9 +169,9 @@ export default class FavorExtension {
             }
             this.logger.info(`为用户 ${user_id} 调整了 ${amount} 点好感度。`);
             return Success(`成功为用户 ${user_id} 调整了 ${amount} 点好感度。`);
-        } catch (e) {
-            this.logger.error(`为用户 ${user_id} 增加好感度失败:`, e);
-            return Failed(`为用户 ${user_id} 增加好感度失败：${e.message}`);
+        } catch (error) {
+            this.logger.error(`为用户 ${user_id} 增加好感度失败:`, error);
+            return Failed(`为用户 ${user_id} 增加好感度失败：${error.message}`);
         }
     }
 
@@ -194,9 +192,9 @@ export default class FavorExtension {
             await this.ctx.database.upsert("favor_scoped", [{ platform: session.platform, user_id, amount: finalAmount }]);
             this.logger.info(`将用户 ${user_id} 的好感度设置为 ${finalAmount}。`);
             return Success(`成功将用户 ${user_id} 的好感度设置为 ${finalAmount}。`);
-        } catch (e) {
-            this.logger.error(`为用户 ${user_id} 设置好感度失败:`, e);
-            return Failed(`为用户 ${user_id} 设置好感度失败：${e.message}`);
+        } catch (error) {
+            this.logger.error(`为用户 ${user_id} 设置好感度失败:`, error);
+            return Failed(`为用户 ${user_id} 设置好感度失败：${error.message}`);
         }
     }
 

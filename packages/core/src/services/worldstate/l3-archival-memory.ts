@@ -1,7 +1,7 @@
 import { Context, Logger } from "koishi";
 
-import { IChatModel, TaskType } from "@/services/model";
-import { Services, TableName } from "@/shared/constants";
+import { IChatModel, TaskType } from "../../services/model";
+import { Services, TableName } from "../../shared/constants";
 import { HistoryConfig } from "./config";
 import { InteractionManager } from "./interaction-manager";
 import { MemoryTarget, SemanticMemoryManager } from "./l2-semantic-memory";
@@ -10,8 +10,8 @@ import { AgentLogEntry, DiaryEntryData } from "./types";
 
 export class ArchivalMemoryManager {
     private logger: Logger;
-    private chatModel: IChatModel;
-    private dailyTaskTimer: NodeJS.Timeout;
+    private chatModel: IChatModel | null = null;
+    private dailyTaskTimer?: NodeJS.Timeout;
     private stopped = false;
     private lifecycle = 0;
     private pendingDiaries = new Map<string, Promise<void>>();
@@ -22,7 +22,7 @@ export class ArchivalMemoryManager {
         private ctx: Context,
         private config: HistoryConfig,
         private interactionManager: InteractionManager,
-        private semanticMemory?: SemanticMemoryManager
+        private semanticMemory?: SemanticMemoryManager,
     ) {
         this.logger = ctx[Services.Logger].getLogger("[L3-长期记忆]");
     }
@@ -34,7 +34,7 @@ export class ArchivalMemoryManager {
         if (!this.config.l3_memory.enabled) return;
 
         try {
-            this.chatModel = this.ctx[Services.Model].useChatGroup(TaskType.Chat).getModels()[0];
+            this.chatModel = this.ctx[Services.Model].useChatGroup(TaskType.Chat)?.getModels()[0] ?? null;
         } catch {
             this.chatModel = null;
         }
@@ -54,7 +54,7 @@ export class ArchivalMemoryManager {
         if (this.dailyTaskTimer) {
             clearTimeout(this.dailyTaskTimer);
         }
-        await Promise.allSettled([...this.pendingWrites]);
+        await Promise.allSettled(this.pendingWrites);
     }
 
     private scheduleDailyTask() {
@@ -102,15 +102,11 @@ export class ArchivalMemoryManager {
         this.logger.info("开始执行每日日记生成任务...");
         const messageChannels = await this.ctx.database.get(TableName.Messages, {}, { fields: ["platform", "channelId"] });
 
-        const knownChannels = [
-            ...new Map(messageChannels.map((channel) => [JSON.stringify([channel.platform, channel.channelId]), channel])).values(),
-        ];
+        const knownChannels = [...new Map(messageChannels.map((channel) => [JSON.stringify([channel.platform, channel.channelId]), channel])).values()];
         const agentChannels = await this.interactionManager.getAgentChannels(knownChannels);
 
         const allChannels = [...messageChannels, ...agentChannels];
-        const uniqueChannels = [
-            ...new Map(allChannels.map((channel) => [JSON.stringify([channel.platform, channel.channelId]), channel])).values(),
-        ];
+        const uniqueChannels = [...new Map(allChannels.map((channel) => [JSON.stringify([channel.platform, channel.channelId]), channel])).values()];
 
         for (const channel of uniqueChannels) {
             if (this.stopped || this.lifecycle !== lifecycle) return;
@@ -137,19 +133,11 @@ export class ArchivalMemoryManager {
         return task;
     }
 
-    private async generateDiary(
-        target: MemoryTarget,
-        date: Date,
-        lifecycle: number,
-        generation?: number,
-        knownChannels?: MemoryTarget[]
-    ): Promise<void> {
+    private async generateDiary(target: MemoryTarget, date: Date, lifecycle: number, generation?: number, knownChannels?: MemoryTarget[]): Promise<void> {
         const { platform, channelId } = target;
         const dateKey = diaryDateKey(date);
         const active = () =>
-            !this.stopped &&
-            this.lifecycle === lifecycle &&
-            (!this.semanticMemory || this.semanticMemory.getHistoryGeneration(target) === generation);
+            !this.stopped && this.lifecycle === lifecycle && (!this.semanticMemory || this.semanticMemory.getHistoryGeneration(target) === generation);
         const controller = new AbortController();
         this.controllers.add(controller);
         try {
@@ -175,7 +163,7 @@ export class ArchivalMemoryManager {
             const conversationText = this.formatInteractionsForPrompt(messages, agentLogs);
             const prompt = this.buildDiaryPrompt(conversationText);
 
-            const diaryContent = await this.chatModel.chat({
+            const diaryContent = await this.chatModel!.chat({
                 messages: [{ role: "user", content: prompt }],
                 temperature: 0.2,
                 abortSignal: controller.signal,
@@ -186,7 +174,7 @@ export class ArchivalMemoryManager {
                 date: dateKey,
                 platform,
                 channelId,
-                content: diaryContent.text,
+                content: diaryContent.text ?? "",
                 keywords: [], // Keyword extraction can be a separate step
                 mentionedUserIds: [...new Set(messages.map((m) => m.sender.id))],
             };
@@ -197,9 +185,7 @@ export class ArchivalMemoryManager {
                 void writing.finally(() => this.pendingWrites.delete(writing)).catch(() => {});
                 return writing;
             };
-            const saved = this.semanticMemory
-                ? await this.semanticMemory.writeMemory(target, generation, write)
-                : await write().then(() => true);
+            const saved = this.semanticMemory ? await this.semanticMemory.writeMemory(target, generation!, write) : await write().then(() => true as boolean);
             if (saved) this.logger.debug(`为频道 ${platform}:${channelId} 生成了 ${dateKey} 的日记`);
         } catch (error) {
             if (active()) this.logger.error(`为频道 ${platform}:${channelId} 生成日记失败`, error);

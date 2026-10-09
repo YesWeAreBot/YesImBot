@@ -6,8 +6,7 @@
 
 [![npm](https://img.shields.io/npm/v/koishi-plugin-yesimbot?style=flat-square)](https://www.npmjs.com/package/koishi-plugin-yesimbot) [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat)](http://choosealicense.com/licenses/mit/) ![Language](https://img.shields.io/badge/language-TypeScript-brightgreen) ![NPM Downloads](https://img.shields.io/npm/dw/koishi-plugin-yesimbot) ![Static Badge](https://img.shields.io/badge/QQ交流群-857518324-green)
 
-
-*✨机器壳，人类心。✨*
+_✨机器壳，人类心。✨_
 
 </div>
 
@@ -19,7 +18,7 @@
 
 YesImBot / Athena 是一个 [Koishi](https://koishi.chat/zh-CN/) 插件，旨在让人工智能大模型能够自然地参与到群聊讨论中，模拟真实的人类互动体验。插件基于中间件架构设计，具有高度的可扩展性和灵活性。
 
-*新的文档站已上线：[https://docs.yesimbot.chat/](https://docs.yesimbot.chat/)*
+_新的文档站已上线：[https://docs.yesimbot.chat/](https://docs.yesimbot.chat/)_
 
 ### 错误上报与本地诊断
 
@@ -43,7 +42,7 @@ YesImBot / Athena 是一个 [Koishi](https://koishi.chat/zh-CN/) 插件，旨在
 
 - **自定义人格与行为**：轻松定制Bot的名字、性格、响应模式等，打造独特的交互体验。
 
-- *AND MORE...*
+- _AND MORE..._
 
 ## 🌈 开始使用
 
@@ -125,11 +124,13 @@ Debug:
 你可以根据自己的需求自定义系统提示词。`StoreFile` 的内容将被添加到系统提示词的末尾。
 
 - 消息队列呈现给LLM的格式：
+
 ```text
 [messageId][{date} from_guild:{channelId}] {senderName}<{senderId}> 说: {userContent}
 ```
 
 - Athena期望LLM返回的格式：
+
 ```json
 {
     "function": "{functionName}",
@@ -151,11 +152,12 @@ Debug:
 - [GPTGOD](https://gptgod.online/#/register?invite_code=envrd6lsla9nydtipzrbvid2r)
 
 ## ✨ 效果
+
 <details>
   <summary>截图</summary>
 
-  ![截图1](https://raw.githubusercontent.com/HydroGest/YesImBot/main/img/screenshot-1.png)
-  ![截图2](https://raw.githubusercontent.com/HydroGest/YesImBot/main/img/screenshot-2.png)
+![截图1](https://raw.githubusercontent.com/HydroGest/YesImBot/main/img/screenshot-1.png)
+![截图2](https://raw.githubusercontent.com/HydroGest/YesImBot/main/img/screenshot-2.png)
 </details>
 
 ## 🍧 TODO
