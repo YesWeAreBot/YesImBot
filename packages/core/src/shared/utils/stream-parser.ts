@@ -99,9 +99,18 @@ export class StreamParser {
                 continue;
             }
 
-            state.status = "streaming";
-
             const schemaValue = this.schema[key];
+            // JSON 修复可能暂时将尚未收到的对象或数组值填成 null。
+            // 等待符合 schema 容器类型的后续快照，不输出或提前关闭子流。
+            if (
+                typeof schemaValue === "object" && schemaValue !== null && !Array.isArray(schemaValue) &&
+                (currentValue === null || typeof currentValue !== "object" || Array.isArray(currentValue))
+            ) {
+                continue;
+            }
+            if (Array.isArray(schemaValue) && !Array.isArray(currentValue)) continue;
+
+            state.status = "streaming";
 
             // 1. 处理对象类型
             if (typeof schemaValue === "object" && !Array.isArray(schemaValue) && schemaValue !== null) {
@@ -193,10 +202,12 @@ export class StreamParser {
 
         const schemaValue = this.schema[key];
 
+        // 无效容器不发送内容，但仍关闭子流；最终响应结构由调用方校验。
         // 对象：发出所有尚未发出的属性
         if (typeof schemaValue === "object" && !Array.isArray(schemaValue) && schemaValue !== null) {
             const progress = state.progress as Set<string>;
-            const objValue = value as Record<string, JsonValue>;
+            const objValue = value !== null && typeof value === "object" && !Array.isArray(value)
+                ? value as Record<string, JsonValue> : {};
             // 遍历 schema 中定义的所有子键
             for (const subKey of Object.keys(schemaValue)) {
                 // 如果该子键尚未被推送过，并且在最终数据中存在，就推送它
@@ -209,14 +220,12 @@ export class StreamParser {
         // 数组：发出所有尚未发出的元素
         else if (Array.isArray(schemaValue)) {
             let progress = state.progress as number;
-            const arr = value as JsonValue[];
-            if (arr) {
-                while (progress < arr.length) {
-                    state.controller.enqueue(arr[progress]);
-                    progress++;
-                }
-                state.progress = progress;
+            const arr = Array.isArray(value) ? value : [];
+            while (progress < arr.length) {
+                state.controller.enqueue(arr[progress]);
+                progress++;
             }
+            state.progress = progress;
         }
         // 原始类型：如果从未发出过，就发出它
         else {
