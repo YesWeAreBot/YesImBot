@@ -76,6 +76,7 @@ export interface ModelConfig {
     providerName?: string;
     modelId: string;
     abilities: ModelAbility[];
+    disableNativeToolCalling?: boolean;
     parameters?: {
         temperature?: number;
         topP?: number;
@@ -106,6 +107,8 @@ export const ModelConfigSchema: Schema<ModelConfig> = Schema.object({
         .role("checkbox")
         .default([ModelAbility.Chat, ModelAbility.FunctionCalling])
         .description("模型支持的能力"),
+
+    disableNativeToolCalling: Schema.boolean().default(false).description("不支持原生工具调用（全局启用时改用 JSON 动作）"),
 
     parameters: Schema.object({
         temperature: Schema.number().default(0.85).description("采样温度"),

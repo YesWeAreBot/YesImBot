@@ -6,7 +6,7 @@ import { Context } from "koishi";
 import { generateText, streamText } from "@/dependencies/xsai";
 import { AppError, ErrorDefinitions } from "@/shared/errors";
 import { isEmpty, isNotEmpty, JsonParser, toBoolean } from "@/shared/utils";
-import { BaseModel } from "./base-model";
+import { BaseModel, formatModelIdentity } from "./base-model";
 import { ModelAbility, ModelConfig } from "./config";
 import { StreamDiagnostics } from "./stream-diagnostics";
 
@@ -41,6 +41,8 @@ export interface ValidationOptions {
     validator?: ContentValidator;
 }
 export interface ChatRequestOptions {
+    /** 原生工具调用不可用时使用的完整 JSON 请求，仅由模型切换器消费。 */
+    nativeToolCallingFallback?: ChatRequestOptions;
     singleStep?: boolean;
     abortSignal?: AbortSignal;
     onStreamStart?: () => void;
@@ -70,7 +72,7 @@ export class ChatModel extends BaseModel implements IChatModel {
         modelConfig: ModelConfig,
         private readonly fetch: typeof globalThis.fetch
     ) {
-        super(ctx, modelConfig, `[聊天模型] [${modelConfig.modelId}]`);
+        super(ctx, modelConfig, `[聊天模型] ${formatModelIdentity(modelConfig)}`);
         this.parseCustomParameters();
     }
 
@@ -127,7 +129,7 @@ export class ChatModel extends BaseModel implements IChatModel {
         try {
             return useStream
                 ? await this._executeStream(chatOptions, options.onStreamStart, options.validation, requestId)
-                : await this._executeNonStream(chatOptions, options.singleStep);
+                : await this._executeNonStream(chatOptions, options.singleStep, options.validation);
         } catch (error) {
             this.logger.debug(`[${requestId}] 请求异常 | 类型: ${error.name} | 错误码: ${error.code ?? "未知"} | 已取消: ${options.abortSignal?.aborted ?? false}`);
             await this._wrapAndThrow(error, chatOptions);
@@ -143,8 +145,8 @@ export class ChatModel extends BaseModel implements IChatModel {
         // 1. 模型配置中的基础参数 (temperature, topP)
         // 2. 模型配置中的自定义参数 (this.customParameters)
         // 3. 运行时传入的参数 (options)
-        const { validation, onStreamStart, abortSignal, singleStep, ...restOptions } = options;
-        return {
+        const { validation, onStreamStart, abortSignal, singleStep, nativeToolCallingFallback, ...restOptions } = options;
+        const chatOptions: ChatOptions = {
             ...this.chatProvider(this.config.modelId),
             abortSignal,
             fetch: async (url: string, init: RequestInit) => {
@@ -160,12 +162,19 @@ export class ChatModel extends BaseModel implements IChatModel {
             // 运行时参数 (会覆盖上面的默认值)
             ...restOptions,
         };
+        if (this.config.disableNativeToolCalling) {
+            // 最后过滤，避免自定义参数或调用方重新启用不支持的 API 特性。
+            for (const key of ["tools", "toolChoice", "tool_choice", "functions", "functionCall", "function_call", "parallelToolCalls", "parallel_tool_calls"]) {
+                delete chatOptions[key];
+            }
+        }
+        return chatOptions;
     }
 
     /**
      * 执行非流式请求
      */
-    private async _executeNonStream(chatOptions: ChatOptions, singleStep = false): Promise<GenerateTextResult> {
+    private async _executeNonStream(chatOptions: ChatOptions, singleStep = false, validation?: ValidationOptions): Promise<GenerateTextResult> {
         const stime = Date.now();
         let result: GenerateTextResult;
         try {
@@ -176,6 +185,15 @@ export class ChatModel extends BaseModel implements IChatModel {
         } catch (error) {
             if (!(error instanceof SingleStepComplete)) throw error;
             result = { ...error.step, steps: [error.step], messages: [], text: error.step.text ?? "" } as GenerateTextResult;
+        }
+        const validator = this._getValidator(validation);
+        if (validator && !result.toolCalls?.length) {
+            const finalValidation = validator(result.text, true);
+            if (!finalValidation.valid) {
+                throw new AppError(ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED, {
+                    context: { rawResponse: result.text, details: finalValidation.error || "格式不匹配或模型未输出有效内容" },
+                });
+            }
         }
         const duration = Date.now() - stime;
 

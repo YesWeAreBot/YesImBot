@@ -6,7 +6,7 @@ import { AppError, ErrorDefinitions } from "@/shared/errors";
 import { isNotEmpty } from "@/shared/utils";
 import { GenerateTextResult } from "@xsai/generate-text";
 import { EvaluationModel } from "./evaluation-model";
-import { BaseModel } from "./base-model";
+import { BaseModel, formatModelIdentity } from "./base-model";
 import { ChatRequestOptions, IChatModel } from "./chat-model";
 import { CircuitBreakerPolicy, ContentFailureAction, ModelAbility, ModelDescriptor, ModelSwitchingStrategy, TaskType } from "./config";
 import { IEmbedModel } from "./embed-model";
@@ -297,7 +297,7 @@ export class ModelService extends Service<Config> {
 // 职责：封装单次请求的全部执行逻辑，包括重试、超时、断路器检查和故障转移。
 class RequestExecutor {
     private readonly logger: Logger;
-    private readonly accumulatedErrors: { modelId: string; error: Error }[] = [];
+    private readonly accumulatedErrors: { providerName?: string; modelId: string; error: Error }[] = [];
 
     constructor(
         ctx: Context,
@@ -309,19 +309,20 @@ class RequestExecutor {
     }
 
     public async execute(options: ChatRequestOptions): Promise<GenerateTextResult> {
-        const originalMessages = JSON.parse(JSON.stringify(options.messages));
-
         for (const model of this.candidateModels) {
             options.abortSignal?.throwIfAborted();
             const breaker = this.circuitBreakers.get(model);
             const generation = breaker?.tryAcquire();
             if (breaker && generation === undefined) {
-                this.logger.info(`[跳过] 模型 ${model.id} (断路器开启)`);
+                this.logger.info(`[跳过] 模型 ${formatModelIdentity({ ...model.config, modelId: model.id })} (断路器开启)`);
                 continue;
             }
 
             // 执行单个模型的请求尝试（包含内部重试）
-            const result = await this.tryRequestWithModel(model, options, originalMessages).catch((error) => {
+            const modelOptions = model.config.disableNativeToolCalling && options.nativeToolCallingFallback
+                ? options.nativeToolCallingFallback : options;
+            const originalMessages = JSON.parse(JSON.stringify(modelOptions.messages));
+            const result = await this.tryRequestWithModel(model, modelOptions, originalMessages).catch((error) => {
                 breaker?.release(generation);
                 throw error;
             });
@@ -333,8 +334,8 @@ class RequestExecutor {
             } else {
                 // 如果失败，记录错误并继续尝试下一个模型（故障转移）
                 breaker?.recordFailure(generation);
-                this.accumulatedErrors.push({ modelId: model.id, error: (result as any).error });
-                this.logger.debug(`[故障转移] 模型 ${model.id} 已放弃，检查下一个候选模型`);
+                this.accumulatedErrors.push({ providerName: model.config.providerName, modelId: model.id, error: (result as any).error });
+                this.logger.debug(`[故障转移] 模型 ${formatModelIdentity({ ...model.config, modelId: model.id })} 已放弃，检查下一个候选模型`);
             }
         }
 
@@ -346,7 +347,7 @@ class RequestExecutor {
 
             cause: new AggregateError(individualErrors, "所有模型均失败"),
             context: {
-                failedModels: this.accumulatedErrors.map((e) => ({ modelId: e.modelId, errorCode: (e.error as AppError).code })),
+                failedModels: this.accumulatedErrors.map((e) => ({ providerName: e.providerName, modelId: e.modelId, errorCode: (e.error as AppError).code })),
                 accumulatedErrors: this.accumulatedErrors,
             },
         });
@@ -383,7 +384,7 @@ class RequestExecutor {
 
         for (let attempt = 0; attempt <= retryPolicy.maxRetries; attempt++) {
             options.abortSignal?.throwIfAborted();
-            const attemptLogger = this.logger.extend(`[${model.id}] [尝试 ${attempt + 1}/${retryPolicy.maxRetries + 1}]`);
+            const attemptLogger = this.logger.extend(`${formatModelIdentity({ ...model.config, modelId: model.id })} [尝试 ${attempt + 1}/${retryPolicy.maxRetries + 1}]`);
             const controller = new AbortController();
             const startedAt = Date.now();
             attemptLogger.debug(`开始请求 | 首字超时: ${timeoutPolicy.firstTokenTimeout ?? "未配置"}s | 总超时: ${timeoutPolicy.totalTimeout}s`);
@@ -533,7 +534,7 @@ export class ModelSwitcher<T extends BaseModel> {
                         breaker = new CircuitBreaker(
                             model.config.circuitBreakerPolicy,
                             this.logger,
-                            `${desc.providerName} / ${desc.modelId}`
+                            formatModelIdentity(desc)
                         );
                         breakersByIdentity.set(identity, breaker);
                     }
