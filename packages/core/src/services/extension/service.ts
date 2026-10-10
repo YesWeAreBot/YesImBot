@@ -32,7 +32,11 @@ export class ToolService extends Service<Config> {
         return Object.freeze({ trustedToolSession: 1 as const });
     }
 
-    static readonly inject = [Services.Logger, Services.Prompt];
+    static readonly inject = {
+        [Services.Logger]: { required: true },
+        [Services.Prompt]: { required: true },
+        [Services.WorldState]: { required: false },
+    };
     private tools: Map<string, ToolDefinition> = new Map();
     private extensions: Map<string, IExtension> = new Map();
 
