@@ -182,6 +182,8 @@ export interface MemoryChunkData {
 export interface DiaryEntryData {
     id: string;
     date: string; // 'YYYY-MM-DD'
+    generatedAt?: Date;
+    sourceMessageCount?: number;
     platform: string;
     channelId: string;
     content: string; // 第一人称日记

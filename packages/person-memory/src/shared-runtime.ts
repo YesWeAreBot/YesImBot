@@ -400,7 +400,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
             "\n人物资料是可修正认识；使用 person_memory 查完整版本，person_recall 按关键词、日期和人物回忆。只有 auto 可自动接受新鲜有来源的关联；管理员锁定与纠错优先。";
         if (config.automaticRecall && /记得|记不记得|之前|上次|以前|昨天|前天|上周|上个月|remember|previous/i.test(session.content || "")) {
             try {
-                text += `\n<recalled_sources>${boundedData(await recall(session, { query: (session.content || "").slice(0, 160), limit: 4 }), 4000)}</recalled_sources>`;
+                text += `\n<recalled_sources>${escapeContext(JSON.stringify(await recall(session, { query: (session.content || "").slice(0, 160), limit: 4 })))}</recalled_sources>`;
             } catch (error) {
                 logger.debug(`自动回忆未完成：${String(error)}`);
             }

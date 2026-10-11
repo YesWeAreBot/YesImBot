@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Context, Logger, Query } from "koishi";
+import { Context, h, Logger, Query } from "koishi";
 
 import { Services, TableName } from "@/shared/constants";
 import { HistoryConfig } from "./config";
@@ -28,6 +28,38 @@ export class HistoryCommandManager {
 
     public register(): void {
         const historyCmd = this.ctx.command("history", "历史记录管理指令集", { authority: 3 });
+
+        const display = async (session: any, result: unknown) => {
+            const text = Array.from(JSON.stringify(result, null, 2));
+            for (let i = 0; i < text.length; i += 3000) await session.send(h.text(text.slice(i, i + 3000).join("")));
+        };
+        historyCmd.subcommand(".recall [query:text]", "召回完整原文并注入当前上下文", { authority: 3 })
+            .option("kind", "-k <kind:string> messages、l2 或 l3（默认 l3）")
+            .option("start", "--start <start:string> 开始日期或时间")
+            .option("end", "--end <end:string> 结束日期或时间")
+            .option("user", "-u <user:string> 原始消息发送者 ID")
+            .option("offset", "-o <offset:natural> 分页位置")
+            .option("limit", "-n <limit:natural> 返回条数，最多 20")
+            .option("display", "--display 同时向聊天窗口显示原文")
+            .action(async ({ session, options }, query) => {
+                try {
+                    const result = await this.service.recallContext(session, { query, kind: options.kind as any, start: options.start,
+                        end: options.end, userId: options.user, offset: options.offset, limit: options.limit });
+                    await this.service.injectRecall(session, result);
+                    if (options.display) await display(session, result);
+                    return "";
+                } catch (error) { return h.text(`召回失败：${String(error)}`); }
+            });
+        historyCmd.subcommand(".diary [date:string]", "手动生成 L3 日记并注入当前上下文", { authority: 3 })
+            .option("display", "--display 同时向聊天窗口显示完整结果")
+            .action(async ({ session, options }, date) => {
+                try {
+                    const result = await this.service.triggerDiary(session, date);
+                    await this.service.injectRecall(session, result, "l3_diary_generate");
+                    if (options.display) await display(session, result);
+                    return "";
+                } catch (error) { return h.text(`L3 触发失败：${String(error)}`); }
+            });
 
         historyCmd
             .subcommand(".count", "统计历史记录中激活的消息数量")

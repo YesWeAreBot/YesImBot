@@ -48,23 +48,25 @@ export function apply(ctx: Context, config: Config) {
     const modelUsage = new Map<string, { since: number; calls: number; entries: number }>();
     const tool = {
         name: "onebot_contacts",
-        description: "读取 OneBot 好友或群成员缓存。首次查询会完整拉取到数据库，但只返回摘要或至多 20 条；后续仅在管理员要求刷新时更新。mode=count 查看数量，mode=lookup 按 user_id 精确查找，mode=page 分页；不能通过模型工具一次返回全量。好友按机器人账号隔离，同平台的群名单按群号共享。群聊只能查询当前群成员；好友和跨群查询仅限管理员私聊。",
+        description: "读取 OneBot 好友、群成员或机器人已加入的群缓存。首次查询会完整拉取到数据库，但只返回摘要或至多 20 条；后续仅在管理员要求刷新时更新。mode=count 查看数量，mode=lookup 按 user_id 精确查找，mode=page 分页，mode=search 用 query 模糊匹配 UID/昵称/群名；不能通过模型工具一次返回全量。好友按机器人账号隔离，同平台的群名单按群号共享。群聊只能查询当前群成员；好友、群列表和跨群查询仅限管理员私聊。",
         parameters: Schema.object({
-            kind: Schema.union([Schema.const("friends"), Schema.const("members")]).required().description("friends 好友或 members 群成员"),
-            mode: Schema.union([Schema.const("count"), Schema.const("lookup"), Schema.const("page")]).required().description("count 数量、lookup 按账号查找、page 分页"),
+            kind: Schema.union([Schema.const("friends"), Schema.const("members"), Schema.const("groups")]).required().description("friends 好友、members 群成员或 groups 机器人已加入的群"),
+            mode: Schema.union([Schema.const("count"), Schema.const("lookup"), Schema.const("page"), Schema.const("search")]).required().description("count 数量、lookup 精确账号、page 分页、search 模糊搜索"),
             group_id: Schema.string().description("群号；在当前群聊可省略"),
+            query: Schema.string().description("search 必填：按 UID、昵称、群名、群名片或备注做字面模糊匹配"),
             user_id: Schema.string().description("lookup 必填：精确的用户账号 ID"),
             offset: Schema.number().description("page 起始位置，从 0 开始"),
             limit: Schema.number().description("page 返回条数，最多 20，默认 10"),
         }),
         isSupported: (session: Session) => !!session && allowed(session) && session.platform === "onebot" && !!session.bot?.internal,
-        async execute(args: { kind: Query["kind"]; mode: "count" | "lookup" | "page"; group_id?: string;
-            user_id?: string; offset?: number; limit?: number; session?: Session }) {
+        async execute(args: { kind: Query["kind"]; mode: "count" | "lookup" | "page" | "search"; group_id?: string;
+            query?: string; user_id?: string; offset?: number; limit?: number; session?: Session }) {
             try {
                 if (!args.session) throw new Error("缺少会话");
                 if (!allowed(args.session)) throw new Error("当前场景未启用 OneBot 名单查询");
+                if (args.mode === "search" && !args.query?.trim()) throw new Error("search 需要 query");
                 if (args.mode === "lookup" && !args.user_id) throw new Error("lookup 需要 user_id");
-                if (args.mode === "page" && args.limit !== undefined && (!Number.isSafeInteger(args.limit) || args.limit < 1 || args.limit > 20))
+                if (["page", "search"].includes(args.mode) && args.limit !== undefined && (!Number.isSafeInteger(args.limit) || args.limit < 1 || args.limit > 20))
                     throw new Error("模型每次最多读取 20 条");
                 const session = args.session;
                 const requestedGroup = groupId(session, args.group_id);
@@ -83,7 +85,7 @@ export function apply(ctx: Context, config: Config) {
                 }
                 if (usage.calls >= 40 || (args.mode !== "count" && usage.entries >= 80))
                     throw new Error("本会话的名单读取额度已用完；请缩小查询范围，稍后再试");
-                const reserved = args.mode === "count" ? 0 : args.mode === "page"
+                const reserved = args.mode === "count" ? 0 : ["page", "search"].includes(args.mode)
                     ? Math.min(args.limit ?? 10, 20, 80 - usage.entries) : 1;
                 usage.calls++;
                 usage.entries += reserved; // Reserve before awaiting concurrent tool calls.
@@ -92,7 +94,8 @@ export function apply(ctx: Context, config: Config) {
                     result = await store.query(onebot(session), {
                         kind: args.kind, groupId: requestedGroup,
                         summaryOnly: args.mode === "count", userId: args.mode === "lookup" ? args.user_id : undefined,
-                        offset: args.mode === "page" ? args.offset : undefined, limit: reserved || 1,
+                        query: args.mode === "search" ? args.query : undefined,
+                        offset: ["page", "search"].includes(args.mode) ? args.offset : undefined, limit: reserved || 1,
                     });
                 } catch (error) {
                     usage.entries -= reserved;
@@ -102,8 +105,8 @@ export function apply(ctx: Context, config: Config) {
                 return Success({ kind: result.kind, groupId: result.groupId, total: result.total,
                     fetchedAt: result.fetchedAt, sourceBotId: result.sourceBotId, offset: result.offset,
                     returned: result.returned,
-                    hasMore: args.mode === "page" && result.offset + result.returned < result.total,
-                    entries: result.entries.map(item => ({ userId: item.userId,
+                    hasMore: ["page", "search"].includes(args.mode) && result.offset + result.returned < result.total,
+                    entries: result.entries.map(item => ({ ...(args.kind === "groups" ? { groupId: item.userId, groupName: item.nickname } : {}), userId: item.userId,
                         nickname: item.nickname.slice(0, 80), remark: item.remark.slice(0, 80),
                         card: item.card.slice(0, 80), role: item.role })) });
             } catch (error) { return Failed(`查询 OneBot 名单失败：${String(error)}`); }
@@ -114,17 +117,20 @@ export function apply(ctx: Context, config: Config) {
 
     ctx.command("onebot.contacts", "查询或刷新 OneBot 好友和群成员名单", { authority: 3 });
     function command(kind: Query["kind"]) {
-        return ctx.command(`onebot.contacts.${kind}`, kind === "friends" ? "查询好友名单" : "查询群成员名单", { authority: 3 })
+        return ctx.command(`onebot.contacts.${kind}`, kind === "friends" ? "查询好友名单" : kind === "groups" ? "查询已加入的群" : "查询群成员名单", { authority: 3 })
             .option("groupId", "-g <groupId:string> 指定群号")
+            .option("query", "-q <query:string> 按账号、昵称或群名模糊搜索")
             .option("offset", "-o <offset:natural> 跳过人数")
             .option("limit", "-n <limit:natural> 返回人数（默认 50）")
             .option("all", "--all 返回完整名单")
             .option("refresh", "-r 强制刷新")
             .action(async ({ session, options }) => {
                 try {
+                    if (kind === "groups" && !session.isDirect) throw new Error("群列表只能在管理员私聊中查询");
                     const result = await store.query(onebot(session), { kind, groupId: groupId(session, options.groupId),
-                        offset: options.offset, limit: options.limit, all: options.all, refresh: options.refresh });
-                    const header = `${kind === "friends" ? "好友" : `群 ${result.groupId} 成员`}：${result.total} 人；本次 ${result.returned} 人；缓存于 ${new Date(result.fetchedAt).toLocaleString()}（来源机器人 ${result.sourceBotId}）`;
+                        query: options.query, offset: options.offset, limit: options.limit, all: options.all, refresh: options.refresh });
+                    const unit = kind === "groups" ? "个群" : "人";
+                    const header = `${kind === "friends" ? "好友" : kind === "groups" ? "已加入的群" : `群 ${result.groupId} 成员`}：${result.total} ${unit}；本次 ${result.returned} ${unit}；缓存于 ${new Date(result.fetchedAt).toLocaleString()}（来源机器人 ${result.sourceBotId}）`;
                     const lines = result.entries.map((item, i) => `${result.offset + i + 1}. ${item.userId} ${item.card || item.remark || item.nickname}${item.role ? ` (${item.role})` : ""}`);
                     if (!lines.length) return h.text(header);
                     // Avoid a single huge platform message when --all is used.
@@ -136,4 +142,5 @@ export function apply(ctx: Context, config: Config) {
     }
     command("friends");
     command("members");
+    command("groups");
 }

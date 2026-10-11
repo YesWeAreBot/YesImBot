@@ -6,7 +6,8 @@ import { HistoryConfig } from "./config";
 import { InteractionManager } from "./interaction-manager";
 import { MemoryTarget, SemanticMemoryManager } from "./l2-semantic-memory";
 import { diaryDateKey, diaryDayRange } from "./memory-date";
-import { AgentLogEntry, DiaryEntryData } from "./types";
+import { randomUUID } from "node:crypto";
+import { AgentLogEntry, DiaryEntryData, MessageData } from "./types";
 
 export class ArchivalMemoryManager {
     private logger: Logger;
@@ -14,7 +15,7 @@ export class ArchivalMemoryManager {
     private dailyTaskTimer: NodeJS.Timeout;
     private stopped = false;
     private lifecycle = 0;
-    private pendingDiaries = new Map<string, Promise<void>>();
+    private pendingDiaries = new Map<string, Promise<DiaryEntryData | undefined>>();
     private pendingWrites = new Set<Promise<unknown>>();
     private controllers = new Set<AbortController>();
 
@@ -43,7 +44,7 @@ export class ArchivalMemoryManager {
             return;
         }
 
-        this.scheduleDailyTask();
+        if (this.config.l3_memory.scheduled !== false) this.scheduleDailyTask();
         this.logger.info("L3 日记服务已启动");
     }
 
@@ -55,6 +56,33 @@ export class ArchivalMemoryManager {
             clearTimeout(this.dailyTaskTimer);
         }
         await Promise.allSettled([...this.pendingWrites]);
+    }
+
+    public async generateOnDemand(platform: string, channelId: string, date = new Date()) {
+        if (this.stopped || !this.config.l3_memory.enabled) throw new Error("L3 日记未启用");
+        if (!this.chatModel) throw new Error("L3 没有可用的聊天模型");
+        const lifecycle = this.lifecycle;
+        const result = await this.generateDiaryForChannel(platform, channelId, date, undefined, true);
+        if (this.stopped || this.lifecycle !== lifecycle) throw new Error("日记任务已取消");
+        return result;
+    }
+
+    public async observeMessage(message: MessageData) {
+        const threshold = this.config.l3_memory.messageThreshold ?? 0;
+        if (!threshold || this.stopped || !this.config.l3_memory.enabled || !this.chatModel) return;
+        const date = new Date(message.timestamp), { start, end } = diaryDayRange(date);
+        const generation = this.semanticMemory?.getHistoryGeneration(message);
+        while (!this.stopped) {
+            const [messages, diaries] = await Promise.all([
+                this.ctx.database.get(TableName.Messages, { platform: message.platform, channelId: message.channelId, timestamp: { $gte: start, $lt: end } }, { fields: ["id"] }),
+                this.ctx.database.get(TableName.L3Diaries, { platform: message.platform, channelId: message.channelId, date: diaryDateKey(date) }),
+            ]);
+            if (this.stopped || (this.semanticMemory && this.semanticMemory.getHistoryGeneration(message) !== generation)) return;
+            const previous = Math.max(0, ...diaries.map(d => d.sourceMessageCount ?? 0));
+            if (messages.length < 5 || messages.length - previous < threshold) return;
+            const generated = await this.generateDiaryForChannel(message.platform, message.channelId, date, undefined, true);
+            if (!generated) return;
+        }
     }
 
     private scheduleDailyTask() {
@@ -85,7 +113,7 @@ export class ArchivalMemoryManager {
             const yesterday = new Date();
             yesterday.setDate(yesterday.getDate() - 1);
             yesterday.setHours(0, 0, 0, 0);
-            void this.generateDiariesForAllChannels(yesterday)
+            void this.generateDiariesForAllChannels(yesterday, true)
                 .catch((error) => this.logger.error("每日日记生成任务失败", error))
                 .finally(() => {
                     if (!this.stopped && this.lifecycle === lifecycle) this.scheduleDailyTask();
@@ -95,7 +123,7 @@ export class ArchivalMemoryManager {
         this.logger.info(`下一次日记生成任务将在 ${nextRun.toLocaleString()} 执行`);
     }
 
-    public async generateDiariesForAllChannels(date = new Date()) {
+    public async generateDiariesForAllChannels(date = new Date(), incremental = false) {
         if (this.stopped || !this.config.l3_memory.enabled || !this.chatModel) return;
         const lifecycle = this.lifecycle;
         const diaryDate = new Date(date);
@@ -114,21 +142,25 @@ export class ArchivalMemoryManager {
 
         for (const channel of uniqueChannels) {
             if (this.stopped || this.lifecycle !== lifecycle) return;
-            await this.generateDiaryForChannel(channel.platform, channel.channelId, diaryDate, uniqueChannels);
+            try {
+                await this.generateDiaryForChannel(channel.platform, channel.channelId, diaryDate, uniqueChannels, incremental);
+            } catch (error) {
+                this.logger.warn(`频道 ${channel.platform}:${channel.channelId} 日记生成失败，继续处理其他频道：${String(error)}`);
+            }
         }
         this.logger.info("每日日记生成任务完成。");
     }
 
-    public generateDiaryForChannel(platform: string, channelId: string, date: Date, knownChannels?: MemoryTarget[]): Promise<void> {
-        if (this.stopped || !this.config.l3_memory.enabled || !this.chatModel) return Promise.resolve();
+    public generateDiaryForChannel(platform: string, channelId: string, date: Date, knownChannels?: MemoryTarget[], incremental = false): Promise<DiaryEntryData | undefined> {
+        if (this.stopped || !this.config.l3_memory.enabled || !this.chatModel) return Promise.resolve(undefined);
         const target = { platform, channelId };
         const generation = this.semanticMemory?.getHistoryGeneration(target);
         const lifecycle = this.lifecycle;
         const diaryDate = new Date(date);
-        const key = JSON.stringify([platform, channelId, diaryDateKey(diaryDate), lifecycle, generation]);
+        const key = JSON.stringify([platform, channelId, diaryDateKey(diaryDate), lifecycle, generation, incremental]);
         const existing = this.pendingDiaries.get(key);
         if (existing) return existing;
-        const task = this.generateDiary(target, diaryDate, lifecycle, generation, knownChannels);
+        const task = this.generateDiary(target, diaryDate, lifecycle, generation, knownChannels, incremental);
         this.pendingDiaries.set(key, task);
         const finish = () => {
             if (this.pendingDiaries.get(key) === task) this.pendingDiaries.delete(key);
@@ -142,8 +174,9 @@ export class ArchivalMemoryManager {
         date: Date,
         lifecycle: number,
         generation?: number,
-        knownChannels?: MemoryTarget[]
-    ): Promise<void> {
+        knownChannels?: MemoryTarget[],
+        incremental = false
+    ): Promise<DiaryEntryData | undefined> {
         const { platform, channelId } = target;
         const dateKey = diaryDateKey(date);
         const active = () =>
@@ -155,8 +188,8 @@ export class ArchivalMemoryManager {
         try {
             await this.semanticMemory?.waitForHistoryClear(target);
             if (!active()) return;
-            const existing = await this.ctx.database.get(TableName.L3Diaries, { platform, channelId, date: dateKey }, { limit: 1 });
-            if (existing.length || !active()) return;
+            const existing = await this.ctx.database.get(TableName.L3Diaries, { platform, channelId, date: dateKey });
+            if ((!incremental && existing.length) || !active()) return;
             const channels = knownChannels ?? (await this.ctx.database.get(TableName.Messages, {}, { fields: ["platform", "channelId"] }));
             if (!active()) return;
             const { start: startOfDay, end: endOfDay } = diaryDayRange(date);
@@ -171,6 +204,7 @@ export class ArchivalMemoryManager {
             if (!active()) return;
 
             if (messages.length + agentLogs.length < 5) return;
+            if (incremental && existing.some(d => (d.sourceMessageCount ?? -1) >= messages.length)) return;
 
             const conversationText = this.formatInteractionsForPrompt(messages, agentLogs);
             const prompt = this.buildDiaryPrompt(conversationText);
@@ -182,7 +216,9 @@ export class ArchivalMemoryManager {
             });
             if (!active()) return;
             const diaryEntry: DiaryEntryData = {
-                id: `diary_${platform}_${channelId}_${dateKey}`,
+                id: `diary_${platform}_${channelId}_${dateKey}${incremental ? `_${randomUUID()}` : ""}`,
+                generatedAt: new Date(),
+                sourceMessageCount: messages.length,
                 date: dateKey,
                 platform,
                 channelId,
@@ -200,9 +236,15 @@ export class ArchivalMemoryManager {
             const saved = this.semanticMemory
                 ? await this.semanticMemory.writeMemory(target, generation, write)
                 : await write().then(() => true);
-            if (saved) this.logger.debug(`为频道 ${platform}:${channelId} 生成了 ${dateKey} 的日记`);
+            if (saved) {
+                this.logger.debug(`为频道 ${platform}:${channelId} 生成了 ${dateKey} 的日记`);
+                return diaryEntry;
+            }
         } catch (error) {
-            if (active()) this.logger.error(`为频道 ${platform}:${channelId} 生成日记失败`, error);
+            if (active()) {
+                this.logger.error(`为频道 ${platform}:${channelId} 生成日记失败`, error);
+                if (incremental) throw error;
+            }
         } finally {
             this.controllers.delete(controller);
         }

@@ -104,7 +104,7 @@ export async function recallStoredMemories(db: Context["database"], options: Sto
             const content = entry.content.toLocaleLowerCase();
             const item = {
                 ...entry,
-                content: entry.content.slice(0, 4000),
+                content: entry.content,
                 score: tokens.reduce((sum, token) => sum + (content.includes(token) ? token.length : 0), 0),
             };
             if (item.score && (!options.accept || (await options.accept(item)))) result.push(item);
