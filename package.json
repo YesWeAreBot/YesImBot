@@ -22,7 +22,12 @@
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
     "prepare": "husky",
-    "test": "vitest run"
+    "test": "vitest run",
+    "add-changeset": "changeset add",
+    "version-packages": "changeset version",
+    "release": "yarn build && changeset publish",
+    "collect-packages": "node scripts/collect-packages.js",
+    "pack:packages": "node scripts/pack-packages.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.5.0",
@@ -35,11 +40,12 @@
     "vite": "7.3.6",
     "vitest": "4.1.10",
     "yakumo": "^3.2.1",
-    "yakumo-client": "file:./packages/yakumo-client",
+    "yakumo-client": "workspace:*",
     "yakumo-esbuild": "^3.0.2",
     "yakumo-tsc": "^3.0.1",
     "yakumo-vitest": "^1.3.3",
-    "yml-register": "^1.2.5"
+    "yml-register": "^1.2.5",
+    "@changesets/cli": "^2.29.5"
   },
   "lint-staged": {
     "*.{ts,tsx,mjs,cjs,js,jsx}": [

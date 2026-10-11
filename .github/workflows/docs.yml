@@ -21,27 +21,30 @@ jobs:
           fetch-depth: 1
           ref: ${{ github.event.inputs.branch }}
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          bun-version: latest
+          node-version: 24
+
+      - name: Enable Yarn
+        run: corepack enable
 
       - name: Cache dependencies
         uses: actions/cache@v4
         with:
-          path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lockb') }}
+          path: .yarn/cache
+          key: ${{ runner.os }}-yarn-${{ hashFiles('yarn.lock') }}
           restore-keys: |
-            ${{ runner.os }}-bun-
+            ${{ runner.os }}-yarn-
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: yarn install --immutable
 
       - name: Install TypeDoc
-        run: bun add -D typedoc typedoc-plugin-markdown typedoc-plugin-rename-defaults
+        run: yarn add -D typedoc typedoc-plugin-markdown typedoc-plugin-rename-defaults
 
       - name: Generate API documentation
-        run: bunx typedoc
+        run: yarn typedoc
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 

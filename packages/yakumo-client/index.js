@@ -1,9 +1,9 @@
-// Bridges the Koishi console client build into the yakumo pipeline.
-//
-// `@koishijs/client/lib` registers a `client` *service* via `ctx.register`, which yakumo 1.x
-// could reach from `pipeline.build` but yakumo 3.x cannot: `ctx.cli.execute` only dispatches
-// CLI commands. This plugin exposes the same build as a CLI command so the step actually runs.
-import { build } from "@koishijs/client/lib";
+// Run the core model bundle and config UI steps after yakumo-esbuild.
+import { execFile } from "node:child_process";
+import { join } from "node:path";
+import { promisify } from "node:util";
+
+const execute = promisify(execFile);
 
 export const inject = ["yakumo", "cli"];
 
@@ -14,8 +14,13 @@ function apply(ctx) {
         if (!packages.length) throw new Error("No package matched the given arguments");
         for (const path of packages) {
             const meta = ctx.yakumo.workspaces[path];
-            if (!meta.dependencies?.["@koishijs/client"] && !meta.devDependencies?.["@koishijs/client"]) continue;
-            await build(ctx.yakumo.cwd + path, meta.yakumo?.client);
+            if (meta.name !== "koishi-plugin-yesimbot") continue;
+            const cwd = join(ctx.yakumo.cwd, path);
+            // xsai is ESM-only and intentionally bundled into the CJS plugin.
+            // The config UI uses the existing esbuild entry, not a Vite client.
+            for (const script of ["scripts/bundle.mjs", "scripts/build-client.mjs"]) {
+                await execute(process.execPath, [script], { cwd });
+            }
         }
     });
 }

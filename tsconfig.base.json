@@ -1,9 +1,6 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "paths": {
-      "koishi": ["./packages/core/node_modules/koishi"]
-    },
     "module": "ESNext",
     "declaration": true,
     "emitDeclarationOnly": true,

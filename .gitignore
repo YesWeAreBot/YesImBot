@@ -177,4 +177,5 @@ lib/
 bun.lock
 package-lock.json
 tsconfig.temp.json
-yarn.lock
+
+artifacts/

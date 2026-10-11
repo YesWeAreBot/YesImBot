@@ -21,45 +21,45 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          bun-version: latest
+          node-version: 24
+
+      - name: Enable Yarn
+        run: corepack enable
 
       - name: Configure Git for Changesets
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
 
-      - name: Cache dependencies and build artifacts
+      - name: Cache dependencies
         uses: actions/cache@v4
         with:
           path: |
-            ~/.bun/install/cache
-            .turbo
-            node_modules
-          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lockb') }}
+            .yarn/cache
+          key: ${{ runner.os }}-yarn-${{ hashFiles('yarn.lock') }}
           restore-keys: |
-            ${{ runner.os }}-bun-
+            ${{ runner.os }}-yarn-
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: yarn install --immutable
 
-      # 添加 continue-on-error 允许测试失败后继续
       - name: Run tests
-        run: bun test
+        run: yarn test
         env:
           API_KEY_SILICON: ${{ secrets.API_KEY_SILICON }}
-        continue-on-error: true # 关键修改：即使测试失败也继续执行
 
       - name: Version packages and create tarballs
         id: package
         run: |
-          bunx changeset version --snapshot
-          bun run pack
+          yarn changeset version --snapshot
+          yarn build
+          yarn pack:packages
 
       - name: Collect all packaged tarballs
-        run: bun run collect-packages
+        run: yarn collect-packages
 
       - name: Upload all packages as a single artifact
         uses: actions/upload-artifact@v4

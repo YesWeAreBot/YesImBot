@@ -6,8 +6,5 @@
   "main": "index.js",
   "exports": {
     ".": "./index.js"
-  },
-  "peerDependencies": {
-    "@koishijs/client": "^5.30.11"
   }
 }

@@ -1,7 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { glob } from "glob";
 
 const destinationDir = "artifacts";
 
@@ -16,7 +15,14 @@ async function main() {
     }
 
     // 2. 查找所有 .tgz 文件
-    const tgzFiles = await glob("packages/**/*.tgz", { absolute: true });
+    const tgzFiles = [];
+    for (const entry of await fs.readdir("packages", { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        const directory = path.resolve("packages", entry.name);
+        for (const name of await fs.readdir(directory)) {
+            if (name.endsWith(".tgz")) tgzFiles.push(path.join(directory, name));
+        }
+    }
     if (tgzFiles.length === 0) {
         console.log("No .tgz files found to collect.");
         return;
