@@ -1,3 +1,4 @@
+import { BASE_DIR } from "../constants";
 import path from "path";
 
 import { Logger, Schema } from "koishi";
@@ -122,7 +123,7 @@ export class ErrorReporter {
         const detailed = !!this.config.includeSensitiveInfo;
         const privacy = { partialCredentials: detailed, includeCookies: !!this.config.includeCookies };
         const cleaned = sanitizeDiagnostic({ ...context, error }, this.knownSecrets, new Set(), 0, "", privacy);
-        const packageJson = require(path.resolve(__dirname, "../../../package.json"));
+        const packageJson = require(path.resolve(BASE_DIR, "package.json"));
         const dump = [
             `# 智能体错误报告\n`,
             `**ID:** \`${diagnosticId(cleaned.errorId)}\`\n`,

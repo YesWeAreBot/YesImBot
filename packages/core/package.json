@@ -37,13 +37,11 @@
     "./package.json": "./package.json",
     "./services": {
       "types": "./lib/services/index.d.ts",
-      "import": "./lib/services/index.js",
-      "require": "./lib/services/index.js"
+      "default": "./lib/services/index.js"
     },
     "./shared": {
       "types": "./lib/shared/index.d.ts",
-      "import": "./lib/shared/index.js",
-      "require": "./lib/shared/index.js"
+      "default": "./lib/shared/index.js"
     }
   },
   "dependencies": {
@@ -57,6 +55,7 @@
     "uuid": "^11.1.0"
   },
   "devDependencies": {
+    "@koishijs/plugin-console": "^5.30.11",
     "@koishijs/plugin-notifier": "^1.2.1",
     "@minatojs/driver-sqlite": "^4.7.0",
     "@types/semver": "^7",
@@ -75,6 +74,7 @@
     "undici": "^6.29.0"
   },
   "peerDependencies": {
+    "@koishijs/plugin-console": "^5.30.11",
     "@koishijs/plugin-notifier": "^1.2.1",
     "@minatojs/driver-sqlite": "^4.7.0",
     "koishi": "^4.18.7",

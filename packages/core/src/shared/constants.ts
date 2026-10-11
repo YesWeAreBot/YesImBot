@@ -1,6 +1,9 @@
 import path from "path";
+import { createRequire } from "node:module";
 
-export const BASE_DIR = path.resolve(__dirname, "../../");
+// Resolve the owning package instead of depending on the bundled entry directory.
+const packageRequire = createRequire(path.join(__dirname, "package.json"));
+export const BASE_DIR = path.dirname(packageRequire.resolve("koishi-plugin-yesimbot/package.json"));
 export const RESOURCES_DIR = path.resolve(BASE_DIR, "resources");
 export const PROMPTS_DIR = path.resolve(RESOURCES_DIR, "prompts");
 export const TEMPLATES_DIR = path.resolve(RESOURCES_DIR, "templates");

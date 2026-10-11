@@ -4,7 +4,7 @@ import {} from "koishi-plugin-puppeteer";
 import { Extension, Tool, withInnerThoughts } from "../../../../services/extension/decorators";
 import { Failed, Success } from "../../../../services/extension/helpers";
 import { Infer } from "../../../../services/extension/types";
-import { isEmpty } from "../../../../shared";
+import { isEmpty } from "../../../../shared/utils";
 
 interface SearchConfig {
     endpoint: string;

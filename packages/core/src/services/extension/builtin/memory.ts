@@ -5,7 +5,7 @@ import { Failed, Success } from "../../../services/extension/helpers";
 import { Infer } from "../../../services/extension/types";
 import { MemoryService } from "../../../services/memory";
 import { MessageData } from "../../../services/worldstate";
-import { formatDate, truncate } from "../../../shared";
+import { formatDate, truncate } from "../../../shared/utils";
 import { Services, TableName } from "../../../shared/constants";
 
 @Extension({
