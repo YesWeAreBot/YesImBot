@@ -443,6 +443,8 @@ export class HeartbeatProcessor {
         if (!response.toolCalls?.length) {
             const legacy = this.parseAndValidateResponse(response, session.cid);
             if (!legacy) throw new Error("模型没有返回有效工具调用");
+            this.displayThoughts(legacy.thoughts);
+            await this.interactionManager.recordThought(turnId, session.platform, session.channelId, legacy.thoughts);
             const replySent = await this.executeActions(turnId, session, legacy.actions, onReplySent);
             return { continue: legacy.request_heartbeat, replySent };
         }
