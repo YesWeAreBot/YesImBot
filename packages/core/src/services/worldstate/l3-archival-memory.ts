@@ -1,4 +1,4 @@
-import { Context, Logger } from "koishi";
+import { $, Context, Logger } from "koishi";
 
 import { IChatModel, TaskType } from "@/services/model";
 import { Services, TableName } from "@/shared/constants";
@@ -18,6 +18,7 @@ export class ArchivalMemoryManager {
     private pendingDiaries = new Map<string, Promise<DiaryEntryData | undefined>>();
     private pendingWrites = new Set<Promise<unknown>>();
     private controllers = new Set<AbortController>();
+    private thresholdChecks = new Map<string, { dirty: boolean; done: Promise<void> }>();
 
     constructor(
         private ctx: Context,
@@ -70,18 +71,40 @@ export class ArchivalMemoryManager {
     public async observeMessage(message: MessageData) {
         const threshold = this.config.l3_memory.messageThreshold ?? 0;
         if (!threshold || this.stopped || !this.config.l3_memory.enabled || !this.chatModel) return;
-        const date = new Date(message.timestamp), { start, end } = diaryDayRange(date);
+        const date = new Date(message.timestamp);
         const generation = this.semanticMemory?.getHistoryGeneration(message);
-        while (!this.stopped) {
-            const [messages, diaries] = await Promise.all([
-                this.ctx.database.get(TableName.Messages, { platform: message.platform, channelId: message.channelId, timestamp: { $gte: start, $lt: end } }, { fields: ["id"] }),
-                this.ctx.database.get(TableName.L3Diaries, { platform: message.platform, channelId: message.channelId, date: diaryDateKey(date) }),
-            ]);
-            if (this.stopped || (this.semanticMemory && this.semanticMemory.getHistoryGeneration(message) !== generation)) return;
-            const previous = Math.max(0, ...diaries.map(d => d.sourceMessageCount ?? 0));
-            if (messages.length < 5 || messages.length - previous < threshold) return;
-            const generated = await this.generateDiaryForChannel(message.platform, message.channelId, date, undefined, true);
-            if (!generated) return;
+        const lifecycle = this.lifecycle;
+        const key = JSON.stringify([message.platform, message.channelId, diaryDateKey(date), generation, lifecycle]);
+        const pending = this.thresholdChecks.get(key);
+        if (pending) {
+            pending.dirty = true;
+            return pending.done;
+        }
+        const check = { dirty: true, done: null as Promise<void> };
+        this.thresholdChecks.set(key, check);
+        check.done = this.checkMessageThreshold(message, date, threshold, generation, lifecycle, check, key);
+        return check.done;
+    }
+
+    private async checkMessageThreshold(message: MessageData, date: Date, threshold: number, generation: number, lifecycle: number, check: { dirty: boolean }, key: string) {
+        const { start, end } = diaryDayRange(date);
+        const active = () => !this.stopped && this.lifecycle === lifecycle &&
+            (!this.semanticMemory || this.semanticMemory.getHistoryGeneration(message) === generation);
+        try {
+            while (check.dirty && active()) {
+                check.dirty = false;
+                const target = { platform: message.platform, channelId: message.channelId };
+                const [messageCount, previousCount] = await Promise.all([
+                    this.ctx.database.eval(TableName.Messages, row => $.count(row.id), { ...target, timestamp: { $gte: start, $lt: end } }),
+                    this.ctx.database.eval(TableName.L3Diaries, row => $.max(row.sourceMessageCount), { ...target, date: diaryDateKey(date) }),
+                ]);
+                if (!active()) return;
+                if (messageCount < 5 || messageCount - (previousCount ?? 0) < threshold) continue;
+                const generated = await this.generateDiaryForChannel(message.platform, message.channelId, date, undefined, true);
+                if (generated) check.dirty = true;
+            }
+        } finally {
+            if (this.thresholdChecks.get(key) === check) this.thresholdChecks.delete(key);
         }
     }
 

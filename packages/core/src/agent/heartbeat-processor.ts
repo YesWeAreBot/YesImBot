@@ -464,7 +464,7 @@ export class HeartbeatProcessor {
                 replySent = true;
                 onReplySent();
             }
-            await this.interactionManager.recordObservation(actionId, session.platform, session.channelId, {
+            await this.recordToolObservation(actionId, session, {
                 turnId,
                 ...action,
                 status: result.status,
@@ -474,6 +474,16 @@ export class HeartbeatProcessor {
             if (result.status !== "success") throw new Error(`工具 ${action.function} 执行失败: ${result.error?.message ?? "未知错误"}`);
         }
         return { continue: !actions.some((action) => action.function === "send_message"), replySent };
+    }
+
+    private async recordToolObservation(actionId: string, session: Session, observation: any) {
+        const write = () => this.interactionManager.recordObservation(actionId, session.platform, session.channelId, observation);
+        const generation = observation.result?.historyGeneration;
+        if (!Number.isSafeInteger(generation)) return write();
+        const world = this.ctx[Services.WorldState];
+        if (!world?.l2_manager || !(await world.l2_manager.writeMemory({ platform: session.platform, channelId: session.channelId }, generation, write))) {
+            throw new Error("召回后历史已清除，请重新召回");
+        }
     }
 
     private displayThoughts(thoughts: AgentResponse["thoughts"]) {
@@ -509,7 +519,7 @@ export class HeartbeatProcessor {
                 replySent = true;
                 onReplySent();
             }
-            await this.interactionManager.recordObservation(actionId, platform, channelId, {
+            await this.recordToolObservation(actionId, session, {
                 turnId,
                 function: action.function,
                 status: result.status,

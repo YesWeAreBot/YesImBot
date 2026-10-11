@@ -43,8 +43,13 @@ export async function recallRawPage(db: Context["database"], target: { platform:
     }
     const table = kind === "messages" ? TableName.Messages : kind === "l2" ? TableName.L2Chunks : TableName.L3Diaries;
     const sort: any = kind === "messages" ? { timestamp: "asc", id: "asc" } : kind === "l2" ? { startTimestamp: "asc", id: "asc" } : { date: "asc", id: "asc" };
-    const rows = await db.get(table, query, { sort, offset, limit: limit + 1 });
-    const selected = rows.slice(0, limit);
+    const l2Fields = ["id", "platform", "channelId", "content", "participantIds", "startTimestamp", "endTimestamp"] as const;
+    const rows = kind === "l2"
+        ? await db.get(TableName.L2Chunks, query, { sort, offset, limit: limit + 1, fields: [...l2Fields] })
+        : await db.get(table, query, { sort, offset, limit: limit + 1 });
+    const selected = rows.slice(0, limit).map(row => kind === "l2"
+        ? Object.fromEntries(l2Fields.map(field => [field, row[field]])) as typeof row
+        : row);
     if (selected.some(row => row.platform !== target.platform || row.channelId !== target.channelId)) throw new Error("数据库返回了范围外的记忆");
     return { kind, target: { platform: target.platform, channelId: target.channelId }, query: options.query ?? "", offset, returned: selected.length, hasMore: rows.length > limit,
         nextOffset: rows.length > limit ? offset + limit : null, contentTruncated: false as const, records: selected };

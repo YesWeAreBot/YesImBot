@@ -188,10 +188,10 @@ export class WorldStateService extends Service<Config> {
         });
     }
 
-    public async recordSystemEvent(event: SystemEventData): Promise<void> {
+    public async recordSystemEvent(event: SystemEventData, expectedGeneration?: number): Promise<boolean> {
         if (event.channelType) this.l2_manager.observeChannel(event, event.channelType);
-        const generation = this.l2_manager.getHistoryGeneration(event);
-        await this.l2_manager.writeMemory(event, generation, () => this.l1_manager.recordSystemEvent(event));
+        const generation = expectedGeneration ?? this.l2_manager.getHistoryGeneration(event);
+        return this.l2_manager.writeMemory(event, generation, () => this.l1_manager.recordSystemEvent(event));
     }
 
     /** 查询使用纯读取，不清除到期状态。 */
