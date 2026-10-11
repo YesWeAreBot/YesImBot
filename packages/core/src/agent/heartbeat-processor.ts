@@ -8,6 +8,7 @@ import { v4 as uuidv4 } from "uuid";
 
 import { Properties, ToolSchema, ToolService } from "@/services/extension";
 import { ChatModelSwitcher } from "@/services/model";
+import type { ValidationOptions } from "@/services/model/chat-model";
 import { PromptService } from "@/services/prompt";
 import { AgentResponse, AgentStimulus } from "@/services/worldstate";
 import { InteractionManager } from "@/services/worldstate/interaction-manager";
@@ -178,8 +179,6 @@ export class HeartbeatProcessor {
     ): Promise<{ continue: boolean; replySent: boolean } | null> {
         const { session } = stimulus;
         const { platform, channelId } = session;
-        const parser = new JsonParser<AgentResponse>();
-
         // 步骤 1-4: 准备请求
         const { messages } = await this._prepareLlmRequest(stimulus);
 
@@ -189,32 +188,7 @@ export class HeartbeatProcessor {
         const llmRawResponse = await this.modelSwitcher.chat({
             messages,
             abortSignal: replyTurnSignal(),
-            validation: {
-                format: "json",
-                validator: (text, final) => {
-                    if (!final) return { valid: false, earlyExit: false }; // 非流式，只在最后验证
-
-                    const { data, error } = parser.parse(text);
-                    if (error) return { valid: false, earlyExit: false, error };
-                    if (!data) return { valid: true, earlyExit: false, parsedData: null };
-
-                    // 归一化处理
-                    //@ts-ignore
-                    if (data.thoughts && typeof data.thoughts.request_heartbeat === "boolean") {
-                        //@ts-ignore
-                        data.request_heartbeat = data.request_heartbeat ?? data.thoughts.request_heartbeat;
-                    }
-
-                    // 结构验证
-                    const isThoughtsValid = data.thoughts && typeof data.thoughts === "object" && !Array.isArray(data.thoughts);
-                    const isActionsValid = Array.isArray(data.actions);
-
-                    if (isThoughtsValid && isActionsValid) {
-                        return { valid: true, earlyExit: false, parsedData: data };
-                    }
-                    return { valid: false, earlyExit: false, error: "Missing 'thoughts' or 'actions' field." };
-                },
-            },
+            validation: this.createJsonValidation(),
         });
 
         const prompt_tokens = llmRawResponse.usage?.prompt_tokens || `~${estimateTokensByRegex(messages.map((m) => m.content).join())}`;
@@ -401,6 +375,36 @@ export class HeartbeatProcessor {
         return data as Omit<AgentResponse, "observations">;
     }
 
+    private createJsonValidation(): ValidationOptions {
+        const parser = new JsonParser<AgentResponse>();
+        return {
+            format: "json",
+            validator: (text, final) => {
+                if (!final) return { valid: false, earlyExit: false }; // 只在完整响应上验证，失败候选不执行动作
+
+                const { data, error } = parser.parse(text);
+                if (error) return { valid: false, earlyExit: false, error };
+                if (!data) return { valid: true, earlyExit: false, parsedData: null };
+
+                // 归一化处理
+                //@ts-ignore
+                if (data.thoughts && typeof data.thoughts.request_heartbeat === "boolean") {
+                    //@ts-ignore
+                    data.request_heartbeat = data.request_heartbeat ?? data.thoughts.request_heartbeat;
+                }
+
+                // 结构验证
+                const isThoughtsValid = data.thoughts && typeof data.thoughts === "object" && !Array.isArray(data.thoughts);
+                const isActionsValid = Array.isArray(data.actions);
+
+                if (isThoughtsValid && isActionsValid) {
+                    return { valid: true, earlyExit: false, parsedData: data };
+                }
+                return { valid: false, earlyExit: false, error: "Missing 'thoughts' or 'actions' field." };
+            },
+        };
+    }
+
     private async performNativeHeartbeat(
         turnId: string,
         stimulus: AgentStimulus<any>,
@@ -408,11 +412,11 @@ export class HeartbeatProcessor {
     ): Promise<{ continue: boolean; replySent: boolean }> {
         const session = stimulus.session;
         const { messages } = await this._prepareLlmRequest(stimulus);
-        messages.push({
+        const nativeMessages: Message[] = [...messages, {
             role: "system",
             content:
                 "本轮启用原生工具调用。请通过工具接口执行动作，不要输出 JSON actions；需要先查询时，先调用查询工具，获得结果后下一轮再决策。使用 send_message 发送回复。",
-        });
+        }];
         const definitions = this.toolService.getAvailableTools(session);
         if (!definitions.length) throw new Error("当前会话没有可用工具");
         const tools: Tool[] = definitions.map((definition) => ({
@@ -423,7 +427,12 @@ export class HeartbeatProcessor {
         }));
         assertReplyTurn();
         const response = await this.modelSwitcher.chat({
-            messages,
+            messages: nativeMessages,
+            nativeToolCallingFallback: {
+                messages,
+                abortSignal: replyTurnSignal(),
+                validation: this.createJsonValidation(),
+            },
             tools,
             toolChoice: "required",
             maxSteps: 1,
@@ -434,6 +443,8 @@ export class HeartbeatProcessor {
         if (!response.toolCalls?.length) {
             const legacy = this.parseAndValidateResponse(response, session.cid);
             if (!legacy) throw new Error("模型没有返回有效工具调用");
+            this.displayThoughts(legacy.thoughts);
+            await this.interactionManager.recordThought(turnId, session.platform, session.channelId, legacy.thoughts);
             const replySent = await this.executeActions(turnId, session, legacy.actions, onReplySent);
             return { continue: legacy.request_heartbeat, replySent };
         }
