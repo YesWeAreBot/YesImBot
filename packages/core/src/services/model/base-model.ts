@@ -2,6 +2,10 @@ import { Services } from "@/shared/constants";
 import { Context, Logger } from "koishi";
 import { ModelConfig } from "./config";
 
+export function formatModelIdentity(config: Pick<ModelConfig, "providerName" | "modelId">): string {
+    return `${config.providerName ? `[${config.providerName}]` : ""}[${config.modelId}]`;
+}
+
 /**
  * 所有模型类的基类，封装了通用属性和方法。
  */

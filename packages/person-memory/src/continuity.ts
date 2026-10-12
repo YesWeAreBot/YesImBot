@@ -134,7 +134,7 @@ export class ContinuityStore {
             userId: source.userId,
             account: accountRef(session.platform, source.userId),
             name: source.name.slice(0, 80),
-            content: source.text.slice(0, 4000),
+            content: source.text,
             personId: identity.person.id,
             bindingRevision: identity.account.bindingRevision ?? 0,
             timestamp: source.timestamp,

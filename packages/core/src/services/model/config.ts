@@ -79,6 +79,7 @@ export interface ModelConfig {
     abilities: ModelAbility[];
     /** Declared maximum context, scoped to this provider/model. */
     contextLimit?: ContextLimitConfig;
+    disableNativeToolCalling?: boolean;
     parameters?: {
         temperature?: number;
         topP?: number;
@@ -134,6 +135,7 @@ export const ModelConfigSchema: Schema<ModelConfig> = Schema.object({
             Schema.object({ mode: Schema.const("auto").required() }),
         ]),
     ]).description("上下文容量（未填写时保持原行为；auto 获取失败时显示未知）"),
+    disableNativeToolCalling: Schema.boolean().default(false).description("不支持原生工具调用（全局启用时改用 JSON 动作）"),
 
     parameters: Schema.object({
         temperature: Schema.number().default(0.85).description("采样温度"),

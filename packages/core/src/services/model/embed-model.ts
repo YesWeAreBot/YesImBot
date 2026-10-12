@@ -4,7 +4,7 @@ import type { EmbedManyOptions, EmbedManyResult, EmbedOptions, EmbedResult } fro
 import { Context } from "koishi";
 
 import { embed, embedMany } from "@/dependencies/xsai";
-import { BaseModel } from "./base-model";
+import { BaseModel, formatModelIdentity } from "./base-model";
 import { ModelConfig } from "./config";
 
 export interface IEmbedModel extends BaseModel {
@@ -19,7 +19,7 @@ export class EmbedModel extends BaseModel implements IEmbedModel {
         modelConfig: ModelConfig,
         private readonly fetch: typeof globalThis.fetch
     ) {
-        super(ctx, modelConfig, `[嵌入模型] [${modelConfig.modelId}]`);
+        super(ctx, modelConfig, `[嵌入模型] ${formatModelIdentity(modelConfig)}`);
         this.fetch = observeUsageFetch(ctx, { provider: modelConfig.providerName ?? "未知", model: this.id, purpose: "嵌入" }, fetch);
     }
 

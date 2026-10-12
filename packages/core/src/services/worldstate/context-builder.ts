@@ -187,10 +187,20 @@ export class ContextBuilder {
 
     private async retrieveL3Memories(platform: string, channelId: string): Promise<DiaryEntryData[]> {
         if (!this.config.l3_memory.enabled) return [];
-        // Example: retrieve yesterday's diary
-        const yesterday = new Date();
+        const today = new Date();
+        const yesterday = new Date(today);
         yesterday.setDate(yesterday.getDate() - 1);
-        return this.ctx.database.get(TableName.L3Diaries, { platform, channelId, date: diaryDateKey(yesterday) });
+        const dates = [diaryDateKey(yesterday)];
+        if (this.config.l3_memory.messageThreshold > 0) dates.push(diaryDateKey(today));
+        const pages = await Promise.all(dates.map(date => this.ctx.database.get(TableName.L3Diaries, { platform, channelId, date })));
+        // Automatic context needs one current version per day; explicit recall retains all versions.
+        return pages.flatMap(entries => {
+            const latest = entries.sort((a, b) =>
+                (new Date(b.generatedAt ?? 0).getTime() - new Date(a.generatedAt ?? 0).getTime()) ||
+                ((b.sourceMessageCount ?? 0) - (a.sourceMessageCount ?? 0)) || b.id.localeCompare(a.id)
+            )[0];
+            return latest ? [latest] : [];
+        });
     }
 
     private async getChannelInfo(session: Session) {

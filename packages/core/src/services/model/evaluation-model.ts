@@ -1,6 +1,6 @@
 import { observeUsageFetch } from "./usage";
 import { Context } from "koishi";
-import { BaseModel } from "./base-model";
+import { BaseModel, formatModelIdentity } from "./base-model";
 import { ModelConfig } from "./config";
 import { evaluateQuestions, EvaluationQuestions, EvaluationRequestOptions, EvaluationResult } from "./evaluation-client";
 
@@ -11,7 +11,7 @@ export class EvaluationModel extends BaseModel {
         config: ModelConfig,
         private readonly fetch: typeof globalThis.fetch
     ) {
-        super(ctx, config, `[评估模型] [${config.modelId}]`);
+        super(ctx, config, `[评估模型] ${formatModelIdentity(config)}`);
         this.fetch = observeUsageFetch(ctx, { provider: config.providerName ?? "未知", model: this.id, purpose: "评估" }, fetch);
     }
 

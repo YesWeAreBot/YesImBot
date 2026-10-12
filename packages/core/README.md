@@ -198,3 +198,5 @@ yarn bundle
 ## ⭐ Star 历史
 
 [![Athena/YesImBot Star 历史图表](https://api.star-history.com/svg?repos=Hydrogest/Yesimbot&type=Date)](https://star-history.com/#Hydrogest/Yesimbot&Date)
+
+长期日记、手动生成与完整原文召回的配置和用法见 [长期日记与原文召回](README-memory-recall.md)。

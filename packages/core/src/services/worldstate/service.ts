@@ -1,4 +1,6 @@
 import { sanitizeDiagnostic } from "../../shared/diagnostic-sanitizer";
+import { diaryDateKey } from "./memory-date";
+import { recallRawPage, type RawRecallOptions } from "./raw-recall";
 import { recallStoredMemories, type StoredRecallOptions } from "./recall";
 import { Context, Service, Session } from "koishi";
 import { createHash, randomUUID } from "node:crypto";
@@ -103,6 +105,50 @@ export class WorldStateService extends Service<Config> {
 
     public recallMemory(options: StoredRecallOptions) { return recallStoredMemories(this.ctx.database, options); }
 
+    public async recallContext(session: Session, options: RawRecallOptions) {
+        if (!this.ctx.filter(session) || !this.isChannelAllowed(session)) throw new Error("当前会话未启用记忆召回");
+        const target = { platform: session.platform, channelId: session.channelId };
+        if (!target.platform || !target.channelId) throw new Error("当前会话缺少平台或频道");
+        const historyGeneration = this.l2_manager.getHistoryGeneration(target);
+        const page = await recallRawPage(this.ctx.database, target, options);
+        if (page.kind !== "messages") {
+            const state: any = { l2_retrieved_memories: [], l3_diary_entries: [] };
+            const key = page.kind === "l3" ? "l3_diary_entries" : "l2_retrieved_memories";
+            state[key] = page.records.map(record => ({ ...record, timestamp: (record as any).startTimestamp }));
+            await this.ctx.parallel("yesimbot/filter-recalled-memory", session, state);
+            const accepted = new Set(state[key].map((record: any) => record.id));
+            page.records = page.records.filter(record => accepted.has(record.id));
+            page.returned = page.records.length;
+        }
+        if (!this.ctx.filter(session) || !this.isChannelAllowed(session)) throw new Error("召回期间会话配置已改变");
+        if (this.l2_manager.getHistoryGeneration(target) !== historyGeneration) throw new Error("召回期间历史已清除，请重新召回");
+        return { ...page, historyGeneration };
+    }
+
+    /** Administrator commands use the same full observation path as model tools. */
+    public async injectRecall(session: Session, result: unknown, operation = "memory_recall") {
+        if (!this.ctx.filter(session) || !this.isChannelAllowed(session)) throw new Error("当前会话未启用记忆注入");
+        const target = { platform: session.platform, channelId: session.channelId };
+        const generation = (result as any).historyGeneration;
+        const written = await this.l2_manager.writeMemory(target, generation, () =>
+            this.l1_manager.recordObservation(randomUUID(), session.platform, session.channelId, {
+                turnId: randomUUID(), function: operation, status: "success", result,
+            }));
+        if (!written) throw new Error("注入前历史已清除，请重新召回");
+    }
+
+    public async triggerDiary(session: Session, date?: string) {
+        if (!this.ctx.filter(session) || !this.isChannelAllowed(session)) throw new Error("当前会话未启用 L3");
+        const day = date === undefined ? new Date() : new Date(`${date}T00:00:00`);
+        if (!Number.isFinite(day.getTime()) || (date !== undefined && (!/^\d{4}-\d{2}-\d{2}$/.test(date) || diaryDateKey(day) !== date))) throw new Error("日期须为 YYYY-MM-DD");
+        if (day > new Date()) throw new Error("不能生成未来的日记");
+        const generation = this.l2_manager.getHistoryGeneration({ platform: session.platform, channelId: session.channelId });
+        const generated = await this.l3_manager.generateOnDemand(session.platform, session.channelId, day);
+        if (this.l2_manager.getHistoryGeneration({ platform: session.platform, channelId: session.channelId }) !== generation) throw new Error("生成期间历史已清除");
+        const result = await this.recallContext(session, { kind: "l3", id: generated?.id, start: day.toISOString(), end: day.toISOString(), limit: 20 });
+        return { ...result, generationStatus: generated ? "created" : "unchanged", generatedId: generated?.id ?? null };
+    }
+
     public async buildWorldState(session: Session): Promise<WorldState> {
         const state = await this.contextBuilder.build(session);
         await this.ctx.parallel("yesimbot/filter-recalled-memory", session, state);
@@ -123,6 +169,9 @@ export class WorldStateService extends Service<Config> {
         // 在 L1 异步写入之前登记代次与在途任务，清除必须等待已接受的写入。
         const generation = this.l2_manager.getHistoryGeneration(message);
         const recorded = await this.l2_manager.writeMemory(message, generation, () => this.l1_manager.recordMessage(message));
+        if (recorded && this.l2_manager.getHistoryGeneration(message) === generation && this.config.l3_memory?.messageThreshold) {
+            void this.l3_manager.observeMessage(message).catch(error => this.logger.warn(`L3 消息触发失败：${String(error)}`));
+        }
         if (recorded && this.l2_manager.getHistoryGeneration(message) === generation && this.config.l2_memory.enabled) {
             this.l2_manager.addMessageToBuffer(message);
         }
@@ -139,10 +188,10 @@ export class WorldStateService extends Service<Config> {
         });
     }
 
-    public async recordSystemEvent(event: SystemEventData): Promise<void> {
+    public async recordSystemEvent(event: SystemEventData, expectedGeneration?: number): Promise<boolean> {
         if (event.channelType) this.l2_manager.observeChannel(event, event.channelType);
-        const generation = this.l2_manager.getHistoryGeneration(event);
-        await this.l2_manager.writeMemory(event, generation, () => this.l1_manager.recordSystemEvent(event));
+        const generation = expectedGeneration ?? this.l2_manager.getHistoryGeneration(event);
+        return this.l2_manager.writeMemory(event, generation, () => this.l1_manager.recordSystemEvent(event));
     }
 
     /** 查询使用纯读取，不清除到期状态。 */
@@ -350,6 +399,8 @@ export class WorldStateService extends Service<Config> {
             {
                 id: "string(255)",
                 date: "string(32)",
+                generatedAt: "timestamp",
+                sourceMessageCount: "unsigned",
                 platform: "string(255)",
                 channelId: "string(255)",
                 content: "text",

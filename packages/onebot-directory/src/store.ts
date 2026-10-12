@@ -50,6 +50,8 @@ export function registerModels(ctx: Context) {
 
 export interface OneBotContact {
     user_id: number | string;
+    group_id?: string | number;
+    group_name?: string;
     nickname?: string;
     remark?: string;
     card?: string;
@@ -59,13 +61,14 @@ export interface OneBotClient {
     selfId: string;
     platform: string;
     internal: {
+        getGroupList?(): Promise<OneBotContact[]>;
         getFriendList(): Promise<OneBotContact[]>;
         getGroupMemberList(groupId: string, noCache?: boolean): Promise<OneBotContact[]>;
     };
 }
 
 export interface Query {
-    kind: "friends" | "members";
+    kind: "friends" | "members" | "groups";
     groupId?: string;
     offset?: number;
     limit?: number;
@@ -73,6 +76,7 @@ export interface Query {
     refresh?: boolean;
     userId?: string;
     summaryOnly?: boolean;
+    query?: string;
 }
 
 /** One instance per plugin; complete snapshots remain cached until explicit refresh. */
@@ -113,11 +117,12 @@ export class DirectoryStore {
         this.ensureActive();
         if (bot.platform !== "onebot" || !bot.internal) throw new Error("仅支持 OneBot 适配器");
         const platform = bot.platform;
-        const ownerId = args.kind === "friends" ? String(bot.selfId) : "*";
-        const scope = args.kind === "friends" ? "friends" : `group:${args.groupId || ""}`;
+        const ownerId = args.kind === "members" ? "*" : String(bot.selfId);
+        const scope = args.kind === "members" ? `group:${args.groupId || ""}` : args.kind;
         if (args.kind === "members" && !args.groupId) throw new Error("查询群成员需要群号或当前群聊");
         if (args.offset !== undefined && (!Number.isSafeInteger(args.offset) || args.offset < 0)) throw new Error("offset 必须是非负整数");
         if (args.limit !== undefined && (!Number.isSafeInteger(args.limit) || args.limit < 1 || args.limit > 500)) throw new Error("limit 必须在 1 到 500 之间；全量请设置 all=true");
+        if (args.query !== undefined && (typeof args.query !== "string" || !args.query.trim() || args.query.length > 160)) throw new Error("搜索关键词须为 1–160 字");
         const key = `${platform}\0${ownerId}\0${scope}`;
         await this.cleanup(platform, ownerId, scope);
         let current = await this.snapshot(platform, ownerId, scope);
@@ -154,14 +159,20 @@ export class DirectoryStore {
         const offset = args.offset || 0;
         const limit = args.all ? Math.max(0, current.total - offset) : args.limit ?? 50;
         const entries: Contact[] = [];
+        const filter: any = { platform, ownerId, scope, revision };
+        if (args.query) {
+            const regex = new RegExp(args.query.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+            filter.$or = ["userId", "nickname", "card", "remark"].map(field => ({ [field]: { $regex: regex } }));
+        }
+        const matchedTotal = args.query ? await this.ctx.database.eval(CONTACTS, row => $.count(row.userId), filter) : current.total;
         if (!args.summaryOnly) {
             if (args.userId) {
                 entries.push(...await this.ctx.database.get(CONTACTS,
                     { platform, ownerId, scope, revision, userId: args.userId }, { limit: 1 }));
             } else {
                 // All reads, including all=true, use bounded DB pages.
-                for (let start = offset; start < Math.min(current.total, offset + limit); start += this.batchSize) {
-                    const page = await this.ctx.database.get(CONTACTS, { platform, ownerId, scope, revision },
+                for (let start = offset; start < Math.min(matchedTotal, offset + limit); start += this.batchSize) {
+                    const page = await this.ctx.database.get(CONTACTS, filter,
                         { sort: { ordinal: "asc" }, offset: start, limit: Math.min(this.batchSize, offset + limit - start) });
                     entries.push(...page);
                     if (!page.length) break;
@@ -169,7 +180,7 @@ export class DirectoryStore {
             }
         }
         return { kind: args.kind, groupId: args.kind === "members" ? args.groupId : undefined,
-            fetchedAt: current.fetchedAt, sourceBotId: current.sourceBotId, total: current.total,
+            fetchedAt: current.fetchedAt, sourceBotId: current.sourceBotId, total: matchedTotal, cachedTotal: current.total,
             offset: args.userId || args.summaryOnly ? 0 : offset, returned: entries.length, entries };
     }
 
@@ -191,7 +202,8 @@ export class DirectoryStore {
     }
 
     private async refresh(bot: OneBotClient, platform: string, ownerId: string, scope: string, kind: Query["kind"], groupId?: string) {
-        const raw = kind === "friends" ? await bot.internal.getFriendList() : await bot.internal.getGroupMemberList(groupId!, true);
+        if (kind === "groups" && !bot.internal.getGroupList) throw new Error("当前 OneBot 适配器不支持群列表");
+        const raw = kind === "friends" ? await bot.internal.getFriendList() : kind === "groups" ? await bot.internal.getGroupList!() : await bot.internal.getGroupMemberList(groupId!, true);
         this.ensureActive();
         if (!Array.isArray(raw)) throw new Error("OneBot 返回了无效的名单");
         const previous = await this.snapshot(platform, ownerId, scope);
@@ -200,11 +212,11 @@ export class DirectoryStore {
         const seen = new Set<string>();
         const entries: Contact[] = [];
         for (const row of raw) {
-            const userId = String(row.user_id ?? "");
+            const userId = String((kind === "groups" ? row.group_id : row.user_id) ?? "");
             if (!userId || seen.has(userId)) continue;
             seen.add(userId);
             entries.push({ platform, ownerId, scope, revision, revisionCreatedAt, userId, ordinal: entries.length,
-                nickname: String(row.nickname ?? ""), remark: String(row.remark ?? ""),
+                nickname: String((kind === "groups" ? row.group_name : row.nickname) ?? ""), remark: String(row.remark ?? ""),
                 card: String(row.card ?? ""), role: String(row.role ?? "") });
         }
         let publicationStarted = false;
