@@ -4,7 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Services } from "@/shared/constants";
-import { captureContextSnapshot, clearContextSnapshots } from "./context-snapshot";
+import { captureContextSnapshot, clearContextSnapshots, MAX_CONTEXT_SNAPSHOT_BYTES } from "./context-snapshot";
 
 export interface TokenUsage {
     in: number | null;
@@ -335,7 +335,7 @@ function ownerContext(ctx: Context): Context {
 export function getUsageLedger(ctx: Context): UsageLedger {
     const owner = ownerContext(ctx);
     if (typeof owner.baseDir !== "string" || !owner.baseDir) throw new Error("缺少插件数据目录，跳过用量统计");
-    const identity = owner;
+    const identity = (ctx[Services.Model] as any)?.usageOwner ?? ctx;
     let ledger = ledgers.get(identity);
     if (ledger) return ledger;
     const keys: string[] = [];
@@ -369,7 +369,7 @@ export function getUsageLedger(ctx: Context): UsageLedger {
     ledger = new UsageLedger(
         path.join(owner.baseDir, "data", "yesimbot", "usage", `${digest}.json`),
         (message) => warnUsage(owner, message),
-        () => clearContextSnapshots(owner)
+        () => clearContextSnapshots(ctx)
     );
     ledgers.set(identity, ledger);
     owner.on?.("dispose", () => ledger!.close());
@@ -389,13 +389,20 @@ export function observeUsageFetch(ctx: Context, metadata: UsageMetadata, fetch: 
             return fetch(url, init);
         }
         let payload: any;
+        const oversized = typeof init?.body === "string" && Buffer.byteLength(init.body, "utf8") > MAX_CONTEXT_SNAPSHOT_BYTES;
         try {
-            payload = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
+            payload = !oversized && typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
         } catch {
             /* non-JSON request */
         }
         try {
-            captureContextSnapshot(ownerContext(ctx), ticket, payload, ticket.period);
+            captureContextSnapshot(
+                ctx,
+                ticket,
+                payload,
+                ticket.period,
+                oversized ? "请求上下文超过单条快照容量，未解析或保留正文；本地输入估算不可用" : undefined
+            );
         } catch (error) {
             warnUsage(ctx, `请求上下文快照不可用: ${error.message}`);
         }
@@ -406,7 +413,7 @@ export function observeUsageFetch(ctx: Context, metadata: UsageMetadata, fetch: 
                   response_format: payload.response_format,
                   tool_choice: payload.tool_choice,
               }
-            : payload?.input ?? (payload?.state !== undefined ? { state: payload.state, questions: payload.questions } : undefined);
+            : (payload?.input ?? (payload?.state !== undefined ? { state: payload.state, questions: payload.questions } : undefined));
         let api: any, output: any;
         let finalized = false;
         const complete = (status: string) => {
@@ -450,7 +457,7 @@ export function observeUsageFetch(ctx: Context, metadata: UsageMetadata, fetch: 
                         for (const choice of data.choices ?? []) {
                             const delta = choice.delta;
                             if (!overflow && typeof delta?.content === "string") text += delta.content;
-                            for (const call of overflow ? [] : delta?.tool_calls ?? [])
+                            for (const call of overflow ? [] : (delta?.tool_calls ?? []))
                                 text += (call.function?.name ?? "") + (call.function?.arguments ?? "");
                         }
                         if (!overflow && typeof data.delta?.text === "string") text += data.delta.text;
@@ -477,7 +484,8 @@ export function observeUsageFetch(ctx: Context, metadata: UsageMetadata, fetch: 
                                 try {
                                     const data = JSON.parse(buffer);
                                     api = data.usage;
-                                    output = data.choices?.map((choice: any) => choice.message ?? choice.text) ?? data.answers;
+                                    output =
+                                        data.choices?.map((choice: any) => choice.message ?? choice.text) ?? data.answers ?? data.content;
                                     if (Array.isArray(data.data) && data.data.some((item: any) => Array.isArray(item.embedding)))
                                         output = "";
                                 } catch {

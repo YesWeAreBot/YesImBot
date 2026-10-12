@@ -282,7 +282,9 @@ async function contextLines(ctx: Context, options: InspectionOptions): Promise<s
                     if (!groups.has(target)) groups.set(target, { count: 0, tokens: 0, unknown: 0 });
                     const group = groups.get(target)!;
                     group.count++;
-                    const tokens = estimateTokens(row.content || row.message || JSON.stringify(row.payload));
+                    const tokens = estimateTokens(
+                        table === TableName.SystemEvents ? { message: row.message, payload: row.payload } : row.content
+                    );
                     if (tokens === null) {
                         group.unknown++;
                         unknownText++;
