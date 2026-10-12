@@ -24,16 +24,21 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          bun-version: latest
+          node-version: 22
 
+      - name: Enable Corepack
+        run: corepack enable
+
+      # yarn.lock 不在仓库里（.gitignore 忽略），无法用 --immutable
       - name: Install Dependencies
-        run: bun install --frozen-lockfile
+        run: yarn install --no-immutable
 
+      # 发布物里的 dist（控制台前端）由这一步产出
       - name: Build All Packages
-        run: bun turbo run build
+        run: yarn build
 
       - name: Creating .npmrc
         run: |
@@ -44,13 +49,13 @@ jobs:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create Canary Version
-        run: bun changeset version --snapshot ${{ github.event.inputs.tag }}
+        run: yarn changeset version --snapshot ${{ github.event.inputs.tag }}
 
       # - name: Optimize Canary Version Format
       #   run: bun run optimize-canary-version
 
       - name: Publish to NPM
-        run: bun changeset publish --tag ${{ github.event.inputs.tag }}
+        run: yarn changeset publish --tag ${{ github.event.inputs.tag }}
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

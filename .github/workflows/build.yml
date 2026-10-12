@@ -21,45 +21,54 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          bun-version: latest
+          node-version: 22
+
+      - name: Enable Corepack
+        run: corepack enable
 
       - name: Configure Git for Changesets
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
 
-      - name: Cache dependencies and build artifacts
+      - name: Locate Yarn cache
+        id: yarn-cache
+        run: echo "dir=$(yarn config get cacheFolder)" >> $GITHUB_OUTPUT
+
+      - name: Cache dependencies
         uses: actions/cache@v4
         with:
-          path: |
-            ~/.bun/install/cache
-            .turbo
-            node_modules
-          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lockb') }}
+          path: ${{ steps.yarn-cache.outputs.dir }}
+          key: ${{ runner.os }}-yarn-${{ hashFiles('package.json', 'packages/*/package.json') }}
           restore-keys: |
-            ${{ runner.os }}-bun-
+            ${{ runner.os }}-yarn-
 
+      # yarn.lock 不在仓库里（.gitignore 忽略），无法用 --immutable
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: yarn install --no-immutable
 
       # 添加 continue-on-error 允许测试失败后继续
       - name: Run tests
-        run: bun test
+        run: yarn test
         env:
           API_KEY_SILICON: ${{ secrets.API_KEY_SILICON }}
         continue-on-error: true # 关键修改：即使测试失败也继续执行
 
+      # dist（控制台前端）只由这一步产出，必须在打包前跑完
+      - name: Build packages
+        run: yarn build
+
       - name: Version packages and create tarballs
         id: package
         run: |
-          bunx changeset version --snapshot
-          bun run pack
+          yarn changeset version --snapshot
+          yarn run pack
 
       - name: Collect all packaged tarballs
-        run: bun run collect-packages
+        run: yarn collect-packages
 
       - name: Upload all packages as a single artifact
         uses: actions/upload-artifact@v4

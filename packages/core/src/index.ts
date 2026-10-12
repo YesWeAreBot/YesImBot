@@ -31,7 +31,7 @@ export default class YesImBot extends Service<Config> {
         super(ctx, "yesimbot", true);
 
         ctx.console.addEntry({
-            dev: path.resolve(__dirname, "../client/index.js"),
+            dev: path.resolve(__dirname, "../client/index.ts"),
             prod: path.resolve(__dirname, "../dist"),
         });
 
