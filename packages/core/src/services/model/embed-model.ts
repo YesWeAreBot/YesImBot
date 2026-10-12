@@ -1,3 +1,4 @@
+import { observeUsageFetch } from "./usage";
 import type { EmbedProvider } from "@xsai-ext/shared-providers";
 import type { EmbedManyOptions, EmbedManyResult, EmbedOptions, EmbedResult } from "@xsai/embed";
 import { Context } from "koishi";
@@ -19,6 +20,7 @@ export class EmbedModel extends BaseModel implements IEmbedModel {
         private readonly fetch: typeof globalThis.fetch
     ) {
         super(ctx, modelConfig, `[嵌入模型] [${modelConfig.modelId}]`);
+        this.fetch = observeUsageFetch(ctx, { provider: modelConfig.providerName ?? "未知", model: this.id, purpose: "嵌入" }, fetch);
     }
 
     public async embed(text: string): Promise<EmbedResult> {

@@ -36,7 +36,7 @@ export const Config: Schema<Config> = Schema.intersect([
 ]);
 interface Tools { capabilities?: { trustedToolSession?: number }; registerTool(tool: unknown): void | (() => void); unregisterTool(name: string): void }
 interface Prompt { inject(name: string, priority: number, fn: (scope: Record<string, any>) => Promise<string>): void | (() => void) }
-interface Models { useChatGroup(name: string): { chat(options: any): Promise<{ text?: string }> } | undefined }
+interface Models { useChatGroup(name: string): { chat(options: any): Promise<{ text?: string }> } | undefined; withUsageScope?<T>(scope: NonNullable<Parameters<SummaryModel>[2]>, callback: () => T): T }
 interface Dependencies { "yesimbot.tool": Tools; "yesimbot.prompt": Prompt; "yesimbot.world-state": { capabilities?: { beforeUserStimulus?: number; memoryCorrectionFilter?: number }; isChannelAllowed(session: Session): boolean }; "yesimbot.model"?: Models }
 const Success = (result: unknown) => ({ status: "success", result });
 const Failed = (error: unknown) => ({ status: "error", error: { name: "PersonMemoryError", message: error instanceof Error ? error.message : String(error) } });
@@ -98,10 +98,14 @@ export function apply(ctx: Context, config: Config) {
     const modes = new Map<string, Mode>(), generations = new Map<string, number>();
     const allowed = (session: Session) => active && ctx.filter(session) && deps["yesimbot.world-state"].isChannelAllowed(session);
     let model: SummaryModel | undefined;
-    if (config.modelGroup) model = async (messages, signal) => {
+    if (config.modelGroup) model = async (messages, signal, attribution) => {
         const group = deps["yesimbot.model"]?.useChatGroup(config.modelGroup);
         if (!group) throw new Error("总结模型组不存在或模型服务不可用");
-        const result = await group.chat({ messages, abortSignal: signal, singleStep: true, stream: false, temperature: 0.2, maxTokens: 1800 });
+        const request = () => group.chat({ messages, abortSignal: signal, singleStep: true, stream: false, temperature: 0.2, maxTokens: 1800 });
+        const models = deps["yesimbot.model"];
+        const result = await (models?.withUsageScope
+            ? models.withUsageScope(attribution || { purpose: "人物记忆摘要" }, request)
+            : request());
         return result.text || "";
     };
     const worker = new SummaryWorker(store, model, { threshold: config.summaryThreshold, cooldownMs: config.cooldownSeconds * 1000, timeoutMs: config.timeoutSeconds * 1000, maxQueue: config.maxQueue }, error => logger.warn(`后台人物总结未接受：${String(error)}`));

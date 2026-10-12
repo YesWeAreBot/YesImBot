@@ -1,3 +1,4 @@
+import { withUsageScope } from "../services/model/usage";
 import { Context, Service, Session, Random } from "koishi";
 
 import { Config } from "@/config";
@@ -257,7 +258,7 @@ export class AgentCore extends Service<Config> {
                     valid,
                     async () => {
                         const session = guardReplySession(stimulus.session);
-                        return this.processor.runCycle({ ...stimulus, session });
+                        return withUsageScope({ platform: session.platform, botId: session.selfId, target: session.channelId, purpose: "主对话" }, () => this.processor.runCycle({ ...stimulus, session }));
                     },
                     controller.signal,
                     (destination) => {

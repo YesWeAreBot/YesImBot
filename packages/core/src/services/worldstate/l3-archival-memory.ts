@@ -1,3 +1,4 @@
+import { withUsageScope } from "../model/usage";
 import { Context, Logger } from "koishi";
 
 import { IChatModel, TaskType } from "@/services/model";
@@ -175,11 +176,11 @@ export class ArchivalMemoryManager {
             const conversationText = this.formatInteractionsForPrompt(messages, agentLogs);
             const prompt = this.buildDiaryPrompt(conversationText);
 
-            const diaryContent = await this.chatModel.chat({
+            const diaryContent = await withUsageScope({ platform, target: channelId, purpose: "L3日记摘要" }, () => this.chatModel.chat({
                 messages: [{ role: "user", content: prompt }],
                 temperature: 0.2,
                 abortSignal: controller.signal,
-            });
+            }));
             if (!active()) return;
             const diaryEntry: DiaryEntryData = {
                 id: `diary_${platform}_${channelId}_${dateKey}`,

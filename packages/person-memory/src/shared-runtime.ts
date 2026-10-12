@@ -281,13 +281,15 @@ export function applySharedMemory(ctx: Context, config: Config) {
         );
     let model: SummaryModel | undefined;
     if (config.modelGroup)
-        model = async (messages, signal) => {
+        model = async (messages, signal, attribution) => {
             const group = deps["yesimbot.model"]?.useChatGroup(config.modelGroup);
             if (!group) throw new Error("总结模型组不存在");
-            return (
-                (await group.chat({ messages, abortSignal: signal, singleStep: true, stream: false, temperature: 0.2, maxTokens: 1800 }))
-                    .text || ""
-            );
+            const request = () => group.chat({ messages, abortSignal: signal, singleStep: true, stream: false, temperature: 0.2, maxTokens: 1800 });
+            const models = deps["yesimbot.model"];
+            const result = await (models.withUsageScope
+                ? models.withUsageScope(attribution || { purpose: "人物记忆摘要" }, request)
+                : request());
+            return result.text || "";
         };
     const worker = new SummaryWorker(
         store,

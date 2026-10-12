@@ -8,11 +8,17 @@ import { ChatModel, IChatModel } from "./chat-model";
 import { ModelAbility, ModelConfig, ProviderConfig } from "./config";
 import { EmbedModel, IEmbedModel } from "./embed-model";
 import { IProviderClient } from "./factories";
+import { ContextLimitResult, contextMetadataURL, parseContextLimit, readContextLimitMetadata } from "./context-limit";
 
 export class ProviderInstance {
     public readonly name: string;
     private readonly fetch: typeof globalThis.fetch;
     private logger: Logger;
+    private contextMetadataCache?: {
+        expiresAt: number;
+        result: Promise<{ checkedAt: number; payload?: unknown; reason?: string }>;
+    };
+    private readonly discoveredContextLimits = new Map<string, ContextLimitResult>();
 
     constructor(
         private ctx: Context,
@@ -77,5 +83,63 @@ export class ProviderInstance {
 
     public getEmbedModel(modelId: string): IEmbedModel | null {
         return this._getModel(modelId, ModelAbility.Embedding, EmbedModel, this.client.embed, "嵌入");
+    }
+
+    /** Read-only metadata discovery, never invoked for unset or manual capacities. */
+    public async getContextLimit(modelId: string): Promise<ContextLimitResult> {
+        const declaration = this.config.models.find((model) => model.modelId === modelId)?.contextLimit;
+        if (!declaration || declaration.mode !== "auto") return this.peekContextLimit(modelId);
+        const result = await this.discoverContextLimit(modelId);
+        this.discoveredContextLimits.set(modelId, result);
+        return result;
+    }
+
+    /** Return declaration/last discovery only; history inspection must never fetch. */
+    public peekContextLimit(modelId: string): ContextLimitResult {
+        const declaration = this.config.models.find((model) => model.modelId === modelId)?.contextLimit;
+        if (!declaration || declaration.mode === "unset") return { mode: "unset", status: "unset" };
+        if (declaration.mode === "custom") {
+            try {
+                return { mode: "custom", status: "known", tokens: parseContextLimit(declaration.value ?? ""), source: "manual" };
+            } catch {
+                return { mode: "custom", status: "unknown", reason: "自定义容量无效" };
+            }
+        }
+        return this.discoveredContextLimits.get(modelId) ?? { mode: "auto", status: "unknown", reason: "尚未获取模型元数据" };
+    }
+
+    private async discoverContextLimit(modelId: string): Promise<ContextLimitResult> {
+        const now = Date.now();
+        if (!this.contextMetadataCache || this.contextMetadataCache.expiresAt <= now) {
+            this.contextMetadataCache = { expiresAt: now + 5 * 60_000, result: this.fetchContextMetadata() };
+        }
+        const { checkedAt, payload, reason } = await this.contextMetadataCache.result;
+        if (reason) return { mode: "auto", status: "unknown", checkedAt, reason };
+        const metadata = readContextLimitMetadata(payload, modelId);
+        if (!metadata) return { mode: "auto", status: "unknown", checkedAt, reason: "API 未返回该模型的明确上下文容量" };
+        return { mode: "auto", status: "known", tokens: metadata.tokens, source: `API /models: ${metadata.field}`, checkedAt };
+    }
+
+    private async fetchContextMetadata(): Promise<{ checkedAt: number; payload?: unknown; reason?: string }> {
+        const checkedAt = Date.now();
+        const unknown = (reason: string) => ({ checkedAt, reason });
+        try {
+            if (!this.client.model) return unknown("提供商未提供模型元数据入口");
+            const options = this.client.model();
+            const url = contextMetadataURL(options.baseURL);
+            const headers = new Headers(options.headers);
+            if (this.config.type === "Anthropic") {
+                if (options.apiKey) headers.set("x-api-key", options.apiKey);
+                if (!headers.has("anthropic-version")) headers.set("anthropic-version", "2023-06-01");
+            } else if (options.apiKey && !headers.has("Authorization")) {
+                headers.set("Authorization", `Bearer ${options.apiKey}`);
+            }
+            const response = await this.fetch(url, { method: "GET", headers, signal: AbortSignal.timeout(10_000), redirect: "error" });
+            if (!response.ok) return unknown(`模型元数据请求失败（HTTP ${response.status}）`);
+            return { checkedAt, payload: await response.json() };
+        } catch {
+            // Do not expose transport messages that may contain API keys or proxy credentials.
+            return unknown("模型元数据获取失败或超时");
+        }
     }
 }

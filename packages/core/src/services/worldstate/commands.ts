@@ -6,6 +6,7 @@ import { HistoryConfig } from "./config";
 import { WorldStateService } from "./index";
 import { HISTORY_CHANNELS } from "./channel-metadata";
 import { MessageData } from "./types";
+import { registerHistoryInspection } from "./history-inspection";
 
 // =================================================================================
 // #region HistoryCommandManager - 负责所有CLI指令
@@ -28,6 +29,7 @@ export class HistoryCommandManager {
 
     public register(): void {
         const historyCmd = this.ctx.command("history", "历史记录管理指令集", { authority: 3 });
+        registerHistoryInspection(this.ctx, historyCmd);
 
         historyCmd
             .subcommand(".count", "统计历史记录中激活的消息数量")

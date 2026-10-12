@@ -1,3 +1,5 @@
+import { getUsageLedger, UsageScope, withUsageScope } from "./usage";
+import { ContextLimitResult } from "./context-limit";
 import { Awaitable, Context, Logger, Schema, Service } from "koishi";
 
 import { Config } from "@/config";
@@ -100,9 +102,11 @@ declare module "koishi" {
 export class ModelService extends Service<Config> {
     static readonly inject = [Services.Logger];
     private readonly providerInstances = new Map<string, ProviderInstance>();
+    public readonly usageOwner: { context: Context };
 
     constructor(ctx: Context, config: Config) {
         super(ctx, Services.Model, true);
+        this.usageOwner = { context: ctx };
         this.config = config;
         this.logger = ctx[Services.Logger].getLogger("[模型服务]");
 
@@ -137,6 +141,20 @@ export class ModelService extends Service<Config> {
             }
         }
         this.logger.info("--- 模型提供商初始化完成 ---");
+    }
+
+    public withUsageScope<T>(scope: UsageScope, callback: () => T): T {
+        // An external worker declares its own source, independently of its triggering chat.
+        return withUsageScope(scope, callback, false);
+    }
+
+    public getContextLimit(providerName: string, modelId: string): Promise<ContextLimitResult> {
+        const provider = this.providerInstances.get(providerName);
+        return provider ? provider.getContextLimit(modelId) : Promise.resolve({ mode: "unset", status: "unknown", reason: "未找到提供商" });
+    }
+
+    public peekContextLimit(providerName: string, modelId: string): ContextLimitResult {
+        return this.providerInstances.get(providerName)?.peekContextLimit(modelId) ?? { mode: "unset", status: "unknown", reason: "未找到提供商" };
     }
 
     public getEvaluationModel(providerName: string, modelId: string): EvaluationModel | null {
@@ -263,7 +281,14 @@ export class ModelService extends Service<Config> {
         );
     }
 
-    protected start(): Awaitable<void> {}
+    protected async start(): Promise<void> {
+        await getUsageLedger(this.ctx).ready();
+        for (const provider of this.config.providers) {
+            for (const model of provider.models) {
+                if (model.contextLimit?.mode === "auto") void this.getContextLimit(provider.name, model.modelId).catch(() => {});
+            }
+        }
+    }
 
     public useEmbeddingGroup(name: string): ModelSwitcher<IEmbedModel> | undefined {
         const groupName = this.resolveGroupName(name);

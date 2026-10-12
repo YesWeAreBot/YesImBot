@@ -1,3 +1,4 @@
+import { observeUsageFetch } from "./usage";
 import type { ChatProvider } from "@xsai-ext/shared-providers";
 import type { GenerateTextResult } from "@xsai/generate-text";
 import type { ChatOptions, CompletionStep, CompletionToolCall, CompletionToolResult, Message } from "@xsai/shared-chat";
@@ -71,6 +72,7 @@ export class ChatModel extends BaseModel implements IChatModel {
         private readonly fetch: typeof globalThis.fetch
     ) {
         super(ctx, modelConfig, `[聊天模型] [${modelConfig.modelId}]`);
+        this.fetch = observeUsageFetch(ctx, { provider: modelConfig.providerName ?? "未知", model: this.id, purpose: "对话" }, fetch);
         this.parseCustomParameters();
     }
 
