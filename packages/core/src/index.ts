@@ -50,6 +50,8 @@ export default class YesImBot extends Service<Config> {
 
     /** 子服务实例，按依赖顺序排列：即构造顺序与启动顺序，卸载时反向停止。 */
     private readonly services: YesImBotService[];
+    private stopping = false;
+    private stopPromise?: Promise<void>;
 
     /** 全部子服务启动流程结束后兑现（失败时已记录日志并通知，不向外抛出）。 */
     public readonly ready: Promise<void>;
@@ -126,9 +128,7 @@ export default class YesImBot extends Service<Config> {
             config.providers?.map((provider) => provider.apiKey).filter(Boolean),
         );
 
-        this.ctx.on("dispose", () => {
-            void this.stopServices();
-        });
+        this.ctx.on("dispose", () => this.stopServices());
 
         this.ready = this.startServices();
     }
@@ -136,25 +136,37 @@ export default class YesImBot extends Service<Config> {
     private async startServices(): Promise<void> {
         try {
             for (const service of this.services) {
+                if (this.stopping) return;
                 await service.start();
+                if (this.stopping) return;
             }
             this.ctx.logger.info("所有服务已就绪");
             this.ctx.logger.info(`Version: ${require("../package.json").version}`);
         } catch (error) {
+            if (this.stopping) return;
             this.ctx.logger.error(error.message);
             this.ctx.notifier.create("初始化时发生错误");
             handleError(this.ctx.logger("yesimbot"), error, "服务初始化时发生错误");
         }
     }
 
-    private async stopServices(): Promise<void> {
-        for (const service of [...this.services].reverse()) {
-            try {
-                await service.stop();
-            } catch (error) {
-                this.ctx.logger.error(error?.message ?? String(error));
+    private stopServices(): Promise<void> {
+        if (this.stopPromise) return this.stopPromise;
+        // Fence startup synchronously, then let its in-flight operation settle
+        // before cleanup. Otherwise an await inside start() can recreate resources
+        // after stop() has already released them.
+        this.stopping = true;
+        this.stopPromise = (async () => {
+            await this.ready;
+            for (const service of [...this.services].reverse()) {
+                try {
+                    await service.stop();
+                } catch (error) {
+                    this.ctx.logger.error(error?.message ?? String(error));
+                }
             }
-        }
+        })();
+        return this.stopPromise;
     }
 }
 
