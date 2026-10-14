@@ -400,7 +400,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
             "\n人物资料是可修正认识；使用 person_memory 查完整版本，person_recall 按关键词、日期和人物回忆。只有 auto 可自动接受新鲜有来源的关联；管理员锁定与纠错优先。";
         if (config.automaticRecall && /记得|记不记得|之前|上次|以前|昨天|前天|上周|上个月|remember|previous/i.test(session.content || "")) {
             try {
-                text += `\n<recalled_sources>${escapeContext(JSON.stringify(await recall(session, { query: (session.content || "").slice(0, 160), limit: 4 })))}</recalled_sources>`;
+                text += `\n<recalled_sources>${boundedData(await recall(session, { query: (session.content || "").slice(0, 160), limit: 4 }), 4000)}</recalled_sources>`;
             } catch (error) {
                 logger.debug(`自动回忆未完成：${String(error)}`);
             }
@@ -412,6 +412,30 @@ export function applySharedMemory(ctx: Context, config: Config) {
         const current = await modeOf(scope);
         return active && current.settings.mode !== "off" && JSON.stringify(current.people) === JSON.stringify(state.people) ? text : "";
     });
+    // Revalidate recalled summaries in L1 snapshots without rewriting the
+    // original observation or its database record. Pagination describes the
+    // source page, so only the returned count changes when rows are omitted.
+    const filterRecallObservations = (state: any, accept: (kind: string, item: any) => boolean) => {
+        const l1 = state.l1_working_memory;
+        if (!l1) return;
+        const filterEvent = (event: any) => {
+            if (event.type !== "agent_observation" ||
+                !["memory_recall", "history.recall", "l3_diary_generate"].includes(event.function)) return event;
+            const envelope = event.result;
+            const wrapped = envelope?.status === "success" && envelope.result;
+            const page = wrapped || envelope;
+            if (!["l2", "l3"].includes(page?.kind) || !Array.isArray(page.records)) return event;
+            const records = page.records.filter((item: any) => accept(page.kind, item));
+            if (records.length === page.records.length) return event;
+            const result = { ...page, records, returned: records.length };
+            return { ...event, result: wrapped ? { ...envelope, result } : result };
+        };
+        state.l1_working_memory = {
+            ...l1,
+            ...(Array.isArray(l1.new_events) ? { new_events: l1.new_events.map(filterEvent) } : {}),
+            ...(Array.isArray(l1.processed_events) ? { processed_events: l1.processed_events.map(filterEvent) } : {}),
+        };
+    };
     ctx.on("yesimbot/filter-recalled-memory", async (session: Session, state: any) => {
         if (!baseAllowed(session)) return;
         const scope = scopeOf(session);
@@ -421,12 +445,14 @@ export function applySharedMemory(ctx: Context, config: Config) {
             if (ambiguous.has(JSON.stringify([session.platform, session.channelId]))) {
                 state.l2_retrieved_memories = [];
                 state.l3_diary_entries = [];
+                filterRecallObservations(state, () => false);
                 return;
             }
             const current = await modeOf(scope);
             if (current.settings.mode === "off" || !active) {
                 state.l2_retrieved_memories = [];
                 state.l3_diary_entries = [];
+                filterRecallObservations(state, () => false);
                 return;
             }
             state.l2_retrieved_memories = (state.l2_retrieved_memories || []).filter(
@@ -447,9 +473,18 @@ export function applySharedMemory(ctx: Context, config: Config) {
                         new Date(`${item.date}T00:00:00`).getTime()
                     )
             );
+            filterRecallObservations(state, (kind, item) =>
+                !summaryUnsafeIn(
+                    current,
+                    item.platform || session.platform,
+                    (kind === "l2" ? item.participantIds : item.mentionedUserIds) || [],
+                    new Date(kind === "l2" ? item.startTimestamp ?? item.timestamp : `${item.date}T00:00:00`).getTime()
+                )
+            );
         } catch (error) {
             state.l2_retrieved_memories = [];
             state.l3_diary_entries = [];
+            filterRecallObservations(state, () => false);
             logger.warn(`旧摘要校验失败：${String(error)}`);
         }
     });

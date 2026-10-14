@@ -12,6 +12,7 @@ import type { ValidationOptions } from "@/services/model/chat-model";
 import { PromptService } from "@/services/prompt";
 import { AgentResponse, AgentStimulus } from "@/services/worldstate";
 import { InteractionManager } from "@/services/worldstate/interaction-manager";
+import { manualRecallOwners } from "@/services/worldstate/manual-recall";
 import { Services } from "@/shared/constants";
 import { AppError, ErrorDefinitions, handleError } from "@/shared/errors";
 import { estimateTokensByRegex, formatDate, JsonParser, StreamParser } from "@/shared/utils";
@@ -87,7 +88,7 @@ export class HeartbeatProcessor {
     /**
      * 准备LLM请求所需的消息负载
      */
-    private async _prepareLlmRequest(stimulus: AgentStimulus<any>): Promise<{ messages: Message[] }> {
+    private async _prepareLlmRequest(stimulus: AgentStimulus<any>): Promise<{ messages: Message[]; manualRecallIds: string[] }> {
         // 1. 构建非消息部分的上下文
         this.logger.debug("步骤 1/4: 构建提示词上下文...");
         const promptContext = await this.contextBuilder.build(stimulus);
@@ -166,7 +167,10 @@ export class HeartbeatProcessor {
             { role: "user", content: userMessageContent },
         ];
 
-        return { messages };
+        const l1 = promptContext.worldState.l1_working_memory;
+        const manualRecallIds = [...manualRecallOwners([...l1.processed_events, ...l1.new_events])]
+            .filter(([, owner]) => owner === undefined).map(([item]) => (item as { turnId: string }).turnId);
+        return { messages, manualRecallIds };
     }
 
     /**
@@ -180,7 +184,7 @@ export class HeartbeatProcessor {
         const { session } = stimulus;
         const { platform, channelId } = session;
         // 步骤 1-4: 准备请求
-        const { messages } = await this._prepareLlmRequest(stimulus);
+        const { messages, manualRecallIds } = await this._prepareLlmRequest(stimulus);
 
         // 步骤 5: 调用LLM
         this.logger.info("步骤 5/7: 调用大语言模型...");
@@ -204,7 +208,7 @@ export class HeartbeatProcessor {
         }
 
         this.displayThoughts(agentResponseData.thoughts);
-        await this.interactionManager.recordThought(turnId, platform, channelId, agentResponseData.thoughts);
+        await this.interactionManager.recordThought(turnId, platform, channelId, agentResponseData.thoughts, manualRecallIds);
 
         // 步骤 7: 执行动作
         this.logger.debug(`步骤 7/7: 执行 ${agentResponseData.actions.length} 个动作...`);
@@ -227,7 +231,7 @@ export class HeartbeatProcessor {
         const { platform, channelId } = session;
 
         // 步骤 1-4: 准备请求
-        const { messages } = await this._prepareLlmRequest(stimulus);
+        const { messages, manualRecallIds } = await this._prepareLlmRequest(stimulus);
 
         this.logger.info("步骤 5/7: 调用大语言模型...");
         const stime = Date.now();
@@ -337,7 +341,7 @@ export class HeartbeatProcessor {
         assertReplyTurn();
         const response = this.parseAndValidateResponse(llmRawResponse, session.cid);
         if (!response) return null;
-        await this.interactionManager.recordThought(turnId, platform, channelId, response.thoughts);
+        await this.interactionManager.recordThought(turnId, platform, channelId, response.thoughts, manualRecallIds);
         const replySent = await this.executeActions(turnId, session, response.actions, onReplySent);
         if (replySent) this.logger.success("单次心跳成功完成");
         else this.logger.debug("单次心跳完成，未成功发送回复");
@@ -411,7 +415,7 @@ export class HeartbeatProcessor {
         onReplySent: () => void
     ): Promise<{ continue: boolean; replySent: boolean }> {
         const session = stimulus.session;
-        const { messages } = await this._prepareLlmRequest(stimulus);
+        const { messages, manualRecallIds } = await this._prepareLlmRequest(stimulus);
         const nativeMessages: Message[] = [...messages, {
             role: "system",
             content:
@@ -444,7 +448,7 @@ export class HeartbeatProcessor {
             const legacy = this.parseAndValidateResponse(response, session.cid);
             if (!legacy) throw new Error("模型没有返回有效工具调用");
             this.displayThoughts(legacy.thoughts);
-            await this.interactionManager.recordThought(turnId, session.platform, session.channelId, legacy.thoughts);
+            await this.interactionManager.recordThought(turnId, session.platform, session.channelId, legacy.thoughts, manualRecallIds);
             const replySent = await this.executeActions(turnId, session, legacy.actions, onReplySent);
             return { continue: legacy.request_heartbeat, replySent };
         }
@@ -468,7 +472,7 @@ export class HeartbeatProcessor {
         let replySent = false;
         for (const action of actions) {
             assertReplyTurn();
-            const actionId = await this.interactionManager.recordAction(turnId, session.platform, session.channelId, action);
+            const actionId = await this.interactionManager.recordAction(turnId, session.platform, session.channelId, action, manualRecallIds);
             assertReplyTurn();
             const result = await this.toolService.invoke(action.function, action.params, session);
             if (action.function === "send_message" && result.status === "success") {

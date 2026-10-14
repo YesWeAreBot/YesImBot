@@ -115,7 +115,7 @@ export class WorldStateService extends Service<Config> {
             const state: any = { l2_retrieved_memories: [], l3_diary_entries: [] };
             const key = page.kind === "l3" ? "l3_diary_entries" : "l2_retrieved_memories";
             state[key] = page.records.map(record => ({ ...record, timestamp: (record as any).startTimestamp }));
-            await this.ctx.parallel("yesimbot/filter-recalled-memory", session, state);
+            await this.ctx.parallel(session, "yesimbot/filter-recalled-memory", session, state);
             const accepted = new Set(state[key].map((record: any) => record.id));
             page.records = page.records.filter(record => accepted.has(record.id));
             page.returned = page.records.length;
@@ -132,7 +132,7 @@ export class WorldStateService extends Service<Config> {
         const generation = (result as any).historyGeneration;
         const written = await this.l2_manager.writeMemory(target, generation, () =>
             this.l1_manager.recordObservation(randomUUID(), session.platform, session.channelId, {
-                turnId: randomUUID(), function: operation, status: "success", result,
+                turnId: randomUUID(), function: operation, status: "success", result, manualRecall: true,
             }));
         if (!written) throw new Error("注入前历史已清除，请重新召回");
     }
@@ -151,7 +151,7 @@ export class WorldStateService extends Service<Config> {
 
     public async buildWorldState(session: Session): Promise<WorldState> {
         const state = await this.contextBuilder.build(session);
-        await this.ctx.parallel("yesimbot/filter-recalled-memory", session, state);
+        await this.ctx.parallel(session, "yesimbot/filter-recalled-memory", session, state);
         return state;
     }
 

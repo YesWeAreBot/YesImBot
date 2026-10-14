@@ -1,6 +1,7 @@
 import { Bot, Context, Logger, Session } from "koishi";
 
 import { Services, TableName } from "@/shared/constants";
+import { manualRecallOwners } from "./manual-recall";
 import { HistoryConfig } from "./config";
 import { InteractionManager } from "./interaction-manager";
 import { SemanticMemoryManager } from "./l2-semantic-memory";
@@ -124,10 +125,12 @@ export class ContextBuilder {
     private applyGracefulDegradation(history: L1HistoryItem[]): L1HistoryItem[] {
         const turnIdsToKeep = new Set<string>();
         const turnIdsToDrop = new Set<string>();
+        const manualOwners = manualRecallOwners(history);
 
         // 从后往前遍历，找到超出保留数量的思考事件，并记录它们的 turnId
         for (let i = history.length - 1; i >= 0; i--) {
             const item = history[i];
+            if (manualOwners.has(item)) continue;
             if (item.type === "agent_thought" || item.type === "agent_action" || item.type === "agent_observation") {
                 if (turnIdsToKeep.size < this.config.l1_memory.keepFullTurnCount) {
                     turnIdsToKeep.add(item.turnId);
@@ -139,12 +142,12 @@ export class ContextBuilder {
             }
         }
 
-        if (turnIdsToDrop.size === 0) {
-            return history;
-        }
-
         // 返回一个新数组，其中不包含属于要删除的 turnId 的所有事件
         return history.filter((item) => {
+            if (manualOwners.has(item)) {
+                const owner = manualOwners.get(item);
+                return owner === undefined || turnIdsToKeep.has(owner);
+            }
             if (item.type === "agent_thought" || item.type === "agent_action" || item.type === "agent_observation") {
                 const turnId = item.turnId;
                 return !turnIdsToDrop.has(turnId);
