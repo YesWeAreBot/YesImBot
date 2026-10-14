@@ -174,7 +174,5 @@ yarn-error.log
 # Add here any additional files/directories you want to ignore in your project
 lib/
 
-bun.lock
 package-lock.json
 tsconfig.temp.json
-yarn.lock
