@@ -371,9 +371,7 @@ it("preserves cancellation at EOF even after validator-approved text", async () 
         await model.chat({ messages: [], abortSignal: controller.signal, validation: { format: "json" } });
         throw new Error("Cancelled response succeeded");
     } catch (error) {
-        expect(error).toBeInstanceOf(AppError);
-        expect((error as AppError).code).toBe(ErrorDefinitions.LLM.TIMEOUT.code);
-        expect((error as AppError).cause).toBe(reason);
+        expect(error).toBe(reason);
     }
 });
 

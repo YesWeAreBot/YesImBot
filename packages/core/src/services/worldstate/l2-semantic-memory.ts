@@ -1,3 +1,4 @@
+import { withUsageScope } from "../model/usage";
 import { Context, Logger } from "koishi";
 import { v4 as uuidv4 } from "uuid";
 
@@ -193,7 +194,7 @@ export class SemanticMemoryManager {
         const conversationText = this.compileEventsToText(messages);
 
         try {
-            const embedding = await this.embedModel.embed(conversationText);
+            const embedding = await withUsageScope({ platform, target: channelId, purpose: "L2记忆索引" }, () => this.embedModel.embed(conversationText));
             const memoryChunk: MemoryChunkData = {
                 id: uuidv4(),
                 platform,
@@ -231,7 +232,7 @@ export class SemanticMemoryManager {
         if (!this.embedModel || k <= 0) return [];
         const minAllowedSim = this.config.l2_memory.retrievalMinSimilarity ?? 0.5;
 
-        const queryEmbedding = await this.embedModel.embed(queryText);
+        const queryEmbedding = await withUsageScope({ platform: options?.platform, target: options?.channelId, purpose: "L2记忆检索" }, () => this.embedModel.embed(queryText));
         const expectedDim = queryEmbedding.embedding.length;
 
         const allChunks = await this.ctx.database.get(TableName.L2Chunks, {
@@ -439,7 +440,7 @@ export class SemanticMemoryManager {
                 try {
                     const generation = this.generation(chunk, generations);
                     if (this.generation(chunk) !== generation) continue;
-                    const result = await this.embedModel.embed(chunk.content);
+                    const result = await withUsageScope({ platform: chunk.platform, target: chunk.channelId, purpose: "L2索引重建" }, () => this.embedModel.embed(chunk.content));
                     if (
                         await this.writeMemory(chunk, generation, () =>
                             this.ctx.database.set(TableName.L2Chunks, { id: chunk.id }, { embedding: result.embedding })

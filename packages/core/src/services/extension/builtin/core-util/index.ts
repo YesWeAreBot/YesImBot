@@ -1,3 +1,4 @@
+import { withUsageScope } from "../../../model/usage";
 import { assertReplyDestination, guardReplyBot, replyTurnSignal } from "@/agent/reply-turn";
 import { Bot, Context, h, Logger, Schema, Session, sleep, Universal } from "koishi";
 
@@ -124,7 +125,7 @@ export default class CoreUtilExtension {
         }),
     })
     async getImageDescription(args: Infer<{ image_id: string; question: string }>) {
-        const { image_id, question } = args;
+        const { image_id, question, session } = args;
 
         const imageInfo = await this.assetService.getInfo(image_id);
         if (!imageInfo) {
@@ -165,7 +166,7 @@ export default class CoreUtilExtension {
         }
 
         try {
-            const response = await model.chat({
+            const response = await withUsageScope({ platform: session?.platform, botId: session?.selfId, target: session?.channelId, purpose: "图片描述" }, () => model.chat({
                 abortSignal: replyTurnSignal(),
                 messages: [
                     {
@@ -177,7 +178,7 @@ export default class CoreUtilExtension {
                     },
                 ],
                 temperature: 0.2,
-            });
+            }));
             return Success(response.text);
         } catch (error) {
             this.logger.error(`图片描述失败: ${error.message}`);

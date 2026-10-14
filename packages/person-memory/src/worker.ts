@@ -1,7 +1,13 @@
-import { type PersonStore } from "./store";
+import { type PersonStore, type Provenance } from "./store";
+
+export function summaryResponseText(result: { text?: string; finishReason?: string }, budget: number): string {
+    if (result.finishReason === "length") throw new Error(`人物总结达到输出上限 ${budget} token，正文可能被截断，未创建候选；可提高后台总结输出上限或选用较少推理的模型`);
+    if (typeof result.text !== "string" || !result.text.trim()) throw new Error("人物总结返回空白正文，未创建候选；请检查模型输出预算及推理设置");
+    return result.text;
+}
 
 export interface WorkerConfig { threshold: number; cooldownMs: number; timeoutMs: number; maxQueue: number }
-export type SummaryModel = (messages: { role: "system" | "user"; content: string }[], signal: AbortSignal) => Promise<string>;
+export type SummaryModel = (messages: { role: "system" | "user"; content: string }[], signal: AbortSignal, attribution?: { platform?: string; botId?: string; target?: string; purpose: string }) => Promise<string>;
 interface Job { key: string; scope: string; userId: string; promise: Promise<string>; resolve: (id: string) => void; reject: (error: Error) => void }
 export class SummaryWorker {
     private stopped = false;
@@ -90,12 +96,22 @@ export class SummaryWorker {
             abort = () => reject(controller.signal.reason instanceof Error ? controller.signal.reason : new Error("任务已取消"));
             controller.signal.addEventListener("abort", abort, { once: true });
         });
+        const sources = evidence.map(item => item.provenance).filter((source): source is Provenance => !!source);
+        const first = sources[0];
+        const singleTarget = first && sources.length === evidence.length && sources.every(source => source.platform === first.platform && source.selfId === first.selfId && source.channelId === first.channelId);
+        const attribution = singleTarget
+            ? { platform: first.platform, botId: first.selfId, target: first.channelId, purpose: "人物记忆摘要" }
+            : { purpose: "人物记忆摘要" };
         let output: string;
-        try { output = await Promise.race([this.model!(messages, controller.signal), cancelled]); }
+        try { output = await Promise.race([this.model!(messages, controller.signal, attribution), cancelled]); }
         finally { clearTimeout(timer); controller.signal.removeEventListener("abort", abort); }
         if (this.stopped || controller.signal.aborted) throw new Error("任务已取消");
-        if (typeof output !== "string" || output.length > 8000) throw new Error("模型输出为空或超出长度限制");
-        const parsed = JSON.parse(output.replace(/^\s*```(?:json)?\s*|\s*```\s*$/g, ""));
+        if (typeof output !== "string" || !output.trim()) throw new Error("人物总结返回空白正文，未创建候选；请检查模型输出预算及推理设置");
+        if (output.length > 8000) throw new Error("人物总结正文超出长度限制，未创建候选");
+        let parsed: any;
+        try { parsed = JSON.parse(output.replace(/^\s*```(?:json)?\s*|\s*```\s*$/g, "")); }
+        catch { throw new Error("人物总结正文不是完整 JSON，未创建候选；请检查输出截断及模型格式设置"); }
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("人物总结 JSON 结构无效，未创建候选");
         if (parsed.profile === "") return "没有新增可靠信息";
         const proposal = await this.store.propose(scope, userId, parsed.profile, parsed.messageIds, "summary-model", expected, () => !this.stopped && !controller.signal.aborted);
         return proposal.id;
