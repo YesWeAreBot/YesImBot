@@ -1,8 +1,11 @@
-const test = require("node:test");
-const assert = require("node:assert/strict");
-const { load, fixture } = require("./helpers.cjs");
-const { applySharedMemory } = load("shared-runtime");
-const { PersonStore, mindScope, accountRef } = load("store");
+import assert from "node:assert/strict";
+
+import { test } from "vitest";
+
+import { applySharedMemory } from "../src/shared-runtime";
+import { PersonStore, accountRef, mindScope } from "../src/store";
+import { fixture } from "./helpers";
+
 const defaults = { mode: "review", modelGroup: "", summaryThreshold: 6, cooldownSeconds: 600, timeoutSeconds: 30, maxQueue: 32 };
 const session = { platform: "onebot", selfId: "bot", channelId: "g", userId: "admin", isDirect: false };
 async function runtime(t, config = {}) {

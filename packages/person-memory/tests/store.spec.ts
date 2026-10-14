@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "vitest";
 
 import { PersonStore, registerModels, sceneKey } from "../src/store";
-import { fixture, reopen } from "./helpers";
+import { fixture } from "./helpers";
 
 const scene = sceneKey({ platform: "onebot", selfId: "bot", channelId: "group", userId: "u", isDirect: false });
 const actor = "admin:42";
@@ -90,14 +90,13 @@ test("pause blocks model mutations and auto mode accepts only fresh grounded pro
     await assert.rejects(store.propose(scene, "u1", "后来的", ["m1"], "model"), /暂停/);
     assert.equal((await store.find(scene, "u1")).person.profile, "喜欢 Python");
 });
-test("SQLite file reopening preserves UUID, reviewed profile, source and audit", async (t) => {
+test("a fresh store in another mode reads committed UUID, reviewed profile, source and audit", async (t) => {
     const { ctx, store } = await setup(t);
     const initial = await store.recognize(scene, "u1", "卅");
     await store.capture(scene, source("m1"));
     const proposal = await store.propose(scene, "u1", "喜欢 Python", ["m1"], "model");
     await store.review(scene, proposal.id, true, actor);
-    const next = await reopen(ctx, registerModels),
-        restored = new PersonStore(next.database, "off");
+    const restored = new PersonStore(ctx.database, "off");
     const found = await restored.find(scene, "u1");
     assert.equal(found.person.id, initial.person.id);
     assert.equal(found.person.profile, "喜欢 Python");

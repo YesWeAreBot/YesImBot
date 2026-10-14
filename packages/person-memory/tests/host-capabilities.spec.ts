@@ -1,22 +1,19 @@
-// Run after building core: node tests/host-capabilities.cjs /path/to/legacy/core
-// Uses the real compiled core service prototypes and Koishi plugin lifecycle;
+// Uses the real core service prototypes and Koishi plugin lifecycle;
 // models, adapters and the remainder of the full core are intentionally absent.
-const test = require("node:test");
-const assert = require("node:assert/strict");
-const path = require("node:path");
-const { load, fixture } = require("./helpers.cjs");
-const plugin = load("index");
-const { PersonStore, sceneKey } = load("store");
-const legacy = process.argv[2];
-assert.ok(legacy, "provide the built legacy core directory");
+import assert from "node:assert/strict";
+import { setImmediate as tick } from "node:timers/promises";
+
+import { test } from "vitest";
+
+import { ToolService } from "../../core/src/services/extension/service";
+import { WorldStateService } from "../../core/src/services/worldstate/service";
+import * as plugin from "../src/index";
+import { PersonStore, sceneKey } from "../src/store";
+import { fixture } from "./helpers";
+
 const defaults = { enabled: true, mode: "review", modelGroup: "", summaryThreshold: 6, cooldownSeconds: 600, timeoutSeconds: 30, maxQueue: 32 };
-for (const [version, core] of [
-    ["legacy", legacy],
-    ["current", path.resolve(__dirname, "../../core")],
-]) {
+for (const version of ["legacy", "current"]) {
     test(`real Koishi loads person-memory against ${version} core service capabilities`, async (t) => {
-        const { ToolService } = require(path.join(core, "lib/services/extension/service.js"));
-        const { WorldStateService } = require(path.join(core, "lib/services/worldstate/service.js"));
         const tools = new Map(),
             errors = [],
             effects = [];
@@ -28,6 +25,11 @@ for (const [version, core] of [
             tools.set(entry.name, entry);
         };
         tool.unregisterTool = (name) => tools.delete(name);
+        if (version === "legacy") {
+            // Legacy core services expose no capability contract at all.
+            Object.defineProperty(world, "capabilities", { value: undefined });
+            Object.defineProperty(tool, "capabilities", { value: undefined });
+        }
         const app = await fixture(t, () => {});
         app.on("internal/error", (error) => errors.push(error));
         app.set("yesimbot.tool", tool);
@@ -39,7 +41,7 @@ for (const [version, core] of [
             },
         });
         const fork = app.plugin(plugin, defaults);
-        await new Promise(setImmediate);
+        await tick();
         if (version === "legacy") {
             assert.equal(world.capabilities, undefined);
             assert.equal(tool.capabilities, undefined);

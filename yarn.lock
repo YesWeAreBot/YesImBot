@@ -1610,6 +1610,17 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@koishijs/plugin-database-memory@npm:^3.7.0":
+  version: 3.7.0
+  resolution: "@koishijs/plugin-database-memory@npm:3.7.0"
+  dependencies:
+    "@minatojs/driver-memory": "npm:^3.7.0"
+  peerDependencies:
+    koishi: ^4.18.10
+  checksum: 10c0/223e548514d7bf9d644fa3dbe8460bf09c50db5c1922c8fe7e6ef8077ab4a9e32ae02a47fb2940f4434a4a2b123250aca5e0db5729f40860de0bb22bdfc85f0b
+  languageName: node
+  linkType: hard
+
 "@koishijs/plugin-http@npm:^0.6.3":
   version: 0.6.3
   resolution: "@koishijs/plugin-http@npm:0.6.3"
@@ -1721,34 +1732,14 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@minatojs/driver-sqlite@npm:^4.7.0":
-  version: 4.7.0
-  resolution: "@minatojs/driver-sqlite@npm:4.7.0"
-  dependencies:
-    "@minatojs/sql-utils": "npm:^5.6.0"
-    "@minatojs/sql.js": "npm:^3.1.0"
-    cosmokit: "npm:^1.6.3"
-  peerDependencies:
-    minato: ^3.7.0
-  checksum: 10c0/ef1059ba9a921e1c5739027f74f2e4b661755f11e9649138c14cfe55fc25de884e26fb204a9fac1dafa5b64a4a6f6f2606c680601dc41fc5e6f2b3b59f459b2a
-  languageName: node
-  linkType: hard
-
-"@minatojs/sql-utils@npm:^5.6.0":
-  version: 5.6.0
-  resolution: "@minatojs/sql-utils@npm:5.6.0"
+"@minatojs/driver-memory@npm:^3.7.0":
+  version: 3.7.0
+  resolution: "@minatojs/driver-memory@npm:3.7.0"
   dependencies:
     cosmokit: "npm:^1.6.3"
   peerDependencies:
     minato: ^3.7.0
-  checksum: 10c0/7b97a6ce110e74d2b1d906bf34b79c5fcd784de49da7fb7172595ae695a694db2b7d6e54d224dd17256cc30cf58a669d041bfe37ea365148d54a50b68a247962
-  languageName: node
-  linkType: hard
-
-"@minatojs/sql.js@npm:^3.1.0":
-  version: 3.1.0
-  resolution: "@minatojs/sql.js@npm:3.1.0"
-  checksum: 10c0/3a61cd868d848a008d89ccdf27411a392d690831b6c5508dd04d84bf002bbfb2e1934e8979b0f6c14ab16523b708bff2fdb7004e564dbe186d7812f1c383f066
+  checksum: 10c0/7c96b2c23a7123a98f5e949d048301ec59ec58a8b9b426b91d7901506235be41431f1f460c4c5322dae944a6fb1b91796d20dc7dfe62fa24deffd94137f0f4d2
   languageName: node
   linkType: hard
 
@@ -6543,7 +6534,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "koishi-plugin-yesimbot-extension-onebot-directory@workspace:packages/onebot-directory"
   dependencies:
-    "@minatojs/driver-sqlite": "npm:^4.7.0"
+    "@koishijs/plugin-database-memory": "npm:^3.7.0"
     koishi: "npm:^4.18.7"
     koishi-plugin-adapter-onebot: "npm:^6.8.0"
     koishi-plugin-yesimbot: "npm:^3.0.3"
@@ -6557,10 +6548,8 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "koishi-plugin-yesimbot-extension-person-memory@workspace:packages/person-memory"
   dependencies:
+    "@koishijs/plugin-database-memory": "npm:^3.7.0"
     "@koishijs/plugin-mock": "npm:^2.6.6"
-    "@minatojs/driver-sqlite": "npm:^4.7.0"
-    "@minatojs/sql-utils": "npm:^5.6.0"
-    "@minatojs/sql.js": "npm:^3.1.0"
     koishi: "npm:^4.18.7"
   peerDependencies:
     koishi: ^4.18.7
@@ -6586,9 +6575,9 @@ __metadata:
   dependencies:
     "@koishijs/client": "npm:^5.30.11"
     "@koishijs/plugin-console": "npm:^5.30.4"
+    "@koishijs/plugin-database-memory": "npm:^3.7.0"
     "@koishijs/plugin-notifier": "npm:^1.2.1"
     "@miaowfish/gifwrap": "npm:^0.10.1"
-    "@minatojs/driver-sqlite": "npm:^4.7.0"
     "@types/semver": "npm:^7"
     "@xsai-ext/providers-cloud": "npm:^0.3.2"
     "@xsai-ext/providers-local": "npm:^0.3.2"
@@ -6611,12 +6600,7 @@ __metadata:
     undici: "npm:^6.29.0"
     uuid: "npm:^11.1.0"
   peerDependencies:
-    "@koishijs/plugin-console": ^5.30.11
-    "@koishijs/plugin-notifier": ^1.2.1
-    "@minatojs/driver-sqlite": ^4.7.0
     koishi: ^4.18.7
-    koishi-plugin-adapter-onebot: ^6.8.0
-    koishi-plugin-puppeteer: ^3.9.0
     undici: ^6.29.0
   languageName: unknown
   linkType: soft

@@ -1,25 +1,17 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-
-import sqlite from "@minatojs/driver-sqlite";
+import memory from "@koishijs/plugin-database-memory";
 import { Context } from "koishi";
 import type { TaskContext } from "vitest";
 
 import { registerModels } from "../src/store";
 
 export async function database(t: TaskContext) {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "yib-directory-"));
-    const app = new Context({ baseDir: dir });
-    app.plugin(sqlite, { path: path.join(dir, "contacts.db") });
+    const app = new Context();
+    app.plugin(memory);
     registerModels(app);
     await app.start();
     await app.database.prepared();
-    t.onTestFinished(async () => {
-        await app.stop();
-        fs.rmSync(dir, { recursive: true, force: true });
-    });
-    // Wrappers control return timing while every operation still runs on real SQLite.
+    t.onTestFinished(() => app.stop());
+    // Wrappers control return timing while every operation still runs on the database.
     const db = new Proxy(app.database, {
         get(target, key) {
             const value = target[key];
@@ -30,7 +22,5 @@ export async function database(t: TaskContext) {
 }
 
 export function gate() {
-    let resolve!: (value?: unknown) => void;
-    const promise = new Promise((r) => (resolve = r));
-    return { promise, resolve };
+    return Promise.withResolvers<void>();
 }

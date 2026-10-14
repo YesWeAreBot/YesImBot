@@ -1,9 +1,9 @@
-import { expect, it } from "bun:test";
 import { appendFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { Context, Bot, Schema } from "koishi";
+import { expect, it } from "vitest";
 
 import { HeartbeatProcessor } from "../src/agent/heartbeat-processor";
 import { ContextBuilder } from "../src/services/worldstate/context-builder";

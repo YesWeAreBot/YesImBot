@@ -1,4 +1,4 @@
-import { expect, it } from "bun:test";
+import { expect, it } from "vitest";
 
 import { StreamParser } from "../src/shared/utils/stream-parser";
 

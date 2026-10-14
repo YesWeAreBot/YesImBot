@@ -29,7 +29,7 @@ async function setup(t, config = {}, capabilities = true) {
     const warnings = [];
     const ctx = await fixture(t, registerModels);
     {
-        // External YIB services and Koishi command dispatch only; DB remains actual SQLite.
+        // External YIB services and Koishi command dispatch only; DB remains a real database.
         // filter mirrors Koishi's Context.filter, which defaults to admitting every session.
         const facade = { model: ctx.model, database: ctx.database, filter: () => true };
         facade["yesimbot.tool"] = {

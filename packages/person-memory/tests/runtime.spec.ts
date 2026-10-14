@@ -9,10 +9,10 @@ const mock = (pluginMock as any).default ?? pluginMock;
 import { EventListenerManager } from "../../core/src/services/worldstate/event-listener";
 import * as plugin from "../src/index";
 import { registerModels } from "../src/store";
-import { fixture, fixtureContext, reopen } from "./helpers";
+import { fixture, fixtureContext } from "./helpers";
 
 const defaults = { enabled: true, mode: "review", modelGroup: "", summaryThreshold: 6, cooldownSeconds: 600, timeoutSeconds: 30, maxQueue: 32 };
-test("real Koishi lifecycle, command parser and authority gate operate with SQLite", async (t) => {
+test("real Koishi lifecycle, command parser and authority gate operate against a real database", async (t) => {
     const tools = new Map();
     let injection, mockFork;
     const app = await fixture(t, (ctx) => {

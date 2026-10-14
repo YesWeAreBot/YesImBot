@@ -4,7 +4,7 @@ import { test } from "vitest";
 
 import { WorldStateService } from "../../core/src/services/worldstate/service";
 import { PersonStore, registerModels } from "../src/store";
-import { fixture, reopen } from "./helpers";
+import { fixture } from "./helpers";
 function wrap(db, intercept) {
     return new Proxy(db, {
         get(target, key) {
@@ -49,7 +49,7 @@ for (const operation of ["edit", "capture"])
     });
 
 test("legacy migration anchor rebuilds a missing cache without changing old audit or revert", async (t) => {
-    let ctx = await fixture(t, (app) => {
+    const ctx = await fixture(t, (app) => {
         // Pre-format database schema, not just an old row in a new table.
         app.model.extend("person_memory.state", { scope: "string", revision: "unsigned", state: "json" }, { primary: "scope" });
         app.model.extend(
@@ -80,7 +80,10 @@ test("legacy migration anchor rebuilds a missing cache without changing old audi
         action: "profile",
         changes: [{ collection: "people", key: "p", before: { ...state.people.p, profile: "" }, after: state.people.p }],
     });
-    ctx = await reopen(ctx, registerModels);
+    // The memory driver keeps rows for the lifetime of the app, so the legacy rows
+    // written above survive re-registering the current models over them.
+    registerModels(ctx);
+    await ctx.database.prepared();
     const store = new PersonStore(ctx.database, "off");
     await store.rename("old", "p", "New", "admin");
     const rename = (await store.history("old"))[0];
@@ -127,7 +130,7 @@ function deferred() {
     });
     return { promise, resolve };
 }
-test("two independent stores arbitrate the same revision with a unique SQLite INSERT", async (t) => {
+test("two independent stores arbitrate the same revision with a unique commit INSERT", async (t) => {
     const ctx = await fixture(t, registerModels),
         store = new PersonStore(ctx.database, "review");
     await store.recognize("s", "old", "Old");

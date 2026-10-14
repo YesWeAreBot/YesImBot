@@ -12,7 +12,7 @@ const bot = (id, users) => ({
     internal: { getGroupMemberList: async () => users.map((user_id) => ({ user_id, nickname: "N" + user_id })) },
 });
 
-test("slow SQLite reader survives two completed refreshes without silently losing its page", async (t) => {
+test("slow database reader survives two completed refreshes without silently losing its page", async (t) => {
     const ctx = await database(t),
         store = new DirectoryStore(ctx, 2, 1);
     await store.query(bot("old", [1, 2]), args);
@@ -41,7 +41,7 @@ test("slow SQLite reader survives two completed refreshes without silently losin
     );
 });
 
-test("independent stores cannot erase another store preparing a shared SQLite revision", async (t) => {
+test("independent stores cannot erase another store preparing a shared revision", async (t) => {
     const ctx = await database(t),
         first = new DirectoryStore(ctx, 2, 100),
         second = new DirectoryStore(ctx, 2, 100);
@@ -85,7 +85,7 @@ function clock(t) {
     };
 }
 
-test("SQLite GC reclaims expired revisions and orphan preparations but keeps the published cache", async (t) => {
+test("GC reclaims expired revisions and orphan preparations but keeps the published cache", async (t) => {
     const time = clock(t),
         ctx = await database(t),
         store = new DirectoryStore(ctx, 2, 100);

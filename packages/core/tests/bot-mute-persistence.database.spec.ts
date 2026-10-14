@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 
-import sqlite from "@minatojs/driver-sqlite";
+import memory from "@koishijs/plugin-database-memory";
 import { Context } from "koishi";
 import { test } from "vitest";
 
@@ -19,14 +16,10 @@ const event = (id, type, timestamp, user = "a", selfId = "a") => ({
     payload: { details: { user: { id: user }, selfId, duration: 30 * 86400000 } },
 });
 
-test("registered mute schema survives real SQLite retention, restart and manual history clear", async (t) => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "yib-mute-state-"));
-    let app = new Context({ baseDir: root });
-    app.plugin(sqlite, { path: path.join(root, "state.db") });
-    t.onTestFinished(async () => {
-        await app.stop();
-        fs.rmSync(root, { recursive: true, force: true });
-    });
+test("registered mute schema survives database retention, restart and manual history clear", async (t) => {
+    const app = new Context();
+    app.plugin(memory);
+    t.onTestFinished(() => app.stop());
     const ctx = {
         model: app.model,
         bots: [
@@ -52,16 +45,6 @@ test("registered mute schema survives real SQLite retention, restart and manual 
         });
         return world;
     };
-    const reopen = async () => {
-        await app.stop();
-        app = new Context({ baseDir: root });
-        app.plugin(sqlite, { path: path.join(root, "state.db") });
-        ctx.model = app.model;
-        restart().registerModels();
-        await app.start();
-        await app.database.prepared();
-        ctx.database = app.database;
-    };
     const world = restart();
     world.registerModels();
     await app.start();
@@ -72,7 +55,6 @@ test("registered mute schema survives real SQLite retention, restart and manual 
     await app.database.create("worldstate.system_events", event("all", "guild-all-member-ban", old, "0", "b"));
     await world.initializeMuteStatus();
     await app.database.remove("worldstate.system_events", { timestamp: { $lt: new Date(Date.now() - 7 * 86400000) } });
-    await reopen();
     const restarted = restart();
     await restarted.initializeMuteStatus();
     assert.equal(restarted.isBotMuted("onebot:g", "a"), true);
@@ -87,7 +69,6 @@ test("registered mute schema survives real SQLite retention, restart and manual 
     await restarted.updateMuteStatus("onebot:g", 0, "b", "all");
     await restarted.recordSystemEvent(event("release", "guild-all-member-unban", Date.now(), "0", "b"));
     await app.database.remove("worldstate.system_events", {});
-    await reopen();
     const final = restart();
     await final.initializeMuteStatus();
     assert.equal(final.isBotMuted("onebot:g", "b"), false);

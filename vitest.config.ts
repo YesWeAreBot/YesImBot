@@ -21,7 +21,7 @@ export default defineConfig({
     test: {
         exclude: ["**/node_modules/**", "**/.git/**"],
         include: ["packages/*/tests/**/*.spec.ts"],
-        // onebot-directory pulls a 2005-member list into real SQLite per test;
+        // onebot-directory pulls a 2005-member list into the database per test;
         // on Windows a cold run can exceed the 5s default under parallel load.
         testTimeout: 30_000,
         hookTimeout: 30_000,
