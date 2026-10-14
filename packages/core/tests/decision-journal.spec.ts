@@ -396,7 +396,7 @@ test("a second writer is explicitly disabled before recovery or compaction", asy
     const second = new DecisionJournal(dir, { ...options, maxEntries: 1 }, (message) => warnings.push(message));
     t.onTestFinished(() => second.close());
     await second.append(record("b"));
-    assert.ok(warnings.some((message) => /already.*writer|writer.*already|another.*writer|locked/i.test(message)));
+    assert.ok(warnings.some((message) => /被锁定/.test(message)));
     assert.deepEqual(await second.list(), []);
     assert.equal(second.diagnostics.droppedRecords, 1);
     await first.append(record("c"));
@@ -445,7 +445,7 @@ test("directory exclusion also applies across processes", async (t) => {
     await first.append(record("parent"));
     const child = childJournal(dir, 'await journal.append(record("child")); console.log(JSON.stringify(await journal.list())); await journal.close();');
     assert.equal(child.status, 0, child.stderr);
-    assert.match(child.stderr, /locked.*recording and queries are disabled/);
+    assert.match(child.stderr, /被锁定.*持久化记录与查询不可用/);
     assert.deepEqual(JSON.parse(child.stdout), []);
     if (process.platform !== "win32") assert.equal((await fs.stat(path.join(dir, ".decisions.lock"))).mode & 0o777, 0o600);
     await first.append(record("still-parent"));
@@ -464,7 +464,7 @@ test("abnormal exit keeps history safe and requires explicit stale-lock cleanup"
     const blocked = new DecisionJournal(dir, options, (message) => warnings.push(message));
     await blocked.append(record("blocked"));
     await blocked.close();
-    assert.ok(warnings.some((message) => /Stop all instances.*manually removing.*abnormal exit/.test(message)));
+    assert.ok(warnings.some((message) => /遗留锁.*停止所有实例.*手动清理/.test(message)));
     assert.equal(await fs.readFile(path.join(dir, "decisions.jsonl"), "utf8"), original);
     // The child has exited, and the rejected instance has closed: removal is safe.
     await fs.unlink(path.join(dir, ".decisions.lock"));
@@ -516,6 +516,20 @@ test("lock release failure warns clearly and stays isolated from realtime work",
     await fs.unlink(path.join(dir, ".decisions.lock"));
     await fs.mkdir(path.join(dir, ".decisions.lock"));
     await assert.doesNotReject(journal.close());
-    assert.ok(warnings.some((message) => /lock release failed.*Stop all instances.*manually removing/.test(message)));
+    assert.ok(warnings.some((message) => /锁释放失败.*停止所有实例.*手动清理/.test(message)));
     assert.ok(journal.diagnostics.writeFailures > 0);
+});
+
+test("lock diagnostics identify the current owner without deleting its lock", async (t) => {
+    const DecisionJournal = loadJournal(),
+        dir = await temporary(t),
+        warnings = [];
+    const owner = new DecisionJournal(dir, options);
+    t.after(() => owner.close());
+    await owner.list({});
+    const blocked = new DecisionJournal(dir, options, (message) => warnings.push(message));
+    t.after(() => blocked.close());
+    await blocked.list({});
+    assert.ok(warnings.some((message) => message.includes(`PID=${process.pid}`) && message.includes("当前进程")));
+    assert.equal(JSON.parse(await fs.readFile(path.join(dir, ".decisions.lock"), "utf8")).pid, process.pid);
 });

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "vitest";
 
 import { PersonStore, registerModels } from "../src/store";
-import { SummaryWorker } from "../src/worker";
+import { SummaryWorker, summaryResponseText } from "../src/worker";
 import { fixture } from "./helpers";
 async function setup(t, model, options = {}) {
     const ctx = await fixture(t, registerModels);
@@ -117,4 +117,18 @@ test("a manual job queued immediately after completion is never stranded", async
         second.finally(() => clearTimeout(timer)).catch(() => {});
     });
     await Promise.race([second, timeout]);
+});
+test("blank summary reports an actionable error and does not create a proposal", async (t) => {
+    const { store, worker } = await setup(t, async () => "   ");
+    await capture(store);
+    await assert.rejects(worker.summarize("s", "u"), /人物总结.*空白/);
+});
+test("invalid summary JSON reports the stage without exposing the raw response", async (t) => {
+    const { store, worker } = await setup(t, async () => "private-secret");
+    await capture(store);
+    await assert.rejects(worker.summarize("s", "u"), (error) => /人物总结.*JSON/.test(error.message) && !error.message.includes("private-secret"));
+});
+test("truncated summary is rejected before JSON parsing with the output limit identified", () => {
+    assert.throws(() => summaryResponseText({ text: "", finishReason: "length" }, 4096), /4096.*截断/);
+    assert.equal(summaryResponseText({ text: '{"profile":""}', finishReason: "stop" }, 4096), '{"profile":""}');
 });

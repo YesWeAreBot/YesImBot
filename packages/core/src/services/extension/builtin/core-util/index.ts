@@ -8,6 +8,7 @@ import { Infer } from "../../../../services/extension/types";
 import { IChatModel, ModelDescriptor } from "../../../../services/model";
 import { Services } from "../../../../shared/constants";
 import { isEmpty } from "../../../../shared/utils";
+import { withUsageScope } from "../../../model/usage";
 
 interface CoreUtilConfig {
     typing: {
@@ -124,7 +125,7 @@ export default class CoreUtilExtension {
         }),
     })
     async getImageDescription(args: Infer<{ image_id: string; question: string }>) {
-        const { image_id, question } = args;
+        const { image_id, question, session } = args;
 
         const imageInfo = await this.assetService.getInfo(image_id);
         if (!imageInfo) {
@@ -165,19 +166,23 @@ export default class CoreUtilExtension {
         }
 
         try {
-            const response = await model.chat({
-                abortSignal: replyTurnSignal(),
-                messages: [
-                    {
-                        role: "user",
-                        content: [
-                            { type: "text", text: prompt },
-                            { type: "image_url", image_url: { url: image, detail: this.config.vision.detail } },
+            const response = await withUsageScope(
+                { platform: session?.platform, botId: session?.selfId, target: session?.channelId, purpose: "图片描述" },
+                () =>
+                    model.chat({
+                        abortSignal: replyTurnSignal(),
+                        messages: [
+                            {
+                                role: "user",
+                                content: [
+                                    { type: "text", text: prompt },
+                                    { type: "image_url", image_url: { url: image, detail: this.config.vision.detail } },
+                                ],
+                            },
                         ],
-                    },
-                ],
-                temperature: 0.2,
-            });
+                        temperature: 0.2,
+                    }),
+            );
             return Success(response.text);
         } catch (error) {
             this.logger.error(`图片描述失败: ${error.message}`);

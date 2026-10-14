@@ -8,6 +8,7 @@ import { Services, TableName } from "../../shared/constants";
 import { sanitizeDiagnostic } from "../../shared/diagnostic-sanitizer";
 import { HISTORY_CHANNELS } from "./channel-metadata";
 import { HistoryConfig } from "./config";
+import { retainPendingRecalls } from "./manual-recall";
 import {
     AgentActionLog,
     AgentHeartbeatLog,
@@ -96,13 +97,20 @@ export class InteractionManager {
         });
     }
 
-    public async recordThought(turnId: string, platform: string, channelId: string, thoughts: AgentThoughtLog["thoughts"]): Promise<void> {
+    public async recordThought(
+        turnId: string,
+        platform: string,
+        channelId: string,
+        thoughts: AgentThoughtLog["thoughts"],
+        consumedRecallIds?: string[],
+    ): Promise<void> {
         const logEntry: AgentThoughtLog = {
             type: "agent_thought",
             id: uuidv4(),
             turnId,
             timestamp: new Date().toISOString(),
             thoughts,
+            ...(consumedRecallIds?.length ? { consumedRecallIds } : {}),
         };
         await this.appendToLog(platform, channelId, logEntry);
     }
@@ -112,6 +120,7 @@ export class InteractionManager {
         platform: string,
         channelId: string,
         action: { function: string; params: Record<string, unknown> },
+        consumedRecallIds?: string[],
     ): Promise<string> {
         const actionId = uuidv4();
         const logEntry: AgentActionLog = {
@@ -121,6 +130,7 @@ export class InteractionManager {
             timestamp: new Date().toISOString(),
             function: action.function,
             params: action.params,
+            ...(consumedRecallIds?.length ? { consumedRecallIds } : {}),
         };
         await this.appendToLog(platform, channelId, logEntry);
         return actionId;
@@ -174,7 +184,7 @@ export class InteractionManager {
                     // 坏行不应使同一文件中的有效记录全部丢失。
                 }
             }
-            return history.slice(-limit);
+            return retainPendingRecalls(history, limit);
         } catch (error) {
             if (error.code === "ENOENT") return [];
             this.logger.error(`读取Agent日志失败: ${filePath}`, error);
@@ -282,7 +292,7 @@ export class InteractionManager {
 
         combinedEvents.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
-        return combinedEvents.slice(-limit);
+        return retainPendingRecalls(combinedEvents, limit);
     }
 
     private logEntryToHistoryItem(entry: InteractionLogEntry): L1HistoryItem {
@@ -296,6 +306,7 @@ export class InteractionManager {
                     observe: entry.thoughts.observe,
                     analyze_infer: entry.thoughts.analyze_infer,
                     plan: entry.thoughts.plan,
+                    consumedRecallIds: entry.consumedRecallIds,
                 };
             case "agent_action":
                 return {
@@ -304,6 +315,7 @@ export class InteractionManager {
                     timestamp,
                     function: entry.function,
                     params: entry.params,
+                    consumedRecallIds: entry.consumedRecallIds,
                 };
             case "agent_observation":
                 return {
@@ -313,6 +325,7 @@ export class InteractionManager {
                     function: entry.function,
                     status: entry.status,
                     result: entry.result,
+                    manualRecall: entry.manualRecall,
                     error: entry.error ? escapeEventData(entry.error) : undefined,
                 };
             case "agent_heartbeat":

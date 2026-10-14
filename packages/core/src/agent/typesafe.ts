@@ -1,6 +1,7 @@
 import { Context, Session } from "koishi";
 
 import { Config } from "../config";
+import { withUsageScope } from "../services/model/usage";
 import { Services, TableName } from "../shared/constants";
 
 const positive = (n: number) => Math.max(0, n * 2 - 1);
@@ -107,7 +108,9 @@ export class TypeSafeEvaluator {
             state.recentMessages.reverse();
         }
         if (signal.aborted) return null;
-        const result = await model.evaluate(state, questions, signal, config.timeoutMs);
+        const result = await withUsageScope({ platform: session.platform, botId: session.selfId, target: session.channelId, purpose: "接话评估" }, () =>
+            model.evaluate(state, questions, signal, config.timeoutMs),
+        );
         if (signal.aborted) return null;
         const { addressed, interested, others } = result.answers;
         onAnswers?.({ addressed: addressed.noul, interested: interested.noul, others: others.noul });

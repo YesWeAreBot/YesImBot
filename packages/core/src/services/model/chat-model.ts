@@ -6,9 +6,10 @@ import { Context } from "koishi";
 import { generateText, streamText } from "../../dependencies/xsai";
 import { AppError, ErrorDefinitions } from "../../shared/errors";
 import { isEmpty, isNotEmpty, JsonParser, toBoolean } from "../../shared/utils";
-import { BaseModel } from "./base-model";
+import { BaseModel, formatModelIdentity } from "./base-model";
 import { ModelAbility, ModelConfig } from "./config";
 import { StreamDiagnostics } from "./stream-diagnostics";
+import { observeUsageFetch } from "./usage";
 
 /**
  * 验证器函数的返回值
@@ -41,6 +42,10 @@ export interface ValidationOptions {
     validator?: ContentValidator;
 }
 export interface ChatRequestOptions {
+    /** 本地诊断用途，不发送给服务商。 */
+    requestPurpose?: string;
+    /** 原生工具调用不可用时使用的完整 JSON 请求，仅由模型切换器消费。 */
+    nativeToolCallingFallback?: ChatRequestOptions;
     singleStep?: boolean;
     abortSignal?: AbortSignal;
     onStreamStart?: () => void;
@@ -70,7 +75,8 @@ export class ChatModel extends BaseModel implements IChatModel {
         modelConfig: ModelConfig,
         private readonly fetch: typeof globalThis.fetch,
     ) {
-        super(ctx, modelConfig, `[聊天模型] [${modelConfig.modelId}]`);
+        super(ctx, modelConfig, `[聊天模型] ${formatModelIdentity(modelConfig)}`);
+        this.fetch = observeUsageFetch(ctx, { provider: modelConfig.providerName ?? "未知", model: this.id, purpose: "对话" }, fetch);
         this.parseCustomParameters();
     }
 
@@ -122,16 +128,20 @@ export class ChatModel extends BaseModel implements IChatModel {
         const requestId = `chat-${++ChatModel.requestSequence}`;
         const chatOptions = this.buildChatOptions(options);
 
-        this.logger.info(`🚀 [请求开始] [${requestId}] [${useStream ? "流式" : "非流式"}] 模型: ${this.id}`);
+        this.logger.info(`🚀 [请求开始] [${requestId}] [${useStream ? "流式" : "非流式"}] 模型: ${this.id} | 用途: ${options.requestPurpose ?? "未标注"}`);
 
         try {
             return useStream
                 ? await this._executeStream(chatOptions, options.onStreamStart, options.validation, requestId)
-                : await this._executeNonStream(chatOptions, options.singleStep);
+                : await this._executeNonStream(chatOptions, options.singleStep, options.validation, requestId);
         } catch (error) {
             this.logger.debug(
                 `[${requestId}] 请求异常 | 类型: ${error.name} | 错误码: ${error.code ?? "未知"} | 已取消: ${options.abortSignal?.aborted ?? false}`,
             );
+            if (options.abortSignal?.aborted && options.abortSignal.reason?.name !== "TimeoutError") {
+                this.logger.debug(`[${requestId}] 调用方已取消请求 | 用途: ${options.requestPurpose ?? "未标注"} | 不作为服务商故障重试`);
+                throw options.abortSignal.reason ?? error;
+            }
             return await this._wrapAndThrow(error, chatOptions);
         }
     }
@@ -145,8 +155,8 @@ export class ChatModel extends BaseModel implements IChatModel {
         // 1. 模型配置中的基础参数 (temperature, topP)
         // 2. 模型配置中的自定义参数 (this.customParameters)
         // 3. 运行时传入的参数 (options)
-        const { validation, onStreamStart, abortSignal, singleStep, ...restOptions } = options;
-        return {
+        const { validation, onStreamStart, abortSignal, singleStep, nativeToolCallingFallback, requestPurpose, ...restOptions } = options;
+        const chatOptions: ChatOptions = {
             ...this.chatProvider(this.config.modelId),
             abortSignal,
             fetch: async (url: any, init: any) => {
@@ -162,12 +172,33 @@ export class ChatModel extends BaseModel implements IChatModel {
             // 运行时参数 (会覆盖上面的默认值)
             ...restOptions,
         };
+        if (this.config.disableNativeToolCalling) {
+            // 最后过滤，避免自定义参数或调用方重新启用不支持的 API 特性。
+            for (const key of [
+                "tools",
+                "toolChoice",
+                "tool_choice",
+                "functions",
+                "functionCall",
+                "function_call",
+                "parallelToolCalls",
+                "parallel_tool_calls",
+            ]) {
+                delete chatOptions[key];
+            }
+        }
+        return chatOptions;
     }
 
     /**
      * 执行非流式请求
      */
-    private async _executeNonStream(chatOptions: ChatOptions, singleStep = false): Promise<GenerateTextResult> {
+    private async _executeNonStream(
+        chatOptions: ChatOptions,
+        singleStep = false,
+        validation?: ValidationOptions,
+        requestId?: string,
+    ): Promise<GenerateTextResult> {
         const stime = Date.now();
         let result: GenerateTextResult;
         try {
@@ -185,12 +216,21 @@ export class ChatModel extends BaseModel implements IChatModel {
             if (!(error instanceof SingleStepComplete)) throw error;
             result = { ...error.step, steps: [error.step], messages: [], text: error.step.text ?? "" } as GenerateTextResult;
         }
+        const validator = this._getValidator(validation);
+        if (validator && !result.toolCalls?.length) {
+            const finalValidation = validator(result.text ?? "", true);
+            if (!finalValidation.valid) {
+                throw new AppError(ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED, {
+                    context: { rawResponse: result.text, details: finalValidation.error || "格式不匹配或模型未输出有效内容" },
+                });
+            }
+        }
         const duration = Date.now() - stime;
 
         const logMessage = result.toolCalls?.length
             ? `工具调用: "${result.toolCalls.map((tc) => tc.toolName).join(", ")}"`
             : `文本长度: ${result.text?.length ?? 0}`;
-        this.logger.success(`✅ [请求成功] [非流式] ${logMessage} | 耗时: ${duration}ms`);
+        this.logger.success(`✅ [传输完成] [${requestId}] [非流式] ${logMessage} | 耗时: ${duration}ms | 结束原因: ${result.finishReason ?? "未知"}`);
         return result;
     }
 
@@ -365,7 +405,11 @@ export class ChatModel extends BaseModel implements IChatModel {
                 throw error; // 重新抛出其他未预料的错误
             }
         } finally {
-            this.logger.debug(`[${requestId}] 流式汇总 | ${JSON.stringify(diagnostics.summary())}`);
+            const summary = diagnostics.summary();
+            this.logger.debug(
+                `[${requestId}] 响应概况 | 耗时: ${summary.elapsedMs}ms | 首包: ${summary.firstChunkMs ?? "未知"}ms | 正文: ${summary.contentChars}字 | 推理: ${summary.reasoningChars}字 | 结束原因: ${summary.finishReason ?? "未知"} | 结束帧: ${summary.done ? "已收到" : "未收到"}`,
+            );
+            this.logger.debug(`[${requestId}] 流式汇总 | ${JSON.stringify(summary)}`);
         }
 
         const duration = Date.now() - stime;
@@ -446,7 +490,7 @@ export class ChatModel extends BaseModel implements IChatModel {
         }
 
         // 2. 处理 AbortError，通常由超时引起
-        if (error.name === "AbortError" || error.message === "timeout") {
+        if (error.name === "AbortError" || error.name === "TimeoutError" || error.message === "timeout") {
             const duration = error.duration ? ` (${error.duration}s)` : "";
             this.logger.error(`🛑 [错误] 请求超时${duration} | 模型: ${this.id}`);
             throw new AppError(ErrorDefinitions.LLM.TIMEOUT, { cause: error, context });

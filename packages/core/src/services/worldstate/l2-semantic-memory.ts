@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from "uuid";
 import { IEmbedModel, TaskType } from "../../services/model";
 import { Services, TableName } from "../../shared/constants";
 import { cosineSimilarity } from "../../shared/utils";
+import { withUsageScope } from "../model/usage";
 import { HistoryConfig } from "./config";
 import { ContextualMessage, HistoryChannelType, MemoryChunkData, MessageData } from "./types";
 
@@ -187,6 +188,7 @@ export class SemanticMemoryManager {
 
     private async indexMessageBatch(messages: MessageData[]): Promise<void> {
         if (!this.embedModel || messages.length === 0) return;
+        const embedModel = this.embedModel;
 
         const firstEvent = messages[0];
         const lastEvent = messages[messages.length - 1];
@@ -198,7 +200,7 @@ export class SemanticMemoryManager {
         const conversationText = this.compileEventsToText(messages);
 
         try {
-            const embedding = await this.embedModel.embed(conversationText);
+            const embedding = await withUsageScope({ platform, target: channelId, purpose: "L2记忆索引" }, () => embedModel.embed(conversationText));
             const memoryChunk: MemoryChunkData = {
                 id: uuidv4(),
                 platform,
@@ -234,9 +236,12 @@ export class SemanticMemoryManager {
     ): Promise<Array<MemoryChunkData & { similarity: number }>> {
         const k = options?.k ?? 5;
         if (!this.embedModel || k <= 0) return [];
+        const embedModel = this.embedModel;
         const minAllowedSim = this.config.l2_memory.retrievalMinSimilarity ?? 0.5;
 
-        const queryEmbedding = await this.embedModel.embed(queryText);
+        const queryEmbedding = await withUsageScope({ platform: options?.platform, target: options?.channelId, purpose: "L2记忆检索" }, () =>
+            embedModel.embed(queryText),
+        );
         const expectedDim = queryEmbedding.embedding.length;
 
         const allChunks = await this.ctx.database.get(TableName.L2Chunks, {
@@ -436,7 +441,9 @@ export class SemanticMemoryManager {
                 try {
                     const generation = this.generation(chunk, generations);
                     if (this.generation(chunk) !== generation) continue;
-                    const result = await this.embedModel!.embed(chunk.content);
+                    const result = await withUsageScope({ platform: chunk.platform, target: chunk.channelId, purpose: "L2索引重建" }, () =>
+                        this.embedModel!.embed(chunk.content),
+                    );
                     if (
                         await this.writeMemory(chunk, generation, () =>
                             this.ctx.database.set(TableName.L2Chunks, { id: chunk.id }, { embedding: result.embedding }),

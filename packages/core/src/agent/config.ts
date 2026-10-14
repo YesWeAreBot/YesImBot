@@ -39,6 +39,7 @@ export const ArousalConfigSchema: Schema<ArousalConfig> = Schema.object({
             id: Schema.string().required().description("频道或用户 ID"),
         }).description("响应频道"),
     )
+        .role("table")
         .default([{ platform: "onebot", type: "guild", id: "*" }])
         .description("允许 Agent 响应的频道。使用 * 作为通配符"),
     prioritizeMentions: Schema.boolean()

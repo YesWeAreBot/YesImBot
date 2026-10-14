@@ -55,7 +55,11 @@ export class ToolService extends Service<Config> {
         return Object.freeze({ trustedToolSession: 1 as const });
     }
 
-    static readonly inject = [Services.Logger, Services.Prompt];
+    static readonly inject = {
+        [Services.Logger]: { required: true },
+        [Services.Prompt]: { required: true },
+        [Services.WorldState]: { required: false },
+    };
     private tools: Map<string, ToolDefinition> = new Map();
     private extensions: Map<string, IExtension> = new Map();
 
@@ -482,28 +486,33 @@ export class ToolService extends Service<Config> {
         if (session?.platform && session.channelId && world?.recordSystemEvent) {
             try {
                 const admin = session.argv?.command?.name === "tool.call";
-                await world.recordSystemEvent({
-                    id: requestId,
-                    platform: session.platform,
-                    channelId: session.channelId,
-                    eventScope: "channel",
-                    type: "tool-result",
-                    timestamp: new Date(),
-                    payload: {
-                        requestId,
-                        actor: admin ? `admin:${session.platform}:${session.userId}` : "model",
-                        requester: session.userId,
-                        operation: functionName,
-                        scope: "channel",
-                        origin: { platform: session.platform, selfId: session.selfId, adapter: session.bot?.platform, channelId: session.channelId },
-                        target: { platform: session.platform, selfId: session.selfId, channelId: session.channelId },
-                        startedAt: startedAt.toISOString(),
-                        finishedAt: new Date().toISOString(),
-                        status: result.status,
-                        receipt: JSON.stringify(sanitizeDiagnostic(result)).slice(0, 2000),
+                const historyGeneration = Number.isSafeInteger(result.result?.historyGeneration) ? result.result.historyGeneration : undefined;
+                const recorded = await world.recordSystemEvent(
+                    {
+                        id: requestId,
+                        platform: session.platform,
+                        channelId: session.channelId,
+                        eventScope: "channel",
+                        type: "tool-result",
+                        timestamp: new Date(),
+                        payload: {
+                            requestId,
+                            actor: admin ? `admin:${session.platform}:${session.userId}` : "model",
+                            requester: session.userId,
+                            operation: functionName,
+                            scope: "channel",
+                            origin: { platform: session.platform, selfId: session.selfId, adapter: session.bot?.platform, channelId: session.channelId },
+                            target: { platform: session.platform, selfId: session.selfId, channelId: session.channelId },
+                            startedAt: startedAt.toISOString(),
+                            finishedAt: new Date().toISOString(),
+                            status: result.status,
+                            receipt: JSON.stringify(sanitizeDiagnostic(result)).slice(0, 2000),
+                        },
+                        message: "框架工具调用已返回；记录的状态是工具回执，不代表所有外部副作用均已核实。",
                     },
-                    message: "框架工具调用已返回；记录的状态是工具回执，不代表所有外部副作用均已核实。",
-                });
+                    historyGeneration,
+                );
+                if (recorded === false && historyGeneration !== undefined) return Failed("召回后历史已清除，请重新召回");
             } catch (error) {
                 this._logger.warn(`工具结果事件投递失败：${String(error)}`);
             }

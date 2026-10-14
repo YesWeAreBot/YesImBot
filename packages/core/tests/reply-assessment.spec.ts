@@ -100,3 +100,24 @@ it("does not replay an assessment that was cancelled by resume", async () => {
     expect(test.calculations).toEqual([]);
     expect(test.scheduled).toEqual([]);
 });
+
+it("keeps an accepted reply when a newer message replaces its pending assessment", async () => {
+    const t = await setup();
+    t.core.receiveStimulus({ type: "user_message", session: { ...t.session, messageId: "newer", content: "next" } });
+    expect(t.scheduled).toHaveLength(1);
+    expect(t.scheduled[0].session.messageId).toBe("incoming");
+    t.core.cancelAssessment(t.key, false);
+    t.release();
+    await settle();
+    expect(t.scheduled).toHaveLength(1);
+    expect(t.calculations).toHaveLength(1);
+});
+
+it("settlement at reply start cannot schedule another reply", async () => {
+    const t = await setup();
+    t.core.cancelAssessment(t.key);
+    expect(t.calculations).toHaveLength(1);
+    expect(t.scheduled).toHaveLength(0);
+    t.release();
+    await settle();
+});

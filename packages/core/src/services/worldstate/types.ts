@@ -98,6 +98,7 @@ export interface AgentResponse {
 
 /** 交互日志中 Agent 思考事件的结构 */
 export interface AgentThoughtLog {
+    consumedRecallIds?: string[];
     type: "agent_thought";
     id: string; // 思考事件的唯一ID
     turnId: string; // 关联的 Agent 回合ID
@@ -107,6 +108,7 @@ export interface AgentThoughtLog {
 
 /** 交互日志中 Agent 动作事件的结构 */
 export interface AgentActionLog {
+    consumedRecallIds?: string[];
     type: "agent_action";
     id: string; // 动作的唯一ID
     turnId: string; // 关联的 Agent 回合ID
@@ -126,6 +128,8 @@ export interface AgentObservationLog {
     status: "success" | "failed" | string;
     result?: any;
     error?: any;
+    /** Administrator recall input; consumption is acknowledged by its request snapshot. */
+    manualRecall?: true;
 }
 
 export interface AgentHeartbeatLog {
@@ -183,6 +187,8 @@ export interface MemoryChunkData {
 export interface DiaryEntryData {
     id: string;
     date: string; // 'YYYY-MM-DD'
+    generatedAt?: Date;
+    sourceMessageCount?: number;
     platform: string;
     channelId: string;
     content: string; // 第一人称日记
@@ -219,6 +225,7 @@ export interface ContextualSystemEvent {
 /** Agent 响应回合在上下文中的表现形式（支持优雅降级） */
 /** 上下文中的 Agent 思考对象 */
 export interface ContextualAgentThought {
+    consumedRecallIds?: string[];
     type: "agent_thought";
     turnId: string;
     timestamp: Date;
@@ -230,6 +237,7 @@ export interface ContextualAgentThought {
 
 /** 上下文中的 Agent 动作对象 */
 export interface ContextualAgentAction {
+    consumedRecallIds?: string[];
     type: "agent_action";
     turnId: string;
     timestamp: Date;
@@ -247,6 +255,7 @@ export interface ContextualAgentObservation {
     function: string;
     status: "success" | "failed" | string;
     result?: any;
+    manualRecall?: true;
     is_new?: boolean;
 }
 

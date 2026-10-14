@@ -111,7 +111,10 @@ export class AgentCore extends Service<Config> {
         pending.controller.abort();
         this.recordDecision(pending.stimulus, { assessment: { mode: this.config.typesafe?.mode ?? "off", multiplier: null, status: "cancelled" } });
         if (settle && this.replyControl.valid(this.replyTarget(pending.stimulus.session), pending.token)) {
-            this.processStimulus(pending.stimulus, 1, false);
+            this.logger.debug(
+                `[${channelCid}] 评估等待已取消 | 原因: ${reason === "new_message" ? "同群新消息到来，保留已成立的回复触发" : "仅结算意愿，不恢复旧任务"}`,
+            );
+            this.processStimulus(pending.stimulus, 1, reason === "new_message");
         } else this.recordDecision(pending.stimulus, { stage: "cancelled", reason });
     }
 
@@ -132,7 +135,7 @@ export class AgentCore extends Service<Config> {
             this.topics?.noteMessage(session, channelCid);
             this.scheduler.noteUserMessage(channelCid);
         }
-        this.cancelAssessment(channelCid);
+        this.cancelAssessment(channelCid, true, type === "user_message" ? "new_message" : "system_stimulus");
         const config = this.config.typesafe;
         const addressed = session?.isDirect || isBotMention(session);
         const useTypeSafe = config && config.mode !== "off" && config.evaluationModel?.providerName && config.evaluationModel.modelId;
@@ -431,8 +434,14 @@ export class AgentCore extends Service<Config> {
                     reason: forcedMention ? "forced_reply_by_mention" : result.probability === 0 ? "below_threshold" : "probability_roll",
                 });
 
+                if (result.calculation) {
+                    const c = result.calculation;
+                    this.logger.debug(
+                        `[${channelCid}] 意愿增益明细 | 消息ID: ${session.messageId ?? "未知"} | 关键词/兴趣倍率: ${c.interestMultiplier} | 语义评估倍率: ${c.assessmentMultiplier} | 动态倍率: ${c.dynamicMultiplier} | 最终增益: ${c.effectiveGain} | 抽签值: ${result.roll ?? "未抽签"}`,
+                    );
+                }
                 /* prettier-ignore */
-                this.logger.debug(`[${channelCid}] 意愿计算: ${willingnessBefore.toFixed(2)} -> ${willingnessAfter.toFixed(2)} | 回复概率: ${(result.probability * 100).toFixed(1)}% | 初步决策: ${decision}`);
+                this.logger.debug(`[${channelCid}] 意愿计算: ${willingnessBefore.toFixed(2)} -> ${willingnessAfter.toFixed(2)} | 回复概率: ${(result.probability * 100).toFixed(1)}% | 初步决策: ${decision} | 处理: ${!allowSchedule ? "仅结算，不调度" : decision ? "准备提交调度" : "未达到回复条件"} | 消息ID: ${session.messageId ?? "未知"}`);
             } catch (error) {
                 this.recordDecision(stimulus, { stage: "failed", reason: "exception" });
                 handleError(
@@ -470,8 +479,11 @@ export class AgentCore extends Service<Config> {
         this.topics?.dispose();
         this.scheduler.dispose();
         this.willing.stopDecayCycle();
-        await this.replyControl.flush();
-        await this.decisionJournal?.close();
+        try {
+            await this.replyControl.flush();
+        } finally {
+            await this.decisionJournal?.close();
+        }
     }
 
     private clearTopicScores(channelKey: string): void {

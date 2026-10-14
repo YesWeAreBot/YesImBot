@@ -1,9 +1,9 @@
 import { Context, Schema, h, type Session } from "koishi";
 
-import { renderPeople, identityWarning } from "./context";
+import { identityWarning, renderPeople } from "./context";
 import { applySharedMemory } from "./shared-runtime";
-import { PersonStore, registerModels, sceneKey, type Mode, type Person, type Proposal, type LinkProposal, type SceneInput, type Audit } from "./store";
-import { SummaryWorker, type SummaryModel } from "./worker";
+import { PersonStore, registerModels, sceneKey, type Audit, type LinkProposal, type Mode, type Person, type Proposal, type SceneInput } from "./store";
+import { SummaryWorker, summaryResponseText, type SummaryModel } from "./worker";
 
 declare module "koishi" {
     interface Events {
@@ -22,6 +22,7 @@ export interface Config {
     cooldownSeconds: number;
     timeoutSeconds: number;
     maxQueue: number;
+    summaryMaxTokens?: number;
     sharedMemory?: boolean;
     memoryDomain?: string;
     recallScope?: "current" | "mind";
@@ -59,6 +60,11 @@ export const Config: Schema<Config> = Schema.intersect([
         modelGroup: Schema.string().default("").description("后台总结使用的 YIB 模型组；留空不调用后台模型，仍可人工编辑和审核模型工具提交的候选"),
         summaryThreshold: Schema.number().min(2).max(100).step(1).default(6).description("同一账号累计多少条新消息后尝试总结"),
         cooldownSeconds: Schema.number().min(30).max(86400).default(600).description("同一场景账号两次自动总结至少间隔的秒数"),
+        summaryMaxTokens: Schema.natural()
+            .min(128)
+            .max(32768)
+            .default(4096)
+            .description("后台总结最大输出 token 数，推理模型可能将推理计入此预算；达到上限时不会接受不完整画像"),
         timeoutSeconds: Schema.number().min(5).max(120).default(30).description("一次后台总结超时秒数"),
         maxQueue: Schema.number().min(1).max(100).step(1).default(32).description("待总结任务上限；全局同时运行一个任务"),
     })
@@ -76,6 +82,7 @@ interface Prompt {
 }
 interface Models {
     useChatGroup(name: string): { chat(options: any): Promise<{ text?: string }> } | undefined;
+    withUsageScope?<T>(scope: NonNullable<Parameters<SummaryModel>[2]>, callback: () => T): T;
 }
 interface Dependencies {
     "yesimbot.tool": Tools;
@@ -196,11 +203,22 @@ export function apply(ctx: Context, config: Config) {
     const allowed = (session: Session) => active && ctx.filter(session) && deps["yesimbot.world-state"].isChannelAllowed(session);
     let model: SummaryModel | undefined;
     if (config.modelGroup)
-        model = async (messages, signal) => {
+        model = async (messages, signal, attribution) => {
             const group = deps["yesimbot.model"]?.useChatGroup(config.modelGroup);
             if (!group) throw new Error("总结模型组不存在或模型服务不可用");
-            const result = await group.chat({ messages, abortSignal: signal, singleStep: true, stream: false, temperature: 0.2, maxTokens: 1800 });
-            return result.text || "";
+            const request = () =>
+                group.chat({
+                    messages,
+                    abortSignal: signal,
+                    singleStep: true,
+                    stream: false,
+                    temperature: 0.2,
+                    maxTokens: config.summaryMaxTokens ?? 4096,
+                    requestPurpose: "人物记忆总结",
+                });
+            const models = deps["yesimbot.model"];
+            const result = await (models?.withUsageScope ? models.withUsageScope(attribution || { purpose: "人物记忆摘要" }, request) : request());
+            return summaryResponseText(result, config.summaryMaxTokens ?? 4096);
         };
     const worker = new SummaryWorker(
         store,

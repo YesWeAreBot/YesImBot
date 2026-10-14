@@ -5,6 +5,7 @@ import { HistoryConfig } from "./config";
 import { InteractionManager } from "./interaction-manager";
 import { SemanticMemoryManager } from "./l2-semantic-memory";
 import { ArchivalMemoryManager } from "./l3-archival-memory";
+import { manualRecallOwners } from "./manual-recall";
 import { diaryDateKey } from "./memory-date";
 import { ContextualMessage, DiaryEntryData, L1HistoryItem, RetrievedMemoryChunk, WorldState } from "./types";
 
@@ -125,10 +126,12 @@ export class ContextBuilder {
     private applyGracefulDegradation(history: L1HistoryItem[]): L1HistoryItem[] {
         const turnIdsToKeep = new Set<string>();
         const turnIdsToDrop = new Set<string>();
+        const manualOwners = manualRecallOwners(history);
 
         // 从后往前遍历，找到超出保留数量的思考事件，并记录它们的 turnId
         for (let i = history.length - 1; i >= 0; i--) {
             const item = history[i];
+            if (manualOwners.has(item)) continue;
             if (item.type === "agent_thought" || item.type === "agent_action" || item.type === "agent_observation") {
                 if (turnIdsToKeep.size < this.config.l1_memory.keepFullTurnCount) {
                     turnIdsToKeep.add(item.turnId);
@@ -140,12 +143,12 @@ export class ContextBuilder {
             }
         }
 
-        if (turnIdsToDrop.size === 0) {
-            return history;
-        }
-
         // 返回一个新数组，其中不包含属于要删除的 turnId 的所有事件
         return history.filter((item) => {
+            if (manualOwners.has(item)) {
+                const owner = manualOwners.get(item);
+                return owner === undefined || turnIdsToKeep.has(owner);
+            }
             if (item.type === "agent_thought" || item.type === "agent_action" || item.type === "agent_observation") {
                 const turnId = item.turnId;
                 return !turnIdsToDrop.has(turnId);
@@ -191,10 +194,22 @@ export class ContextBuilder {
 
     private async retrieveL3Memories(platform: string, channelId: string): Promise<DiaryEntryData[]> {
         if (!this.config.l3_memory.enabled) return [];
-        // Example: retrieve yesterday's diary
-        const yesterday = new Date();
+        const today = new Date();
+        const yesterday = new Date(today);
         yesterday.setDate(yesterday.getDate() - 1);
-        return this.ctx.database.get(TableName.L3Diaries, { platform, channelId, date: diaryDateKey(yesterday) });
+        const dates = [diaryDateKey(yesterday)];
+        if ((this.config.l3_memory.messageThreshold ?? 0) > 0) dates.push(diaryDateKey(today));
+        const pages = await Promise.all(dates.map((date) => this.ctx.database.get(TableName.L3Diaries, { platform, channelId, date })));
+        // Automatic context needs one current version per day; explicit recall retains all versions.
+        return pages.flatMap((entries) => {
+            const latest = entries.sort(
+                (a, b) =>
+                    new Date(b.generatedAt ?? 0).getTime() - new Date(a.generatedAt ?? 0).getTime() ||
+                    (b.sourceMessageCount ?? 0) - (a.sourceMessageCount ?? 0) ||
+                    b.id.localeCompare(a.id),
+            )[0];
+            return latest ? [latest] : [];
+        });
     }
 
     private async getChannelInfo(session: Session) {
