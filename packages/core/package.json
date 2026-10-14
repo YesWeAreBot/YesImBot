@@ -58,6 +58,7 @@
   },
   "devDependencies": {
     "@koishijs/client": "^5.30.11",
+    "@koishijs/plugin-console": "^5.30.4",
     "@koishijs/plugin-notifier": "^1.2.1",
     "@minatojs/driver-sqlite": "^4.7.0",
     "@types/semver": "^7",

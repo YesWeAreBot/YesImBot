@@ -1,5 +1,6 @@
 import path from "node:path";
 
+import {} from "@koishijs/plugin-console";
 import {} from "@koishijs/plugin-notifier";
 import { Context, ForkScope, Service } from "koishi";
 
