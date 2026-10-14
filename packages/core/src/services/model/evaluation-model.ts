@@ -1,3 +1,4 @@
+import type { UsageOwner } from "./usage-owner";
 import { observeUsageFetch } from "./usage";
 import { Context } from "koishi";
 import { BaseModel, formatModelIdentity } from "./base-model";
@@ -9,10 +10,11 @@ export class EvaluationModel extends BaseModel {
         ctx: Context,
         private readonly provider: (model: string) => EvaluationRequestOptions,
         config: ModelConfig,
-        private readonly fetch: typeof globalThis.fetch
+        private readonly fetch: typeof globalThis.fetch,
+        usageOwner?: UsageOwner
     ) {
         super(ctx, config, `[评估模型] ${formatModelIdentity(config)}`);
-        this.fetch = observeUsageFetch(ctx, { provider: config.providerName ?? "未知", model: this.id, purpose: "评估" }, fetch);
+        this.fetch = observeUsageFetch(ctx, { provider: config.providerName ?? "未知", model: this.id, purpose: "评估" }, fetch, usageOwner);
     }
 
     public evaluate<Q extends EvaluationQuestions>(state: unknown, questions: Q, signal?: AbortSignal, timeoutMs = 3000): Promise<EvaluationResult<Q>> {

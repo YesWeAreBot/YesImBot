@@ -133,7 +133,7 @@ export class ModelService extends Service<Config> {
 
             try {
                 const client = factory.createClient(providerConfig);
-                const instance = new ProviderInstance(this.ctx, providerConfig, client);
+                const instance = new ProviderInstance(this.ctx, providerConfig, client, this.usageOwner);
                 this.providerInstances.set(instance.name, instance);
                 this.logger.success(`✅ 初始化成功 | 提供商: ${providerId} | 共 ${providerConfig.models.length} 个模型`);
             } catch (error) {
@@ -301,7 +301,7 @@ export class ModelService extends Service<Config> {
     }
 
     protected async start(): Promise<void> {
-        await getUsageLedger(this.ctx).ready();
+        await getUsageLedger(this.ctx, this.usageOwner).ready();
         for (const provider of this.config.providers) {
             for (const model of provider.models) {
                 if (model.contextLimit?.mode === "auto") void this.getContextLimit(provider.name, model.modelId).catch(() => {});

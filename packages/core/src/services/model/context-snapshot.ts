@@ -1,3 +1,4 @@
+import { resolveUsageOwner, UsageOwner } from "./usage-owner";
 import { Context } from "koishi";
 import { estimateTokensByRegex } from "../../shared/utils/toolkit";
 
@@ -20,8 +21,8 @@ const MAX_ENTRIES = 128;
 export const MAX_CONTEXT_SNAPSHOT_BYTES = 2 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 16 * 1024 * 1024;
 // A Context inherited by a command and a provider must resolve the same instance.
-function owner(ctx: Context): object {
-    return (ctx as any)["yesimbot.model"]?.usageOwner ?? ctx;
+function owner(ctx: Context, explicitOwner?: UsageOwner): object {
+    return resolveUsageOwner(ctx, explicitOwner) ?? ctx;
 }
 
 export function captureContextSnapshot(
@@ -29,9 +30,10 @@ export function captureContextSnapshot(
     metadata: { platform?: string; botId?: string; target?: string; provider: string; model: string; purpose?: string },
     payload: unknown,
     period: string,
-    unavailable?: string
+    unavailable?: string,
+    explicitOwner?: UsageOwner
 ): void {
-    const identity = owner(ctx);
+    const identity = owner(ctx, explicitOwner);
     let store = stores.get(identity);
     if (!store) stores.set(identity, (store = new Map()));
     const key = JSON.stringify([metadata.platform, metadata.botId, metadata.target, metadata.provider, metadata.model, metadata.purpose]);
@@ -87,10 +89,10 @@ export function captureContextSnapshot(
     }
 }
 
-export function getContextSnapshots(ctx: Context): ContextSnapshot[] {
-    return [...(stores.get(owner(ctx))?.values() ?? [])].map((snapshot) => ({ ...snapshot }));
+export function getContextSnapshots(ctx: Context, explicitOwner?: UsageOwner): ContextSnapshot[] {
+    return [...(stores.get(owner(ctx, explicitOwner))?.values() ?? [])].map((snapshot) => ({ ...snapshot }));
 }
 
-export function clearContextSnapshots(ctx: Context): void {
-    stores.delete(owner(ctx));
+export function clearContextSnapshots(ctx: Context, explicitOwner?: UsageOwner): void {
+    stores.delete(owner(ctx, explicitOwner));
 }

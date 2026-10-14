@@ -1,3 +1,4 @@
+import { resolveUsageOwner, UsageOwner } from "./usage-owner";
 import type { Context } from "koishi";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomUUID } from "node:crypto";
@@ -329,13 +330,11 @@ function warnUsage(ctx: Context, message: string): void {
         /* logging failure cannot affect a model request */
     }
 }
-function ownerContext(ctx: Context): Context {
-    return (ctx[Services.Model] as any)?.usageOwner?.context ?? ctx;
-}
-export function getUsageLedger(ctx: Context): UsageLedger {
-    const owner = ownerContext(ctx);
+export function getUsageLedger(ctx: Context, explicitOwner?: UsageOwner): UsageLedger {
+    const usageOwner = resolveUsageOwner(ctx, explicitOwner);
+    const owner = usageOwner?.context ?? ctx;
     if (typeof owner.baseDir !== "string" || !owner.baseDir) throw new Error("缺少插件数据目录，跳过用量统计");
-    const identity = (ctx[Services.Model] as any)?.usageOwner ?? ctx;
+    const identity = usageOwner ?? ctx;
     let ledger = ledgers.get(identity);
     if (ledger) return ledger;
     const keys: string[] = [];
@@ -369,7 +368,7 @@ export function getUsageLedger(ctx: Context): UsageLedger {
     ledger = new UsageLedger(
         path.join(owner.baseDir, "data", "yesimbot", "usage", `${digest}.json`),
         (message) => warnUsage(owner, message),
-        () => clearContextSnapshots(ctx)
+        () => clearContextSnapshots(ctx, usageOwner)
     );
     ledgers.set(identity, ledger);
     owner.on?.("dispose", () => ledger!.close());
@@ -377,11 +376,11 @@ export function getUsageLedger(ctx: Context): UsageLedger {
 }
 
 /** Observe each transport call, so SDK tool steps and retries each have a record. */
-export function observeUsageFetch(ctx: Context, metadata: UsageMetadata, fetch: typeof globalThis.fetch): typeof globalThis.fetch {
+export function observeUsageFetch(ctx: Context, metadata: UsageMetadata, fetch: typeof globalThis.fetch, explicitOwner?: UsageOwner): typeof globalThis.fetch {
     return (async (url, init) => {
         let ledger: UsageLedger, ticket: UsageTicket;
         try {
-            ledger = getUsageLedger(ctx);
+            ledger = getUsageLedger(ctx, explicitOwner);
             await ledger.ready();
             ticket = ledger.begin(metadata);
         } catch (error) {
@@ -401,7 +400,8 @@ export function observeUsageFetch(ctx: Context, metadata: UsageMetadata, fetch: 
                 ticket,
                 payload,
                 ticket.period,
-                oversized ? "请求上下文超过单条快照容量，未解析或保留正文；本地输入估算不可用" : undefined
+                oversized ? "请求上下文超过单条快照容量，未解析或保留正文；本地输入估算不可用" : undefined,
+                explicitOwner
             );
         } catch (error) {
             warnUsage(ctx, `请求上下文快照不可用: ${error.message}`);

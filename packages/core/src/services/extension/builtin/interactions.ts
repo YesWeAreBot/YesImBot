@@ -121,7 +121,7 @@ export default class InteractionsExtension {
 
     @Tool({
         name: "get_forward_msg",
-        description: `获取合并转发消息的内容，用于查看转发消息的详细信息，如结果仍包含一层，请自己决定是否继续获取。`,
+        description: `获取合并转发消息的内容，自动展开最多三层（含最外层）。无法展开的子转发保留标记及原因，平台未返回的内容无法恢复。`,
         parameters: withInnerThoughts({
             id: Schema.string().required().description("合并转发 ID，如在 `<forward id='12345'>` 中的 12345 即是其 ID"),
         }),
@@ -130,8 +130,18 @@ export default class InteractionsExtension {
     async getForwardMsg({ session, id }: Infer<{ id: string }>) {
         if (isEmpty(id)) return Failed("id is required");
         try {
-            const forwardMessages: unknown = await session.onebot.getForwardMsg(id);
-            const formattedResult = await formatForwardMessage(this.ctx, forwardMessages);
+            const cache = new Map<string, Promise<unknown>>();
+            const load = (forwardId: string): Promise<unknown> => {
+                let request = cache.get(forwardId);
+                if (!request) {
+                    if (cache.size >= 32) throw new Error("单次转发查询达到 32 个不同转发的上限");
+                    request = Promise.resolve().then(() => session.onebot.getForwardMsg(forwardId));
+                    cache.set(forwardId, request);
+                }
+                return request;
+            };
+            const forwardMessages = await load(id);
+            const formattedResult = await formatForwardMessage(this.ctx, forwardMessages, 1, load, new Set([id]));
 
             return Success(formattedResult);
         } catch (error) {
@@ -159,8 +169,10 @@ function forwardTime(value: unknown): string {
     return formatDate(date, "YYYY-MM-DD HH:mm:ss");
 }
 
-async function formatForwardMessage(ctx: Context, messages: unknown, depth = 0): Promise<string> {
-    if (depth > 8) throw new Error("转发消息嵌套深度超过 8 层");
+async function formatForwardMessage(
+    ctx: Context, messages: unknown, depth: number,
+    load: (id: string) => Promise<unknown>, ancestors: Set<string>
+): Promise<string> {
     if (!Array.isArray(messages)) throw new Error("转发消息列表缺失或无效");
     const formatted = await Promise.all(messages.map(async (input, index) => {
         if (!isRecord(input)) throw new Error(`转发消息第 ${index + 1} 个节点无效`);
@@ -192,10 +204,30 @@ async function formatForwardMessage(ctx: Context, messages: unknown, depth = 0):
                 }
                 case "reply":
                     return h("quote", { id: forwardId(element.attrs.id, "reply.id") }).toString();
-                case "forward":
-                    return h("forward", { id: forwardId(element.attrs.id, "forward.id") }).toString();
-                case "node":
-                    return formatForwardMessage(ctx, [{ type: "node", data: element.attrs }], depth + 1);
+                case "forward": {
+                    const id = forwardId(element.attrs.id, "forward.id");
+                    const marker = h("forward", { id }).toString();
+                    if (ancestors.has(id)) return `${marker}（循环引用，未继续展开）`;
+                    if (depth >= 3) return `${marker}（已达三层展开上限，含最外层）`;
+                    try {
+                        const nested = await load(id);
+                        if (nested === undefined || nested === null) return `${marker}（平台未提供子转发内容）`;
+                        const path = new Set(ancestors).add(id);
+                        const body = await formatForwardMessage(ctx, nested, depth + 1, load, path);
+                        return `${h("forward", { id, depth: depth + 1 }).toString().replace(/\/>$/, ">")}\n${body}\n</forward>`;
+                    } catch {
+                        // A broken subtree must not hide the readable siblings. Avoid
+                        // exposing transport errors which may include private URLs.
+                        return `${marker}（子转发获取失败或数据无效）`;
+                    }
+                }
+                case "node": {
+                    if (depth >= 3) return "<forward/>（已达三层展开上限，含最外层）";
+                    try {
+                        const body = await formatForwardMessage(ctx, [{ type: "node", data: element.attrs }], depth + 1, load, ancestors);
+                        return `<forward depth="${depth + 1}">\n${body}\n</forward>`;
+                    } catch { return "<forward/>（内嵌转发数据无效）"; }
+                }
                 default:
                     return h(element.type, element.attrs).toString();
             }

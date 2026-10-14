@@ -133,11 +133,12 @@ describe("get_forward_msg payload compatibility", () => {
         expect(result.error?.message).toContain("asset unavailable");
     });
 
-    it("rejects excessive nested nodes with a readable error", async () => {
+    it("retains the outer content and marks excessive nested nodes", async () => {
         let content: any[] = [text("deep")];
         for (let i = 0; i < 10; i++) content = [{ type: "node", data: { name: "Bob", uin: "456", content } }];
         const result = await getForward([{ sender, time, message: content }]);
-        expect(result.status).toBe("error");
-        expect(result.error?.message).toMatch(/嵌套|深度/);
+        expect(result.status).toBe("success");
+        expect(result.result).toContain("三层展开上限");
+        expect(result.result).not.toContain("deep");
     });
 });

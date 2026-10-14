@@ -1,3 +1,4 @@
+import type { UsageOwner } from "./usage-owner";
 import { observeUsageFetch } from "./usage";
 import type { ChatProvider } from "@xsai-ext/shared-providers";
 import type { GenerateTextResult } from "@xsai/generate-text";
@@ -73,10 +74,11 @@ export class ChatModel extends BaseModel implements IChatModel {
         ctx: Context,
         private readonly chatProvider: ChatProvider["chat"],
         modelConfig: ModelConfig,
-        private readonly fetch: typeof globalThis.fetch
+        private readonly fetch: typeof globalThis.fetch,
+        usageOwner?: UsageOwner
     ) {
         super(ctx, modelConfig, `[聊天模型] ${formatModelIdentity(modelConfig)}`);
-        this.fetch = observeUsageFetch(ctx, { provider: modelConfig.providerName ?? "未知", model: this.id, purpose: "对话" }, fetch);
+        this.fetch = observeUsageFetch(ctx, { provider: modelConfig.providerName ?? "未知", model: this.id, purpose: "对话" }, fetch, usageOwner);
         this.parseCustomParameters();
     }
 

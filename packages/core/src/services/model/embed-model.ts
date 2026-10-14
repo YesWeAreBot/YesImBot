@@ -1,3 +1,4 @@
+import type { UsageOwner } from "./usage-owner";
 import { observeUsageFetch } from "./usage";
 import type { EmbedProvider } from "@xsai-ext/shared-providers";
 import type { EmbedManyOptions, EmbedManyResult, EmbedOptions, EmbedResult } from "@xsai/embed";
@@ -17,10 +18,11 @@ export class EmbedModel extends BaseModel implements IEmbedModel {
         ctx: Context,
         private readonly embedProvider: EmbedProvider["embed"],
         modelConfig: ModelConfig,
-        private readonly fetch: typeof globalThis.fetch
+        private readonly fetch: typeof globalThis.fetch,
+        usageOwner?: UsageOwner
     ) {
         super(ctx, modelConfig, `[嵌入模型] ${formatModelIdentity(modelConfig)}`);
-        this.fetch = observeUsageFetch(ctx, { provider: modelConfig.providerName ?? "未知", model: this.id, purpose: "嵌入" }, fetch);
+        this.fetch = observeUsageFetch(ctx, { provider: modelConfig.providerName ?? "未知", model: this.id, purpose: "嵌入" }, fetch, usageOwner);
     }
 
     public async embed(text: string): Promise<EmbedResult> {
