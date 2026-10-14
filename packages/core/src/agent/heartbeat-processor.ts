@@ -186,6 +186,7 @@ export class HeartbeatProcessor {
         this.logger.info("步骤 5/7: 调用大语言模型...");
         assertReplyTurn();
         const llmRawResponse = await this.modelSwitcher.chat({
+                requestPurpose: "主对话",
             messages,
             abortSignal: replyTurnSignal(),
             validation: this.createJsonValidation(),
@@ -291,6 +292,7 @@ export class HeartbeatProcessor {
         try {
             assertReplyTurn();
             llmRawResponse = await this.modelSwitcher.chat({
+                requestPurpose: "主对话",
                 messages,
                 abortSignal: turnSignal,
                 stream: true,
@@ -427,6 +429,7 @@ export class HeartbeatProcessor {
         }));
         assertReplyTurn();
         const response = await this.modelSwitcher.chat({
+                requestPurpose: "主对话",
             messages: nativeMessages,
             nativeToolCallingFallback: {
                 messages,

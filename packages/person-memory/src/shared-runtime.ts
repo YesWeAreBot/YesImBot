@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { PersonStore, registerModels, mindScope, accountRef, sceneKey, type Mode, type Audit, type SceneInput } from "./store";
 import { summaryUnsafeIn, ContinuityStore, registerContinuityModels, sourceRef, type RecallTarget } from "./continuity";
 import { escapeContext } from "./context";
-import { SummaryWorker, type SummaryModel } from "./worker";
+import { SummaryWorker, summaryResponseText, type SummaryModel } from "./worker";
 import type { Config } from "./index";
 
 const success = (result: unknown) => ({ status: "success", result });
@@ -284,10 +284,8 @@ export function applySharedMemory(ctx: Context, config: Config) {
         model = async (messages, signal) => {
             const group = deps["yesimbot.model"]?.useChatGroup(config.modelGroup);
             if (!group) throw new Error("总结模型组不存在");
-            return (
-                (await group.chat({ messages, abortSignal: signal, singleStep: true, stream: false, temperature: 0.2, maxTokens: 1800 }))
-                    .text || ""
-            );
+            const result = await group.chat({ messages, abortSignal: signal, singleStep: true, stream: false, temperature: 0.2, maxTokens: config.summaryMaxTokens ?? 4096, requestPurpose: "人物记忆总结" });
+            return summaryResponseText(result, config.summaryMaxTokens ?? 4096);
         };
     const worker = new SummaryWorker(
         store,

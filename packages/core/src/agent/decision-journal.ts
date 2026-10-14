@@ -274,7 +274,24 @@ export class DecisionJournal {
             this.lock = await open(this.lockPath, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
         } catch (error) {
             if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-            this.warning("Decision journal directory is locked by another writer or an interrupted process; this instance's recording and queries are disabled. Stop all instances before manually removing .decisions.lock after an abnormal exit.");
+            let owner = "归属未知";
+            try {
+                const file = await open(this.lockPath, constants.O_RDONLY | constants.O_NOFOLLOW);
+                try {
+                    const stat = await file.stat();
+                    if (stat.isFile() && stat.size <= 1024) {
+                        const { pid } = JSON.parse(await file.readFile("utf8"));
+                        if (Number.isSafeInteger(pid) && pid > 0) {
+                            if (pid === process.pid) owner = `PID=${pid}，当前进程中的其他实例或重载任务占用`;
+                            else {
+                                try { process.kill(pid, 0); owner = `PID=${pid}，进程仍存在`; }
+                                catch (error) { owner = `PID=${pid}，${error.code === "ESRCH" ? "进程已退出，可能为遗留锁" : "无法确认进程状态"}`; }
+                            }
+                        }
+                    }
+                } finally { await file.close(); }
+            } catch { /* A malformed or unsafe lock must never be reclaimed automatically. */ }
+            this.warning(`决策记录目录被锁定 | ${owner} | 本实例的持久化记录与查询不可用，普通回复继续。多实例请分别配置目录；遗留锁仅在停止所有实例后手动清理 .decisions.lock。`);
             return;
         }
         await this.lock.writeFile(JSON.stringify({ pid: process.pid }) + "\n");
@@ -477,7 +494,7 @@ export class DecisionJournal {
             await unlink(this.lockPath);
         } catch {
             this.counts.writeFailures++;
-            this.warning("Decision journal lock release failed; recording may remain disabled on restart. Stop all instances before manually removing .decisions.lock.");
+            this.warning("决策记录锁释放失败；重启后记录可能仍不可用。请停止所有实例，再确认并手动清理 .decisions.lock。");
         }
     }
 

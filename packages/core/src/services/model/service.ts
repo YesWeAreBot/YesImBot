@@ -210,9 +210,28 @@ export class ModelService extends Service<Config> {
 
         const defaultGroup = this.config.modelGroups.find((g) => g.models.length > 0);
 
+        const supportsEmbedding = (group: typeof defaultGroup) => group.models.some((descriptor) => {
+            const provider = this.config.providers.find((p) => p.name === descriptor.providerName);
+            const model = provider?.models.find((m) => m.modelId === descriptor.modelId);
+            if (!model?.abilities.includes(ModelAbility.Embedding)) return false;
+            try { return !!ProviderFactoryRegistry.get(provider.type)?.createClient(provider).embed; }
+            catch { return false; }
+        });
         for (const task of new Set([...Object.keys(this.config.task), TaskType.Chat, TaskType.Embedding])) {
             const groupName = this.config.task[task];
-            if (!this.config.modelGroups.some((group) => group.name === groupName)) {
+            const selected = this.config.modelGroups.find((group) => group.name === groupName);
+            if (task === TaskType.Embedding) {
+                if (selected && supportsEmbedding(selected)) continue;
+                const fallback = this.config.modelGroups.find(supportsEmbedding);
+                if (fallback) {
+                    this.config.task[task] = fallback.name;
+                    modified = true;
+                    this.logger.warn(`嵌入任务配置不可用，已改用具备嵌入能力的模型组 ${fallback.name}`);
+                } else {
+                    if (groupName !== undefined) { delete this.config.task[task]; modified = true; }
+                    this.logger.warn("未配置可用的嵌入模型组；L2 语义检索暂不可用，普通聊天不受影响。请为 embed 分配支持嵌入的提供商与模型。");
+                }
+            } else if (!selected) {
                 this.config.task[task] = defaultGroup.name;
                 this.logger.warn(`配置错误: 为任务 ${task} 分配的模型组 ${groupName} 不存在，已自动更正为默认组 ${defaultGroup.name}`);
                 modified = true;
@@ -266,6 +285,7 @@ export class ModelService extends Service<Config> {
     protected start(): Awaitable<void> {}
 
     public useEmbeddingGroup(name: string): ModelSwitcher<IEmbedModel> | undefined {
+        if (name === TaskType.Embedding && !this.config.task[name]) return undefined;
         const groupName = this.resolveGroupName(name);
         if (!groupName) return undefined; // resolveGroupName 内部会记录日志
 
@@ -392,14 +412,14 @@ class RequestExecutor {
             const useStream = options.stream ?? model.config.parameters?.stream ?? true;
             const firstTokenTimeoutId = useStream && timeoutPolicy.firstTokenTimeout !== undefined ? setTimeout(() => {
                 const timeoutError = new Error(`First token not received within ${timeoutPolicy.firstTokenTimeout}s`);
-                timeoutError.name = "AbortError";
+                timeoutError.name = "TimeoutError";
                 timeoutError["duration"] = timeoutPolicy.firstTokenTimeout;
                 controller.abort(timeoutError);
             }, timeoutPolicy.firstTokenTimeout * 1000) : undefined;
 
             const timeoutId = setTimeout(() => {
                 const timeoutError = new Error(`Request timed out after ${timeoutPolicy.totalTimeout}s`);
-                timeoutError.name = "AbortError";
+                timeoutError.name = "TimeoutError";
                 timeoutError["duration"] = timeoutPolicy.totalTimeout;
                 controller.abort(timeoutError);
             }, timeoutPolicy.totalTimeout * 1000);

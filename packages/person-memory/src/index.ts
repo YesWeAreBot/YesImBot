@@ -2,7 +2,7 @@ import { applySharedMemory } from "./shared-runtime";
 import { Context, Schema, h, type Session } from "koishi";
 import { PersonStore, registerModels, sceneKey, type Mode, type Person, type Proposal, type LinkProposal, type SceneInput, type Audit } from "./store";
 import { renderPeople, identityWarning } from "./context";
-import { SummaryWorker, type SummaryModel } from "./worker";
+import { SummaryWorker, summaryResponseText, type SummaryModel } from "./worker";
 
 declare module "koishi" {
     interface Events {
@@ -13,7 +13,7 @@ declare module "koishi" {
 
 export const name = "yesimbot-person-memory";
 export const inject = { required: ["database", "yesimbot.prompt", "yesimbot.tool", "yesimbot.world-state"], optional: ["yesimbot.model"] };
-export interface Config { enabled: boolean; mode: Mode; modelGroup: string; summaryThreshold: number; cooldownSeconds: number; timeoutSeconds: number; maxQueue: number; sharedMemory?: boolean; memoryDomain?: string; recallScope?: "current" | "mind"; automaticRecall?: boolean; memoryRetentionDays?: number }
+export interface Config { enabled: boolean; mode: Mode; modelGroup: string; summaryThreshold: number; cooldownSeconds: number; timeoutSeconds: number; maxQueue: number; summaryMaxTokens?: number; sharedMemory?: boolean; memoryDomain?: string; recallScope?: "current" | "mind"; automaticRecall?: boolean; memoryRetentionDays?: number }
 export const Config: Schema<Config> = Schema.intersect([
     Schema.object({
         enabled: Schema.boolean().default(true).description("启用当前场景的人物记忆与账号关联"),
@@ -30,6 +30,7 @@ export const Config: Schema<Config> = Schema.intersect([
         modelGroup: Schema.string().default("").description("后台总结使用的 YIB 模型组；留空不调用后台模型，仍可人工编辑和审核模型工具提交的候选"),
         summaryThreshold: Schema.number().min(2).max(100).step(1).default(6).description("同一账号累计多少条新消息后尝试总结"),
         cooldownSeconds: Schema.number().min(30).max(86400).default(600).description("同一场景账号两次自动总结至少间隔的秒数"),
+        summaryMaxTokens: Schema.natural().min(128).max(32768).default(4096).description("后台总结最大输出 token 数，推理模型可能将推理计入此预算；达到上限时不会接受不完整画像"),
         timeoutSeconds: Schema.number().min(5).max(120).default(30).description("一次后台总结超时秒数"),
         maxQueue: Schema.number().min(1).max(100).step(1).default(32).description("待总结任务上限；全局同时运行一个任务"),
     }).collapse().description("后台总结").role("yib-section"),
@@ -101,8 +102,8 @@ export function apply(ctx: Context, config: Config) {
     if (config.modelGroup) model = async (messages, signal) => {
         const group = deps["yesimbot.model"]?.useChatGroup(config.modelGroup);
         if (!group) throw new Error("总结模型组不存在或模型服务不可用");
-        const result = await group.chat({ messages, abortSignal: signal, singleStep: true, stream: false, temperature: 0.2, maxTokens: 1800 });
-        return result.text || "";
+        const result = await group.chat({ messages, abortSignal: signal, singleStep: true, stream: false, temperature: 0.2, maxTokens: config.summaryMaxTokens ?? 4096, requestPurpose: "人物记忆总结" });
+        return summaryResponseText(result, config.summaryMaxTokens ?? 4096);
     };
     const worker = new SummaryWorker(store, model, { threshold: config.summaryThreshold, cooldownMs: config.cooldownSeconds * 1000, timeoutMs: config.timeoutSeconds * 1000, maxQueue: config.maxQueue }, error => logger.warn(`后台人物总结未接受：${String(error)}`));
     const removeInjection = deps["yesimbot.prompt"].inject("person_memory", 35, async view => {
