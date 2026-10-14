@@ -4,6 +4,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Context, Schema } from "koishi";
 import { Failed, Infer, type ToolCallResult, type ToolService } from "koishi-plugin-yesimbot/services";
+
 import { CommandResolver } from "./CommandResolver";
 import { Config } from "./Config";
 import { Logger } from "./Logger";
@@ -16,19 +17,19 @@ export class MCPManager {
     private toolService: ToolService;
     private config: Config;
     private clients: Client[] = [];
-    private transports: (SSEClientTransport | StdioClientTransport | StreamableHTTPClientTransport)[] = [];
+    private transports: Array<SSEClientTransport | StdioClientTransport | StreamableHTTPClientTransport> = [];
     private registeredTools: string[] = []; // 已注册工具
     private availableTools: string[] = []; // 所有可用工具
     private disposed = false;
     private readonly shutdown = new AbortController();
     private pendingConnections = new Set<Promise<void>>();
-    private toolDisposers: (() => void)[] = [];
+    private toolDisposers: Array<() => void> = [];
     private cleanupPromise?: Promise<void>;
 
     private async untilShutdown<T>(operation: Promise<T>): Promise<T> {
         const signal = this.shutdown.signal;
         if (signal.aborted) throw new Error("MCP manager disposed");
-        let abort: () => void;
+        let abort: (() => void) | undefined;
         try {
             return await Promise.race([
                 operation,
@@ -38,7 +39,7 @@ export class MCPManager {
                 }),
             ]);
         } finally {
-            signal.removeEventListener("abort", abort);
+            signal.removeEventListener("abort", abort!);
         }
     }
 
@@ -69,7 +70,7 @@ export class MCPManager {
                 const pending = this.connectServer(serverName);
                 this.pendingConnections.add(pending);
                 return pending.finally(() => this.pendingConnections.delete(pending));
-            })
+            }),
         );
         if (this.disposed) return;
 
@@ -84,7 +85,7 @@ export class MCPManager {
                 Schema.array(Schema.union(this.availableTools.map((tool) => Schema.const(tool).description(tool))))
                     .role("checkbox")
                     .collapse()
-                    .default(this.availableTools)
+                    .default(this.availableTools),
             );
 
             this.logger.success(`成功连接 ${this.clients.length} 个服务器，注册 ${this.registeredTools.length} 个工具`);
@@ -97,7 +98,7 @@ export class MCPManager {
     private async connectServer(serverName: string): Promise<void> {
         const server = this.config.mcpServers[serverName];
         let transport: any;
-        let client: Client;
+        let client: Client | undefined;
 
         try {
             // 创建传输层
@@ -117,7 +118,7 @@ export class MCPManager {
                 const enableTransform = server.enableCommandTransform ?? this.config.globalSettings?.enableCommandTransform ?? true;
 
                 const [command, args, env] = await this.untilShutdown(
-                    this.commandResolver.resolveCommand(server.command, server.args || [], enableTransform, server.env)
+                    this.commandResolver.resolveCommand(server.command, server.args || [], enableTransform, server.env),
                 );
                 if (this.disposed) return;
 
@@ -137,7 +138,7 @@ export class MCPManager {
             const connected = connection.then(async () => {
                 if (this.disposed) {
                     try {
-                        await client.close();
+                        await client!.close();
                     } finally {
                         await transport.close();
                     }
@@ -180,7 +181,7 @@ export class MCPManager {
                 client.listTools(undefined, {
                     signal: this.shutdown.signal,
                     timeout: this.config.timeout,
-                })
+                }),
             );
             if (this.disposed) return;
             const tools = toolsResponse?.tools || [];
@@ -200,7 +201,7 @@ export class MCPManager {
 
                 const definition = {
                     name: tool.name,
-                    description: tool.description,
+                    description: tool.description ?? "",
 
                     parameters: convertJsonSchemaToSchemastery(tool.inputSchema),
                     execute: async (args: Infer<any>) => {
@@ -213,9 +214,8 @@ export class MCPManager {
                     typeof unregister === "function"
                         ? unregister
                         : () => {
-                              if (this.toolService.getTool(definition.name) === definition)
-                                  this.toolService.unregisterTool(definition.name);
-                          }
+                              if (this.toolService.getTool(definition.name) === definition) this.toolService.unregisterTool(definition.name);
+                          },
                 );
 
                 this.registeredTools.push(tool.name);
@@ -251,7 +251,7 @@ export class MCPManager {
                         signal: controller.signal,
                     }),
                     deadline,
-                ])
+                ]),
             );
 
             // 处理返回内容
@@ -380,7 +380,7 @@ function convertJsonSchemaToSchemastery(jsonSchema: any): Schema<any> {
             case "object":
                 const properties = jsonSchema.properties || {};
                 const requiredFields = new Set(jsonSchema.required || []);
-                const schemasteryProperties = {};
+                const schemasteryProperties: Record<string, Schema> = {};
 
                 // 遍历所有属性，递归转换它们，并根据需要应用 .required()
                 for (const key in properties) {

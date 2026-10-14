@@ -1,19 +1,19 @@
-import { getUsageLedger, UsageScope, withUsageScope } from "./usage";
-import { ContextLimitResult } from "./context-limit";
+import { GenerateTextResult } from "@xsai/generate-text";
 import { Awaitable, Context, Logger, Schema, Service } from "koishi";
 
-import { Config } from "@/config";
-import { Services } from "@/shared/constants";
-import { AppError, ErrorDefinitions } from "@/shared/errors";
-import { isNotEmpty } from "@/shared/utils";
-import { GenerateTextResult } from "@xsai/generate-text";
-import { EvaluationModel } from "./evaluation-model";
+import { Config } from "../../config";
+import { Services } from "../../shared/constants";
+import { AppError, ErrorDefinitions } from "../../shared/errors";
+import { isNotEmpty } from "../../shared/utils";
 import { BaseModel, formatModelIdentity } from "./base-model";
 import { ChatRequestOptions, IChatModel } from "./chat-model";
 import { CircuitBreakerPolicy, ContentFailureAction, ModelAbility, ModelDescriptor, ModelSwitchingStrategy, TaskType } from "./config";
+import { ContextLimitResult } from "./context-limit";
 import { IEmbedModel } from "./embed-model";
+import { EvaluationModel } from "./evaluation-model";
 import { ProviderFactoryRegistry } from "./factories";
 import { ProviderInstance } from "./provider-instance";
+import { getUsageLedger, UsageScope, withUsageScope } from "./usage";
 
 enum CircuitBreakerState {
     CLOSED, // 允许请求
@@ -32,7 +32,7 @@ class CircuitBreaker {
     constructor(
         private readonly policy: CircuitBreakerPolicy,
         parentLogger: Logger,
-        private readonly modelId: string
+        private readonly modelId: string,
     ) {
         this.logger = parentLogger.extend(`[断路器][${modelId}]`);
     }
@@ -228,30 +228,37 @@ export class ModelService extends Service<Config> {
 
         const defaultGroup = this.config.modelGroups.find((g) => g.models.length > 0);
 
-        const supportsEmbedding = (group: typeof defaultGroup) => group.models.some((descriptor) => {
-            const provider = this.config.providers.find((p) => p.name === descriptor.providerName);
-            const model = provider?.models.find((m) => m.modelId === descriptor.modelId);
-            if (!model?.abilities.includes(ModelAbility.Embedding)) return false;
-            try { return !!ProviderFactoryRegistry.get(provider.type)?.createClient(provider).embed; }
-            catch { return false; }
-        });
+        const supportsEmbedding = (group: NonNullable<typeof defaultGroup>) =>
+            group.models.some((descriptor) => {
+                const provider = this.config.providers.find((p) => p.name === descriptor.providerName);
+                const model = provider?.models.find((m) => m.modelId === descriptor.modelId);
+                if (!provider || !model?.abilities.includes(ModelAbility.Embedding)) return false;
+                try {
+                    return !!ProviderFactoryRegistry.get(provider.type)?.createClient(provider).embed;
+                } catch {
+                    return false;
+                }
+            });
         for (const task of new Set([...Object.keys(this.config.task), TaskType.Chat, TaskType.Embedding])) {
-            const groupName = this.config.task[task];
+            const groupName = (this.config.task as Record<string, string | undefined>)[task];
             const selected = this.config.modelGroups.find((group) => group.name === groupName);
             if (task === TaskType.Embedding) {
                 if (selected && supportsEmbedding(selected)) continue;
                 const fallback = this.config.modelGroups.find(supportsEmbedding);
                 if (fallback) {
-                    this.config.task[task] = fallback.name;
+                    (this.config.task as Record<string, string | undefined>)[task] = fallback.name;
                     modified = true;
                     this.logger.warn(`嵌入任务配置不可用，已改用具备嵌入能力的模型组 ${fallback.name}`);
                 } else {
-                    if (groupName !== undefined) { delete this.config.task[task]; modified = true; }
+                    if (groupName !== undefined) {
+                        delete (this.config.task as Record<string, string | undefined>)[task];
+                        modified = true;
+                    }
                     this.logger.warn("未配置可用的嵌入模型组；L2 语义检索暂不可用，普通聊天不受影响。请为 embed 分配支持嵌入的提供商与模型。");
                 }
             } else if (!selected) {
-                this.config.task[task] = defaultGroup.name;
-                this.logger.warn(`配置错误: 为任务 ${task} 分配的模型组 ${groupName} 不存在，已自动更正为默认组 ${defaultGroup.name}`);
+                (this.config.task as Record<string, string | undefined>)[task] = defaultGroup!.name;
+                this.logger.warn(`配置错误: 为任务 ${task} 分配的模型组 ${groupName} 不存在，已自动更正为默认组 ${defaultGroup!.name}`);
                 modified = true;
             }
         }
@@ -263,11 +270,17 @@ export class ModelService extends Service<Config> {
     }
 
     private registerSchemas() {
-        this.ctx.schema.set("modelService.evaluationModels", Schema.union([
-            ...this.config.providers.flatMap(p => p.models.filter(m => m.abilities.includes(ModelAbility.Evaluation))
-                .map(m => Schema.const({ providerName: p.name, modelId: m.modelId }).description(`${p.name} / ${m.modelId}`))),
-            Schema.object({ providerName: Schema.string(), modelId: Schema.string() }).description("自定义评估模型"),
-        ]).default({ providerName: "", modelId: "" }));
+        this.ctx.schema.set(
+            "modelService.evaluationModels",
+            Schema.union([
+                ...this.config.providers.flatMap((p) =>
+                    p.models
+                        .filter((m) => m.abilities.includes(ModelAbility.Evaluation))
+                        .map((m) => Schema.const({ providerName: p.name, modelId: m.modelId }).description(`${p.name} / ${m.modelId}`)),
+                ),
+                Schema.object({ providerName: Schema.string(), modelId: Schema.string() }).description("自定义评估模型"),
+            ]).default({ providerName: "", modelId: "" }),
+        );
         const models = this.config.providers.map((p) => p.models.map((m) => ({ providerName: p.name, modelId: m.modelId }))).flat();
 
         const selectableModels = models
@@ -286,7 +299,7 @@ export class ModelService extends Service<Config> {
                 })
                     .role("table")
                     .description("自定义模型"),
-            ]).default({ providerName: "", modelId: "" })
+            ]).default({ providerName: "", modelId: "" }),
         );
 
         this.ctx.schema.set(
@@ -296,7 +309,7 @@ export class ModelService extends Service<Config> {
                     return Schema.const(group.name).description(group.name);
                 }),
                 Schema.string().description("自定义模型组"),
-            ]).default("default")
+            ]).default("default"),
         );
     }
 
@@ -329,8 +342,8 @@ export class ModelService extends Service<Config> {
     }
 
     private resolveGroupName(name: string): string | undefined {
-        if (this.config.task[name]) {
-            return this.config.task[name];
+        if ((this.config.task as Record<string, string>)[name]) {
+            return (this.config.task as Record<string, string>)[name];
         }
 
         this.logger.warn(`[切换器] ⚠ 无效的任务名称 | 任务: ${String(name)}`);
@@ -342,13 +355,13 @@ export class ModelService extends Service<Config> {
 // 职责：封装单次请求的全部执行逻辑，包括重试、超时、断路器检查和故障转移。
 class RequestExecutor {
     private readonly logger: Logger;
-    private readonly accumulatedErrors: { providerName?: string; modelId: string; error: Error }[] = [];
+    private readonly accumulatedErrors: Array<{ providerName?: string; modelId: string; error: Error }> = [];
 
     constructor(
         ctx: Context,
         private readonly groupName: string,
         private readonly candidateModels: IChatModel[],
-        private readonly circuitBreakers: Map<BaseModel, CircuitBreaker>
+        private readonly circuitBreakers: Map<BaseModel, CircuitBreaker>,
     ) {
         this.logger = ctx[Services.Logger].getLogger(`[请求执行器][${groupName}]`);
     }
@@ -364,21 +377,20 @@ class RequestExecutor {
             }
 
             // 执行单个模型的请求尝试（包含内部重试）
-            const modelOptions = model.config.disableNativeToolCalling && options.nativeToolCallingFallback
-                ? options.nativeToolCallingFallback : options;
+            const modelOptions = model.config.disableNativeToolCalling && options.nativeToolCallingFallback ? options.nativeToolCallingFallback : options;
             const originalMessages = JSON.parse(JSON.stringify(modelOptions.messages));
             const result = await this.tryRequestWithModel(model, modelOptions, originalMessages).catch((error) => {
-                breaker?.release(generation);
+                breaker?.release(generation!);
                 throw error;
             });
 
             // 如果成功，立即返回
             if (result.success) {
-                breaker?.recordSuccess(generation);
+                breaker?.recordSuccess(generation!);
                 return result.data;
             } else {
                 // 如果失败，记录错误并继续尝试下一个模型（故障转移）
-                breaker?.recordFailure(generation);
+                breaker?.recordFailure(generation!);
                 this.accumulatedErrors.push({ providerName: model.config.providerName, modelId: model.id, error: (result as any).error });
                 this.logger.debug(`[故障转移] 模型 ${formatModelIdentity({ ...model.config, modelId: model.id })} 已放弃，检查下一个候选模型`);
             }
@@ -417,7 +429,7 @@ class RequestExecutor {
     private async tryRequestWithModel(
         model: IChatModel,
         options: ChatRequestOptions,
-        originalMessages: ChatRequestOptions["messages"]
+        originalMessages: ChatRequestOptions["messages"],
     ): Promise<{ success: true; data: GenerateTextResult } | { success: false; error: Error }> {
         const retryPolicy = model.config.retryPolicy ?? {
             maxRetries: 0,
@@ -429,25 +441,30 @@ class RequestExecutor {
 
         for (let attempt = 0; attempt <= retryPolicy.maxRetries; attempt++) {
             options.abortSignal?.throwIfAborted();
-            const attemptLogger = this.logger.extend(`${formatModelIdentity({ ...model.config, modelId: model.id })} [尝试 ${attempt + 1}/${retryPolicy.maxRetries + 1}]`);
+            const attemptLogger = this.logger.extend(
+                `${formatModelIdentity({ ...model.config, modelId: model.id })} [尝试 ${attempt + 1}/${retryPolicy.maxRetries + 1}]`,
+            );
             const controller = new AbortController();
             const startedAt = Date.now();
             attemptLogger.debug(`开始请求 | 首字超时: ${timeoutPolicy.firstTokenTimeout ?? "未配置"}s | 总超时: ${timeoutPolicy.totalTimeout}s`);
 
             const useStream = options.stream ?? model.config.parameters?.stream ?? true;
-            const firstTokenTimeoutId = useStream && timeoutPolicy.firstTokenTimeout !== undefined ? setTimeout(() => {
-                const timeoutError = new Error(`First token not received within ${timeoutPolicy.firstTokenTimeout}s`);
-                timeoutError.name = "TimeoutError";
-                timeoutError["duration"] = timeoutPolicy.firstTokenTimeout;
-                controller.abort(timeoutError);
-            }, timeoutPolicy.firstTokenTimeout * 1000) : undefined;
+            const firstTokenTimeoutId =
+                useStream && timeoutPolicy.firstTokenTimeout !== undefined
+                    ? setTimeout(() => {
+                          const timeoutError = new Error(`First token not received within ${timeoutPolicy.firstTokenTimeout}s`);
+                          timeoutError.name = "TimeoutError";
+                          (timeoutError as unknown as Record<string, unknown>)["duration"] = timeoutPolicy.firstTokenTimeout;
+                          controller.abort(timeoutError);
+                      }, timeoutPolicy.firstTokenTimeout * 1000)
+                    : undefined;
 
             const timeoutId = setTimeout(() => {
                 const timeoutError = new Error(`Request timed out after ${timeoutPolicy.totalTimeout}s`);
                 timeoutError.name = "TimeoutError";
-                timeoutError["duration"] = timeoutPolicy.totalTimeout;
+                (timeoutError as unknown as Record<string, unknown>)["duration"] = timeoutPolicy.totalTimeout;
                 controller.abort(timeoutError);
-            }, timeoutPolicy.totalTimeout * 1000);
+            }, timeoutPolicy.totalTimeout! * 1000);
 
             const options_copy = { ...options };
 
@@ -462,7 +479,9 @@ class RequestExecutor {
                 const result = await model.chat(options_copy);
                 clearTimeout(timeoutId);
                 clearTimeout(firstTokenTimeoutId);
-                attemptLogger.debug(`请求成功 | 耗时: ${Date.now() - startedAt}ms | Tokens: ${result.usage?.total_tokens ?? "未知"} (输入: ${result.usage?.prompt_tokens ?? "未知"}, 输出: ${result.usage?.completion_tokens ?? "未知"}) | 结束原因: ${result.finishReason ?? "未知"}`);
+                attemptLogger.debug(
+                    `请求成功 | 耗时: ${Date.now() - startedAt}ms | Tokens: ${result.usage?.total_tokens ?? "未知"} (输入: ${result.usage?.prompt_tokens ?? "未知"}, 输出: ${result.usage?.completion_tokens ?? "未知"}) | 结束原因: ${result.finishReason ?? "未知"}`,
+                );
                 return { success: true, data: result };
             } catch (error) {
                 clearTimeout(timeoutId);
@@ -470,12 +489,14 @@ class RequestExecutor {
                 options.abortSignal?.throwIfAborted();
 
                 const appError = error instanceof AppError ? error : undefined;
-                attemptLogger.debug(`请求失败详情 | 耗时: ${Date.now() - startedAt}ms | 错误码: ${appError?.code ?? "未知"} | HTTP: ${appError?.context?.httpStatus ?? "未知"} | 原因类型: ${(error as Error)?.cause instanceof Error ? ((error as Error).cause as Error).name : (error as Error)?.name ?? "未知"}`);
+                attemptLogger.debug(
+                    `请求失败详情 | 耗时: ${Date.now() - startedAt}ms | 错误码: ${appError?.code ?? "未知"} | HTTP: ${appError?.context?.httpStatus ?? "未知"} | 原因类型: ${(error as Error)?.cause instanceof Error ? ((error as Error).cause as Error).name : ((error as Error)?.name ?? "未知")}`,
+                );
 
                 // 内容验证失败的特定处理
                 if (error instanceof AppError && error.code === ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED.code) {
                     if (retryPolicy.onContentFailure === ContentFailureAction.AugmentAndRetry && attempt < retryPolicy.maxRetries) {
-                        const rawResponse = error.context.rawResponse;
+                        const rawResponse = error.context?.rawResponse;
 
                         // 简单判断是否是有效内容
                         if (rawResponse) {
@@ -538,8 +559,10 @@ class RequestExecutor {
                     attemptLogger.debug("下一步: 放弃当前模型 | Retry-After 超过最大等待时间 300000ms");
                     return { success: false, error };
                 }
-                const delayMs = Math.max(500 * (attempt + 1),
-                    typeof retryAfterMs === "number" && Number.isFinite(retryAfterMs) && retryAfterMs >= 0 ? retryAfterMs : 0);
+                const delayMs = Math.max(
+                    500 * (attempt + 1),
+                    typeof retryAfterMs === "number" && Number.isFinite(retryAfterMs) && retryAfterMs >= 0 ? retryAfterMs : 0,
+                );
                 attemptLogger.debug(`下一步: 重试当前模型 | 等待: ${delayMs}ms`);
                 await this.waitForRetry(delayMs, options.abortSignal);
             } finally {
@@ -564,7 +587,7 @@ export class ModelSwitcher<T extends BaseModel> {
     constructor(
         protected readonly ctx: Context,
         protected readonly groupConfig: { name: string; models: ModelDescriptor[] },
-        modelGetter: (providerName: string, modelId: string) => T | null
+        modelGetter: (providerName: string, modelId: string) => T | null,
     ) {
         this.logger = ctx[Services.Logger].getLogger(`[模型组][${groupConfig.name}]`);
 
@@ -576,11 +599,7 @@ export class ModelSwitcher<T extends BaseModel> {
                     const identity = JSON.stringify([desc.providerName, desc.modelId]);
                     let breaker = breakersByIdentity.get(identity);
                     if (!breaker) {
-                        breaker = new CircuitBreaker(
-                            model.config.circuitBreakerPolicy,
-                            this.logger,
-                            formatModelIdentity(desc)
-                        );
+                        breaker = new CircuitBreaker(model.config.circuitBreakerPolicy, this.logger, formatModelIdentity(desc));
                         breakersByIdentity.set(identity, breaker);
                     }
                     this.circuitBreakers.set(model, breaker);
@@ -620,7 +639,7 @@ export class ChatModelSwitcher extends ModelSwitcher<IChatModel> {
     constructor(
         ctx: Context,
         groupConfig: { name: string; models: ModelDescriptor[] },
-        modelGetter: (providerName: string, modelId: string) => IChatModel | null
+        modelGetter: (providerName: string, modelId: string) => IChatModel | null,
     ) {
         super(ctx, groupConfig, modelGetter);
 

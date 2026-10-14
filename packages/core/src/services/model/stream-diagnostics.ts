@@ -29,18 +29,20 @@ export class StreamDiagnostics {
 
     observe(response: Response): Response {
         if (!response.body) return response;
-        const body = response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
-            transform: (chunk, controller) => {
-                this.firstChunkMs ??= Date.now() - this.startedAt;
-                this.bytes += chunk.byteLength;
-                this.scan(this.decoder.decode(chunk, { stream: true }));
-                controller.enqueue(chunk);
-            },
-            flush: () => {
-                this.scan(this.decoder.decode());
-                this.eof = true;
-            },
-        }));
+        const body = response.body.pipeThrough(
+            new TransformStream<Uint8Array, Uint8Array>({
+                transform: (chunk, controller) => {
+                    this.firstChunkMs ??= Date.now() - this.startedAt;
+                    this.bytes += chunk.byteLength;
+                    this.scan(this.decoder.decode(chunk, { stream: true }));
+                    controller.enqueue(chunk);
+                },
+                flush: () => {
+                    this.scan(this.decoder.decode());
+                    this.eof = true;
+                },
+            }),
+        );
         return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
     }
 
@@ -49,7 +51,10 @@ export class StreamDiagnostics {
         for (const part of text.split(/(?<=\n)/)) {
             if (!this.oversizedLine) {
                 if (this.line.length + part.length <= 65536) this.line += part;
-                else { this.line = ""; this.oversizedLine = true; }
+                else {
+                    this.line = "";
+                    this.oversizedLine = true;
+                }
             }
             if (part.endsWith("\n")) {
                 if (!this.oversizedLine) this.recordLine(this.line.trimEnd());
@@ -63,15 +68,20 @@ export class StreamDiagnostics {
         if (!line.startsWith("data:")) return;
         const data = line.slice(5).trim();
         this.frames++;
-        if (data === "[DONE]") { this.done = true; return; }
+        if (data === "[DONE]") {
+            this.done = true;
+            return;
+        }
         try {
             const frame = JSON.parse(data);
             if (frame?.error) this.errorFrames++;
             if (frame?.usage) {
                 // 只复制标准数字字段，上游扩展字段不进入日志。
-                this.usage = Object.fromEntries(["prompt_tokens", "completion_tokens", "total_tokens"]
-                    .filter(key => typeof frame.usage[key] === "number")
-                    .map(key => [key, frame.usage[key]]));
+                this.usage = Object.fromEntries(
+                    ["prompt_tokens", "completion_tokens", "total_tokens"]
+                        .filter((key) => typeof frame.usage[key] === "number")
+                        .map((key) => [key, frame.usage[key]]),
+                );
             }
             const choice = frame?.choices?.[0];
             const delta = choice?.delta;
@@ -87,12 +97,24 @@ export class StreamDiagnostics {
 
     summary(): Record<string, unknown> {
         return {
-            httpStatus: this.httpStatus, contentType: this.contentType,
-            elapsedMs: Date.now() - this.startedAt, headersMs: this.headersMs, firstChunkMs: this.firstChunkMs,
-            bytes: this.bytes, frames: this.frames, contentChars: this.contentChars, reasoningChars: this.reasoningChars,
-            toolFrames: this.toolFrames, errorFrames: this.errorFrames, malformedFrames: this.malformedFrames,
-            usage: this.usage, finishReason: this.finishReason, done: this.done, eof: this.eof,
-            pendingLineChars: this.line.length, oversizedLine: this.oversizedLine,
+            httpStatus: this.httpStatus,
+            contentType: this.contentType,
+            elapsedMs: Date.now() - this.startedAt,
+            headersMs: this.headersMs,
+            firstChunkMs: this.firstChunkMs,
+            bytes: this.bytes,
+            frames: this.frames,
+            contentChars: this.contentChars,
+            reasoningChars: this.reasoningChars,
+            toolFrames: this.toolFrames,
+            errorFrames: this.errorFrames,
+            malformedFrames: this.malformedFrames,
+            usage: this.usage,
+            finishReason: this.finishReason,
+            done: this.done,
+            eof: this.eof,
+            pendingLineChars: this.line.length,
+            oversizedLine: this.oversizedLine,
         };
     }
 

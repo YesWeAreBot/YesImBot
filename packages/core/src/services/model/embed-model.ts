@@ -1,12 +1,12 @@
-import type { UsageOwner } from "./usage-owner";
-import { observeUsageFetch } from "./usage";
 import type { EmbedProvider } from "@xsai-ext/shared-providers";
 import type { EmbedManyOptions, EmbedManyResult, EmbedOptions, EmbedResult } from "@xsai/embed";
 import { Context } from "koishi";
 
-import { embed, embedMany } from "@/dependencies/xsai";
+import { embed, embedMany } from "../../dependencies/xsai";
 import { BaseModel, formatModelIdentity } from "./base-model";
 import { ModelConfig } from "./config";
+import { observeUsageFetch } from "./usage";
+import type { UsageOwner } from "./usage-owner";
 
 export interface IEmbedModel extends BaseModel {
     embed(text: string): Promise<EmbedResult>;
@@ -19,7 +19,7 @@ export class EmbedModel extends BaseModel implements IEmbedModel {
         private readonly embedProvider: EmbedProvider["embed"],
         modelConfig: ModelConfig,
         private readonly fetch: typeof globalThis.fetch,
-        usageOwner?: UsageOwner
+        usageOwner?: UsageOwner,
     ) {
         super(ctx, modelConfig, `[嵌入模型] ${formatModelIdentity(modelConfig)}`);
         this.fetch = observeUsageFetch(ctx, { provider: modelConfig.providerName ?? "未知", model: this.id, purpose: "嵌入" }, fetch, usageOwner);

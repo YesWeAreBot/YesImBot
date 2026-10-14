@@ -1,9 +1,10 @@
-import type { UsageOwner } from "./usage-owner";
-import { observeUsageFetch } from "./usage";
 import { Context } from "koishi";
+
 import { BaseModel, formatModelIdentity } from "./base-model";
 import { ModelConfig } from "./config";
 import { evaluateQuestions, EvaluationQuestions, EvaluationRequestOptions, EvaluationResult } from "./evaluation-client";
+import { observeUsageFetch } from "./usage";
+import type { UsageOwner } from "./usage-owner";
 
 export class EvaluationModel extends BaseModel {
     constructor(
@@ -11,7 +12,7 @@ export class EvaluationModel extends BaseModel {
         private readonly provider: (model: string) => EvaluationRequestOptions,
         config: ModelConfig,
         private readonly fetch: typeof globalThis.fetch,
-        usageOwner?: UsageOwner
+        usageOwner?: UsageOwner,
     ) {
         super(ctx, config, `[评估模型] ${formatModelIdentity(config)}`);
         this.fetch = observeUsageFetch(ctx, { provider: config.providerName ?? "未知", model: this.id, purpose: "评估" }, fetch, usageOwner);

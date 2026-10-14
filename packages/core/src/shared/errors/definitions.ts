@@ -116,8 +116,7 @@ export const ErrorDefinitions = {
         ALL_FAILED_IN_GROUP: {
             code: "MODEL.ALL_FAILED_IN_GROUP",
             message: (groupName: string) => `模型组 '${groupName}' 中的所有模型都未能处理请求`,
-            suggestion:
-                "这表明存在普遍性问题。请检查错误报告中的 'cause' 以了解单个模型的失败原因。这可能是网络问题或影响组内所有模型的问题",
+            suggestion: "这表明存在普遍性问题。请检查错误报告中的 'cause' 以了解单个模型的失败原因。这可能是网络问题或影响组内所有模型的问题",
         },
         RETRY_EXHAUSTED: {
             code: "MODEL.RETRY_EXHAUSTED",

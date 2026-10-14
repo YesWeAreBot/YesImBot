@@ -1,19 +1,20 @@
-import { withUsageScope } from "../model/usage";
+import { randomUUID } from "node:crypto";
+
 import { $, Context, Logger } from "koishi";
 
-import { IChatModel, TaskType } from "@/services/model";
-import { Services, TableName } from "@/shared/constants";
+import { IChatModel, TaskType } from "../../services/model";
+import { Services, TableName } from "../../shared/constants";
+import { withUsageScope } from "../model/usage";
 import { HistoryConfig } from "./config";
 import { InteractionManager } from "./interaction-manager";
 import { MemoryTarget, SemanticMemoryManager } from "./l2-semantic-memory";
 import { diaryDateKey, diaryDayRange } from "./memory-date";
-import { randomUUID } from "node:crypto";
 import { AgentLogEntry, DiaryEntryData, MessageData } from "./types";
 
 export class ArchivalMemoryManager {
     private logger: Logger;
-    private chatModel: IChatModel;
-    private dailyTaskTimer: NodeJS.Timeout;
+    private chatModel: IChatModel | null = null;
+    private dailyTaskTimer?: NodeJS.Timeout;
     private stopped = false;
     private lifecycle = 0;
     private pendingDiaries = new Map<string, Promise<DiaryEntryData | undefined>>();
@@ -25,7 +26,7 @@ export class ArchivalMemoryManager {
         private ctx: Context,
         private config: HistoryConfig,
         private interactionManager: InteractionManager,
-        private semanticMemory?: SemanticMemoryManager
+        private semanticMemory?: SemanticMemoryManager,
     ) {
         this.logger = ctx[Services.Logger].getLogger("[L3-长期记忆]");
     }
@@ -37,7 +38,7 @@ export class ArchivalMemoryManager {
         if (!this.config.l3_memory.enabled) return;
 
         try {
-            this.chatModel = this.ctx[Services.Model].useChatGroup(TaskType.Chat).getModels()[0];
+            this.chatModel = this.ctx[Services.Model].useChatGroup(TaskType.Chat)?.getModels()[0] ?? null;
         } catch {
             this.chatModel = null;
         }
@@ -57,7 +58,7 @@ export class ArchivalMemoryManager {
         if (this.dailyTaskTimer) {
             clearTimeout(this.dailyTaskTimer);
         }
-        await Promise.allSettled([...this.pendingWrites]);
+        await Promise.allSettled(this.pendingWrites);
     }
 
     public async generateOnDemand(platform: string, channelId: string, date = new Date()) {
@@ -81,23 +82,31 @@ export class ArchivalMemoryManager {
             pending.dirty = true;
             return pending.done;
         }
-        const check = { dirty: true, done: null as Promise<void> };
+        const check = { dirty: true, done: Promise.resolve() };
         this.thresholdChecks.set(key, check);
         check.done = this.checkMessageThreshold(message, date, threshold, generation, lifecycle, check, key);
         return check.done;
     }
 
-    private async checkMessageThreshold(message: MessageData, date: Date, threshold: number, generation: number, lifecycle: number, check: { dirty: boolean }, key: string) {
+    private async checkMessageThreshold(
+        message: MessageData,
+        date: Date,
+        threshold: number,
+        generation: number | undefined,
+        lifecycle: number,
+        check: { dirty: boolean },
+        key: string,
+    ) {
         const { start, end } = diaryDayRange(date);
-        const active = () => !this.stopped && this.lifecycle === lifecycle &&
-            (!this.semanticMemory || this.semanticMemory.getHistoryGeneration(message) === generation);
+        const active = () =>
+            !this.stopped && this.lifecycle === lifecycle && (!this.semanticMemory || this.semanticMemory.getHistoryGeneration(message) === generation);
         try {
             while (check.dirty && active()) {
                 check.dirty = false;
                 const target = { platform: message.platform, channelId: message.channelId };
                 const [messageCount, previousCount] = await Promise.all([
-                    this.ctx.database.eval(TableName.Messages, row => $.count(row.id), { ...target, timestamp: { $gte: start, $lt: end } }),
-                    this.ctx.database.eval(TableName.L3Diaries, row => $.max(row.sourceMessageCount), { ...target, date: diaryDateKey(date) }),
+                    this.ctx.database.eval(TableName.Messages, (row) => $.count(row.id), { ...target, timestamp: { $gte: start, $lt: end } }),
+                    this.ctx.database.eval(TableName.L3Diaries, (row) => $.max(row.sourceMessageCount), { ...target, date: diaryDateKey(date) }),
                 ]);
                 if (!active()) return;
                 if (messageCount < 5 || messageCount - (previousCount ?? 0) < threshold) continue;
@@ -154,15 +163,11 @@ export class ArchivalMemoryManager {
         this.logger.info("开始执行每日日记生成任务...");
         const messageChannels = await this.ctx.database.get(TableName.Messages, {}, { fields: ["platform", "channelId"] });
 
-        const knownChannels = [
-            ...new Map(messageChannels.map((channel) => [JSON.stringify([channel.platform, channel.channelId]), channel])).values(),
-        ];
+        const knownChannels = [...new Map(messageChannels.map((channel) => [JSON.stringify([channel.platform, channel.channelId]), channel])).values()];
         const agentChannels = await this.interactionManager.getAgentChannels(knownChannels);
 
         const allChannels = [...messageChannels, ...agentChannels];
-        const uniqueChannels = [
-            ...new Map(allChannels.map((channel) => [JSON.stringify([channel.platform, channel.channelId]), channel])).values(),
-        ];
+        const uniqueChannels = [...new Map(allChannels.map((channel) => [JSON.stringify([channel.platform, channel.channelId]), channel])).values()];
 
         for (const channel of uniqueChannels) {
             if (this.stopped || this.lifecycle !== lifecycle) return;
@@ -175,7 +180,13 @@ export class ArchivalMemoryManager {
         this.logger.info("每日日记生成任务完成。");
     }
 
-    public generateDiaryForChannel(platform: string, channelId: string, date: Date, knownChannels?: MemoryTarget[], incremental = false): Promise<DiaryEntryData | undefined> {
+    public generateDiaryForChannel(
+        platform: string,
+        channelId: string,
+        date: Date,
+        knownChannels?: MemoryTarget[],
+        incremental = false,
+    ): Promise<DiaryEntryData | undefined> {
         if (this.stopped || !this.config.l3_memory.enabled || !this.chatModel) return Promise.resolve(undefined);
         const target = { platform, channelId };
         const generation = this.semanticMemory?.getHistoryGeneration(target);
@@ -199,14 +210,12 @@ export class ArchivalMemoryManager {
         lifecycle: number,
         generation?: number,
         knownChannels?: MemoryTarget[],
-        incremental = false
+        incremental = false,
     ): Promise<DiaryEntryData | undefined> {
         const { platform, channelId } = target;
         const dateKey = diaryDateKey(date);
         const active = () =>
-            !this.stopped &&
-            this.lifecycle === lifecycle &&
-            (!this.semanticMemory || this.semanticMemory.getHistoryGeneration(target) === generation);
+            !this.stopped && this.lifecycle === lifecycle && (!this.semanticMemory || this.semanticMemory.getHistoryGeneration(target) === generation);
         const controller = new AbortController();
         this.controllers.add(controller);
         try {
@@ -228,17 +237,19 @@ export class ArchivalMemoryManager {
             if (!active()) return;
 
             if (messages.length + agentLogs.length < 5) return;
-            if (incremental && existing.some(d => (d.sourceMessageCount ?? -1) >= messages.length)) return;
+            if (incremental && existing.some((d) => (d.sourceMessageCount ?? -1) >= messages.length)) return;
 
             const conversationText = this.formatInteractionsForPrompt(messages, agentLogs);
             const prompt = this.buildDiaryPrompt(conversationText);
 
-            const diaryContent = await withUsageScope({ platform, target: channelId, purpose: "L3日记摘要" }, () => this.chatModel.chat({
-                requestPurpose: "L3 日记总结",
-                messages: [{ role: "user", content: prompt }],
-                temperature: 0.2,
-                abortSignal: controller.signal,
-            }));
+            const diaryContent = await withUsageScope({ platform, target: channelId, purpose: "L3日记摘要" }, () =>
+                this.chatModel!.chat({
+                    requestPurpose: "L3 日记总结",
+                    messages: [{ role: "user", content: prompt }],
+                    temperature: 0.2,
+                    abortSignal: controller.signal,
+                }),
+            );
             if (!active()) return;
             const diaryEntry: DiaryEntryData = {
                 id: `diary_${platform}_${channelId}_${dateKey}${incremental ? `_${randomUUID()}` : ""}`,
@@ -247,7 +258,7 @@ export class ArchivalMemoryManager {
                 date: dateKey,
                 platform,
                 channelId,
-                content: diaryContent.text,
+                content: diaryContent.text ?? "",
                 keywords: [], // Keyword extraction can be a separate step
                 mentionedUserIds: [...new Set(messages.map((m) => m.sender.id))],
             };
@@ -258,9 +269,10 @@ export class ArchivalMemoryManager {
                 void writing.finally(() => this.pendingWrites.delete(writing)).catch(() => {});
                 return writing;
             };
-            const saved = this.semanticMemory
-                ? await this.semanticMemory.writeMemory(target, generation, write)
-                : await write().then(() => true);
+            const saved =
+                this.semanticMemory && generation !== undefined
+                    ? await this.semanticMemory.writeMemory(target, generation, write)
+                    : await write().then(() => true);
             if (saved) {
                 this.logger.debug(`为频道 ${platform}:${channelId} 生成了 ${dateKey} 的日记`);
                 return diaryEntry;

@@ -1,38 +1,33 @@
 {
   "name": "@yesimbot/koishi-plugin-code2image",
-  "description": "Yes! I'm Bot! 代码转图片扩展插件",
   "version": "1.1.1",
-  "main": "lib/index.js",
-  "typings": "lib/index.d.ts",
-  "homepage": "https://github.com/HydroGest/YesImBot",
-  "files": [
-    "lib",
-    "dist",
-    "README.md"
+  "description": "Yes! I'm Bot! 代码转图片扩展插件",
+  "keywords": [
+    "extension",
+    "koishi",
+    "plugin",
+    "yesimbot"
   ],
-  "scripts": {
-    "build": "tsc && node esbuild.config.mjs",
-    "dev": "tsc -w --preserveWatchOutput",
-    "lint": "eslint . --ext .ts",
-    "clean": "rm -rf lib .turbo tsconfig.tsbuildinfo",
-    "pack": "bun pm pack"
-  },
+  "homepage": "https://github.com/HydroGest/YesImBot",
   "license": "MIT",
   "contributors": [
     "MiaowFISH <miaow233@qq.com>"
-  ],
-  "keywords": [
-    "koishi",
-    "plugin",
-    "yesimbot",
-    "extension"
   ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/HydroGest/YesImBot.git",
     "directory": "packages/code2image"
   },
+  "files": [
+    "lib",
+    "dist",
+    "README.md"
+  ],
+  "main": "lib/index.js",
+  "typings": "lib/index.d.ts",
   "dependencies": {
+    "@shikijs/langs": "^3.23.0",
+    "@shikijs/themes": "^3.23.0",
     "shiki": "^3.8.1"
   },
   "devDependencies": {

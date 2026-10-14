@@ -1,11 +1,13 @@
 import { Argv, Context, h } from "koishi";
-import { Services, TableName } from "@/shared/constants";
-import { estimateTokens, getUsageLedger, TokenUsage, UsageRecord } from "../model/usage";
+
+import { Services, TableName } from "../../shared/constants";
 import { getContextSnapshots } from "../model/context-snapshot";
+import { estimateTokens, getUsageLedger, TokenUsage, UsageRecord } from "../model/usage";
 import { HISTORY_CHANNELS } from "./channel-metadata";
 
 const dimensions = ["adapter", "bot", "provider", "model", "target"] as const;
 type Dimension = (typeof dimensions)[number];
+const isDimension = (value: string): value is Dimension => dimensions.some((dimension) => dimension === value);
 export interface InspectionOptions {
     adapter: string[];
     bot: string[];
@@ -37,12 +39,12 @@ export function parseInspectionOptions(source: string, fallback: Record<string, 
         const token = tokens[i];
         if (token.quoted || !token.content.startsWith("--")) continue;
         const [name, ...inline] = token.content.slice(2).split("=");
-        if (["full", "details", "reset", "restart"].includes(name)) {
+        if (name === "full" || name === "details" || name === "reset" || name === "restart") {
             if (inline.length) throw new Error(`--${name} 不接受参数`);
             result[name === "restart" ? "reset" : name] = true;
             continue;
         }
-        if (![...dimensions, "page"].includes(name as any)) throw new Error(`未知参数 --${name}`);
+        if (name !== "page" && !isDimension(name)) throw new Error(`未知参数 --${name}`);
         const next = inline.length ? inline.join("=") : tokens[++i]?.content;
         if (!next || next.startsWith("--")) throw new Error(`--${name} 缺少参数`);
         if (name === "page") {
@@ -52,8 +54,7 @@ export function parseInspectionOptions(source: string, fallback: Record<string, 
         } else result[name].push(next);
     }
     for (const name of dimensions) {
-        if (!result[name].length && fallback[name] !== undefined)
-            result[name] = Array.isArray(fallback[name]) ? fallback[name] : [fallback[name]];
+        if (!result[name].length && fallback[name] !== undefined) result[name] = Array.isArray(fallback[name]) ? fallback[name] : [fallback[name]];
         result[name] = [...new Set(result[name])].sort();
     }
     for (const flag of ["full", "details", "reset"] as const) result[flag] ||= !!fallback[flag];
@@ -76,7 +77,7 @@ export function matchesUsage(record: Partial<UsageRecord>, options: InspectionOp
             !options[name].length ||
             (name === "target"
                 ? options.target.some((target) => matchesTarget(record.platform, record.target, target))
-                : options[name].includes(values[name] || ""))
+                : options[name].includes(values[name] || "")),
     );
 }
 
@@ -97,7 +98,7 @@ export function formatUsage(value: TokenUsage, approximate = false): string {
 
 function sumUsage(records: UsageRecord[], kind: "api" | "local"): TokenUsage {
     const result: TokenUsage = { in: null, out: null, cr: null, cw: null, total: null };
-    for (const key of Object.keys(result) as (keyof TokenUsage)[]) {
+    for (const key of Object.keys(result) as Array<keyof TokenUsage>) {
         const known = records.map((row) => row[kind][key]).filter((value) => typeof value === "number");
         if (known.length) result[key] = known.reduce((a, b) => a + b, 0);
     }
@@ -123,8 +124,9 @@ function groupBy<T>(items: T[], key: (row: T) => string): Map<string, T[]> {
     const result = new Map<string, T[]>();
     for (const row of items) {
         const value = key(row);
-        if (!result.has(value)) result.set(value, []);
-        result.get(value).push(row);
+        const bucket = result.get(value);
+        if (bucket) bucket.push(row);
+        else result.set(value, [row]);
     }
     return new Map([...result].sort(([a], [b]) => a.localeCompare(b)));
 }
@@ -137,7 +139,7 @@ export function renderTokenLines(records: UsageRecord[], options: InspectionOpti
     };
     if (!options.full) leaves(records);
     else {
-        const groups: [string, (row: UsageRecord) => string][] = [
+        const groups: Array<[string, (row: UsageRecord) => string]> = [
             ["适配器", (row) => row.platform || "实例后台"],
             ["服务商", (row) => row.provider],
             ["模型", (row) => `[${row.provider}][${row.model}]`],
@@ -178,19 +180,19 @@ export class InspectionPages {
     private entries = new Map<string, { period: string; expires: number; lines: string[] }>();
     constructor(
         private ttl = 5 * 60_000,
-        private limit = 64
+        private limit = 64,
     ) {}
     set(key: string, period: string, lines: string[], now = Date.now()): void {
         const size = lines.reduce((total, line) => total + line.length, 0);
         if (size > 8 * 1024 * 1024) throw new Error("完整查询结果超过快照容量，请缩小筛选范围；未截断内容。");
         this.entries.delete(key);
         for (const [id, entry] of this.entries) if (entry.expires <= now) this.entries.delete(id);
-        while (this.entries.size >= this.limit) this.entries.delete(this.entries.keys().next().value);
+        while (this.entries.size >= this.limit) this.entries.delete(this.entries.keys().next().value!);
         while (
             [...this.entries.values()].reduce((total, entry) => total + entry.lines.reduce((bytes, line) => bytes + line.length, 0), size) >
             16 * 1024 * 1024
         )
-            this.entries.delete(this.entries.keys().next().value);
+            this.entries.delete(this.entries.keys().next().value!);
         this.entries.set(key, { period, expires: now + this.ttl, lines });
     }
     get(key: string, period: string, now = Date.now()): string[] | undefined {
@@ -218,7 +220,7 @@ function visibleTarget(ctx: Context, platform: string, channelId: string, channe
                     selfId: bot.selfId,
                     channel: { id: channelId, type: type === "private" ? 1 : 0 },
                     guild: type === "private" ? undefined : { id: channelId },
-                } as any)
+                } as any),
             );
         return channelType === "private" || channelType === "guild" ? visible(channelType) : visible("private") && visible("guild");
     });
@@ -239,20 +241,16 @@ async function contextLines(ctx: Context, options: InspectionOptions): Promise<s
             const rows = await ctx.database.get(
                 HISTORY_CHANNELS,
                 {},
-                { fields: ["platform", "channelId", "channelType"], limit: 500, offset, sort: { platform: "asc", channelId: "asc" } }
+                { fields: ["platform", "channelId", "channelType"], limit: 500, offset, sort: { platform: "asc", channelId: "asc" } },
             );
             for (const row of rows)
                 if (row.channelType === "guild" || row.channelType === "private")
                     channelTypes.set(JSON.stringify([row.platform, row.channelId]), row.channelType);
             if (rows.length < 500) break;
         }
-        const tables: [string, string, string[]][] = [
+        const tables: Array<[string, string, string[]]> = [
             [TableName.Messages, "历史消息（非实际 L1 窗口）", ["id", "platform", "channelId", "channelType", "timestamp", "content"]],
-            [
-                TableName.SystemEvents,
-                "系统事件",
-                ["platform", "channelId", "channelType", "timestamp", "type", "message", "payload", "eventScope", "botKey"],
-            ],
+            [TableName.SystemEvents, "系统事件", ["platform", "channelId", "channelType", "timestamp", "type", "message", "payload", "eventScope", "botKey"]],
             [TableName.L2Chunks, "L2 摘要", ["platform", "channelId", "content", "startTimestamp", "endTimestamp"]],
             [TableName.L3Diaries, "L3 日记", ["platform", "channelId", "content", "date", "keywords"]],
         ];
@@ -269,8 +267,7 @@ async function contextLines(ctx: Context, options: InspectionOptions): Promise<s
                         omittedScope++;
                         continue;
                     }
-                    if (options.target.length && !options.target.some((target) => matchesTarget(row.platform, row.channelId, target)))
-                        continue;
+                    if (options.target.length && !options.target.some((target) => matchesTarget(row.platform, row.channelId, target))) continue;
                     const recordedType = row.channelType === "private" || row.channelType === "guild" ? row.channelType : undefined;
                     const metadataType = channelTypes.get(JSON.stringify([row.platform, row.channelId]));
                     const type = recordedType && metadataType && recordedType !== metadataType ? undefined : recordedType || metadataType;
@@ -282,9 +279,7 @@ async function contextLines(ctx: Context, options: InspectionOptions): Promise<s
                     if (!groups.has(target)) groups.set(target, { count: 0, tokens: 0, unknown: 0 });
                     const group = groups.get(target)!;
                     group.count++;
-                    const tokens = estimateTokens(
-                        table === TableName.SystemEvents ? { message: row.message, payload: row.payload } : row.content
-                    );
+                    const tokens = estimateTokens(table === TableName.SystemEvents ? { message: row.message, payload: row.payload } : row.content);
                     if (tokens === null) {
                         group.unknown++;
                         unknownText++;
@@ -309,14 +304,14 @@ async function contextLines(ctx: Context, options: InspectionOptions): Promise<s
             if (omittedScope) lines.push(`  非频道事件无法确认实例归属，已略过 ${omittedScope} 条；可在实际请求快照查看已注入事件。`);
             for (const [target, group] of [...groups].sort(([a], [b]) => a.localeCompare(b)))
                 lines.push(
-                    `  ${target}：${group.count} 条 · 文本 ≈${(group.tokens / 1000).toFixed(2)}K · 未知 ${group.unknown} 条 · ${group.first || "未知时间"} 至 ${group.last || "未知时间"}`
+                    `  ${target}：${group.count} 条 · 文本 ≈${(group.tokens / 1000).toFixed(2)}K · 未知 ${group.unknown} 条 · ${group.first || "未知时间"} 至 ${group.last || "未知时间"}`,
                 );
             lines.push(...details);
         }
         const blocks = ctx[Services.Memory]?.getMemoryBlocksForRendering() || [];
         const memoryTokens = estimateTokens(blocks);
         lines.push(
-            `【实例核心记忆】${blocks.length} 个区块 · 文本 ${memoryTokens === null ? "未知" : `≈${(memoryTokens / 1000).toFixed(2)}K`}（共享记忆，不归属单个目标）`
+            `【实例核心记忆】${blocks.length} 个区块 · 文本 ${memoryTokens === null ? "未知" : `≈${(memoryTokens / 1000).toFixed(2)}K`}（共享记忆，不归属单个目标）`,
         );
         if (options.details) lines.push(JSON.stringify(blocks, null, 2));
         if (memoryTokens === null) unknownText++;
@@ -324,13 +319,10 @@ async function contextLines(ctx: Context, options: InspectionOptions): Promise<s
         lines.unshift(`【本地保存容量】已知文本合计 ≈${(storedTokens / 1000).toFixed(2)}K · 无法估算 ${unknownText} 项`);
     }
     const snapshots = getContextSnapshots(ctx).filter((row) =>
-        matchesUsage(
-            { platform: row.adapter, botId: row.bot, target: row.target, provider: row.provider, model: row.model } as any,
-            options
-        )
+        matchesUsage({ platform: row.adapter, botId: row.bot, target: row.target, provider: row.provider, model: row.model } as any, options),
     );
     if (options.full) {
-        const groups: [string, (row: (typeof snapshots)[number]) => string][] = [
+        const groups: Array<[string, (row: (typeof snapshots)[number]) => string]> = [
             ["适配器", (row) => row.adapter || "实例后台"],
             ["服务商", (row) => row.provider],
             ["模型", (row) => `[${row.provider}][${row.model}]`],
@@ -342,7 +334,7 @@ async function contextLines(ctx: Context, options: InspectionOptions): Promise<s
                 lines.push(`${name}：${rows.length} 个最近快照`);
                 for (const row of rows)
                     lines.push(
-                        `  来源：${row.adapter || "实例后台"}/${row.bot || "无机器人"}/${row.target || "无目标"}/[${row.provider}][${row.model}]/${row.purpose || "请求"}`
+                        `  来源：${row.adapter || "实例后台"}/${row.bot || "无机器人"}/${row.target || "无目标"}/[${row.provider}][${row.model}]/${row.purpose || "请求"}`,
                     );
             }
         }
@@ -351,12 +343,12 @@ async function contextLines(ctx: Context, options: InspectionOptions): Promise<s
     for (const row of snapshots) {
         lines.push(
             `${new Date(row.timestamp).toISOString()} ${row.adapter || "实例后台"}/${row.bot || "无机器人"}/${row.target || "无目标"} [${row.provider}][${row.model}] ${row.purpose || "请求"}`,
-            `输入文本 ${row.inputTokens === undefined ? "未知" : `≈${(row.inputTokens / 1000).toFixed(2)}K`}`
+            `输入文本 ${row.inputTokens === undefined ? "未知" : `≈${(row.inputTokens / 1000).toFixed(2)}K`}`,
         );
         const capacity = ctx[Services.Model]?.peekContextLimit(row.provider, row.model);
         if (capacity)
             lines.push(
-                `最大上下文：${capacity.tokens === undefined ? "未知" : `${capacity.tokens / 1000}K`} · ${capacity.mode} · ${capacity.source || capacity.reason || capacity.status}${capacity.checkedAt ? ` · ${new Date(capacity.checkedAt).toISOString()}` : ""}`
+                `最大上下文：${capacity.tokens === undefined ? "未知" : `${capacity.tokens / 1000}K`} · ${capacity.mode} · ${capacity.source || capacity.reason || capacity.status}${capacity.checkedAt ? ` · ${new Date(capacity.checkedAt).toISOString()}` : ""}`,
             );
         if (row.unavailable) lines.push(`完整内容不可用：${row.unavailable}`);
         else if (options.details) lines.push(row.content || "无内容");
@@ -398,7 +390,7 @@ export function registerHistoryInspection(ctx: Context, historyCmd: any): void {
                         kind === "tokens"
                             ? renderTokenLines(
                                   snapshot.records.filter((row) => matchesUsage(row, options)),
-                                  options
+                                  options,
                               )
                             : await contextLines(ctx, options);
                     if (fullScope.length > 256) lines.push("【完整筛选条件】", fullScope);
@@ -425,7 +417,7 @@ export function registerHistoryInspection(ctx: Context, historyCmd: any): void {
                             ...header,
                             ...pages[options.page - 1],
                             ...(pages.length > options.page ? [`下一页：使用相同条件追加 --page ${options.page + 1}`] : []),
-                        ].join("\n")
+                        ].join("\n"),
                     )
                     .toString();
             } catch (error) {

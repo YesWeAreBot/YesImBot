@@ -32,6 +32,10 @@ export function containsFilter(content: string, filterList: string[]): boolean {
     return regex.test(content);
 }
 
+function pad(num: number): string {
+    return String(num).padStart(2, "0");
+}
+
 /**
  * 格式化日期对象或时间戳为指定格式的字符串。
  * @param date - Date 对象或毫秒级时间戳。
@@ -41,7 +45,6 @@ export function containsFilter(content: string, filterList: string[]): boolean {
  */
 export function formatDate(date: Date | number, format: string = "YYYY-MM-DD HH:mm:ss"): string {
     const d = typeof date === "number" ? new Date(date) : date;
-    const pad = (num: number) => String(num).padStart(2, "0");
 
     const replacements: { [key: string]: string } = {
         YYYY: String(d.getFullYear()),
@@ -282,8 +285,7 @@ const knownMimeTypes: MimeTypeSignature[] = [
     },
     {
         mime: "application/zip",
-        validate: (buf) =>
-            check(buf, [0x50, 0x4b, 0x03, 0x04]) || check(buf, [0x50, 0x4b, 0x05, 0x06]) || check(buf, [0x50, 0x4b, 0x07, 0x08]),
+        validate: (buf) => check(buf, [0x50, 0x4b, 0x03, 0x04]) || check(buf, [0x50, 0x4b, 0x05, 0x06]) || check(buf, [0x50, 0x4b, 0x07, 0x08]),
     },
     {
         mime: "application/x-rar-compressed",

@@ -1,11 +1,13 @@
-import { resolveUsageOwner, UsageOwner } from "./usage-owner";
-import type { Context } from "koishi";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { Services } from "@/shared/constants";
+
+import type { Context } from "koishi";
+
+import { Services } from "../../shared/constants";
 import { captureContextSnapshot, clearContextSnapshots, MAX_CONTEXT_SNAPSHOT_BYTES } from "./context-snapshot";
+import { resolveUsageOwner, UsageOwner } from "./usage-owner";
 
 export interface TokenUsage {
     in: number | null;
@@ -45,10 +47,7 @@ export interface UsageTicket extends UsageMetadata {
 }
 const scopes = new AsyncLocalStorage<UsageScope>();
 export function withUsageScope<T>(scope: UsageScope, fn: () => T, inherit = true): T {
-    return scopes.run(
-        { ...(inherit ? scopes.getStore() : {}), ...Object.fromEntries(Object.entries(scope).filter(([, value]) => value !== undefined)) },
-        fn
-    );
+    return scopes.run({ ...(inherit ? scopes.getStore() : {}), ...Object.fromEntries(Object.entries(scope).filter(([, value]) => value !== undefined)) }, fn);
 }
 const number = (...values: unknown[]): number | null =>
     (values.find((value) => typeof value === "number" && Number.isFinite(value) && value >= 0) as number) ?? null;
@@ -66,22 +65,17 @@ export function normalizeUsage(value: any): TokenUsage {
         value.input_tokens_details?.cached_tokens,
         value.cache_read_input_tokens,
         value.prompt_cache_hit_tokens,
-        value.cached_tokens
+        value.cached_tokens,
     );
     const cw = number(
         value.cache_creation_input_tokens,
-        value.cache_creation &&
-            number(value.cache_creation.ephemeral_5m_input_tokens, value.cache_creation.ephemeral_1h_input_tokens) !== null
+        value.cache_creation && number(value.cache_creation.ephemeral_5m_input_tokens, value.cache_creation.ephemeral_1h_input_tokens) !== null
             ? (number(value.cache_creation.ephemeral_5m_input_tokens) ?? 0) + (number(value.cache_creation.ephemeral_1h_input_tokens) ?? 0)
             : undefined,
         value.prompt_tokens_details?.cache_write_tokens,
-        value.input_tokens_details?.cache_write_tokens
+        value.input_tokens_details?.cache_write_tokens,
     );
-    if (
-        value.prompt_tokens === undefined &&
-        input !== null &&
-        (value.cache_read_input_tokens !== undefined || value.cache_creation_input_tokens !== undefined)
-    )
+    if (value.prompt_tokens === undefined && input !== null && (value.cache_read_input_tokens !== undefined || value.cache_creation_input_tokens !== undefined))
         input += (cr ?? 0) + (cw ?? 0);
     return {
         in: input,
@@ -101,10 +95,7 @@ export function estimateTokens(value: unknown): number | null {
             typeof value === "string"
                 ? value
                 : JSON.stringify(value, (key, item) => {
-                      if (
-                          ["image_url", "input_audio", "audio", "video_url"].includes(key) ||
-                          (key === "type" && /image|audio|video/.test(String(item)))
-                      )
+                      if (["image_url", "input_audio", "audio", "video_url"].includes(key) || (key === "type" && /image|audio|video/.test(String(item))))
                           multimodal = true;
                       return item;
                   });
@@ -116,6 +107,9 @@ export function estimateTokens(value: unknown): number | null {
         return null;
     }
 }
+
+const usageRecordKey = (record: UsageMetadata & { status: string }) =>
+    JSON.stringify([record.provider, record.model, record.platform, record.botId, record.target, record.purpose ?? "未分类", record.status]);
 
 export class UsageLedger {
     private period = randomUUID();
@@ -135,7 +129,7 @@ export class UsageLedger {
     public constructor(
         private readonly file: string,
         private readonly warn: (message: string) => void,
-        private readonly onReset?: () => void
+        private readonly onReset?: () => void,
     ) {
         this.loading = this.load().then(() => {
             this.loaded = true;
@@ -153,13 +147,7 @@ export class UsageLedger {
                 !Array.isArray(data.records) ||
                 !data.records.every(
                     (record: any) =>
-                        record &&
-                        Number.isInteger(record.count) &&
-                        record.count > 0 &&
-                        record.api &&
-                        record.local &&
-                        record.apiUnknown &&
-                        record.localUnknown
+                        record && Number.isInteger(record.count) && record.count > 0 && record.api && record.local && record.apiUnknown && record.localUnknown,
                 )
             )
                 throw new Error("统计文件格式无效");
@@ -202,7 +190,7 @@ export class UsageLedger {
     private async finishRecord(
         ticket: UsageTicket,
         result: { api?: unknown; input?: unknown; output?: unknown; status?: string },
-        stopped = false
+        stopped = false,
     ): Promise<void> {
         await this.ready();
         if ((this.closed && !stopped) || ticket.period !== this.period || this.completed.has(ticket.id)) return;
@@ -220,18 +208,7 @@ export class UsageLedger {
         };
         const status = result.status ?? "success",
             purpose = ticket.purpose ?? "未分类";
-        const key = (record: UsageMetadata & { status: string }) =>
-            JSON.stringify([
-                record.provider,
-                record.model,
-                record.platform,
-                record.botId,
-                record.target,
-                record.purpose ?? "未分类",
-                record.status,
-            ]);
-        let record = this.records.find((record) => key(record) === key({ ...ticket, purpose, status }));
-        const unknown = (): Record<keyof TokenUsage, number> => ({ in: 0, out: 0, cr: 0, cw: 0, total: 0 });
+        let record = this.records.find((record) => usageRecordKey(record) === usageRecordKey({ ...ticket, purpose, status }));
         if (!record) {
             record = {
                 ...ticket,
@@ -241,8 +218,8 @@ export class UsageLedger {
                 lastTime: ticket.time,
                 api: emptyUsage(),
                 local: emptyUsage(),
-                apiUnknown: unknown(),
-                localUnknown: unknown(),
+                apiUnknown: { in: 0, out: 0, cr: 0, cw: 0, total: 0 },
+                localUnknown: { in: 0, out: 0, cr: 0, cw: 0, total: 0 },
                 localApproximate: true,
             };
             this.records.push(record);
@@ -322,9 +299,7 @@ const ledgers = new WeakMap<object, UsageLedger>();
 function warnUsage(ctx: Context, message: string): void {
     // Telemetry must remain optional, including in isolated model integrations.
     try {
-        const logger =
-            ctx[Services.Logger]?.getLogger?.("[用量统计]") ??
-            (typeof ctx.logger === "function" ? ctx.logger("yesimbot-usage") : undefined);
+        const logger = ctx[Services.Logger]?.getLogger?.("[用量统计]") ?? (typeof ctx.logger === "function" ? ctx.logger("yesimbot-usage") : undefined);
         logger?.warn?.(message);
     } catch {
         /* logging failure cannot affect a model request */
@@ -368,7 +343,7 @@ export function getUsageLedger(ctx: Context, explicitOwner?: UsageOwner): UsageL
     ledger = new UsageLedger(
         path.join(owner.baseDir, "data", "yesimbot", "usage", `${digest}.json`),
         (message) => warnUsage(owner, message),
-        () => clearContextSnapshots(ctx, usageOwner)
+        () => clearContextSnapshots(ctx, usageOwner),
     );
     ledgers.set(identity, ledger);
     owner.on?.("dispose", () => ledger!.close());
@@ -401,7 +376,7 @@ export function observeUsageFetch(ctx: Context, metadata: UsageMetadata, fetch: 
                 payload,
                 ticket.period,
                 oversized ? "请求上下文超过单条快照容量，未解析或保留正文；本地输入估算不可用" : undefined,
-                explicitOwner
+                explicitOwner,
             );
         } catch (error) {
             warnUsage(ctx, `请求上下文快照不可用: ${error.message}`);
@@ -484,10 +459,8 @@ export function observeUsageFetch(ctx: Context, metadata: UsageMetadata, fetch: 
                                 try {
                                     const data = JSON.parse(buffer);
                                     api = data.usage;
-                                    output =
-                                        data.choices?.map((choice: any) => choice.message ?? choice.text) ?? data.answers ?? data.content;
-                                    if (Array.isArray(data.data) && data.data.some((item: any) => Array.isArray(item.embedding)))
-                                        output = "";
+                                    output = data.choices?.map((choice: any) => choice.message ?? choice.text) ?? data.answers ?? data.content;
+                                    if (Array.isArray(data.data) && data.data.some((item: any) => Array.isArray(item.embedding))) output = "";
                                 } catch {
                                     /* malformed response still gets a record */
                                 }

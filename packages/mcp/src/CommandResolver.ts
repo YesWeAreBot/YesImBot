@@ -10,13 +10,7 @@ export class CommandResolver {
     private installedBunPath: string | null;
     private config: Config;
 
-    constructor(
-        logger: Logger,
-        systemUtils: SystemUtils,
-        config: Config,
-        installedUVPath: string | null = null,
-        installedBunPath: string | null = null
-    ) {
+    constructor(logger: Logger, systemUtils: SystemUtils, config: Config, installedUVPath: string | null = null, installedBunPath: string | null = null) {
         this.logger = logger;
         this.systemUtils = systemUtils;
         this.config = config;
@@ -31,11 +25,14 @@ export class CommandResolver {
         command: string,
         args: string[],
         enableTransform: boolean = true,
-        additionalEnv: Record<string, string> = {}
+        additionalEnv: Record<string, string> = {},
     ): Promise<[string, string[], Record<string, string>]> {
         let finalCommand = command;
         let finalArgs = [...args];
-        const finalEnv = { ...process.env, ...additionalEnv };
+        const finalEnv: Record<string, string> = {};
+        for (const [key, value] of Object.entries({ ...process.env, ...additionalEnv })) {
+            if (value !== undefined) finalEnv[key] = value;
+        }
 
         // 设置 UV/Python 环境变量
         this.setupUVEnvironment(finalEnv);
@@ -117,7 +114,7 @@ export class CommandResolver {
     /**
      * 设置 UV/Python 相关环境变量
      */
-    private setupUVEnvironment(env: Record<string, string>): void {
+    private setupUVEnvironment(env: Record<string, string | undefined>): void {
         if (this.config.uvSettings?.pypiMirror) {
             const mirror = this.config.uvSettings.pypiMirror;
             env["PIP_INDEX_URL"] = mirror;

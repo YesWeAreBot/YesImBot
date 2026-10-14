@@ -1,37 +1,30 @@
 {
   "name": "@yesimbot/koishi-plugin-favor",
-  "description": "Yes! I'm Bot! 好感度插件",
   "version": "1.1.1",
-  "main": "lib/index.js",
-  "typings": "lib/index.d.ts",
-  "homepage": "https://github.com/HydroGest/YesImBot",
-  "files": [
-    "lib",
-    "dist",
-    "README.md"
+  "description": "Yes! I'm Bot! 好感度插件",
+  "keywords": [
+    "extension",
+    "koishi",
+    "plugin",
+    "yesimbot"
   ],
-  "scripts": {
-    "build": "tsc && node esbuild.config.mjs",
-    "dev": "tsc -w --preserveWatchOutput",
-    "lint": "eslint . --ext .ts",
-    "clean": "rm -rf lib .turbo tsconfig.tsbuildinfo",
-    "pack": "bun pm pack"
-  },
+  "homepage": "https://github.com/HydroGest/YesImBot",
   "license": "MIT",
   "contributors": [
     "MiaowFISH <miaow233@qq.com>"
-  ],
-  "keywords": [
-    "koishi",
-    "plugin",
-    "yesimbot",
-    "extension"
   ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/HydroGest/YesImBot.git",
     "directory": "packages/favor"
   },
+  "files": [
+    "lib",
+    "dist",
+    "README.md"
+  ],
+  "main": "lib/index.js",
+  "typings": "lib/index.d.ts",
   "devDependencies": {
     "koishi": "^4.18.7",
     "koishi-plugin-yesimbot": "^3.0.2"

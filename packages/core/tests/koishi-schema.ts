@@ -79,10 +79,12 @@ export function extractMetaFromSchema(schema: Schema): Properties {
                 // case 'array':
                 //   param.items = extractSingleParam(valueSchema.inner); // 需要一个辅助函数来处理非 object 的 schema
                 //   break;
+                default:
+                    break;
             }
 
             return [key, param];
-        })
+        }),
     );
 }
 

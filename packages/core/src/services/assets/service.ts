@@ -1,15 +1,16 @@
-import { GifUtil } from "@miaowfish/gifwrap";
 import { createHash } from "crypto";
 import { readFileSync } from "fs";
-import { Jimp } from "jimp";
-import { Context, Element, Service, h } from "koishi";
 import path from "path";
 import { fileURLToPath } from "url";
+
+import { GifUtil } from "@miaowfish/gifwrap";
+import { Jimp } from "jimp";
+import { Context, Element, Service, h } from "koishi";
 import { v4 as uuidv4 } from "uuid";
 
-import { Config } from "@/config";
-import { Services, TableName } from "@/shared/constants";
-import { formatSize, getMimeType, truncate } from "@/shared/utils";
+import { Config } from "../../config";
+import { Services, TableName } from "../../shared/constants";
+import { formatSize, getMimeType, truncate } from "../../shared/utils";
 import { LocalStorageDriver } from "./drivers/local";
 import { AssetData, AssetInfo, AssetMetadata, FileResponse, ReadAssetOptions, StorageDriver } from "./types";
 
@@ -55,8 +56,8 @@ export class AssetService extends Service<Config> {
     private static readonly PROCESSED_IMAGE_CACHE_SUFFIX = ".p.jpeg";
     private static readonly MAX_COMPRESSION_ATTEMPTS = 5; // 压缩图片时的最大尝试次数
 
-    private storage: StorageDriver;
-    private cacheStorage: StorageDriver;
+    private storage!: StorageDriver;
+    private cacheStorage!: StorageDriver;
 
     private assetEndpoint: string;
     private readonly maxFileSizeBytes: number;
@@ -66,7 +67,7 @@ export class AssetService extends Service<Config> {
         this.config = config;
         this.maxFileSizeBytes = config.maxFileSize * 1024 * 1024;
         this.logger = ctx[Services.Logger].getLogger("[资源服务]");
-        this.assetEndpoint = this.config.assetEndpoint;
+        this.assetEndpoint = this.config.assetEndpoint ?? "";
     }
 
     protected async start() {
@@ -90,7 +91,7 @@ export class AssetService extends Service<Config> {
                 lastUsedAt: "timestamp",
                 metadata: "json",
             },
-            { primary: "id", unique: ["hash"] }
+            { primary: "id", unique: ["hash"] },
         );
 
         // 设置自动清理任务
@@ -161,8 +162,8 @@ export class AssetService extends Service<Config> {
                 const jimp = await Jimp.read(data);
                 metadata.width = jimp.width;
                 metadata.height = jimp.height;
-            } catch (e) {
-                this.logger.warn(`无法解析图片元数据: ${e.message}`);
+            } catch (error) {
+                this.logger.warn(`无法解析图片元数据: ${error.message}`);
             }
         }
 
@@ -459,7 +460,7 @@ export class AssetService extends Service<Config> {
         // 动态调整质量进行压缩
         const maxSizeBytes = this.config.image.maxSizeMB * 1024 * 1024;
         let quality = 90;
-        let compressedBuffer: Buffer;
+        let compressedBuffer: Buffer = buffer;
 
         for (let i = 0; i < AssetService.MAX_COMPRESSION_ATTEMPTS; i++) {
             compressedBuffer = await jimpInstance.getBuffer("image/jpeg", { quality });
@@ -539,7 +540,7 @@ export class AssetService extends Service<Config> {
             const ratio = Math.min(
                 thumbSize / frame.bitmap.width,
                 thumbSize / frame.bitmap.height,
-                1.0 // 不放大
+                1.0, // 不放大
             );
 
             const newWidth = Math.round(frame.bitmap.width * ratio);
@@ -637,9 +638,9 @@ export class AssetService extends Service<Config> {
                 ctx.set("Content-Length", info.size.toString());
                 ctx.set("Cache-Control", "public, max-age=31536000, immutable"); // 长期缓存
                 ctx.body = buffer;
-            } catch (err) {
+            } catch (error) {
                 // 如果是文件找不到，返回404，否则可能为其他服务器错误，但为简单起见统一返回404
-                this.logger.warn(`通过 HTTP 端点提供资源 ${id} 失败: ${err.message}`);
+                this.logger.warn(`通过 HTTP 端点提供资源 ${id} 失败: ${error.message}`);
                 ctx.status = 404;
                 ctx.body = "Asset not found";
             }
@@ -693,9 +694,7 @@ export class AssetService extends Service<Config> {
         let deletedOrphanedCount = 0;
 
         for (const fileName of allFiles.filter(
-            (file) =>
-                path.join(this.ctx.baseDir, this.config.storagePath, file) !==
-                path.join(this.ctx.baseDir, this.config.image.processedCachePath)
+            (file) => path.join(this.ctx.baseDir, this.config.storagePath, file) !== path.join(this.ctx.baseDir, this.config.image.processedCachePath),
         )) {
             // 跳过处理后的缓存文件
             if (fileName.endsWith(AssetService.PROCESSED_IMAGE_CACHE_SUFFIX)) {

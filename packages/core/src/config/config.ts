@@ -1,15 +1,15 @@
 import { Schema } from "koishi";
 
-import { AgentBehaviorConfig, AgentBehaviorConfigSchema } from "@/agent";
-import { AssetServiceConfig, AssetServiceConfigSchema } from "@/services/assets";
-import { ToolServiceConfig, ToolServiceConfigSchema } from "@/services/extension";
-import { LoggingConfig, LoggingConfigSchema } from "@/services/logger";
-import { MemoryConfig, MemoryConfigSchema } from "@/services/memory";
-import { ModelServiceConfig, ModelServiceConfigSchema } from "@/services/model";
-import { PromptServiceConfig, PromptServiceConfigSchema } from "@/services/prompt";
-//import { TelemetryConfig, TelemetryConfigSchema } from "@/services/telemetry";
-import { HistoryConfig, HistoryConfigSchema } from "@/services/worldstate";
-import { ErrorReporterConfig, ErrorReporterConfigSchema } from "@/shared/errors";
+import { AgentBehaviorConfig, AgentBehaviorConfigSchema } from "../agent";
+import { AssetServiceConfig, AssetServiceConfigSchema } from "../services/assets";
+import { ToolServiceConfig, ToolServiceConfigSchema } from "../services/extension";
+import { LoggingConfig, LoggingConfigSchema } from "../services/logger";
+import { MemoryConfig, MemoryConfigSchema } from "../services/memory";
+import { ModelServiceConfig, ModelServiceConfigSchema } from "../services/model";
+import { PromptServiceConfig, PromptServiceConfigSchema } from "../services/prompt";
+//import { TelemetryConfig, TelemetryConfigSchema } from "../services/telemetry";
+import { HistoryConfig, HistoryConfigSchema } from "../services/worldstate";
+import { ErrorReporterConfig, ErrorReporterConfigSchema } from "../shared/errors";
 
 export const CONFIG_VERSION = "2.0.1";
 
@@ -35,28 +35,30 @@ export type Config = ModelServiceConfig &
         readonly version: string | number;
     };
 
-export const Config: Schema<Config> = Schema.intersect([
-    Schema.object({
-        version: Schema.union([Schema.string(), Schema.number()]).hidden(),
-    }),
+export const Config: Schema<Config> = Schema.intersect(
+    [
+        Schema.object({
+            version: Schema.union([Schema.string(), Schema.number()]).hidden(),
+        }),
 
-    ModelServiceConfigSchema.description("模型服务"),
-    AgentBehaviorConfigSchema,
-    PromptServiceConfigSchema,
+        ModelServiceConfigSchema.description("模型服务"),
+        AgentBehaviorConfigSchema,
+        PromptServiceConfigSchema,
 
-    MemoryConfigSchema.description("记忆能力配置"),
-    HistoryConfigSchema,
-    ToolServiceConfigSchema.description("工具能力配置"),
+        MemoryConfigSchema.description("记忆能力配置"),
+        HistoryConfigSchema,
+        ToolServiceConfigSchema.description("工具能力配置"),
 
-    AssetServiceConfigSchema.collapse().description("资源存储与处理"),
-    //TelemetryConfigSchema,
-    SystemConfigSchema.collapse().description("系统设置"),
-].map(configSection));
+        AssetServiceConfigSchema.collapse().description("资源存储与处理"),
+        //TelemetryConfigSchema,
+        SystemConfigSchema.collapse().description("系统设置"),
+    ].map(configSection),
+);
 
 // Preserve flat configuration fields. Only top-level presentation metadata changes.
 function configSection(schema: Schema): Schema {
     if (schema.type === "intersect" && !schema.meta.description) {
-        return Schema.intersect(schema.list.map(configSection));
+        return Schema.intersect((schema.list ?? []).map(configSection));
     }
     return schema.meta.description ? schema.role("yib-section") : schema;
 }

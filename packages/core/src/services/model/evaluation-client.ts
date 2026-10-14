@@ -10,11 +10,28 @@ export type EvaluationQuestion =
     | { type: "score"; instructions?: string; criteria: string[] };
 export type EvaluationQuestions = Record<string, EvaluationQuestion>;
 
-export interface NoulAnswer { type: "noul"; noul: number }
-export interface ChoiceAnswer { type: "choice"; choice: string; probabilities: Record<string, number>; confidence: number }
-export interface ScoreAnswer { type: "score"; score: number; legend: Record<string, string>; probabilities: Record<string, number>; confidence: number }
-export type EvaluationAnswer<Q extends EvaluationQuestion> = Q extends { type: "noul" } ? NoulAnswer
-    : Q extends { type: "choice" } ? ChoiceAnswer : ScoreAnswer;
+export interface NoulAnswer {
+    type: "noul";
+    noul: number;
+}
+export interface ChoiceAnswer {
+    type: "choice";
+    choice: string;
+    probabilities: Record<string, number>;
+    confidence: number;
+}
+export interface ScoreAnswer {
+    type: "score";
+    score: number;
+    legend: Record<string, string>;
+    probabilities: Record<string, number>;
+    confidence: number;
+}
+export type EvaluationAnswer<Q extends EvaluationQuestion> = Q extends { type: "noul" }
+    ? NoulAnswer
+    : Q extends { type: "choice" }
+      ? ChoiceAnswer
+      : ScoreAnswer;
 export interface EvaluationResult<Q extends EvaluationQuestions> {
     model: string;
     answers: { [K in keyof Q]: EvaluationAnswer<Q[K]> };
@@ -31,25 +48,34 @@ export interface SystemOneWireQuestion {
     instructions?: string;
     criteria?: Record<string, string> | string[];
 }
-export type EvaluationPost = (url: string, body: { model: string; state: unknown; questions: Record<string, SystemOneWireQuestion> }, options: EvaluationPostOptions) => Promise<unknown>;
+export type EvaluationPost = (
+    url: string,
+    body: { model: string; state: unknown; questions: Record<string, SystemOneWireQuestion> },
+    options: EvaluationPostOptions,
+) => Promise<unknown>;
 
 const validProbability = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
 const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
 
 function validAnswer(question: EvaluationQuestion, answer: unknown): boolean {
-    if (!record(answer) || answer.type !== question.type)
-        return false;
-    if (question.type === "noul")
-        return validProbability(answer.noul);
-    if (!validProbability(answer.confidence) || !record(answer.probabilities))
-        return false;
+    if (!record(answer) || answer.type !== question.type) return false;
+    if (question.type === "noul") return validProbability(answer.noul);
+    if (!validProbability(answer.confidence) || !record(answer.probabilities)) return false;
     const names = question.type === "choice" ? Object.keys(question.criteria) : question.criteria.map((_, i) => String(i));
-    if (Object.keys(answer.probabilities).length !== names.length || !names.every(name => validProbability((answer.probabilities as Record<string, unknown>)[name])))
+    if (
+        Object.keys(answer.probabilities).length !== names.length ||
+        !names.every((name) => validProbability((answer.probabilities as Record<string, unknown>)[name]))
+    )
         return false;
-    if (question.type === "choice")
-        return typeof answer.choice === "string" && names.includes(answer.choice);
-    return typeof answer.score === "number" && Number.isFinite(answer.score) && answer.score >= 0 && answer.score <= names.length - 1
-        && record(answer.legend) && names.every(name => (answer.legend as Record<string, unknown>)[name] === question.criteria[Number(name)]);
+    if (question.type === "choice") return typeof answer.choice === "string" && names.includes(answer.choice);
+    return (
+        typeof answer.score === "number" &&
+        Number.isFinite(answer.score) &&
+        answer.score >= 0 &&
+        answer.score <= names.length - 1 &&
+        record(answer.legend) &&
+        names.every((name) => (answer.legend as Record<string, unknown>)[name] === question.criteria[Number(name)])
+    );
 }
 
 /** Send a System One request; callers select their answer validation policy. */
@@ -60,26 +86,27 @@ export async function requestSystemOne(
 ): Promise<unknown> {
     const url = `${options.baseURL.replace(/\/+$/, "")}/systemone`;
     const body = { model: options.model, state: request.state, questions: request.questions };
-    const timeoutSignal = transport.timeoutMs && transport.timeoutMs > 0
-        ? AbortSignal.timeout(transport.timeoutMs)
-        : undefined;
-    const signal = timeoutSignal && transport.signal
-        ? AbortSignal.any([transport.signal, timeoutSignal])
-        : timeoutSignal ?? transport.signal;
+    const timeoutSignal = transport.timeoutMs && transport.timeoutMs > 0 ? AbortSignal.timeout(transport.timeoutMs) : undefined;
+    const signal = timeoutSignal && transport.signal ? AbortSignal.any([transport.signal, timeoutSignal]) : (timeoutSignal ?? transport.signal);
     const init: EvaluationPostOptions = {
         headers: { Authorization: `Bearer ${options.apiKey}`, "Content-Type": "application/json" },
         signal,
         timeout: transport.timeoutMs,
         redirect: "error",
     };
-    const post: EvaluationPost = transport.post ?? (async (endpoint, data, config) => {
-        const response = await (transport.fetch ?? globalThis.fetch)(endpoint, {
-            method: "POST", headers: config.headers, body: JSON.stringify(data), signal: config.signal, redirect: config.redirect,
+    const post: EvaluationPost =
+        transport.post ??
+        (async (endpoint, data, config) => {
+            const response = await (transport.fetch ?? globalThis.fetch)(endpoint, {
+                method: "POST",
+                headers: config.headers,
+                body: JSON.stringify(data),
+                signal: config.signal,
+                redirect: config.redirect,
+            });
+            if (!response.ok) throw new Error(`TypeSafe request failed with status ${response.status}`);
+            return response.json();
         });
-        if (!response.ok)
-            throw new Error(`TypeSafe request failed with status ${response.status}`);
-        return response.json();
-    });
     const response = await post(url, body, init);
     return response;
 }
@@ -91,9 +118,12 @@ export async function evaluateQuestions<Q extends EvaluationQuestions>(
     transport: { signal?: AbortSignal; timeoutMs?: number; post?: EvaluationPost; fetch?: typeof globalThis.fetch } = {},
 ): Promise<EvaluationResult<Q>> {
     const response = await requestSystemOne(options, request, transport);
-    if (!record(response) || !record(response.answers)
-        || (response.model !== undefined && typeof response.model !== "string")
-        || !Object.entries(request.questions).every(([name, question]) => validAnswer(question, (response.answers as Record<string, unknown>)[name]))) {
+    if (
+        !record(response) ||
+        !record(response.answers) ||
+        (response.model !== undefined && typeof response.model !== "string") ||
+        !Object.entries(request.questions).every(([name, question]) => validAnswer(question, (response.answers as Record<string, unknown>)[name]))
+    ) {
         throw new Error("Invalid TypeSafe evaluation response");
     }
     return { ...response, model: typeof response.model === "string" ? response.model : options.model } as unknown as EvaluationResult<Q>;

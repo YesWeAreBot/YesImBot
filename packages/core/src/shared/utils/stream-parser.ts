@@ -103,7 +103,9 @@ export class StreamParser {
             // JSON 修复可能暂时将尚未收到的对象或数组值填成 null。
             // 等待符合 schema 容器类型的后续快照，不输出或提前关闭子流。
             if (
-                typeof schemaValue === "object" && schemaValue !== null && !Array.isArray(schemaValue) &&
+                typeof schemaValue === "object" &&
+                schemaValue !== null &&
+                !Array.isArray(schemaValue) &&
                 (currentValue === null || typeof currentValue !== "object" || Array.isArray(currentValue))
             ) {
                 continue;
@@ -114,12 +116,7 @@ export class StreamParser {
 
             // 1. 处理对象类型
             if (typeof schemaValue === "object" && !Array.isArray(schemaValue) && schemaValue !== null) {
-                this.processObject(
-                    state,
-                    currentValue as Record<string, JsonValue>,
-                    lastValue as Record<string, JsonValue> | undefined,
-                    schemaValue
-                );
+                this.processObject(state, currentValue as Record<string, JsonValue>, lastValue as Record<string, JsonValue> | undefined, schemaValue);
             }
             // 2. 处理数组类型
             else if (Array.isArray(schemaValue)) {
@@ -137,12 +134,7 @@ export class StreamParser {
         }
     }
 
-    private processObject(
-        state: StreamState,
-        current: Record<string, JsonValue>,
-        last: Record<string, JsonValue> | undefined,
-        subSchema: Schema
-    ): void {
+    private processObject(state: StreamState, current: Record<string, JsonValue>, last: Record<string, JsonValue> | undefined, subSchema: Schema): void {
         const progress = state.progress as Set<string>;
         const subKeys = Object.keys(subSchema);
 
@@ -206,8 +198,7 @@ export class StreamParser {
         // 对象：发出所有尚未发出的属性
         if (typeof schemaValue === "object" && !Array.isArray(schemaValue) && schemaValue !== null) {
             const progress = state.progress as Set<string>;
-            const objValue = value !== null && typeof value === "object" && !Array.isArray(value)
-                ? value as Record<string, JsonValue> : {};
+            const objValue = value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, JsonValue>) : {};
             // 遍历 schema 中定义的所有子键
             for (const subKey of Object.keys(schemaValue)) {
                 // 如果该子键尚未被推送过，并且在最终数据中存在，就推送它
@@ -254,7 +245,7 @@ export class StreamParser {
                 try {
                     // completeStream 应该已经关闭了它，但以防万一
                     state.controller.close();
-                } catch (e) {
+                } catch {
                     /* might already be closed */
                 }
             }

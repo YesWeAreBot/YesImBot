@@ -1,6 +1,7 @@
+import semver from "semver";
+
 import { Config, CONFIG_VERSION } from "./config";
 import { ConfigV1, ConfigV200 } from "./versions";
-import semver from "semver";
 
 function migrateV1ToV200(configV1: ConfigV1): Omit<Config, "enableTelemetry" | "sentryDsn"> {
     const { modelService, agentBehavior, capabilities, assetService, promptService, system } = configV1;
@@ -61,7 +62,7 @@ export function migrateConfig(config: any): Config {
     }
 
     while (semver.lt(currentVersion, CONFIG_VERSION)) {
-        const migrator = MIGRATIONS[currentVersion];
+        const migrator = MIGRATIONS[currentVersion as keyof typeof MIGRATIONS];
         if (!migrator) {
             // 如果缺少某个版本的迁移脚本，抛出错误
             throw new Error(`缺少从版本 ${currentVersion} 的迁移脚本`);

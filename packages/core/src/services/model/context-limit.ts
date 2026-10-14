@@ -39,8 +39,7 @@ export function readContextLimitMetadata(payload: unknown, modelId: string): { t
     const fields = ["context_length", "context_window", "max_context_length", "max_context_tokens"];
     for (const field of fields) {
         const value = model[field];
-        if (typeof value === "number" && Number.isFinite(value) && value > 0 && value <= Number.MAX_SAFE_INTEGER)
-            return { tokens: value, field };
+        if (typeof value === "number" && Number.isFinite(value) && value > 0 && value <= Number.MAX_SAFE_INTEGER) return { tokens: value, field };
     }
 }
 

@@ -1,9 +1,10 @@
 import fs from "fs/promises";
-import { Context, Service } from "koishi";
 import path from "path";
 
-import { Config } from "@/config";
-import { RESOURCES_DIR, Services } from "@/shared/constants";
+import { Context, Service } from "koishi";
+
+import { Config } from "../../config";
+import { RESOURCES_DIR, Services } from "../../shared/constants";
 import { MemoryBlock, MemoryBlockData } from "./memory-block";
 
 declare module "koishi" {
@@ -90,7 +91,7 @@ export class MemoryService extends Service<Config> {
                         this.coreMemoryBlocks.set(block.label, block);
                         this.logger.debug(`已从文件 '${file}' 加载核心记忆块 '${block.label}'`);
                     }
-                } catch (error) {
+                } catch {
                     // A failed block must not prevent loading the remaining files.
                 }
             }

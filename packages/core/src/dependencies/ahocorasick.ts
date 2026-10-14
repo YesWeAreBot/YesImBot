@@ -1,28 +1,28 @@
 //@ts-nocheck
 //https://github.com/BrunoRB/ahocorasick/blob/master/src/main.js
 
-(function() {
-    'use strict';
+(function () {
+    "use strict";
 
-    var AhoCorasick = function(keywords) {
+    // oxlint-disable-next-line unicorn/consistent-function-scoping
+    var AhoCorasick = function (keywords) {
         this._buildTables(keywords);
     };
 
-    AhoCorasick.prototype._buildTables = function(keywords) {
+    AhoCorasick.prototype._buildTables = function (keywords) {
         var gotoFn = {
-            0: {}
+            0: {},
         };
         var output = {};
 
         var state = 0;
-        keywords.forEach(function(word) {
+        keywords.forEach(function (word) {
             var curr = 0;
-            for (var i=0; i<word.length; i++) {
+            for (var i = 0; i < word.length; i++) {
                 var l = word[i];
                 if (gotoFn[curr] && l in gotoFn[curr]) {
                     curr = gotoFn[curr][l];
-                }
-                else {
+                } else {
                     state++;
                     gotoFn[curr][l] = state;
                     gotoFn[state] = {};
@@ -53,7 +53,7 @@
 
                 // set state = f(r)
                 var state = failure[r];
-                while(state > 0 && !(l in gotoFn[state])) {
+                while (state > 0 && !(l in gotoFn[state])) {
                     state = failure[state];
                 }
 
@@ -61,8 +61,7 @@
                     var fs = gotoFn[state][l];
                     failure[s] = fs;
                     output[s] = output[s].concat(output[fs]);
-                }
-                else {
+                } else {
                     failure[s] = 0;
                 }
             }
@@ -73,10 +72,10 @@
         this.failure = failure;
     };
 
-    AhoCorasick.prototype.search = function(string) {
+    AhoCorasick.prototype.search = function (string) {
         var state = 0;
         var results = [];
-        for (var i=0; i<string.length; i++) {
+        for (var i = 0; i < string.length; i++) {
             var l = string[i];
             while (state > 0 && !(l in this.gotoFn[state])) {
                 state = this.failure[state];
@@ -96,10 +95,9 @@
         return results;
     };
 
-    if (typeof module !== 'undefined') {
+    if (typeof module !== "undefined") {
         module.exports = AhoCorasick;
-    }
-    else {
+    } else {
         window.AhoCorasick = AhoCorasick;
     }
 })();

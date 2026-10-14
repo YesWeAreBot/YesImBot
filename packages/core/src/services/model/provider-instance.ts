@@ -1,15 +1,16 @@
-import type { UsageOwner } from "./usage-owner";
-import { Services } from "@/shared/constants";
-import { isNotEmpty } from "@/shared/utils";
 import { Context, Logger } from "koishi";
 import { ProxyAgent, fetch as ufetch } from "undici";
-import { EvaluationModel } from "./evaluation-model";
+
+import { Services } from "../../shared/constants";
+import { isNotEmpty } from "../../shared/utils";
 import { BaseModel } from "./base-model";
 import { ChatModel, IChatModel } from "./chat-model";
 import { ModelAbility, ModelConfig, ProviderConfig } from "./config";
-import { EmbedModel, IEmbedModel } from "./embed-model";
-import { IProviderClient } from "./factories";
 import { ContextLimitResult, contextMetadataURL, parseContextLimit, readContextLimitMetadata } from "./context-limit";
+import { EmbedModel, IEmbedModel } from "./embed-model";
+import { EvaluationModel } from "./evaluation-model";
+import { IProviderClient } from "./factories";
+import type { UsageOwner } from "./usage-owner";
 
 export class ProviderInstance {
     public readonly name: string;
@@ -25,16 +26,16 @@ export class ProviderInstance {
         private ctx: Context,
         public readonly config: ProviderConfig,
         private readonly client: IProviderClient,
-        private readonly usageOwner?: UsageOwner
+        private readonly usageOwner?: UsageOwner,
     ) {
         this.name = config.name;
         this.logger = ctx[Services.Logger].getLogger(`[提供商] [${this.name}]`);
 
         if (isNotEmpty(this.config.proxy)) {
-            this.fetch = (async (input, init) => {
+            this.fetch = (async (input: any, init: any) => {
                 this.logger.debug(`🌐 使用代理 | 地址: ${this.config.proxy}`);
-                init = { ...init, dispatcher: new ProxyAgent(this.config.proxy) };
-                return ufetch(input, init);
+                init = { ...init, dispatcher: new ProxyAgent(this.config.proxy!) };
+                return ufetch(input as any, init as any);
             }) as unknown as typeof globalThis.fetch;
         } else {
             this.fetch = ufetch as unknown as typeof globalThis.fetch;
@@ -51,7 +52,7 @@ export class ProviderInstance {
         requiredAbility: ModelAbility,
         modelConstructor: new (ctx: Context, providerFn: any, config: ModelConfig, fetch: typeof globalThis.fetch, usageOwner?: UsageOwner) => T,
         providerCapability: unknown,
-        capabilityName: string
+        capabilityName: string,
     ): T | null {
         if (!providerCapability) {
             this.logger.debug(`[获取模型] 🟡 跳过 | 模型ID: ${modelId} | 原因: 提供商不支持 ${capabilityName} 能力`);

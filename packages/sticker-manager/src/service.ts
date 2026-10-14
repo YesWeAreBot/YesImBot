@@ -1,9 +1,11 @@
 import { createHash } from "crypto";
 import { mkdir, readdir, readFile, rename, rmdir, unlink, writeFile } from "fs/promises";
-import { Context, h, Logger, Session } from "koishi";
-import { Services } from "koishi-plugin-yesimbot/shared";
 import path from "path";
 import { pathToFileURL } from "url";
+
+import { Context, h, Session } from "koishi";
+import { Services } from "koishi-plugin-yesimbot/shared";
+
 import { StickerConfig } from "./config";
 
 // 添加表情包表结构
@@ -35,7 +37,7 @@ export class StickerService {
 
     constructor(
         private ctx: Context,
-        private config: StickerConfig
+        private config: StickerConfig,
     ) {
         ctx.on("dispose", () => {
             this.disposed = true;
@@ -84,7 +86,7 @@ export class StickerService {
                     source: "json",
                     createdAt: "timestamp",
                 },
-                { primary: "id" }
+                { primary: "id" },
             );
 
             this.ctx.logger.debug("表情包表已创建");
@@ -132,10 +134,10 @@ export class StickerService {
             category,
             filePath: destPath,
             source: {
-                platform: session.platform,
-                channelId: session.channelId,
-                userId: session.userId,
-                messageId: session.messageId,
+                platform: session.platform ?? "unknown",
+                channelId: session.channelId ?? "unknown",
+                userId: session.userId ?? "unknown",
+                messageId: session.messageId ?? "unknown",
             },
             createdAt: new Date(),
         };
@@ -157,7 +159,7 @@ export class StickerService {
 
         if (!model || !model.isVisionModel()) {
             this.ctx.logger.error(`当前模型组中没有支持多模态的模型。`);
-            throw Error();
+            throw new Error();
         }
 
         try {
@@ -178,7 +180,7 @@ export class StickerService {
                 ],
             });
 
-            return response.text.trim();
+            return response.text!.trim();
         } catch (error) {
             this.ctx.logger.error("表情分类失败", error);
             return "分类失败";
@@ -199,6 +201,7 @@ export class StickerService {
             failed: 0,
             skipped: 0,
             failedFiles: [],
+            failedUrls: [],
         };
 
         // 检查源目录是否存在
@@ -326,7 +329,7 @@ export class StickerService {
         return [...new Set(records.map((r) => r.category))];
     }
 
-    async getRandomSticker(category: string): Promise<h> {
+    async getRandomSticker(category: string): Promise<h | null> {
         const records = await this.ctx.database.select(TableName).where({ category }).execute();
 
         if (records.length === 0) return null;
@@ -358,6 +361,7 @@ export class StickerService {
             success: 0,
             failed: 0,
             skipped: 0,
+            failedFiles: [],
             failedUrls: [],
         };
 
@@ -570,7 +574,7 @@ export class StickerService {
 
     public async renameCategory(oldName: string, newName: string): Promise<number> {
         const result = await this.ctx.database.set(TableName, { category: oldName }, { category: newName });
-        const modified = result.matched;
+        const modified = result.matched ?? 0;
         this.ctx.logger.info(`已将分类 "${oldName}" 重命名为 "${newName}"，更新了 ${modified} 个表情包`);
         return modified;
     }
@@ -594,8 +598,8 @@ export class StickerService {
             }
         }
 
-        this.ctx.logger.info(`已删除分类 "${category}"，共移除 ${result.removed} 个表情包`);
-        return result.removed;
+        this.ctx.logger.info(`已删除分类 "${category}"，共移除 ${result.removed ?? 0} 个表情包`);
+        return result.removed ?? 0;
     }
 
     /**
@@ -604,8 +608,8 @@ export class StickerService {
     public async mergeCategories(sourceCategory: string, targetCategory: string): Promise<number> {
         const result = await this.ctx.database.set(TableName, { category: sourceCategory }, { category: targetCategory });
 
-        this.ctx.logger.info(`已将分类 "${sourceCategory}" 合并到 "${targetCategory}"，移动了 ${result.matched} 个表情包`);
-        return result.matched;
+        this.ctx.logger.info(`已将分类 "${sourceCategory}" 合并到 "${targetCategory}"，移动了 ${result.matched ?? 0} 个表情包`);
+        return result.matched ?? 0;
     }
 
     /**
@@ -614,12 +618,12 @@ export class StickerService {
     public async moveSticker(stickerId: string, newCategory: string): Promise<number> {
         const result = await this.ctx.database.set(TableName, { id: stickerId }, { category: newCategory });
 
-        if (result.matched === 0) {
+        if ((result.matched ?? 0) === 0) {
             throw new Error("未找到该表情包");
         }
 
         this.ctx.logger.info(`已将表情包 ${stickerId} 移动到分类 "${newCategory}"`);
-        return result.matched;
+        return result.matched ?? 0;
     }
 
     /**
@@ -670,10 +674,10 @@ interface ImportStats {
     success: number; // 成功导入数
     failed: number; // 导入失败数
     skipped: number; // 跳过数（重复表情包）
-    failedFiles?: string[]; // 失败的文件名列表
-    failedUrls?: {
+    failedFiles: string[]; // 失败的文件名列表
+    failedUrls: Array<{
         // 失败的 URL 列表
         url: string;
         error: string;
-    }[];
+    }>;
 }

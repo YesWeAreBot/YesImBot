@@ -110,7 +110,7 @@ export interface ConfigV1 {
      */
     modelService: {
         providers: ProviderConfig[];
-        modelGroups: { name: string; models: ModelDescriptor[]; strategy: ModelSwitchingStrategy }[];
+        modelGroups: Array<{ name: string; models: ModelDescriptor[]; strategy: ModelSwitchingStrategy }>;
         task: {
             chat: string;
             embed: string;

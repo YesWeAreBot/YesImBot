@@ -121,16 +121,17 @@ function describe(target: Target): string {
     return `${target.platform}:${target.selfId}:${target.channelId}`;
 }
 
+const addTargetOptions = (command: ReturnType<Context["command"]>) =>
+    command
+        .option("platform", "-p <platform:string> 目标平台")
+        .option("bot", "-b <bot:string> 目标机器人账号（有多个候选时指定）")
+        .option("channel", "-c <channel:string> 实际会话ID，平台唯一时自动识别")
+        .option("target", "-t <target:string> 指定目标 platform:channelId")
+        .option("group", "-g <group:string> 目标群/频道ID")
+        .option("user", "-u <user:string> 目标私聊用户ID");
+
 export function registerReplyCommands(ctx: Context, control: ReplyControl, defaultDuration: number): void {
     const root = ctx.command("chat", "聊天回复管理", { authority: 3 });
-    const addTargetOptions = (command: ReturnType<Context["command"]>) =>
-        command
-            .option("platform", "-p <platform:string> 目标平台")
-            .option("bot", "-b <bot:string> 目标机器人账号（有多个候选时指定）")
-            .option("channel", "-c <channel:string> 实际会话ID，平台唯一时自动识别")
-            .option("target", "-t <target:string> 指定目标 platform:channelId")
-            .option("group", "-g <group:string> 目标群/频道ID")
-            .option("user", "-u <user:string> 目标私聊用户ID");
 
     addTargetOptions(root.subcommand(".pause [duration:string]", "暂停聊天回复", { authority: 3 }))
         .option("block", "--block <categories:string> 抑制类别，以逗号分隔")
@@ -139,7 +140,8 @@ export function registerReplyCommands(ctx: Context, control: ReplyControl, defau
         .example("chat.pause")
         .example("chat.pause 5m --allow at")
         .example("chat.pause permanent -p onebot -b 123456 -g 654321")
-        .action(async ({ session, options }, duration) => {
+        .action(async ({ session, options }: { session?: any; options?: any }, duration?: string) => {
+            if (!session || !options) return;
             try {
                 if (options.block !== undefined && options.allow !== undefined) throw new Error("--block 与 --allow 不能同时使用。");
                 const milliseconds = parseDuration(duration, defaultDuration);
@@ -150,38 +152,48 @@ export function registerReplyCommands(ctx: Context, control: ReplyControl, defau
                     blocked = categories.filter((category) => !allowed.includes(category));
                 }
                 const target = await resolveTarget(ctx, control, session, options);
-                await control.set(target, blocked, milliseconds, { id: `admin:${session.platform}:${session.userId}`, origin: { platform: session.platform, selfId: session.selfId, channelId: session.channelId, adapter: session.bot?.platform } });
+                await control.set(target, blocked, milliseconds, {
+                    id: `admin:${session.platform}:${session.userId}`,
+                    origin: { platform: session.platform, selfId: session.selfId, channelId: session.channelId, adapter: session.bot?.platform },
+                });
                 const rule = control.get(target);
                 const ending =
                     rule?.expiresAt === null
                         ? "永久生效，直到主动解除"
-                        : `恢复时间：${new Date(rule?.expiresAt ?? Date.now() + milliseconds).toLocaleString("zh-CN")}`;
+                        : `恢复时间：${new Date(rule?.expiresAt ?? Date.now() + (milliseconds ?? 0)).toLocaleString("zh-CN")}`;
                 return `已更新 ${describe(target)} 的回复规则。\n抑制类别：${blocked.join(", ") || "无"}\n${ending}。消息与事件继续记录，其他指令正常使用。`;
             } catch (error) {
                 return `操作失败：${error.message}`;
             }
         });
 
-    addTargetOptions(root.subcommand(".resume", "解除聊天回复抑制", { authority: 3 })).action(async ({ session, options }) => {
-        try {
-            const target = await resolveTarget(ctx, control, session, options);
-            const resumed = await control.resume(target, { id: `admin:${session.platform}:${session.userId}`, origin: { platform: session.platform, selfId: session.selfId, channelId: session.channelId, adapter: session.bot?.platform } });
-            return resumed
-                ? `已解除 ${describe(target)} 的回复抑制，意愿从零开始积累。`
-                : `${describe(target)} 当前没有生效的回复抑制规则。`;
-        } catch (error) {
-            return `操作失败：${error.message}`;
-        }
-    });
+    addTargetOptions(root.subcommand(".resume", "解除聊天回复抑制", { authority: 3 })).action(
+        async ({ session, options }: { session?: any; options?: any }) => {
+            if (!session || !options) return;
+            try {
+                const target = await resolveTarget(ctx, control, session, options);
+                const resumed = await control.resume(target, {
+                    id: `admin:${session.platform}:${session.userId}`,
+                    origin: { platform: session.platform, selfId: session.selfId, channelId: session.channelId, adapter: session.bot?.platform },
+                });
+                return resumed ? `已解除 ${describe(target)} 的回复抑制，意愿从零开始积累。` : `${describe(target)} 当前没有生效的回复抑制规则。`;
+            } catch (error) {
+                return `操作失败：${error.message}`;
+            }
+        },
+    );
 
-    addTargetOptions(root.subcommand(".status", "查看聊天回复抑制状态", { authority: 3 })).action(async ({ session, options }) => {
-        try {
-            const target = await resolveTarget(ctx, control, session, options);
-            const rule = control.get(target);
-            if (!rule) return `${describe(target)} 当前没有生效的回复抑制规则。`;
-            return `${describe(target)}\n抑制类别：${rule.blocked.join(", ") || "无"}\n${rule.expiresAt === null ? "永久生效" : `恢复时间：${new Date(rule.expiresAt).toLocaleString("zh-CN")}`}。`;
-        } catch (error) {
-            return `查询失败：${error.message}`;
-        }
-    });
+    addTargetOptions(root.subcommand(".status", "查看聊天回复抑制状态", { authority: 3 })).action(
+        async ({ session, options }: { session?: any; options?: any }) => {
+            if (!session || !options) return;
+            try {
+                const target = await resolveTarget(ctx, control, session, options);
+                const rule = control.get(target);
+                if (!rule) return `${describe(target)} 当前没有生效的回复抑制规则。`;
+                return `${describe(target)}\n抑制类别：${rule.blocked.join(", ") || "无"}\n${rule.expiresAt === null ? "永久生效" : `恢复时间：${new Date(rule.expiresAt).toLocaleString("zh-CN")}`}。`;
+            } catch (error) {
+                return `查询失败：${error.message}`;
+            }
+        },
+    );
 }

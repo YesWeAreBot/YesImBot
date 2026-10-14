@@ -17,13 +17,13 @@ YesImBot (Athena) 是一个基于 [Koishi](https://koishi.chat/zh-CN/) 的智能
 
 ## 🎯 核心特性
 
--   **🧠 智能对话管理**：基于意愿值系统控制 Bot 的主动发言频率，模拟真实人类的交流模式
--   **💾 记忆系统**：通过 Memory 和 Scenario 管理上下文，使机器人能够记住和理解对话历史
--   **🔗 多适配器支持**：支持多种 LLM API（OpenAI、Cloudflare、Ollama 等），实现负载均衡和故障转移
--   **🛠️ 可扩展的工具系统**：基于工具调用框架，允许机器人执行各种操作
--   **🎭 自定义人格**：轻松定制 Bot 的名字、性格、响应模式等
--   **📱 Web 管理界面**：提供直观的 Web 界面进行配置和管理
--   **🔌 MCP 扩展支持**：支持 Model Context Protocol 扩展，实现更强大的功能集成
+- **🧠 智能对话管理**：基于意愿值系统控制 Bot 的主动发言频率，模拟真实人类的交流模式
+- **💾 记忆系统**：通过 Memory 和 Scenario 管理上下文，使机器人能够记住和理解对话历史
+- **🔗 多适配器支持**：支持多种 LLM API（OpenAI、Cloudflare、Ollama 等），实现负载均衡和故障转移
+- **🛠️ 可扩展的工具系统**：基于工具调用框架，允许机器人执行各种操作
+- **🎭 自定义人格**：轻松定制 Bot 的名字、性格、响应模式等
+- **📱 Web 管理界面**：提供直观的 Web 界面进行配置和管理
+- **🔌 MCP 扩展支持**：支持 Model Context Protocol 扩展，实现更强大的功能集成
 
 ## 📦 项目结构
 
@@ -41,12 +41,12 @@ YesImBot/
 
 ### 📦 包说明
 
-| 包名      | 描述                        | NPM 包名                               |
-| --------- | --------------------------- | -------------------------------------- |
-| **core**  | 核心聊天机器人功能          | `koishi-plugin-yesimbot`               |
-| **mcp**   | Model Context Protocol 扩展 | `koishi-plugin-yesimbot-extension-mcp` |
+| 包名              | 描述                           | NPM 包名                                         |
+| ----------------- | ------------------------------ | ------------------------------------------------ |
+| **core**          | 核心聊天机器人功能             | `koishi-plugin-yesimbot`                         |
+| **mcp**           | Model Context Protocol 扩展    | `koishi-plugin-yesimbot-extension-mcp`           |
 | **person-memory** | 人物画像、账号关联与管理员审核 | `koishi-plugin-yesimbot-extension-person-memory` |
-| **webui** | Web 管理界面                | _开发中_                               |
+| **webui**         | Web 管理界面                   | _开发中_                                         |
 
 ## 📋 文档导航
 
@@ -72,8 +72,8 @@ YesImBot/
 
 ## 💬 社区支持
 
--   🐛 **问题反馈**: [GitHub Issues](https://github.com/HydroGest/YesImBot/issues)
--   💬 **QQ 交流群**: [857518324](http://qm.qq.com/cgi-bin/qm/qr?_wv=1027&k=k3O5_1kNFJMERGxBOj1ci43jHvLvfru9&authKey=TkOxmhIa6kEQxULtJ0oMVU9FxoY2XNiA%2B7bQ4K%2FNx5%2F8C8ToakYZeDnQjL%2B31Rx%2B&noverify=0&group_code=857518324)
+- 🐛 **问题反馈**: [GitHub Issues](https://github.com/HydroGest/YesImBot/issues)
+- 💬 **QQ 交流群**: [857518324](http://qm.qq.com/cgi-bin/qm/qr?_wv=1027&k=k3O5_1kNFJMERGxBOj1ci43jHvLvfru9&authKey=TkOxmhIa6kEQxULtJ0oMVU9FxoY2XNiA%2B7bQ4K%2FNx5%2F8C8ToakYZeDnQjL%2B31Rx%2B&noverify=0&group_code=857518324)
 
 ## 📄 许可证
 

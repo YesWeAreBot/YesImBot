@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+
 import { $, type Context } from "koishi";
 
 export const SNAPSHOTS = "yesimbot.onebot_directory_snapshots" as const;
@@ -39,13 +40,37 @@ declare module "koishi" {
 }
 
 export function registerModels(ctx: Context) {
-    ctx.model.extend(SNAPSHOTS, {
-        platform: "string(64)", ownerId: "string(64)", scope: "string(255)", revision: "string(36)", fetchedAt: "timestamp", previousRevision: "string(36)", sourceBotId: "string(64)", total: "unsigned",
-    }, { autoInc: false, primary: ["platform", "ownerId", "scope"] });
-    ctx.model.extend(CONTACTS, {
-        platform: "string(64)", ownerId: "string(64)", scope: "string(255)", revision: "string(36)", userId: "string(64)",
-        revisionCreatedAt: { type: "timestamp", initial: new Date(0) }, ordinal: "unsigned", nickname: "string(255)", remark: "string(255)", card: "string(255)", role: "string(32)",
-    }, { autoInc: false, primary: ["platform", "ownerId", "scope", "revision", "userId"] });
+    ctx.model.extend(
+        SNAPSHOTS,
+        {
+            platform: "string(64)",
+            ownerId: "string(64)",
+            scope: "string(255)",
+            revision: "string(36)",
+            fetchedAt: "timestamp",
+            previousRevision: "string(36)",
+            sourceBotId: "string(64)",
+            total: "unsigned",
+        },
+        { autoInc: false, primary: ["platform", "ownerId", "scope"] },
+    );
+    ctx.model.extend(
+        CONTACTS,
+        {
+            platform: "string(64)",
+            ownerId: "string(64)",
+            scope: "string(255)",
+            revision: "string(36)",
+            userId: "string(64)",
+            revisionCreatedAt: { type: "timestamp", initial: new Date(0) },
+            ordinal: "unsigned",
+            nickname: "string(255)",
+            remark: "string(255)",
+            card: "string(255)",
+            role: "string(32)",
+        },
+        { autoInc: false, primary: ["platform", "ownerId", "scope", "revision", "userId"] },
+    );
 }
 
 export interface OneBotContact {
@@ -86,7 +111,11 @@ export class DirectoryStore {
     private closed = false;
     private readonly waiting: Array<{ resolve(): void; reject(error: Error): void }> = [];
 
-    constructor(private readonly ctx: Context, private readonly concurrency: number, private readonly batchSize: number) {}
+    constructor(
+        private readonly ctx: Context,
+        private readonly concurrency: number,
+        private readonly batchSize: number,
+    ) {}
 
     stop() {
         this.closed = true;
@@ -100,8 +129,10 @@ export class DirectoryStore {
     private async withSlot(job: () => Promise<void>) {
         if (this.running < this.concurrency) this.running++;
         else await new Promise<void>((resolve, reject) => this.waiting.push({ resolve, reject }));
-        try { this.ensureActive(); await job(); }
-        finally {
+        try {
+            this.ensureActive();
+            await job();
+        } finally {
             const next = this.waiting.shift();
             if (next) next.resolve(); // Transfer the reserved slot directly to the next job.
             else this.running--;
@@ -121,8 +152,10 @@ export class DirectoryStore {
         const scope = args.kind === "members" ? `group:${args.groupId || ""}` : args.kind;
         if (args.kind === "members" && !args.groupId) throw new Error("查询群成员需要群号或当前群聊");
         if (args.offset !== undefined && (!Number.isSafeInteger(args.offset) || args.offset < 0)) throw new Error("offset 必须是非负整数");
-        if (args.limit !== undefined && (!Number.isSafeInteger(args.limit) || args.limit < 1 || args.limit > 500)) throw new Error("limit 必须在 1 到 500 之间；全量请设置 all=true");
-        if (args.query !== undefined && (typeof args.query !== "string" || !args.query.trim() || args.query.length > 160)) throw new Error("搜索关键词须为 1–160 字");
+        if (args.limit !== undefined && (!Number.isSafeInteger(args.limit) || args.limit < 1 || args.limit > 500))
+            throw new Error("limit 必须在 1 到 500 之间；全量请设置 all=true");
+        if (args.query !== undefined && (typeof args.query !== "string" || !args.query.trim() || args.query.length > 160))
+            throw new Error("搜索关键词须为 1–160 字");
         const key = `${platform}\0${ownerId}\0${scope}`;
         await this.cleanup(platform, ownerId, scope);
         let current = await this.snapshot(platform, ownerId, scope);
@@ -157,36 +190,46 @@ export class DirectoryStore {
     private async readRevision(current: Snapshot, args: Query) {
         const { platform, ownerId, scope, revision } = current;
         const offset = args.offset || 0;
-        const limit = args.all ? Math.max(0, current.total - offset) : args.limit ?? 50;
+        const limit = args.all ? Math.max(0, current.total - offset) : (args.limit ?? 50);
         const entries: Contact[] = [];
         const filter: any = { platform, ownerId, scope, revision };
         if (args.query) {
             const regex = new RegExp(args.query.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-            filter.$or = ["userId", "nickname", "card", "remark"].map(field => ({ [field]: { $regex: regex } }));
+            filter.$or = ["userId", "nickname", "card", "remark"].map((field) => ({ [field]: { $regex: regex } }));
         }
-        const matchedTotal = args.query ? await this.ctx.database.eval(CONTACTS, row => $.count(row.userId), filter) : current.total;
+        const matchedTotal = args.query ? await this.ctx.database.eval(CONTACTS, (row) => $.count(row.userId), filter) : current.total;
         if (!args.summaryOnly) {
             if (args.userId) {
-                entries.push(...await this.ctx.database.get(CONTACTS,
-                    { platform, ownerId, scope, revision, userId: args.userId }, { limit: 1 }));
+                entries.push(...(await this.ctx.database.get(CONTACTS, { platform, ownerId, scope, revision, userId: args.userId }, { limit: 1 })));
             } else {
                 // All reads, including all=true, use bounded DB pages.
                 for (let start = offset; start < Math.min(matchedTotal, offset + limit); start += this.batchSize) {
-                    const page = await this.ctx.database.get(CONTACTS, filter,
-                        { sort: { ordinal: "asc" }, offset: start, limit: Math.min(this.batchSize, offset + limit - start) });
+                    const page = await this.ctx.database.get(CONTACTS, filter, {
+                        sort: { ordinal: "asc" },
+                        offset: start,
+                        limit: Math.min(this.batchSize, offset + limit - start),
+                    });
                     entries.push(...page);
                     if (!page.length) break;
                 }
             }
         }
-        return { kind: args.kind, groupId: args.kind === "members" ? args.groupId : undefined,
-            fetchedAt: current.fetchedAt, sourceBotId: current.sourceBotId, total: matchedTotal, cachedTotal: current.total,
-            offset: args.userId || args.summaryOnly ? 0 : offset, returned: entries.length, entries };
+        return {
+            kind: args.kind,
+            groupId: args.kind === "members" ? args.groupId : undefined,
+            fetchedAt: current.fetchedAt,
+            sourceBotId: current.sourceBotId,
+            total: matchedTotal,
+            cachedTotal: current.total,
+            offset: args.userId || args.summaryOnly ? 0 : offset,
+            returned: entries.length,
+            entries,
+        };
     }
 
     private contactCount(snapshot: Pick<Snapshot, "platform" | "ownerId" | "scope" | "revision">) {
         const { platform, ownerId, scope, revision } = snapshot;
-        return this.ctx.database.eval(CONTACTS, row => $.count(row.userId), { platform, ownerId, scope, revision });
+        return this.ctx.database.eval(CONTACTS, (row) => $.count(row.userId), { platform, ownerId, scope, revision });
     }
 
     private async cleanup(platform: string, ownerId: string, scope: string) {
@@ -194,16 +237,27 @@ export class DirectoryStore {
         // The exclusion is evaluated inside the DELETE, not from a stale JS
         // snapshot. Readers and publishers additionally verify counts to handle
         // a preparation crossing the TTL/publication boundary.
-        await database.remove(CONTACTS, row => $.and(
-            $.eq(row.platform, platform), $.eq(row.ownerId, ownerId), $.eq(row.scope, scope),
-            $.lt(row.revisionCreatedAt, new Date(Date.now() - REVISION_TTL_MS)),
-            $.not($.in(row.revision, database.select(SNAPSHOTS, { platform, ownerId, scope }).evaluate("revision"))),
-        )).catch(error => this.ctx.logger.warn("清理旧名单失败：%s", String(error)));
+        await database
+            .remove(CONTACTS, (row) =>
+                $.and(
+                    $.eq(row.platform, platform),
+                    $.eq(row.ownerId, ownerId),
+                    $.eq(row.scope, scope),
+                    $.lt(row.revisionCreatedAt, new Date(Date.now() - REVISION_TTL_MS)),
+                    $.not($.in(row.revision, database.select(SNAPSHOTS, { platform, ownerId, scope }).evaluate("revision"))),
+                ),
+            )
+            .catch((error) => this.ctx.logger.warn("清理旧名单失败：%s", String(error)));
     }
 
     private async refresh(bot: OneBotClient, platform: string, ownerId: string, scope: string, kind: Query["kind"], groupId?: string) {
         if (kind === "groups" && !bot.internal.getGroupList) throw new Error("当前 OneBot 适配器不支持群列表");
-        const raw = kind === "friends" ? await bot.internal.getFriendList() : kind === "groups" ? await bot.internal.getGroupList!() : await bot.internal.getGroupMemberList(groupId!, true);
+        const raw =
+            kind === "friends"
+                ? await bot.internal.getFriendList()
+                : kind === "groups"
+                  ? await bot.internal.getGroupList!()
+                  : await bot.internal.getGroupMemberList(groupId!, true);
         this.ensureActive();
         if (!Array.isArray(raw)) throw new Error("OneBot 返回了无效的名单");
         const previous = await this.snapshot(platform, ownerId, scope);
@@ -215,9 +269,19 @@ export class DirectoryStore {
             const userId = String((kind === "groups" ? row.group_id : row.user_id) ?? "");
             if (!userId || seen.has(userId)) continue;
             seen.add(userId);
-            entries.push({ platform, ownerId, scope, revision, revisionCreatedAt, userId, ordinal: entries.length,
-                nickname: String((kind === "groups" ? row.group_name : row.nickname) ?? ""), remark: String(row.remark ?? ""),
-                card: String(row.card ?? ""), role: String(row.role ?? "") });
+            entries.push({
+                platform,
+                ownerId,
+                scope,
+                revision,
+                revisionCreatedAt,
+                userId,
+                ordinal: entries.length,
+                nickname: String((kind === "groups" ? row.group_name : row.nickname) ?? ""),
+                remark: String(row.remark ?? ""),
+                card: String(row.card ?? ""),
+                role: String(row.role ?? ""),
+            });
         }
         let publicationStarted = false;
         try {
@@ -230,21 +294,24 @@ export class DirectoryStore {
             // conditional set is not a publication lock. Check both sides of
             // publication instead; queries independently verify completeness.
             const expected = { platform, ownerId, scope, revision };
-            if (await this.contactCount(expected) !== entries.length)
-                throw new Error("名单准备期间已过期，请重新刷新");
+            if ((await this.contactCount(expected)) !== entries.length) throw new Error("名单准备期间已过期，请重新刷新");
             this.ensureActive();
             publicationStarted = true;
-            await this.ctx.database.upsert(SNAPSHOTS, [{ ...expected,
-                previousRevision: previous?.revision || "", sourceBotId: String(bot.selfId),
-                fetchedAt: new Date(Date.now()), total: entries.length }]);
-            if (await this.contactCount(expected) !== entries.length)
-                throw new Error("名单准备期间已过期，请重新刷新");
+            await this.ctx.database.upsert(SNAPSHOTS, [
+                {
+                    ...expected,
+                    previousRevision: previous?.revision || "",
+                    sourceBotId: String(bot.selfId),
+                    fetchedAt: new Date(Date.now()),
+                    total: entries.length,
+                },
+            ]);
+            if ((await this.contactCount(expected)) !== entries.length) throw new Error("名单准备期间已过期，请重新刷新");
         } catch (error) {
             // A rejected write may already have committed. Once publication
             // starts, leave the candidate to pointer-aware TTL cleanup, so a
             // transient post-publication error cannot erase a complete cache.
-            if (!publicationStarted)
-                await this.ctx.database.remove(CONTACTS, { platform, ownerId, scope, revision }).catch(() => {});
+            if (!publicationStarted) await this.ctx.database.remove(CONTACTS, { platform, ownerId, scope, revision }).catch(() => {});
             throw error;
         }
         await this.cleanup(platform, ownerId, scope);

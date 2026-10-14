@@ -1,13 +1,13 @@
-import { Services } from "@/shared/constants";
 import { ImagePart, TextPart } from "@xsai/shared-chat";
 import { Context, Logger } from "koishi";
 
-import { AssetService } from "@/services/assets";
-import { ToolService } from "@/services/extension";
-import { MemoryService } from "@/services/memory";
-import { ChatModelSwitcher } from "@/services/model";
-import { AgentStimulus, ContextualMessage, UserMessagePayload, WorldState, WorldStateService } from "@/services/worldstate";
-import { Config } from "@/config";
+import { Config } from "../config";
+import { AssetService } from "../services/assets";
+import { ToolService } from "../services/extension";
+import { MemoryService } from "../services/memory";
+import { ChatModelSwitcher } from "../services/model";
+import { AgentStimulus, ContextualMessage, UserMessagePayload, WorldState, WorldStateService } from "../services/worldstate";
+import { Services } from "../shared/constants";
 
 interface ImageCandidate {
     id: string;
@@ -30,7 +30,7 @@ export class PromptContextBuilder {
     constructor(
         private readonly ctx: Context,
         private readonly config: Config,
-        private readonly modelSwitcher: ChatModelSwitcher
+        private readonly modelSwitcher: ChatModelSwitcher,
     ) {
         this.logger = ctx[Services.Logger].getLogger("[上下文构建器]");
         this.assetService = ctx[Services.Asset];
@@ -55,6 +55,8 @@ export class PromptContextBuilder {
             case "system_event":
                 triggerContext = { isSystemEvent: true, event: payload };
                 break;
+            default:
+                break;
         }
         worldState.triggerContext = triggerContext;
 
@@ -70,7 +72,7 @@ export class PromptContextBuilder {
      * 构建多模态消息内容，如果模型和配置支持。
      * @returns 包含图片和文本的消息内容数组，或纯文本字符串。
      */
-    public async buildMultimodalUserMessage(userPromptText: string, worldState: WorldState): Promise<string | (ImagePart | TextPart)[]> {
+    public async buildMultimodalUserMessage(userPromptText: string, worldState: WorldState): Promise<string | Array<ImagePart | TextPart>> {
         const canUseVision = this.modelSwitcher.hasVisionCapability() && this.config.enableVision;
         if (!canUseVision) {
             return userPromptText;
@@ -79,11 +81,7 @@ export class PromptContextBuilder {
         const multiModalData = await this.buildMultimodalImages(worldState);
         if (multiModalData.images.length > 0) {
             this.logger.debug(`上下文包含 ${multiModalData.images.length / 2} 张图片，将构建多模态消息。`);
-            return [
-                { type: "text", text: this.config.multiModalSystemTemplate },
-                ...multiModalData.images,
-                { type: "text", text: userPromptText },
-            ];
+            return [{ type: "text", text: this.config.multiModalSystemTemplate }, ...multiModalData.images, { type: "text", text: userPromptText }];
         }
 
         return userPromptText;
@@ -95,12 +93,11 @@ export class PromptContextBuilder {
      * @param worldState 当前的世界状态
      * @returns 包含筛选后的图片内容的对象
      */
-    private async buildMultimodalImages(worldState: WorldState): Promise<{ images: (ImagePart | TextPart)[] }> {
+    private async buildMultimodalImages(worldState: WorldState): Promise<{ images: Array<ImagePart | TextPart> }> {
         // 1. 将所有消息扁平化并建立索引
-        const allMessages = [
-            ...(worldState.l1_working_memory.processed_events || []),
-            ...(worldState.l1_working_memory.new_events || []),
-        ].filter((item): item is { type: "message" } & ContextualMessage => item.type === "message");
+        const allMessages = [...(worldState.l1_working_memory.processed_events || []), ...(worldState.l1_working_memory.new_events || [])].filter(
+            (item): item is { type: "message" } & ContextualMessage => item.type === "message",
+        );
 
         const messageMap = new Map(allMessages.map((m) => [m.id, m]));
 
@@ -114,7 +111,7 @@ export class PromptContextBuilder {
             // 检查引用，为被引用的图片赋予更高优先级
             let isQuotedImage = false;
             if (msg.quoteId && messageMap.has(msg.quoteId)) {
-                const quotedElements = messageMap.get(msg.quoteId).elements;
+                const quotedElements = messageMap.get(msg.quoteId)!.elements;
                 if (quotedElements.some((e) => imageTags.includes(e.type))) {
                     isQuotedImage = true;
                 }
@@ -138,7 +135,7 @@ export class PromptContextBuilder {
                     }
                     return map;
                 }, new Map<string, ImageCandidate>())
-                .values()
+                .values(),
         );
 
         // 4. 根据生命周期和数量上限选择最终图片
@@ -160,7 +157,7 @@ export class PromptContextBuilder {
 
         const imageDataResults = await Promise.all(Array.from(finalImageIds).map((id) => this.assetService.getInfo(id)));
 
-        const finalImages: (ImagePart | TextPart)[] = [];
+        const finalImages: Array<ImagePart | TextPart> = [];
         const allowedImageTypes = new Set(this.config.allowedImageTypes);
 
         for (const result of imageDataResults) {

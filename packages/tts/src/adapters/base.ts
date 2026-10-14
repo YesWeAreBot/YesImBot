@@ -1,4 +1,5 @@
 import { Awaitable, Context, Schema } from "koishi";
+
 import { BaseTTSConfig, BaseTTSParams, SynthesisResult } from "../types";
 
 /**
@@ -20,7 +21,7 @@ export abstract class TTSAdapter<C extends BaseTTSConfig = BaseTTSConfig, P exte
      */
     constructor(
         protected ctx: Context,
-        protected config: C
+        protected config: C,
     ) {}
 
     public stop(): Awaitable<void> {}

@@ -1,10 +1,11 @@
 import fs from "fs";
 import { readFile, stat } from "fs/promises";
+
 import matter from "gray-matter";
 import { Context, Logger } from "koishi";
 
-import { Services } from "@/shared/constants";
-import { AppError, ErrorDefinitions } from "@/shared/errors";
+import { Services } from "../../shared/constants";
+import { AppError, ErrorDefinitions } from "../../shared/errors";
 
 export interface MemoryBlockData {
     title: string;

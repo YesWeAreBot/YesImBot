@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test";
+
 import { Context, Logger, Schema } from "koishi";
+
 import { ToolService } from "../lib/services/extension/service";
 import { Services } from "../src/shared/constants";
 

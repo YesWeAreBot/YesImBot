@@ -1,9 +1,10 @@
 import { promises as fs } from "fs";
 import { mkdir } from "fs/promises";
+import path from "path";
+
 import { base64ToArrayBuffer, Context, h, Logger, Schema } from "koishi";
 import {} from "koishi-plugin-puppeteer";
 import { Extension, Failed, Infer, Success, Tool, withInnerThoughts } from "koishi-plugin-yesimbot/services";
-import * as path from "path";
 import type { BuiltinLanguage, BuiltinTheme, HighlighterCore } from "shiki";
 
 // 使用 Logger 创建一个独立的日志记录器，便于区分插件日志
@@ -42,23 +43,21 @@ export default class CodeToImage {
             .role("path")
             .default("data/code2image/fonts")
             .description("存放自定义字体文件（.ttf, .otf, .woff2）的目录路径。留空则不加载本地字体"),
-        defaultFontFamily: Schema.string()
-            .default("JetBrains Mono")
-            .description("默认使用的字体名称。需确保该字体已在 `fontDirectory` 中或为系统预装字体"),
+        defaultFontFamily: Schema.string().default("JetBrains Mono").description("默认使用的字体名称。需确保该字体已在 `fontDirectory` 中或为系统预装字体"),
         defaultFontSize: Schema.number().min(10).default(18).description("默认字体大小（单位：px）"),
         defaultPadding: Schema.number().min(0).default(40).description("图片默认内边距（单位：px）"),
     });
 
     static readonly inject = ["puppeteer"];
 
-    private highlighter: HighlighterCore;
+    private highlighter?: HighlighterCore;
     private disposed = false;
     private initialization?: Promise<void>;
     private localFonts: Map<string, string> = new Map();
 
     constructor(
         public ctx: Context,
-        public config: CodeToImageConfig
+        public config: CodeToImageConfig,
     ) {
         // 在构造函数中直接监听 ready 事件
         ctx.on("ready", async () => {
@@ -167,8 +166,8 @@ export default class CodeToImage {
             // 动态加载 Shiki 主题和语言
             try {
                 await this.highlighter.loadTheme(import(`@shikijs/themes/${theme}`));
-            } catch (e) {
-                logger.warn(`尝试加载主题 "${theme}" 失败: ${e.message}`);
+            } catch (error) {
+                logger.warn(`尝试加载主题 "${theme}" 失败: ${error.message}`);
                 theme = this.config.defaultTheme;
             }
 
@@ -176,8 +175,8 @@ export default class CodeToImage {
             if (!loadedLanguages.includes(lang)) {
                 try {
                     await this.highlighter.loadLanguage(import(`@shikijs/langs/${lang}`));
-                } catch (e) {
-                    logger.warn(`尝试加载语言 "${lang}" 失败: ${e.message}`);
+                } catch (error) {
+                    logger.warn(`尝试加载语言 "${lang}" 失败: ${error.message}`);
                     return `不支持的语言: ${lang}。请检查语言名称是否正确。`;
                 }
             }
@@ -236,6 +235,7 @@ export default class CodeToImage {
             .option("theme", "-t <theme:string> 指定高亮主题")
             .option("font", "-f <font:string>指定字体 ")
             .action(async ({ session, options }, code) => {
+                if (!session || !options) return;
                 if (!code) return session.execute("help code");
 
                 // 从 Markdown 代码块中提取代码和语言
@@ -288,6 +288,7 @@ export default class CodeToImage {
     }>) {
         //await session.send("收到渲染指令，正在生成图片...");
 
+        if (!session || !options) return;
         const result = await this.generateImage(options);
 
         if (Buffer.isBuffer(result)) {
@@ -303,13 +304,7 @@ export default class CodeToImage {
      * @param pageOptions 页面内容和样式选项
      * @returns 完整的 HTML 字符串
      */
-    private createHtmlPage(pageOptions: {
-        fragment: string;
-        backgroundColor: string;
-        fontFamily: string;
-        fontSize: number;
-        padding: number;
-    }): string {
+    private createHtmlPage(pageOptions: { fragment: string; backgroundColor: string; fontFamily: string; fontSize: number; padding: number }): string {
         const { fragment, backgroundColor, fontFamily, fontSize, padding } = pageOptions;
 
         // 生成 @font-face 规则
@@ -318,7 +313,7 @@ export default class CodeToImage {
                 ([name, url]) => `@font-face {
                     font-family: "${name}";
                     src: url("file://${url}");
-                }`
+                }`,
             )
             .join("\n");
 

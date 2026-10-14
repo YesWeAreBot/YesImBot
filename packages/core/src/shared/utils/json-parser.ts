@@ -140,8 +140,8 @@ export class JsonParser<T> {
             let data: T;
             try {
                 data = JSON.parse(processedString) as T;
-            } catch (e: any) {
-                this.log(`直接解析失败: ${e.message}`);
+            } catch (error: any) {
+                this.log(`直接解析失败: ${error.message}`);
                 const repaired = jsonrepair(processedString);
                 data = JSON.parse(repaired) as T;
             }
@@ -156,17 +156,17 @@ export class JsonParser<T> {
 
             this.log("解析流程成功完成");
             return { data, error: null, logs: this.logs };
-        } catch (e: any) {
-            this.log(`最终解析失败: ${e.message}`);
-            if (e instanceof JSONRepairError) {
-                const line = (e as any).line;
-                const column = (e as any).column;
+        } catch (error: any) {
+            this.log(`最终解析失败: ${error.message}`);
+            if (error instanceof JSONRepairError) {
+                const line = (error as any).line;
+                const column = (error as any).column;
                 // 在源文本中标出错误位置
                 const pointer = " ".repeat(column - 1) + "^";
                 this.log(`${processedString.split("\n")[line - 1]}`);
                 this.log(`${pointer}`);
             }
-            return { data: null, error: e.message, logs: this.logs };
+            return { data: null, error: error.message, logs: this.logs };
         }
     }
 

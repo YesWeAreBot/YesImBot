@@ -1,9 +1,11 @@
+import path from "path";
+
 import { Context, Logger, Schema } from "koishi";
 import { AssetService, ToolDefinition, withInnerThoughts } from "koishi-plugin-yesimbot/services";
 import { Services } from "koishi-plugin-yesimbot/shared";
-import path from "path";
 import { loadPyodide, PyodideAPI } from "pyodide";
 import type { PyProxy } from "pyodide/ffi";
+
 import { SharedConfig } from "../../config";
 import { CodeExecutionResult, CodeExecutor, ExecutionArtifact, ExecutionError } from "../base";
 
@@ -63,18 +65,18 @@ export const PythonConfigSchema: Schema<PythonConfig> = Schema.intersect([
 class PyodideEnginePool {
     private readonly logger: Logger;
     private pool: PyodideAPI[] = [];
-    private waiting: ((engine: PyodideAPI) => void)[] = [];
+    private waiting: Array<(engine: PyodideAPI) => void> = [];
     private readonly maxSize: number;
     private isInitialized = false;
 
     constructor(
         private ctx: Context,
         private config: PythonConfig,
-        private sharedConfig: SharedConfig
+        private sharedConfig: SharedConfig,
     ) {
         // 为日志源添加特定前缀，方便区分
         this.logger = ctx.logger(`[执行器:Python:引擎池]`);
-        this.maxSize = config.poolSize;
+        this.maxSize = config.poolSize ?? 0;
     }
 
     private async createEngine(): Promise<PyodideAPI> {
@@ -87,7 +89,7 @@ class PyodideEnginePool {
         this.logger.info(`[创建实例] Pyodide 核心加载完成`);
 
         if (this.config.packages && this.config.packages.length > 0) {
-            const packageList = this.config.packages.join(", ");
+            const packageList = this.config.packages!.join(", ");
             this.logger.info(`[创建实例] 准备加载预设包: ${packageList}`);
             try {
                 await pyodide.loadPackage(this.config.packages);
@@ -167,7 +169,7 @@ export class PythonExecutor implements CodeExecutor {
     constructor(
         private ctx: Context,
         private config: PythonConfig,
-        private sharedConfig: SharedConfig
+        private sharedConfig: SharedConfig,
     ) {
         this.logger = ctx.logger(`[执行器:Python]`);
         this.assetService = ctx[Services.Asset];
@@ -255,8 +257,7 @@ if os.path.exists(workspace):
                 name: "TimeoutError",
                 message: `Code execution exceeded the time limit of ${this.config.timeout}ms.`,
                 stack: err.stack,
-                suggestion:
-                    "Your code took too long to run. Please optimize for performance, reduce complexity, or process a smaller amount of data.",
+                suggestion: "Your code took too long to run. Please optimize for performance, reduce complexity, or process a smaller amount of data.",
             };
         }
 
@@ -280,8 +281,8 @@ if os.path.exists(workspace):
                 suggestion =
                     "A variable or function was used before it was defined. Ensure all variables are assigned and all necessary libraries (from the allowed list) are imported correctly.";
             } else if (errorType.startsWith("ModuleNotFoundError")) {
-                suggestion = `The code tried to import a module that is not available or not allowed. You can only import from this list: [${this.config.allowedModules.join(
-                    ", "
+                suggestion = `The code tried to import a module that is not available or not allowed. You can only import from this list: [${this.config.allowedModules!.join(
+                    ", ",
                 )}].`;
             } else if (errorType.startsWith("TypeError")) {
                 suggestion =
@@ -304,8 +305,8 @@ if os.path.exists(workspace):
         // 工具描述通常面向 LLM，保持英文可能更佳，但可按需翻译
         const defaultDescription = `Executes Python code in a sandboxed WebAssembly-based environment (Pyodide).
 - Python Version: 3.11
-- Pre-installed Libraries: ${this.config.packages.join(", ") || "Python Standard Library"}
-- Allowed Importable Modules: ${this.config.allowedModules.join(", ")}
+- Pre-installed Libraries: ${this.config.packages!.join(", ") || "Python Standard Library"}
+- Allowed Importable Modules: ${this.config.allowedModules!.join(", ")}
 - Use print() to output results. The final expression's value is also returned.
 - File I/O is restricted to a temporary '/workspace' directory.
 - To generate files (like images, plots, data files), use the special function '__create_artifact__(fileName, content, type)'. It returns assets for download. For example, to save a plot, use matplotlib to save it to a BytesIO buffer and pass it to this function.`;
@@ -362,9 +363,7 @@ if os.path.exists(workspace):
             engine.globals.set("__create_artifact__", createArtifact);
             engine.FS.mkdirTree("/workspace");
 
-            const maxOutputSize = Number.isFinite(this.sharedConfig.maxOutputSize)
-                ? Math.max(0, Math.floor(this.sharedConfig.maxOutputSize))
-                : 10240;
+            const maxOutputSize = Number.isFinite(this.sharedConfig.maxOutputSize) ? Math.max(0, Math.floor(this.sharedConfig.maxOutputSize)) : 10240;
             const collectOutput = (skipEmpty: boolean) => {
                 let content = "";
                 let length = 0;

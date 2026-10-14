@@ -1,5 +1,8 @@
 {
-  "extends": "../../tsconfig.base",
-  "compilerOptions": { "rootDir": "src", "outDir": "lib", "strict": true, "types": ["node", "yml-register/types"] },
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "lib",
+    "rootDir": "src"
+  },
   "include": ["src"]
 }

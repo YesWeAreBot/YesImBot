@@ -1,10 +1,10 @@
-import { Context, h, Schema } from "koishi";
+import { Context, h, Schema, Session } from "koishi";
 
-import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
-import { Failed, Success } from "@/services/extension/helpers";
-import { Infer } from "@/services/extension/types";
-import { MemoryService } from "@/services/memory";
-import { Services } from "@/shared/constants";
+import { Extension, Tool, withInnerThoughts } from "../../../services/extension/decorators";
+import { Failed, Success } from "../../../services/extension/helpers";
+import { Infer } from "../../../services/extension/types";
+import { MemoryService } from "../../../services/memory";
+import { Services } from "../../../shared/constants";
 
 @Extension({
     name: "memory",
@@ -21,7 +21,10 @@ export default class MemoryExtension {
 
     static readonly inject = [Services.Memory];
 
-    constructor(public ctx: Context, public config: any) {}
+    constructor(
+        public ctx: Context,
+        public config: any,
+    ) {}
 
     private get memoryService(): MemoryService {
         if (!this.ctx[Services.Memory]) {
@@ -114,34 +117,34 @@ export default class MemoryExtension {
         description:
             "Searches your raw conversation history (recall memory). Useful for finding specific keywords, names, or direct quotes from past conversations.",
         parameters: withInnerThoughts({
-            query: Schema.string()
-                .required()
-                .description("The search term to find in past messages. This is a keyword-based search."),
-            limit: Schema.number()
-                .min(1)
-                .default(10)
-                .max(20)
-                .description("Maximum number of messages to return (default: 10, max: 20)."),
+            query: Schema.string().required().description("The search term to find in past messages. This is a keyword-based search."),
+            limit: Schema.number().min(1).default(10).max(20).description("Maximum number of messages to return (default: 10, max: 20)."),
             offset: Schema.number().min(0).step(1).default(0).description("分页位置；用返回的 nextOffset 继续"),
             channel_id: Schema.string().description("Optional: Filter by a specific channel ID."),
-            user_id: Schema.string().description(
-                "Optional: Filter by messages sent by a specific user ID (not the bot's own ID)."
-            ),
+            user_id: Schema.string().description("Optional: Filter by messages sent by a specific user ID (not the bot's own ID)."),
         }),
     })
     async conversationSearch(args: Infer<{ query: string; limit?: number; offset?: number; channel_id?: string; user_id?: string }>) {
+        const { session } = args;
+        if (!session) return Failed("session 不可用");
         try {
-            if (args.channel_id && args.channel_id !== args.session.channelId) return Failed("聊天召回仅限当前频道；跨频道请使用已配置共同域的 person_recall");
-            const result = await this.ctx[Services.WorldState].recallContext(args.session, {
-                kind: "messages", query: args.query, limit: args.limit ?? 10, offset: args.offset, userId: args.user_id,
+            if (args.channel_id && args.channel_id !== session.channelId) return Failed("聊天召回仅限当前频道；跨频道请使用已配置共同域的 person_recall");
+            const result = await this.ctx[Services.WorldState].recallContext(session, {
+                kind: "messages",
+                query: args.query,
+                limit: args.limit ?? 10,
+                offset: args.offset,
+                userId: args.user_id,
             });
             return Success(result);
-        } catch (error) { return Failed(`召回失败：${String(error)}`); }
-
+        } catch (error) {
+            return Failed(`召回失败：${String(error)}`);
+        }
     }
     @Tool({
         name: "memory_recall",
-        description: "分页读取当前频道原始消息、L2 摘要或 L3 日记并提供完整原文；不裁正文。返回 hasMore 时用 nextOffset 继续。display 仅控制是否同时发送到聊天窗口，结果始终作为观察提供给你。",
+        description:
+            "分页读取当前频道原始消息、L2 摘要或 L3 日记并提供完整原文；不裁正文。返回 hasMore 时用 nextOffset 继续。display 仅控制是否同时发送到聊天窗口，结果始终作为观察提供给你。",
         parameters: withInnerThoughts({
             kind: Schema.union(["messages", "l2", "l3"]).default("l3"),
             id: Schema.string().description("可选：按召回记录 ID 读取完整条目"),
@@ -154,37 +157,61 @@ export default class MemoryExtension {
             display: Schema.boolean().default(false).description("是否同时向当前聊天窗口显示原文"),
         }),
     })
-    async memoryRecall(args: Infer<{ kind?: "messages" | "l2" | "l3"; id?: string; query?: string; start?: string; end?: string; user_id?: string; offset?: number; limit?: number; display?: boolean }>) {
+    async memoryRecall(
+        args: Infer<{
+            kind?: "messages" | "l2" | "l3";
+            id?: string;
+            query?: string;
+            start?: string;
+            end?: string;
+            user_id?: string;
+            offset?: number;
+            limit?: number;
+            display?: boolean;
+        }>,
+    ) {
+        const { session } = args;
+        if (!session) return Failed("session 不可用");
         try {
-            const result = await this.ctx[Services.WorldState].recallContext(args.session, { ...args, userId: args.user_id });
-            return this.withDisplay(args.session, result, args.display);
-        } catch (error) { return Failed(`召回失败：${String(error)}`); }
+            const result = await this.ctx[Services.WorldState].recallContext(session, { ...args, userId: args.user_id });
+            return this.withDisplay(session, result, args.display);
+        } catch (error) {
+            return Failed(`召回失败：${String(error)}`);
+        }
     }
 
     @Tool({
         name: "l3_diary_generate",
-        description: "手动触发当前频道 L3 日记，日期默认今天；读取完整生成结果到下一轮上下文。需要已启用 L3，不覆盖旧日记。没有新消息或材料不足时不生成。display 只控制聊天窗口显示。",
+        description:
+            "手动触发当前频道 L3 日记，日期默认今天；读取完整生成结果到下一轮上下文。需要已启用 L3，不覆盖旧日记。没有新消息或材料不足时不生成。display 只控制聊天窗口显示。",
         parameters: withInnerThoughts({
             date: Schema.string().description("可选 YYYY-MM-DD，服务器本地日期"),
             display: Schema.boolean().default(false),
         }),
     })
     async generateDiary(args: Infer<{ date?: string; display?: boolean }>) {
+        const { session } = args;
+        if (!session) return Failed("session 不可用");
         try {
-            const result = await this.ctx[Services.WorldState].triggerDiary(args.session, args.date);
-            return this.withDisplay(args.session, result, args.display);
-        } catch (error) { return Failed(`L3 触发失败：${String(error)}`); }
+            const result = await this.ctx[Services.WorldState].triggerDiary(session, args.date);
+            return this.withDisplay(session, result, args.display);
+        } catch (error) {
+            return Failed(`L3 触发失败：${String(error)}`);
+        }
     }
 
-    private async withDisplay(session: Infer<{}>["session"], result: unknown, display: boolean) {
+    private async withDisplay(session: Session, result: unknown, display?: boolean) {
         if (!display) return Success(result, { display: "silent" });
-        try { await this.displayRecall(session, result); return Success(result, { display: "sent" }); }
-        catch (error) { return Success(result, { display: "failed", displayError: String(error) }); }
+        try {
+            await this.displayRecall(session, result);
+            return Success(result, { display: "sent" });
+        } catch (error) {
+            return Success(result, { display: "failed", displayError: String(error) });
+        }
     }
 
-    private async displayRecall(session: Infer<{}>["session"], result: unknown) {
+    private async displayRecall(session: Session, result: unknown) {
         const text = Array.from(JSON.stringify(result, null, 2));
         for (let i = 0; i < text.length; i += 3000) await session.send(h.text(text.slice(i, i + 3000).join("")));
     }
-
 }

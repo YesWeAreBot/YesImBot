@@ -1,14 +1,14 @@
-import { withUsageScope } from "../../../model/usage";
-import { assertReplyDestination, guardReplyBot, replyTurnSignal } from "@/agent/reply-turn";
 import { Bot, Context, h, Logger, Schema, Session, sleep, Universal } from "koishi";
 
-import { AssetService } from "@/services/assets";
-import { Extension, Tool, withInnerThoughts } from "@/services/extension/decorators";
-import { Failed, Success } from "@/services/extension/helpers";
-import { Infer } from "@/services/extension/types";
-import { IChatModel, ModelDescriptor } from "@/services/model";
-import { Services } from "@/shared/constants";
-import { isEmpty } from "@/shared/utils";
+import { assertReplyDestination, guardReplyBot, replyTurnSignal } from "../../../../agent/reply-turn";
+import { AssetService } from "../../../../services/assets";
+import { Extension, Tool, withInnerThoughts } from "../../../../services/extension/decorators";
+import { Failed, Success } from "../../../../services/extension/helpers";
+import { Infer } from "../../../../services/extension/types";
+import { IChatModel, ModelDescriptor } from "../../../../services/model";
+import { Services } from "../../../../shared/constants";
+import { isEmpty } from "../../../../shared/utils";
+import { withUsageScope } from "../../../model/usage";
 
 interface CoreUtilConfig {
     typing: {
@@ -49,11 +49,11 @@ export default class CoreUtilExtension {
 
     private readonly logger: Logger;
     private readonly assetService: AssetService;
-    private disposed: boolean;
+    private disposed: boolean = false;
 
     constructor(
         public ctx: Context,
-        public config: CoreUtilConfig
+        public config: CoreUtilConfig,
     ) {
         this.logger = ctx[Services.Logger].getLogger("[核心工具]");
         this.assetService = ctx[Services.Asset];
@@ -166,19 +166,23 @@ export default class CoreUtilExtension {
         }
 
         try {
-            const response = await withUsageScope({ platform: session?.platform, botId: session?.selfId, target: session?.channelId, purpose: "图片描述" }, () => model.chat({
-                abortSignal: replyTurnSignal(),
-                messages: [
-                    {
-                        role: "user",
-                        content: [
-                            { type: "text", text: prompt },
-                            { type: "image_url", image_url: { url: image, detail: this.config.vision.detail } },
+            const response = await withUsageScope(
+                { platform: session?.platform, botId: session?.selfId, target: session?.channelId, purpose: "图片描述" },
+                () =>
+                    model.chat({
+                        abortSignal: replyTurnSignal(),
+                        messages: [
+                            {
+                                role: "user",
+                                content: [
+                                    { type: "text", text: prompt },
+                                    { type: "image_url", image_url: { url: image, detail: this.config.vision.detail } },
+                                ],
+                            },
                         ],
-                    },
-                ],
-                temperature: 0.2,
-            }));
+                        temperature: 0.2,
+                    }),
+            );
             return Success(response.text);
         } catch (error) {
             this.logger.error(`图片描述失败: ${error.message}`);
@@ -249,8 +253,8 @@ export default class CoreUtilExtension {
             // 发送至当前会话
             return {
                 bot: koishiSession.bot,
-                channelId: koishiSession.channelId,
-                finalTarget: `${koishiSession.platform}:${koishiSession.channelId}`,
+                channelId: koishiSession.channelId!,
+                finalTarget: `${koishiSession.platform}:${koishiSession.channelId!}`,
             };
         } else {
             // 发送至指定目标
@@ -298,7 +302,7 @@ export default class CoreUtilExtension {
             await sleep(delay);
 
             if (this.disposed) throw new Error("核心工具已卸载，消息未发送");
-            assertReplyDestination({ platform: bot.platform, selfId: bot.selfId, channelId });
+            assertReplyDestination({ platform: bot.platform!, selfId: bot.selfId, channelId });
 
             // --- 发送消息 ---
             const sameSession = bot === originalSession.bot && channelId === originalSession.channelId;
@@ -341,13 +345,14 @@ export default class CoreUtilExtension {
             id: channelId,
             type: channel?.type ?? (channelId.startsWith("private:") ? Universal.Channel.Type.DIRECT : Universal.Channel.Type.TEXT),
         };
-        const guild = channel.type === Universal.Channel.Type.DIRECT
-            ? undefined
-            : sameSession
-              ? originalSession.event.guild
-              : bot.platform === "onebot"
-                ? { id: channelId }
-                : undefined;
+        const guild =
+            channel.type === Universal.Channel.Type.DIRECT
+                ? undefined
+                : sameSession
+                  ? originalSession.event.guild
+                  : bot.platform === "onebot"
+                    ? { id: channelId }
+                    : undefined;
         const timestamp = Date.now();
         const session = bot.session({
             type: "after-send",

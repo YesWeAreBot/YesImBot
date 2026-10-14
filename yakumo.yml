@@ -1,0 +1,13 @@
+- name: yakumo
+  config:
+    pipeline:
+      build:
+        - tsc
+        - esbuild
+        - client
+      clean:
+        - tsc --clean
+- name: yakumo-tsc
+- name: yakumo-esbuild
+- name: yakumo-vitest
+- name: yakumo-client

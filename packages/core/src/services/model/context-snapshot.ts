@@ -1,6 +1,7 @@
-import { resolveUsageOwner, UsageOwner } from "./usage-owner";
 import { Context } from "koishi";
+
 import { estimateTokensByRegex } from "../../shared/utils/toolkit";
+import { resolveUsageOwner, UsageOwner } from "./usage-owner";
 
 export interface ContextSnapshot {
     timestamp: number;
@@ -31,7 +32,7 @@ export function captureContextSnapshot(
     payload: unknown,
     period: string,
     unavailable?: string,
-    explicitOwner?: UsageOwner
+    explicitOwner?: UsageOwner,
 ): void {
     const identity = owner(ctx, explicitOwner);
     let store = stores.get(identity);
@@ -54,14 +55,11 @@ export function captureContextSnapshot(
             // Transport credentials are not context. Message/tool contents remain unchanged.
             const contextBody =
                 body && typeof body === "object" && !Array.isArray(body)
-                    ? Object.fromEntries(
-                          Object.entries(body).filter(([key]) => !/^(?:api_?key|authorization|access_?token|headers)$/i.test(key))
-                      )
+                    ? Object.fromEntries(Object.entries(body).filter(([key]) => !/^(?:api_?key|authorization|access_?token|headers)$/i.test(key)))
                     : body;
             const content = JSON.stringify(contextBody);
             if (typeof content !== "string") snapshot.unavailable = "请求上下文无法序列化";
-            else if (Buffer.byteLength(content, "utf8") > MAX_CONTEXT_SNAPSHOT_BYTES)
-                snapshot.unavailable = "请求上下文超过单条快照容量，未保留正文";
+            else if (Buffer.byteLength(content, "utf8") > MAX_CONTEXT_SNAPSHOT_BYTES) snapshot.unavailable = "请求上下文超过单条快照容量，未保留正文";
             else {
                 snapshot.content = content;
                 let multimodal = false;
@@ -70,8 +68,7 @@ export function captureContextSnapshot(
                     ? { messages: input.messages, tools: input.tools, response_format: input.response_format }
                     : (input?.input ?? { state: input?.state, questions: input?.questions });
                 const text = JSON.stringify(context, (_key, value) => {
-                    if (value && typeof value === "object" && ["image_url", "input_audio", "image", "audio", "video"].includes(value.type))
-                        multimodal = true;
+                    if (value && typeof value === "object" && ["image_url", "input_audio", "image", "audio", "video"].includes(value.type)) multimodal = true;
                     return value;
                 });
                 if (!multimodal && text !== undefined) snapshot.inputTokens = estimateTokensByRegex(text);

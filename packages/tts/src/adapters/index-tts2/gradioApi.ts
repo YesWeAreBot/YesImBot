@@ -1,12 +1,13 @@
 import fs from "fs/promises";
-import path from "path";
-import { ControlMethod, GenSingleParams, GenSingleEvent, GradioApiError, GradioFileData } from "./types";
+
 import { Context } from "koishi";
+
+import { GenSingleParams, GenSingleEvent, GradioApiError, GradioFileData } from "./types";
 
 export class GradioAPI {
     constructor(
         public ctx: Context,
-        private baseURL: string
+        private baseURL: string,
     ) {}
 
     /**
@@ -26,11 +27,10 @@ export class GradioAPI {
         const uploadId = Math.random().toString(36).substring(2); // 生成一个随机的 upload_id
 
         try {
-            const response = await this.ctx.http.post<string[] | { path: string }[]>(
-                `${this.baseURL}/gradio_api/upload?upload_id=${uploadId}`,
-                formData,
-                { responseType: "json", timeout: 60_000 }
-            );
+            const response = await this.ctx.http.post<string[] | Array<{ path: string }>>(`${this.baseURL}/gradio_api/upload?upload_id=${uploadId}`, formData, {
+                responseType: "json",
+                timeout: 60_000,
+            });
             if (Array.isArray(response) && response.length > 0) {
                 const first = response[0] as unknown;
                 if (typeof first === "string") return first;
@@ -85,7 +85,7 @@ export class GradioAPI {
             const result = await this.ctx.http.post<GenSingleEvent | GradioApiError>(
                 `${this.baseURL}/gradio_api/call/gen_single`,
                 { data: dataPayload },
-                { responseType: "json", timeout: 120_000 }
+                { responseType: "json", timeout: 120_000 },
             );
 
             if ("error" in result) {
@@ -123,7 +123,7 @@ export class GradioAPI {
         return await this.getTask(event_id);
     }
 
-    private extractEventData(sseData: string, targetEvent: string = "complete"): { visible: boolean; value: GradioFileData }[] {
+    private extractEventData(sseData: string, targetEvent: string = "complete"): Array<{ visible: boolean; value: GradioFileData }> {
         const lines = sseData.trim().split("\n");
 
         let currentEvent: string | null = null;
@@ -138,11 +138,12 @@ export class GradioAPI {
                 if (currentEvent === targetEvent && currentData && currentData !== "null") {
                     try {
                         return JSON.parse(currentData);
-                    } catch (error) {
+                    } catch {
                         console.warn(`Failed to parse data for event ${targetEvent}:`, currentData);
                     }
                 }
             }
         }
+        return [];
     }
 }

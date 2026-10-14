@@ -40,7 +40,7 @@ export class MustacheRenderer implements IRenderer {
         // 循环渲染，直到输出不再变化或达到最大深度
         while (output !== previousOutput && currentDepth < maxDepth) {
             previousOutput = output;
-            output = Mustache.render(previousOutput, scope, partials, { escape: (text) => text });
+            output = Mustache.render(previousOutput, scope, partials, { escape: (text: string) => text });
             currentDepth++;
         }
 

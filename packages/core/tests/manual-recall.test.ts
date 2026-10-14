@@ -1,12 +1,14 @@
 import { expect, it } from "bun:test";
-import { Context, Bot, Schema } from "koishi";
 import { appendFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { WorldStateService } from "../src/services/worldstate/service";
-import { InteractionManager } from "../src/services/worldstate/interaction-manager";
-import { ContextBuilder } from "../src/services/worldstate/context-builder";
+
+import { Context, Bot, Schema } from "koishi";
+
 import { HeartbeatProcessor } from "../src/agent/heartbeat-processor";
+import { ContextBuilder } from "../src/services/worldstate/context-builder";
+import { InteractionManager } from "../src/services/worldstate/interaction-manager";
+import { WorldStateService } from "../src/services/worldstate/service";
 import { Services } from "../src/shared/constants";
 
 const logger = { debug() {}, info() {}, warn() {}, error() {} };
@@ -27,18 +29,31 @@ for (const operation of ["buildWorldState", "recallContext"] as const) {
         app.channel(incoming.channelId).on("yesimbot/filter-recalled-memory", (_session, state) => {
             received.push(state.l2_retrieved_memories[0].content);
         });
-        const row = { id: "memory", platform: incoming.platform, channelId: incoming.channelId, content: "private text", startTimestamp: new Date(), endTimestamp: new Date(), participantIds: ["alice"] };
+        const row = {
+            id: "memory",
+            platform: incoming.platform,
+            channelId: incoming.channelId,
+            content: "private text",
+            startTimestamp: new Date(),
+            endTimestamp: new Date(),
+            participantIds: ["alice"],
+        };
         app.set("database", { get: async () => [row] } as any);
         const world = Object.create(WorldStateService.prototype);
-        Object.assign(world, { ctx: app, config: { allowedChannels: [{ platform: "onebot", type: "private", id: "*" }] },
+        Object.assign(world, {
+            ctx: app,
+            config: { allowedChannels: [{ platform: "onebot", type: "private", id: "*" }] },
             l2_manager: { getHistoryGeneration: () => 0 },
-            contextBuilder: { build: async () => ({ l2_retrieved_memories: [row], l3_diary_entries: [] }) } });
+            contextBuilder: { build: async () => ({ l2_retrieved_memories: [row], l3_diary_entries: [] }) },
+        });
         try {
             expect(app.channel("public").filter(incoming)).toBe(false);
             if (operation === "buildWorldState") await world.buildWorldState(incoming);
             else await world.recallContext(incoming, { kind: "l2" });
             expect(received).toEqual(["private text"]);
-        } finally { await app.stop(); }
+        } finally {
+            await app.stop();
+        }
     });
 }
 
@@ -51,26 +66,48 @@ async function fixture() {
     const config: any = { l1_memory: { maxMessages: 2, keepFullTurnCount: 2 }, l2_memory: { enabled: false }, l3_memory: { enabled: false } };
     const manager = new InteractionManager(app, config);
     const world = Object.create(WorldStateService.prototype);
-    Object.assign(world, { ctx: app, config: { allowedChannels: [{ platform: "onebot", type: "private", id: "*" }] }, l1_manager: manager,
-        l2_manager: { writeMemory: async (_target: any, _generation: any, write: () => Promise<void>) => { await write(); return true; } } });
+    Object.assign(world, {
+        ctx: app,
+        config: { allowedChannels: [{ platform: "onebot", type: "private", id: "*" }] },
+        l1_manager: manager,
+        l2_manager: {
+            writeMemory: async (_target: any, _generation: any, write: () => Promise<void>) => {
+                await write();
+                return true;
+            },
+        },
+    });
     const incoming = session(app);
     const builder = new ContextBuilder(app, config, manager, {} as any, {} as any);
     (builder as any).getSelfInfo = async () => ({ id: "bot", name: "Bot" });
     (builder as any).getChannelInfo = async () => ({ name: "Alice" });
-    return { app, manager, world, incoming, builder, close: async () => { await app.stop(); await rm(baseDir, { recursive: true, force: true }); } };
+    return {
+        app,
+        manager,
+        world,
+        incoming,
+        builder,
+        close: async () => {
+            await app.stop();
+            await rm(baseDir, { recursive: true, force: true });
+        },
+    };
 }
 
 it("keeps every unconsumed manual page across the L1 event limit and process reload", async () => {
     const f = await fixture();
     try {
-        for (let offset = 0; offset < 3; offset++) await f.world.injectRecall(f.incoming, { kind: "l3", historyGeneration: 0, records: [{ content: `page-${offset}` }] });
+        for (let offset = 0; offset < 3; offset++)
+            await f.world.injectRecall(f.incoming, { kind: "l3", historyGeneration: 0, records: [{ content: `page-${offset}` }] });
         const reopened = new InteractionManager(f.app, (f.builder as any).config);
         const events = await reopened.getL1History(f.incoming.platform, f.incoming.channelId, 2, "bot");
         const retained = (f.builder as any).applyGracefulDegradation(events);
         expect(retained.map((event: any) => event.result.records[0].content)).toEqual(["page-0", "page-1", "page-2"]);
         const state = await f.builder.build(f.incoming);
         expect(state.l1_working_memory.new_events.filter((event: any) => event.type === "agent_observation")).toHaveLength(3);
-    } finally { await f.close(); }
+    } finally {
+        await f.close();
+    }
 });
 
 it("ignores malformed persisted consumption metadata without losing valid log rows", async () => {
@@ -78,11 +115,24 @@ it("ignores malformed persisted consumption metadata without losing valid log ro
     try {
         await f.world.injectRecall(f.incoming, { kind: "l3", historyGeneration: 0, records: [{ content: "valid-page" }] });
         const filename = (f.manager as any).getLogFilePath("onebot", f.incoming.channelId);
-        await appendFile(filename, JSON.stringify({ type: "agent_thought", platform: "onebot", channelId: f.incoming.channelId,
-            id: "invalid-metadata", turnId: "broken", timestamp: new Date().toISOString(), thoughts: {}, consumedRecallIds: {} }) + "\n");
+        await appendFile(
+            filename,
+            JSON.stringify({
+                type: "agent_thought",
+                platform: "onebot",
+                channelId: f.incoming.channelId,
+                id: "invalid-metadata",
+                turnId: "broken",
+                timestamp: new Date().toISOString(),
+                thoughts: {},
+                consumedRecallIds: {},
+            }) + "\n",
+        );
         const history = await f.manager.getL1History("onebot", f.incoming.channelId, 20, "bot");
         expect(history.filter((event: any) => event.type === "agent_observation").map((event: any) => event.result.records[0].content)).toEqual(["valid-page"]);
-    } finally { await f.close(); }
+    } finally {
+        await f.close();
+    }
 });
 
 it("does not let pending manual pages evict completed Agent turns", async () => {
@@ -90,18 +140,22 @@ it("does not let pending manual pages evict completed Agent turns", async () => 
     try {
         await f.manager.recordThought("turn-1", "onebot", f.incoming.channelId, { observe: "old", analyze_infer: "", plan: "" });
         await f.manager.recordThought("turn-2", "onebot", f.incoming.channelId, { observe: "recent", analyze_infer: "", plan: "" });
-        for (let page = 0; page < 3; page++) await f.world.injectRecall(f.incoming, { kind: "l3", historyGeneration: 0, records: [{ content: `page-${page}` }] });
+        for (let page = 0; page < 3; page++)
+            await f.world.injectRecall(f.incoming, { kind: "l3", historyGeneration: 0, records: [{ content: `page-${page}` }] });
         const events = await f.manager.getL1History("onebot", f.incoming.channelId, 20, "bot");
         const retained = (f.builder as any).applyGracefulDegradation(events);
         expect(retained.filter((event: any) => event.type === "agent_thought").map((event: any) => event.turnId)).toEqual(["turn-1", "turn-2"]);
         expect(retained.filter((event: any) => event.type === "agent_observation")).toHaveLength(3);
-    } finally { await f.close(); }
+    } finally {
+        await f.close();
+    }
 });
 
 it("retains consumed manual pages with their first consuming turn and expires them normally", async () => {
     const f = await fixture();
     try {
-        for (let page = 0; page < 3; page++) await f.world.injectRecall(f.incoming, { kind: "l3", historyGeneration: 0, records: [{ content: `page-${page}` }] });
+        for (let page = 0; page < 3; page++)
+            await f.world.injectRecall(f.incoming, { kind: "l3", historyGeneration: 0, records: [{ content: `page-${page}` }] });
         const consumed = (await f.manager.getL1History("onebot", f.incoming.channelId, 20, "bot")).map((event: any) => event.turnId);
         await (f.manager.recordThought as any)("consumer", "onebot", f.incoming.channelId, { observe: "read pages", analyze_infer: "", plan: "" }, consumed);
         await f.manager.recordThought("next", "onebot", f.incoming.channelId, { observe: "next", analyze_infer: "", plan: "" });
@@ -110,8 +164,13 @@ it("retains consumed manual pages with their first consuming turn and expires th
         await f.manager.recordAction("last", "onebot", f.incoming.channelId, { function: "lookup", params: {} });
         const expired = (f.builder as any).applyGracefulDegradation(await f.manager.getL1History("onebot", f.incoming.channelId, 20, "bot"));
         expect(expired.filter((event: any) => event.type === "agent_observation")).toHaveLength(0);
-        expect(expired.filter((event: any) => event.type === "agent_thought" || event.type === "agent_action").map((event: any) => event.turnId)).toEqual(["next", "last"]);
-    } finally { await f.close(); }
+        expect(expired.filter((event: any) => event.type === "agent_thought" || event.type === "agent_action").map((event: any) => event.turnId)).toEqual([
+            "next",
+            "last",
+        ]);
+    } finally {
+        await f.close();
+    }
 });
 
 for (const mode of ["json", "stream", "native", "native-tools"]) {
@@ -120,22 +179,35 @@ for (const mode of ["json", "stream", "native", "native-tools"]) {
         try {
             await f.world.injectRecall(f.incoming, { kind: "l3", historyGeneration: 0, records: [{ content: "requested-page" }] });
             const definition = { name: "lookup", parameters: Schema.object({}) };
-            const processor = new HeartbeatProcessor(f.app, { heartbeat: 1, nativeToolCalling: mode.startsWith("native"), streamAction: mode === "stream" } as any,
-                { chat: async () => {
-                    // Arrives while this model request is in flight, after context preparation.
-                    await f.world.injectRecall(f.incoming, { kind: "l3", historyGeneration: 0, records: [{ content: "next-page" }] });
-                    return mode === "native-tools" ? { toolCalls: [{ toolName: "lookup", toolCallId: "call", args: "{}" }] }
-                        : { text: JSON.stringify({ thoughts: {}, actions: [], request_heartbeat: false }) };
-                } } as any,
+            const processor = new HeartbeatProcessor(
+                f.app,
+                { heartbeat: 1, nativeToolCalling: mode.startsWith("native"), streamAction: mode === "stream" } as any,
+                {
+                    chat: async () => {
+                        // Arrives while this model request is in flight, after context preparation.
+                        await f.world.injectRecall(f.incoming, { kind: "l3", historyGeneration: 0, records: [{ content: "next-page" }] });
+                        return mode === "native-tools"
+                            ? { toolCalls: [{ toolName: "lookup", toolCallId: "call", args: "{}" }] }
+                            : { text: JSON.stringify({ thoughts: {}, actions: [], request_heartbeat: false }) };
+                    },
+                } as any,
                 { render: async () => "prompt" } as any,
                 { getAvailableTools: () => [definition], getTool: () => definition, invoke: async () => ({ status: "success" }) } as any,
                 f.manager,
-                { build: async () => ({ toolSchemas: [], memoryBlocks: [], worldState: await f.builder.build(f.incoming) }), buildMultimodalUserMessage: async () => "prompt" } as any);
+                {
+                    build: async () => ({ toolSchemas: [], memoryBlocks: [], worldState: await f.builder.build(f.incoming) }),
+                    buildMultimodalUserMessage: async () => "prompt",
+                } as any,
+            );
             await processor.runCycle({ session: f.incoming } as any);
             await f.manager.recordThought("next", "onebot", f.incoming.channelId, { observe: "", analyze_infer: "", plan: "" });
             await f.manager.recordThought("last", "onebot", f.incoming.channelId, { observe: "", analyze_infer: "", plan: "" });
             const retained = (f.builder as any).applyGracefulDegradation(await f.manager.getL1History("onebot", f.incoming.channelId, 20, "bot"));
-            expect(retained.filter((event: any) => event.type === "agent_observation").map((event: any) => event.result.records[0].content)).toEqual(["next-page"]);
-        } finally { await f.close(); }
+            expect(retained.filter((event: any) => event.type === "agent_observation").map((event: any) => event.result.records[0].content)).toEqual([
+                "next-page",
+            ]);
+        } finally {
+            await f.close();
+        }
     });
 }

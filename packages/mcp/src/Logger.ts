@@ -9,22 +9,22 @@ export class Logger {
     }
 
     info(message: string) {
-        this.ctx.logger("🔥 MCP").info(message)
+        this.ctx.logger("🔥 MCP").info(message);
     }
 
     success(message: string) {
-        this.ctx.logger("✅ MCP").success(message)
+        this.ctx.logger("✅ MCP").success(message);
     }
 
     warn(message: string) {
-        this.ctx.logger("⚠️ MCP").warn(message)
+        this.ctx.logger("⚠️ MCP").warn(message);
     }
 
     error(message: string) {
-        this.ctx.logger("❌ MCP").error(message)
+        this.ctx.logger("❌ MCP").error(message);
     }
 
     debug(message: string) {
-        this.ctx.logger("🔍 MCP").debug(message)
+        this.ctx.logger("🔍 MCP").debug(message);
     }
 }

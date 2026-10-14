@@ -1,9 +1,10 @@
-import type { ReplyCategory } from "./reply-control";
-import { Services } from "@/shared/constants";
-import { Context, Eval, Logger, Session, merge } from "koishi";
+import { Context, Eval, Logger, Session } from "koishi";
+
+import { Config } from "../config";
+import { Services } from "../shared/constants";
 import { WillingnessConfig } from "./config";
-import { Config } from "@/config";
 import type { WillingnessCalculation } from "./decision-record";
+import type { ReplyCategory } from "./reply-control";
 
 export interface MessageContext {
     chatId: string;
@@ -21,7 +22,7 @@ export interface TopicWillingnessInput {
     latestTopicPreference?: number;
     currentScoreKey: string;
     multiplier: number;
-    candidates: { scoreKey: string; share: number }[];
+    candidates: Array<{ scoreKey: string; share: number }>;
 }
 
 type ResolveComputed<T> =
@@ -33,7 +34,7 @@ type ResolveComputed<T> =
           ? ResolveComputed<U>
           : // 如果是数组
             T extends Array<infer V>
-            ? ResolveComputed<V>[]
+            ? Array<ResolveComputed<V>>
             : // 如果是对象（排除 null）
               T extends object
               ? { [K in keyof T]: ResolveComputed<T[K]> }
@@ -54,9 +55,9 @@ export interface ReplyDecision {
 
 export interface ParticipationSnapshot {
     active: boolean;
-    lastReplyAt: number | null;
-    expiresAt: number | null;
-    participantId: string | null;
+    lastReplyAt?: number;
+    expiresAt?: number;
+    participantId?: string;
 }
 
 export class WillingnessManager {
@@ -68,7 +69,7 @@ export class WillingnessManager {
     private willingnessScores: Map<string, number> = new Map();
     private lastMessageTimestamps: Map<string, number> = new Map(); // 记录每个对话的最后消息时间，用于计算热度
     private sessions = new Map<string, Session>();
-    private participation = new Map<string, Omit<ParticipationSnapshot, "active">>();
+    private participation = new Map<string, Required<Omit<ParticipationSnapshot, "active">>>();
 
     private decayInterval: NodeJS.Timeout | null = null;
 
@@ -212,21 +213,20 @@ export class WillingnessManager {
 
         const allowed = (category: ReplyCategory) => !context.allowedCategories || context.allowedCategories.includes(category);
         const selfId = session.selfId || session.bot?.selfId;
-        const mentions = session.elements.filter((element) => element.type === "at");
+        const mentions = session.elements?.filter((element) => element.type === "at") ?? [];
         const mentionsSelf = !!session.stripped.atSelf || (!!selfId && mentions.some((element) => element.attrs.id === selfId));
         const quoteUserId = session.quote?.user?.id;
         const quotesSelf = !!selfId && quoteUserId === selfId;
         const invited = (mentionsSelf && allowed("at")) || (quotesSelf && allowed("quote"));
-        const addressesOthers =
-            mentions.some((element) => element.attrs.id && element.attrs.id !== selfId) || (!!quoteUserId && quoteUserId !== selfId);
+        const addressesOthers = mentions.some((element) => element.attrs.id && element.attrs.id !== selfId) || (!!quoteUserId && quoteUserId !== selfId);
 
         // 任意 @/引用可能属于允许的回复类别，但只有明确邀请自身才是参与信号。
         if (!invited && addressesOthers) return 1;
         const sameParticipant = !!state.participantId && state.participantId === session.userId;
         if (!invited && !(context.isDirect && allowed("direct")) && !(sameParticipant && allowed("text"))) return 1;
 
-        const duration = state.expiresAt - state.lastReplyAt;
-        const remainingRatio = Math.max(0, Math.min(1, (state.expiresAt - Date.now()) / duration));
+        const duration = state.expiresAt! - state.lastReplyAt!;
+        const remainingRatio = Math.max(0, Math.min(1, (state.expiresAt! - Date.now()) / duration));
         const configuredInfluence = this.baseConfig.participation?.influence ?? 0.5;
         const influence = Number.isFinite(configuredInfluence) ? Math.max(0, Math.min(1, configuredInfluence)) : 0.5;
         return 1 + influence * remainingRatio;
@@ -237,8 +237,12 @@ export class WillingnessManager {
      * @param context 消息上下文
      * @returns 回复概率 (0-1)
      */
-    public calculateReplyProbability(session: Session, context: MessageContext, assessmentMultiplier = 1,
-        capture?: (calculation: Omit<WillingnessCalculation, "roll">) => void): number {
+    public calculateReplyProbability(
+        session: Session,
+        context: MessageContext,
+        assessmentMultiplier = 1,
+        capture?: (calculation: Omit<WillingnessCalculation, "roll">) => void,
+    ): number {
         const { chatId } = context;
         const config = this._getResolvedConfig(session);
         const { lifecycle } = config;
@@ -262,12 +266,26 @@ export class WillingnessManager {
         this.willingnessScores.set(chatId, currentWillingness);
 
         // 转换为概率
-        const probability = currentWillingness <= resolvedProbabilityThreshold ? 0
-            : Math.max(0, Math.min(1, (currentWillingness - resolvedProbabilityThreshold) * resolvedProbabilityAmplifier));
-        capture?.({ before, after: currentWillingness, gains: details.gains, baseScore: details.baseScore, interestMultiplier: details.interestMultiplier,
-            marginalMultiplier: details.marginalMultiplier, dynamicMultiplier: gainMultiplier, assessmentMultiplier,
-            participationMultiplier: details.participationMultiplier, effectiveGain, maxWillingness: resolvedMaxWillingness,
-            threshold: resolvedProbabilityThreshold, amplifier: resolvedProbabilityAmplifier, probability });
+        const probability =
+            currentWillingness <= resolvedProbabilityThreshold
+                ? 0
+                : Math.max(0, Math.min(1, (currentWillingness - resolvedProbabilityThreshold) * resolvedProbabilityAmplifier));
+        capture?.({
+            before,
+            after: currentWillingness,
+            gains: details.gains,
+            baseScore: details.baseScore,
+            interestMultiplier: details.interestMultiplier,
+            marginalMultiplier: details.marginalMultiplier,
+            dynamicMultiplier: gainMultiplier,
+            assessmentMultiplier,
+            participationMultiplier: details.participationMultiplier,
+            effectiveGain,
+            maxWillingness: resolvedMaxWillingness,
+            threshold: resolvedProbabilityThreshold,
+            amplifier: resolvedProbabilityAmplifier,
+            probability,
+        });
         return probability;
     }
 
@@ -306,7 +324,7 @@ export class WillingnessManager {
                 this.participation.set(participationId, {
                     lastReplyAt: now,
                     expiresAt: now + durationSeconds * 1000,
-                    participantId: session.userId || null,
+                    participantId: session.userId ?? "",
                 });
             }
         }
@@ -341,10 +359,10 @@ export class WillingnessManager {
     /** 返回参与状态的副本；到期查询不会清除或刷新状态。 */
     public getParticipation(chatId: string, now = Date.now()): ParticipationSnapshot {
         const state = this.participation.get(chatId);
-        if (!state) return { active: false, lastReplyAt: null, expiresAt: null, participantId: null };
+        if (!state) return { active: false };
         return {
             ...state,
-            active: !!this.baseConfig.participation?.enabled && now >= state.lastReplyAt && now < state.expiresAt,
+            active: !!this.baseConfig.participation?.enabled && now >= (state.lastReplyAt ?? 0) && now < (state.expiresAt ?? 0),
         };
     }
 
@@ -358,7 +376,7 @@ export class WillingnessManager {
         chatId: string = session.cid,
         allowedCategories?: ReplyCategory[],
         assessmentMultiplier = 1,
-        topic?: TopicWillingnessInput
+        topic?: TopicWillingnessInput,
     ): { decision: boolean; probability: number; roll: number; calculation: WillingnessCalculation; scoreKey?: string } {
         const currentScoreKey = topic?.currentScoreKey ?? chatId;
         this.sessions.set(currentScoreKey, session);
@@ -367,19 +385,20 @@ export class WillingnessManager {
             chatId: currentScoreKey,
             participationId: topic ? chatId : undefined,
             allowedCategories,
-            content: session.content,
+            content: session.content ?? "",
             isMentioned: allowedCategories
-                ? session.elements.some((e) => e.type === "at") || session.stripped.atSelf
-                : session.stripped.atSelf || session.elements.some((e) => e.type === "at" && e.attrs.id === session.bot.selfId),
+                ? session.elements?.some((e) => e.type === "at") || session.stripped.atSelf
+                : session.stripped.atSelf || session.elements?.some((e) => e.type === "at" && e.attrs.id === session.bot.selfId) || false,
             isQuote: allowedCategories
-                ? !!session.quote || session.elements.some((e) => e.type === "quote")
-                : session.quote && session.quote?.user?.id === session.bot.selfId,
+                ? !!session.quote || !!session.elements?.some((e) => e.type === "quote")
+                : !!session.quote && session.quote?.user?.id === session.bot.selfId,
             isDirect: session.isDirect,
         };
 
-        let calculation: Omit<WillingnessCalculation, "roll">;
-        let probability = this.calculateReplyProbability(session, context,
-            assessmentMultiplier * (topic?.multiplier ?? 1), value => { calculation = value; });
+        let calculation: Omit<WillingnessCalculation, "roll"> | undefined;
+        let probability = this.calculateReplyProbability(session, context, assessmentMultiplier * (topic?.multiplier ?? 1), (value) => {
+            calculation = value;
+        });
         let scoreKey = currentScoreKey;
         if (topic) {
             const configuredPreference = topic.latestTopicPreference ?? 70;
@@ -399,15 +418,16 @@ export class WillingnessManager {
             }
             if (scoreKey !== currentScoreKey) {
                 this.sessions.set(scoreKey, session);
-                probability = this.calculateReplyProbability(session, { ...context, chatId: scoreKey }, 0,
-                    value => { calculation = value; });
+                probability = this.calculateReplyProbability(session, { ...context, chatId: scoreKey }, 0, (value) => {
+                    calculation = value;
+                });
             }
         }
 
         const roll = Math.random();
         const decision = roll < probability;
 
-        return { decision, probability, roll, calculation: { ...calculation, roll }, ...(topic ? { scoreKey } : {}) };
+        return { decision, probability, roll, calculation: { ...calculation, roll } as WillingnessCalculation, ...(topic ? { scoreKey } : {}) };
     }
 
     /**
@@ -422,7 +442,7 @@ export class WillingnessManager {
         const current = this.willingnessScores.get(chatId) || 0;
         const newValue = Math.min(
             current + resolvedMaxWillingness * 0.7, // 提升70%的意愿值
-            resolvedMaxWillingness
+            resolvedMaxWillingness,
         );
 
         this.willingnessScores.set(chatId, newValue);

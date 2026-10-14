@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "rootDir": ".",
+    "target": "ES2022",
+    "module": "ESNext",
+    "declaration": true,
+    "jsx": "preserve",
+    "noEmit": true,
+    "composite": true,
+    "incremental": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    // node10 解析：@koishijs/client 的 exports 把 "./global" 指向它并未随包发布的 client/global.d.ts，
+    // 只有根目录的 global.d.ts 存在，走 exports 的解析器（bundler/nodenext）找不到它。
+    "moduleResolution": "node",
+    "ignoreDeprecations": "6.0",
+    "strictBindCallApply": true,
+    // index.ts 是 JS 风格的渲染函数组件，ctx.extendSchema 又是运行时 mixin、上游无类型声明。
+    "noImplicitAny": false,
+    "types": ["@koishijs/client/global"]
+  },
+  "include": ["."]
+}

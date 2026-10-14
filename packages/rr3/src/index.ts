@@ -1,8 +1,9 @@
 import * as crypto from "crypto";
 import { performance } from "perf_hooks";
+
+import { Context, Schema } from "koishi";
 import { AssetService, Extension, Failed, Infer, Success, Tool } from "koishi-plugin-yesimbot/services";
 import { Services } from "koishi-plugin-yesimbot/shared";
-import { Context, Logger, Schema } from "koishi";
 
 /**
  * 简单的计时器，用于统计代码块执行时间
@@ -31,7 +32,7 @@ class ApiError extends Error {
     constructor(
         public status: number,
         public body: any,
-        message: string
+        message: string,
     ) {
         super(message);
         this.name = "ApiError";
@@ -80,7 +81,7 @@ export const ConfigSchema: Schema<Config> = Schema.object({
     defaultArgs: Schema.object({
         negative_prompt: Schema.string()
             .default(
-                "lips,realistic,{{{nsfw}}}, lowres, bad, error, fewer, extra, missing, worst quality, jpeg artifacts, bad quality, watermark, unfinished, displeasing, chromatic aberration, signature, extra digits, artistic error, username, scan, [abstract], bad anatomy, bad hands"
+                "lips,realistic,{{{nsfw}}}, lowres, bad, error, fewer, extra, missing, worst quality, jpeg artifacts, bad quality, watermark, unfinished, displeasing, chromatic aberration, signature, extra digits, artistic error, username, scan, [abstract], bad anatomy, bad hands",
             )
             .role("textarea", { rows: [2, 4] })
             .description("默认的反向提示词"),
@@ -110,7 +111,7 @@ export default class RR3 {
 
     constructor(
         public ctx: Context,
-        public config: Config
+        public config: Config,
     ) {
         this.assetService = ctx[Services.Asset];
         this.ctx.on("dispose", () => this.lifetime.abort());
@@ -128,7 +129,7 @@ export default class RR3 {
             prompt: Schema.string()
                 .required()
                 .description(
-                    "图片的详细描述。使用英文逗号分隔的关键词。结构应为：(核心主体), (主体细节), (构图/视角), (背景), (画风)。例如：1girl, solo, silver hair, red eyes, cat ears, looking at viewer, upper body, night sky, by wlop"
+                    "图片的详细描述。使用英文逗号分隔的关键词。结构应为：(核心主体), (主体细节), (构图/视角), (背景), (画风)。例如：1girl, solo, silver hair, red eyes, cat ears, looking at viewer, upper body, night sky, by wlop",
                 ),
             orientation: Schema.union([
                 Schema.const("portrait").description("竖屏构图，适用于肖像或手机壁纸"),
@@ -146,7 +147,7 @@ export default class RR3 {
         try {
             this.ensureActive();
             // 根据 LLM 选择的 orientation 获取具体尺寸
-            const dimensions = this.orientationPresets[args.orientation];
+            const dimensions = this.orientationPresets[args.orientation as keyof typeof this.orientationPresets];
             this.ctx.logger.info(`选择构图: ${args.orientation} (${dimensions.width}x${dimensions.height})`);
 
             const prompt = this.config.usePreset ? `${this.config.preset},${args.prompt}` : args.prompt;
@@ -244,9 +245,7 @@ export default class RR3 {
 
     private encrypt(plaintext: string, publicKeyPem: string): string {
         try {
-            return crypto
-                .publicEncrypt({ key: publicKeyPem, padding: crypto.constants.RSA_PKCS1_PADDING }, Buffer.from(plaintext, "utf8"))
-                .toString("base64");
+            return crypto.publicEncrypt({ key: publicKeyPem, padding: crypto.constants.RSA_PKCS1_PADDING }, Buffer.from(plaintext, "utf8")).toString("base64");
         } catch (error) {
             this.ctx.logger.error("使用公钥加密失败: %o", error);
             throw new Error("Encryption failed", { cause: error });

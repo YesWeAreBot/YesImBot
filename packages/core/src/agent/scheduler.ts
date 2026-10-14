@@ -1,8 +1,8 @@
 import { Context, Logger } from "koishi";
 
-import { AgentStimulus } from "@/services/worldstate";
-import { Services } from "@/shared/constants";
-import { AppError, ErrorDefinitions, handleError } from "@/shared/errors";
+import { AgentStimulus } from "../services/worldstate";
+import { Services } from "../shared/constants";
+import { AppError, ErrorDefinitions, handleError } from "../shared/errors";
 import { AgentBehaviorConfig } from "./config";
 
 type TaskCallback = (stimulus: AgentStimulus<any>) => Promise<any>;
@@ -25,7 +25,7 @@ export class StimulusScheduler {
         private readonly ctx: Context,
         private readonly config: AgentBehaviorConfig,
         private readonly taskCallback: TaskCallback,
-        private readonly observe?: (stimulus: AgentStimulus<any>, stage: string, reason?: string) => void
+        private readonly observe?: (stimulus: AgentStimulus<any>, stage: string, reason?: string) => void,
     ) {
         this.logger = ctx[Services.Logger].getLogger("[刺激调度器]");
     }
@@ -35,7 +35,10 @@ export class StimulusScheduler {
     }
 
     public schedule(stimulus: AgentStimulus<any>): void {
-        if (this.disposed) { this.observe?.(stimulus, "cancelled", "disposed"); return; }
+        if (this.disposed) {
+            this.observe?.(stimulus, "cancelled", "disposed");
+            return;
+        }
         const { channelCid: channelKey, type, priority } = stimulus;
 
         if (this.runningTasks.has(channelKey)) {
@@ -75,7 +78,7 @@ export class StimulusScheduler {
         if (!debouncedTask) {
             debouncedTask = this.ctx.debounce(
                 (stimulus: AgentStimulus<any>) => this.executeTask(channelKey, stimulus, schedulingStack),
-                this.config.debounceMs
+                this.config.debounceMs,
             );
             this.debouncedReplyTasks.set(channelKey, debouncedTask);
         }
@@ -205,7 +208,7 @@ export class StimulusScheduler {
             // 防抖期间仍可合并新消息，真正开始执行时才获取频道锁。
             this.logger.debug(`[${channelKey}] 调度被跳过的段落`);
 
-            this.getDebouncedTask(channelKey)(skippedStimulus);
+            this.getDebouncedTask(channelKey)(skippedStimulus!);
         } else if (this.config.newMessageStrategy === "deferred" && this.skippedStimulus.has(channelKey)) {
             // 任务完成后才启动定时器
             this.setupDeferredTimer(channelKey);
@@ -229,7 +232,7 @@ export class StimulusScheduler {
             if (this.disposed || this.runningTasks.has(channelKey)) return;
             this.logger.debug(`[${channelKey}] 延迟处理定时器触发`);
             if (this.skippedStimulus.has(channelKey)) {
-                const stimulus = this.skippedStimulus.get(channelKey);
+                const stimulus = this.skippedStimulus.get(channelKey)!;
                 this.skippedStimulus.delete(channelKey);
 
                 // 安静期已完成消息合并，直接获取执行锁，避免再次防抖造成覆盖或并发。

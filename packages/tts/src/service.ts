@@ -10,9 +10,7 @@ import { BaseTTSParams } from "./types";
 
 export const Config = Schema.intersect([
     Schema.object({
-        provider: Schema.union(["cosyvoice", "index-tts2", "fish-audio", "open-audio"])
-            .default("cosyvoice")
-            .description("选择要使用的 TTS 服务提供商"),
+        provider: Schema.union(["cosyvoice", "index-tts2", "fish-audio", "open-audio"]).default("cosyvoice").description("选择要使用的 TTS 服务提供商"),
     }),
     Schema.union([
         Schema.object({
@@ -48,7 +46,7 @@ export class TTSService {
 
     constructor(
         private ctx: Context,
-        private config: Config
+        private config: Config,
     ) {
         this.adapter = this.createAdapter();
 
@@ -84,7 +82,7 @@ export class TTSService {
         }
     }
 
-    public getTool(): ToolDefinition {
+    public getTool(): ToolDefinition | null {
         if (!this.adapter) {
             return null;
         }
@@ -99,6 +97,7 @@ export class TTSService {
 
     private async execute(args: Infer<BaseTTSParams>) {
         const { session, text } = args;
+        if (!session) return Failed("session 不可用");
         if (this.stopped) return Failed("TTS service stopped");
 
         if (!text?.trim()) {
@@ -113,10 +112,10 @@ export class TTSService {
             if (this.stopped) return Failed("TTS service stopped");
             await session.send(h.audio(result.audio, result.mimeType));
             return Success();
-        } catch (err) {
-            this.ctx.logger.error(`[TTS] 语音合成或发送失败: ${err.message}`);
-            this.ctx.logger.error(err);
-            return Failed({ name: "Error", message: `语音合成失败: ${err.message}` });
+        } catch (error) {
+            this.ctx.logger.error(`[TTS] 语音合成或发送失败: ${error.message}`);
+            this.ctx.logger.error(error);
+            return Failed({ name: "Error", message: `语音合成失败: ${error.message}` });
         }
     }
 }

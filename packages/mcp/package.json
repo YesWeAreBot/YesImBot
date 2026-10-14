@@ -1,43 +1,37 @@
 {
   "name": "@yesimbot/koishi-plugin-mcp",
-  "description": "Yes! I'm Bot! MCP 扩展插件",
   "version": "1.1.2",
-  "main": "lib/index.js",
-  "typings": "lib/index.d.ts",
-  "homepage": "https://github.com/HydroGest/YesImBot",
-  "files": [
-    "lib",
-    "dist",
-    "resources"
+  "description": "Yes! I'm Bot! MCP 扩展插件",
+  "keywords": [
+    "koishi",
+    "mcp",
+    "modelcontextprotocol",
+    "plugin",
+    "yesimbot"
   ],
-  "scripts": {
-    "build": "tsc && node esbuild.config.mjs",
-    "dev": "tsc -w --preserveWatchOutput",
-    "lint": "eslint . --ext .ts",
-    "clean": "rm -rf lib .turbo tsconfig.tsbuildinfo",
-    "pack": "bun pm pack"
-  },
+  "homepage": "https://github.com/HydroGest/YesImBot",
   "license": "MIT",
   "contributors": [
     "MiaowFISH <miaow233@qq.com>"
-  ],
-  "keywords": [
-    "koishi",
-    "plugin",
-    "mcp",
-    "modelcontextprotocol",
-    "yesimbot"
   ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/HydroGest/YesImBot.git",
     "directory": "packages/mcp"
   },
+  "files": [
+    "lib",
+    "dist",
+    "resources"
+  ],
+  "main": "lib/index.js",
+  "typings": "lib/index.d.ts",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.13.0",
     "yauzl": "^3.2.0"
   },
   "devDependencies": {
+    "@types/yauzl": "^2.10.0",
     "koishi": "^4.18.7",
     "koishi-plugin-yesimbot": "^3.0.2"
   },
