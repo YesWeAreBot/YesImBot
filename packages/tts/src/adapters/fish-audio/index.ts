@@ -121,6 +121,7 @@ export class FishAudioAdapter extends TTSAdapter<FishAudioConfig, FishAudioTTSPa
     }
 
     async synthesize(params: FishAudioTTSParams): Promise<SynthesisResult> {
+        this.controller.signal.throwIfAborted();
         const request: ServerTTSRequest = {
             text: params.text,
             chunk_length: this.config.chunk_length,
@@ -142,14 +143,13 @@ export class FishAudioAdapter extends TTSAdapter<FishAudioConfig, FishAudioTTSPa
 
         const response = await fetch(`${this.baseURL}/v1/tts`, {
             method: "POST",
+            signal: this.controller.signal,
             headers: { "Content-Type": "application/msgpack", authorization: `Bearer ${this.config.apiKey}`, model: this.config.model },
             body: encode(request),
             dispatcher,
         });
 
         if (response.ok) {
-            const mimeType = response.headers;
-            console.log(mimeType);
             const result = await response.arrayBuffer();
 
             return {

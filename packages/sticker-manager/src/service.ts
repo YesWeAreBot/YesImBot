@@ -32,6 +32,7 @@ declare module "koishi" {
 
 export class StickerService {
     private disposed = false;
+    private readonly controller = new AbortController();
     private readonly ready: Promise<void>;
     public isReady: boolean = false;
 
@@ -41,6 +42,7 @@ export class StickerService {
     ) {
         ctx.on("dispose", () => {
             this.disposed = true;
+            this.controller.abort(new Error("表情包服务已停止"));
             this.isReady = false;
         });
         this.ready = this.start();
@@ -103,6 +105,7 @@ export class StickerService {
      * @returns
      */
     public async stealSticker(image_id: string, session: Session): Promise<StickerRecord> {
+        await this.whenReady();
         const assetService = this.ctx[Services.Asset];
 
         const imageDataForLLM = (await assetService.read(image_id, {
@@ -122,11 +125,10 @@ export class StickerService {
         const extension = this.getExtensionFromContentType(mimeType) || "png";
         const destPath = path.resolve(this.config.storagePath, `${stickerId}.${extension}`);
 
-        // 保存文件到表情目录
-        await writeFile(destPath, imageData);
-
-        // 分类表情
+        // 分类成功后再保存，临时失败不留下错误分类或孤立文件。
         const category = await this.classifySticker(imageDataForLLM);
+        this.controller.signal.throwIfAborted();
+        await writeFile(destPath, imageData);
 
         // 创建数据库记录
         const record: StickerRecord = {
@@ -142,6 +144,7 @@ export class StickerService {
             createdAt: new Date(),
         };
 
+        this.controller.signal.throwIfAborted();
         await this.ctx.database.create(TableName, record);
         this.ctx.logger.debug(`已保存表情: ${category} - ${stickerId}`);
         return record;
@@ -159,11 +162,13 @@ export class StickerService {
 
         if (!model || !model.isVisionModel()) {
             this.ctx.logger.error(`当前模型组中没有支持多模态的模型。`);
-            throw new Error();
+            throw new Error("当前分类模型不支持视觉，请配置多模态模型后重试。");
         }
 
         try {
+            this.controller.signal.throwIfAborted();
             const response = await model.chat({
+                abortSignal: this.controller.signal,
                 messages: [
                     {
                         role: "user",
@@ -180,10 +185,13 @@ export class StickerService {
                 ],
             });
 
-            return response.text!.trim();
+            this.controller.signal.throwIfAborted();
+            const category = response.text?.trim();
+            if (!category) throw new Error("模型未返回有效的表情分类，请重试。");
+            return category;
         } catch (error) {
             this.ctx.logger.error("表情分类失败", error);
-            return "分类失败";
+            throw error;
         }
     }
 
@@ -194,6 +202,7 @@ export class StickerService {
      * @returns 导入结果统计信息
      */
     public async importFromDirectory(sourceDir: string, session: Session): Promise<ImportStats> {
+        await this.whenReady();
         // 初始化统计数据
         const stats: ImportStats = {
             total: 0,
@@ -217,6 +226,7 @@ export class StickerService {
             const subdirs = await this.getValidSubdirectories(sourceDir);
 
             for (const [index, subdir] of subdirs.entries()) {
+                this.controller.signal.throwIfAborted();
                 // 更新进度
 
                 const category = path.basename(subdir);
@@ -225,6 +235,7 @@ export class StickerService {
 
                 // 导入当前分类下的所有图片
                 for (const file of files) {
+                    this.controller.signal.throwIfAborted();
                     try {
                         const filePath = path.join(subdir, file);
                         const result = await this.importSingleSticker(filePath, category);
@@ -235,6 +246,7 @@ export class StickerService {
                             stats.skipped++;
                         }
                     } catch (error) {
+                        this.controller.signal.throwIfAborted();
                         stats.failed++;
                         stats.failedFiles.push(file);
                         this.ctx.logger.warn(`导入失败: ${file} - ${error.message}`);
@@ -356,6 +368,7 @@ export class StickerService {
     }
 
     public async importEmojiHubTxt(filePath: string, category: string, session: Session): Promise<ImportStats> {
+        await this.whenReady();
         const stats: ImportStats = {
             total: 0,
             success: 0,
@@ -393,6 +406,7 @@ export class StickerService {
 
             // 处理每个 URL
             for (const [index, rawUrl] of urls.entries()) {
+                this.controller.signal.throwIfAborted();
                 // 更新进度消息
                 if (index % 100 === 0 && progressMsg) {
                     await session.sendQueued(`已处理 ${index}/${urls.length} 个 URL...`);
@@ -421,6 +435,7 @@ export class StickerService {
 
                     // 将图片数据写入文件
                     const buffer = await response.arrayBuffer();
+                    this.controller.signal.throwIfAborted();
                     await writeFile(tempFilePath, Buffer.from(buffer));
                     this.ctx.logger.debug(`已下载图片: ${tempFilePath}`);
 
@@ -440,6 +455,7 @@ export class StickerService {
                         }
                     }
                 } catch (error) {
+                    this.controller.signal.throwIfAborted();
                     stats.failed++;
                     stats.failedUrls.push({ url: rawUrl, error: error.message });
                     this.ctx.logger.warn(`导入失败: ${rawUrl} - ${error.message}`);
@@ -480,23 +496,8 @@ export class StickerService {
      * 自定义 fetch 方法，带超时控制
      */
     private async fetchWithTimeout(url: string, timeout: number): Promise<Response> {
-        return new Promise((resolve, reject) => {
-            // 设置超时定时器
-            const timeoutId = setTimeout(() => {
-                reject(new Error("请求超时"));
-            }, timeout);
-
-            // 发起 fetch 请求
-            fetch(url)
-                .then((response) => {
-                    clearTimeout(timeoutId);
-                    resolve(response);
-                })
-                .catch((error) => {
-                    clearTimeout(timeoutId);
-                    reject(error);
-                });
-        });
+        this.controller.signal.throwIfAborted();
+        return fetch(url, { signal: AbortSignal.any([this.controller.signal, AbortSignal.timeout(timeout)]) });
     }
     /**
      * 清理临时目录
@@ -538,6 +539,7 @@ export class StickerService {
         const destPath = path.resolve(this.config.storagePath, `${fileHash}${extension}`);
 
         // 移动文件到表情包目录
+        this.controller.signal.throwIfAborted();
         await rename(filePath, destPath);
 
         // 创建数据库记录

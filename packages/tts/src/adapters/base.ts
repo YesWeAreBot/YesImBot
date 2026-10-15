@@ -24,7 +24,11 @@ export abstract class TTSAdapter<C extends BaseTTSConfig = BaseTTSConfig, P exte
         protected config: C,
     ) {}
 
-    public stop(): Awaitable<void> {}
+    protected readonly controller = new AbortController();
+
+    public stop(): Awaitable<void> {
+        this.controller.abort(new Error("TTS adapter stopped"));
+    }
 
     /**
      * Synthesizes speech from the given parameters.

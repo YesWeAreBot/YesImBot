@@ -80,10 +80,11 @@ export class IndexTTS2Adapter extends TTSAdapter<IndexTTS2Config, IndexTTS2TTSPa
 
     constructor(ctx: Context, config: IndexTTS2Config) {
         super(ctx, config);
-        this.api = new GradioAPI(ctx, config.baseURL);
+        this.api = new GradioAPI(ctx, config.baseURL, this.controller.signal);
     }
 
     async synthesize(params: IndexTTS2TTSParams): Promise<SynthesisResult> {
+        this.controller.signal.throwIfAborted();
         const {
             advanced,
             baseURL, // 排除不需要传给后端的字段
@@ -104,7 +105,7 @@ export class IndexTTS2Adapter extends TTSAdapter<IndexTTS2Config, IndexTTS2TTSPa
         try {
             const result = await this.api.generateSingleAudio(fullParams);
 
-            const audio = await this.ctx.http(result.url!, { responseType: "arraybuffer" });
+            const audio = await this.ctx.http(result.url!, { responseType: "arraybuffer", signal: this.controller.signal });
 
             return { audio: Buffer.from(audio.data), mimeType: "audio/wav" };
         } catch (error) {

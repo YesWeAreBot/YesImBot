@@ -113,9 +113,15 @@ export class TTSService {
             await session.send(h.audio(result.audio, result.mimeType));
             return Success();
         } catch (error) {
-            this.ctx.logger.error(`[TTS] 语音合成或发送失败: ${error.message}`);
-            this.ctx.logger.error(error);
-            return Failed({ name: "Error", message: `语音合成失败: ${error.message}` });
+            this.ctx.logger.error("[TTS] 语音合成或发送失败", error);
+            if (this.stopped) return Failed("TTS service stopped");
+            try {
+                await session.send(h.text(text));
+                return Success({ fallback: "text", message: "语音不可用，已发送文字。" });
+            } catch (fallbackError) {
+                this.ctx.logger.error(fallbackError);
+                return Failed({ name: "Error", message: "语音及文字发送均失败，请重试。" });
+            }
         }
     }
 }

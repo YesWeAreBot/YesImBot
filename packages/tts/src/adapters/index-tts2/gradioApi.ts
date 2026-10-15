@@ -8,6 +8,7 @@ export class GradioAPI {
     constructor(
         public ctx: Context,
         private baseURL: string,
+        private signal?: AbortSignal,
     ) {}
 
     /**
@@ -29,6 +30,7 @@ export class GradioAPI {
         try {
             const response = await this.ctx.http.post<string[] | Array<{ path: string }>>(`${this.baseURL}/gradio_api/upload?upload_id=${uploadId}`, formData, {
                 responseType: "json",
+                signal: this.signal,
                 timeout: 60_000,
             });
             if (Array.isArray(response) && response.length > 0) {
@@ -85,7 +87,7 @@ export class GradioAPI {
             const result = await this.ctx.http.post<GenSingleEvent | GradioApiError>(
                 `${this.baseURL}/gradio_api/call/gen_single`,
                 { data: dataPayload },
-                { responseType: "json", timeout: 120_000 },
+                { responseType: "json", timeout: 120_000, signal: this.signal },
             );
 
             if ("error" in result) {
@@ -106,6 +108,7 @@ export class GradioAPI {
     private async getTask(event_id: string): Promise<GradioFileData> {
         const sseText = await this.ctx.http.get<string>(`${this.baseURL}/gradio_api/call/gen_single/${event_id}`, {
             responseType: "text",
+            signal: this.signal,
             timeout: 120_000,
         });
 

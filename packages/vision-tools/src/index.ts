@@ -6,7 +6,7 @@ import { Context, Schema, sleep } from "koishi";
 import {} from "koishi-plugin-puppeteer";
 import { Extension, Failed, Infer, Success, Tool, ToolCallResult, withInnerThoughts } from "koishi-plugin-yesimbot/services";
 import { Services } from "koishi-plugin-yesimbot/shared";
-import type { Page } from "puppeteer-core";
+import type { Page, Target } from "puppeteer-core";
 import { FormData, ProxyAgent, RequestInit, fetch as ufetch } from "undici";
 
 namespace GoogleVisionApi {
@@ -39,6 +39,7 @@ namespace GoogleVisionApi {
     export interface IVisionApiResponse {
         responses: Array<{
             webDetection: IWebDetection;
+            error?: { message: string };
         }>;
     }
 }
@@ -252,6 +253,10 @@ export default class VisionTools {
     };
     static readonly Config = Config;
 
+    private readonly controller = new AbortController();
+    private readonly pages = new Set<Page>();
+    private removeTargetListener?: () => void;
+
     // --- Google Vision 常量 ---
     private static readonly GOOGLE_VISION_API_URL = "https://vision.googleapis.com/v1/images:annotate";
     private static readonly WEB_DETECTION_MAX_RESULTS = 15;
@@ -269,7 +274,14 @@ export default class VisionTools {
                 throw new Error("视觉工具代理只支持 HTTP(S) 地址");
             }
         }
+        this.ctx.on("dispose", async () => {
+            this.controller.abort(new Error("视觉工具已停止"));
+            this.removeTargetListener?.();
+            await Promise.allSettled([...this.pages].map((page) => page.close()));
+            this.pages.clear();
+        });
         this.ctx.on("ready", async () => {
+            if (this.controller.signal.aborted) return;
             this.ctx.logger.info("增强视觉工具已加载");
             this.setupPuppeteerAntiDetection();
         });
@@ -280,18 +292,21 @@ export default class VisionTools {
         const puppeteer = this.ctx.puppeteer;
         if (puppeteer?.browser) {
             this.ctx.logger.info("✅ 检测到 Puppeteer 服务，正在附加反检测逻辑...");
-            puppeteer.browser.on("targetcreated", async (target) => {
+            const listener = async (target: Target) => {
+                if (this.controller.signal.aborted) return;
                 if (target.type() === "page") {
                     try {
                         const page = await target.page();
-                        if (page) {
+                        if (page && !this.controller.signal.aborted) {
                             await page.evaluateOnNewDocument(scriptToInject);
                         }
                     } catch {
                         // 目标页面可能在注入前关闭，可以安全忽略
                     }
                 }
-            });
+            };
+            puppeteer.browser.on("targetcreated", listener);
+            this.removeTargetListener = () => puppeteer.browser.off("targetcreated", listener);
             this.ctx.logger.info("👍 反检测逻辑已附加到所有未来页面。");
         } else {
             this.ctx.logger.warn("⚠️ 未找到 Puppeteer 服务或浏览器实例，浏览器抓取功能将不可用。");
@@ -306,30 +321,36 @@ export default class VisionTools {
         }),
     })
     public async searchImageSource(args: Infer<{ image_id: string; method: string }>): Promise<ToolCallResult> {
-        const { image_id, method } = args;
-        this.ctx.logger.info(`请求使用方法: ${method}`);
+        try {
+            this.controller.signal.throwIfAborted();
+            const { image_id, method } = args;
+            this.ctx.logger.info(`请求使用方法: ${method}`);
 
-        const assetService = this.ctx.get(Services.Asset)!;
-        const image = (await assetService.read(image_id, { format: "data-url" })) as string;
-        const imageInfo = await assetService.getInfo(image_id);
-        if (!image || !imageInfo?.mime.startsWith("image/")) {
-            return Failed(`图片获取失败 (ID: ${image_id})，请确认图片ID是否正确。`);
-        }
+            const assetService = this.ctx.get(Services.Asset)!;
+            const image = (await assetService.read(image_id, { format: "data-url" })) as string;
+            const imageInfo = await assetService.getInfo(image_id);
+            if (!image || !imageInfo?.mime.startsWith("image/")) {
+                return Failed(`图片获取失败 (ID: ${image_id})，请确认图片ID是否正确。`);
+            }
 
-        const data = { content: image, data: { mime: imageInfo.mime } };
+            const data = { content: image, data: { mime: imageInfo.mime } };
 
-        switch (this.config.engine) {
-            case "google_lens_serpapi":
-                return this.searchImageSourceWithGoogleLens(image_id, data);
-            case "google_lens_scraper":
-                return this.searchImageSourceWithGoogleLensScraper(image_id, data);
-            case "google_vision":
-                return this.searchImageSourceWithGoogleVision(image_id, data);
-            case "serpapi_reverse_image":
-                return this.searchImageSourceWithSerpApi(image_id, data);
-            default:
-                data;
-                return Failed("没有可用的图片搜索服务，请检查插件配置。");
+            switch (this.config.engine) {
+                case "google_lens_serpapi":
+                    return this.searchImageSourceWithGoogleLens(image_id, data);
+                case "google_lens_scraper":
+                    return this.searchImageSourceWithGoogleLensScraper(image_id, data);
+                case "google_vision":
+                    return this.searchImageSourceWithGoogleVision(image_id, data);
+                case "serpapi_reverse_image":
+                    return this.searchImageSourceWithSerpApi(image_id, data);
+                default:
+                    data;
+                    return Failed("没有可用的图片搜索服务，请检查插件配置。");
+            }
+        } catch (error) {
+            this.ctx.logger.error("图片搜索失败", error);
+            return Failed("图片获取或搜索失败，请稍后重试。");
         }
     }
 
@@ -366,7 +387,10 @@ export default class VisionTools {
             });
 
             const data = (await response.json()) as GoogleVisionApi.IVisionApiResponse;
-            const webDetection = data?.responses?.[0]?.webDetection;
+            if (!data || "error" in data || data.responses?.[0]?.error) {
+                return Failed("Google Vision 服务返回错误，请稍后重试。");
+            }
+            const webDetection = data.responses?.[0]?.webDetection;
 
             if (!webDetection) {
                 this.ctx.logger.info(`${logPrefix} API 未返回有效的 webDetection 结果`);
@@ -400,6 +424,7 @@ export default class VisionTools {
 
             const response = await this.fetchWithProxy(serpApiUrl);
             const data = (await response.json()) as SerpApi.ISerpApiResponse;
+            if (!data || "error" in data) return Failed("SerpApi 服务返回错误，请稍后重试。");
 
             if (!data.knowledge_graph && (!data.image_results || data.image_results.length === 0)) {
                 return Success("分析完成，但在网络上未能找到与此图片相关的明确信息。");
@@ -432,6 +457,7 @@ export default class VisionTools {
 
             const response = await this.fetchWithProxy(serpApiUrl);
             const data = (await response.json()) as GoogleLensApi.GoogleLensResult;
+            if (!data || "error" in data) return Failed("SerpApi 服务返回错误，请稍后重试。");
 
             if (!data.visual_matches || data.visual_matches.length === 0) {
                 return Success("分析完成，但Google Lens未能找到此图片的任何视觉匹配项。");
@@ -463,6 +489,7 @@ export default class VisionTools {
 
             // 2. 执行抓取
             const result = await this.runGoogleLensScraper(tempImagePath);
+            this.controller.signal.throwIfAborted();
             if (!result) {
                 return Failed("浏览器抓取失败，未返回任何结果。");
             }
@@ -581,6 +608,8 @@ export default class VisionTools {
     }
 
     private async fetchWithProxy(url: URL | string, init: RequestInit = {}) {
+        this.controller.signal.throwIfAborted();
+        init.signal = init.signal ? AbortSignal.any([this.controller.signal, init.signal]) : this.controller.signal;
         const proxyUrl = this.config.proxy;
         if (proxyUrl) {
             const proxy = new URL(proxyUrl);
@@ -600,6 +629,7 @@ export default class VisionTools {
     }
 
     private async uploadImage(image_id: string, image: { data: { mime: string } }): Promise<string | null> {
+        this.controller.signal.throwIfAborted();
         const apiKey = this.config.uploader?.apiKey;
         if (!apiKey) {
             this.ctx.logger.error("图片上传失败：未配置 uploader.apiKey。");
@@ -618,7 +648,7 @@ export default class VisionTools {
         formData.append("key", apiKey);
 
         try {
-            const response = await ufetch("https://imgur.la/api/1/upload", {
+            const response = await this.fetchWithProxy("https://imgur.la/api/1/upload", {
                 method: "POST",
                 body: formData,
             });
@@ -651,8 +681,11 @@ export default class VisionTools {
         },
     ): Promise<GoogleLensResult> {
         this.ctx.logger.info("🚀 启动浏览器抓取...");
+        this.controller.signal.throwIfAborted();
         const page = await this.ctx.puppeteer.page();
+        this.pages.add(page);
         try {
+            this.controller.signal.throwIfAborted();
             await page.setViewport({ width: 1920, height: 1080 });
             await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36");
 
@@ -751,7 +784,8 @@ export default class VisionTools {
             throw error;
         } finally {
             this.ctx.logger.info("🎬 关闭页面...");
-            await page.close();
+            this.pages.delete(page);
+            await page.close().catch(() => {});
         }
     }
 
