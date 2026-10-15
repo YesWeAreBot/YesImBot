@@ -43,7 +43,7 @@ for (const operation of ["buildWorldState", "recallContext"] as const) {
         Object.assign(world, {
             ctx: app,
             config: { allowedChannels: [{ platform: "onebot", type: "private", id: "*" }] },
-            l2_manager: { getHistoryGeneration: () => 0 },
+            l2_manager: { getHistoryGeneration: () => 0, waitForHistoryClear: async () => {} },
             contextBuilder: { build: async () => ({ l2_retrieved_memories: [row], l3_diary_entries: [] }) },
         });
         try {

@@ -186,8 +186,13 @@ export class WorldStateService extends Service<Config> {
     }
 
     public async buildWorldState(session: Session): Promise<WorldState> {
+        const target = { platform: session.platform, channelId: session.channelId! };
+        await this.l2_manager.waitForHistoryClear(target);
+        const generation = this.l2_manager.getHistoryGeneration(target);
         const state = await this.contextBuilder.build(session);
+        if (this.l2_manager.getHistoryGeneration(target) !== generation) throw new Error("上下文构建期间历史已清除，请重新触发回复");
         await this.ctx.parallel(session, "yesimbot/filter-recalled-memory", session, state);
+        if (this.l2_manager.getHistoryGeneration(target) !== generation) throw new Error("上下文构建期间历史已清除，请重新触发回复");
         return state;
     }
 
