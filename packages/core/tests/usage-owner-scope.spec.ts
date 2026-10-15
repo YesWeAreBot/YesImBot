@@ -13,6 +13,7 @@ import { EmbedModel } from "../src/model/embed-model";
 import { EvaluationModel } from "../src/model/evaluation-model";
 import type { IProviderClient } from "../src/model/factories";
 import { ProviderInstance } from "../src/model/provider-instance";
+import { ModelService } from "../src/model/service";
 import { getUsageLedger, observeUsageFetch } from "../src/model/usage";
 import type { UsageOwner } from "../src/model/usage-owner";
 import { loggingStub } from "./helpers/yesimbot";
@@ -62,6 +63,9 @@ test("explicit telemetry owner avoids model service lookup and shares history/re
         await response.json();
         const ledger = getUsageLedger(commandCtx, ownerA);
         assert.equal((await ledger.snapshot()).records.length, 1);
+        const facadeCtx = { yesimbot: { model: { usageOwner: ownerA } } } as unknown as Context;
+        assert.equal(getUsageLedger(facadeCtx), ledger);
+        assert.equal(getContextSnapshots(facadeCtx).length, 1);
         assert.equal(getContextSnapshots(commandCtx, ownerA).length, 1);
         assert.equal((await getUsageLedger(commandCtx, ownerB).snapshot()).records.length, 0);
         assert.equal(getContextSnapshots(commandCtx, ownerB).length, 0);
@@ -112,6 +116,58 @@ test("provider-created chat, embedding and evaluation transports retain the expl
         assert.equal(modelLookups, 0, "provider transports must carry the owner instead of looking it up");
         await ledger.close();
     } finally {
+        await rm(dir, { recursive: true, force: true });
+    }
+});
+
+test("model service startup and its providers share an explicit owner before facade registration", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "yib-service-owner-"));
+    const logger = { debug() {}, info() {}, warn() {}, error() {}, success() {} };
+    const ctx: any = {
+        baseDir: dir,
+        scope: { key: "service-owner" },
+        schema: { set() {} },
+        notifier: {
+            create(message: unknown) {
+                assert.fail(JSON.stringify(message));
+            },
+        },
+    };
+    Object.defineProperty(ctx, "yesimbot", {
+        get() {
+            throw new Error("facade not registered");
+        },
+    });
+    const service = new ModelService(
+        ctx,
+        {
+            providers: [
+                {
+                    name: "test",
+                    type: "OpenAI",
+                    apiKey: "test",
+                    baseURL: "https://example.invalid/v1/",
+                    models: [{ modelId: "test", abilities: [ModelAbility.Chat, ModelAbility.Embedding], parameters: { custom: [] } }],
+                },
+            ],
+            modelGroups: [{ name: "default", models: [{ providerName: "test", modelId: "test" }] }],
+            task: { chat: "default", embed: "default" },
+        } as any,
+        loggingStub(logger),
+    );
+    const ledger = getUsageLedger(ctx, service.usageOwner);
+    try {
+        await service.start();
+        const provider = (service as any).providerInstances.get("test");
+        assert.ok(provider, "service initializes providers without reading its facade");
+        provider.fetch = async () => new Response(JSON.stringify({ usage: { prompt_tokens: 4, completion_tokens: 2 } }));
+        const model: any = service.getChatModel("test", "test");
+        assert.ok(model);
+        await (await model.fetch("https://example.invalid", { method: "POST", body: JSON.stringify({ messages: [] }) })).json();
+        assert.equal((await ledger.snapshot()).records.length, 1);
+        assert.equal(getContextSnapshots(ctx, service.usageOwner).length, 1);
+    } finally {
+        await ledger.close();
         await rm(dir, { recursive: true, force: true });
     }
 });
