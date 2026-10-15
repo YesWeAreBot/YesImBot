@@ -1,10 +1,12 @@
 import { Context, isEmpty } from "koishi";
 
 import { Config } from "../config";
+import { checkConfiguration } from "./config-check";
 
 export const name = "yesimbot.command.config";
 
 export function apply(ctx: Context, config: Config) {
+    ctx.command("conf.check", "检查模型配置与能力声明", { authority: 3 }).action(() => checkConfiguration(config));
     ctx.command("conf.get [key:string]", { authority: 3 }).action(async ({ session, options }, key) => {
         if (isEmpty(key)) return "请输入有效的配置键";
         let parsedKeyChain: Array<string | number>;
