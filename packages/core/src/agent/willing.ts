@@ -380,6 +380,9 @@ export class WillingnessManager {
     ): { decision: boolean; probability: number; roll: number; calculation: WillingnessCalculation; scoreKey?: string } {
         const currentScoreKey = topic?.currentScoreKey ?? chatId;
         this.sessions.set(currentScoreKey, session);
+        // Only the message's own topic receives activity, not a different topic
+        // selected later from accumulated willingness.
+        this.lastMessageTimestamps.set(currentScoreKey, Date.now());
 
         const context: MessageContext = {
             chatId: currentScoreKey,
