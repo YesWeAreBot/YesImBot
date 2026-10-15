@@ -244,6 +244,7 @@ export default class StickerTools {
                         const ext = sticker.filePath.split(".").pop();
                         const b64 = await readFile(sticker.filePath, "base64");
                         const base64Data = `data:image/${ext};base64,${b64}`;
+                        if (this.disposed) return "";
                         await session.sendQueued(h.image(base64Data));
                         await new Promise((resolve) => setTimeout(resolve, delay)); // 延时
                     }
@@ -260,6 +261,7 @@ export default class StickerTools {
                 const b64 = await readFile(targetSticker.filePath, "base64");
                 const base64Data = `data:image/${ext};base64,${b64}`;
 
+                if (this.disposed) return "";
                 await session.sendQueued(h.image(base64Data));
                 return `🆔 ID: ${targetSticker.id}\n📁 分类: ${category}`;
             });
@@ -342,6 +344,7 @@ export default class StickerTools {
 
             if (!sticker) return Failed(`分类 "${category}" 中没有表情包`);
 
+            if (this.disposed) return Failed("表情包插件已停止");
             await session.sendQueued(sticker);
 
             return Success({

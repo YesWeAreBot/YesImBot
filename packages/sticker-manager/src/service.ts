@@ -219,6 +219,7 @@ export class StickerService {
         }
 
         // 创建进度消息
+        this.controller.signal.throwIfAborted();
         const progressMsg = await session.sendQueued("开始导入表情包，正在扫描目录...");
 
         try {
@@ -396,6 +397,7 @@ export class StickerService {
         }
 
         // 创建进度消息
+        this.controller.signal.throwIfAborted();
         const progressMsg = await session.sendQueued(`开始导入表情包，共 ${stats.total} 个 URL...`);
 
         try {
@@ -409,6 +411,7 @@ export class StickerService {
                 this.controller.signal.throwIfAborted();
                 // 更新进度消息
                 if (index % 100 === 0 && progressMsg) {
+                    this.controller.signal.throwIfAborted();
                     await session.sendQueued(`已处理 ${index}/${urls.length} 个 URL...`);
                 }
 
