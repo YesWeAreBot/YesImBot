@@ -5,7 +5,7 @@ import { guardReplySession, withReplyTurn } from "../src/agent/reply-turn";
 import { ToolService } from "../src/services/extension/service";
 import { Services } from "../src/shared/constants";
 
-function fixture(execute: (args: any) => Promise<any>, retry = 0) {
+function fixture(execute: (args: any) => Promise<any>, retry = 0, record?: (event: any) => Promise<any>) {
     const events: any[] = [];
     const errors: any[] = [];
     const service = {
@@ -13,7 +13,7 @@ function fixture(execute: (args: any) => Promise<any>, retry = 0) {
         _logger: { info() {}, warn() {}, success() {}, debug() {}, error: (...args: any[]) => errors.push(args) },
         config: { advanced: { maxRetry: retry, retryDelay: 60_000 } },
         executeInvocation: ToolService.prototype["executeInvocation"],
-        ctx: { [Services.WorldState]: { recordSystemEvent: async (event: any) => events.push(event) } },
+        ctx: { [Services.WorldState]: { recordSystemEvent: record ?? (async (event: any) => events.push(event)) } },
     } as unknown as ToolService;
     return { invoke: (session?: any) => ToolService.prototype.invoke.call(service, "probe", {}, session), events, errors };
 }
@@ -118,4 +118,40 @@ it("removes the turn's abort listener when a tool completes normally", async () 
     );
     expect(add).toHaveBeenCalledTimes(1);
     expect(remove).toHaveBeenCalledWith("abort", add.mock.calls[0][1]);
+});
+
+it("releases cancellation while a successful tool receipt is still being persisted", async () => {
+    const controller = new AbortController();
+    let release!: () => void, ready!: () => void;
+    const entered = new Promise<void>((resolve) => {
+        ready = resolve;
+    });
+    const blocked = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    const tool = fixture(
+        async () => ({ status: "success" }),
+        0,
+        async () => {
+            ready();
+            await blocked;
+            return true;
+        },
+    );
+    const invocation = withReplyTurn(
+        () => true,
+        () => tool.invoke({ platform: "onebot", channelId: "g", bot: {} }),
+        controller.signal,
+    );
+    const outcome = invocation.then(
+        () => "completed",
+        () => "cancelled",
+    );
+    await entered;
+    controller.abort();
+    const result = await Promise.race([outcome, new Promise((resolve) => setTimeout(() => resolve("blocked"), 20))]);
+    release();
+    await outcome;
+    expect(result).toBe("cancelled");
+    expect(tool.errors).toEqual([]);
 });
