@@ -2,11 +2,51 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import memory from "@koishijs/plugin-database-memory";
+import pluginMock from "@koishijs/plugin-mock";
+import { Context } from "koishi";
 import { expect, it } from "vitest";
 
 import { captureContextSnapshot, getContextSnapshots } from "../src/services/model/context-snapshot";
 import { getUsageLedger } from "../src/services/model/usage";
+import { HistoryCommandManager } from "../src/services/worldstate/commands";
 import { parseInspectionOptions, registerHistoryInspection } from "../src/services/worldstate/history-inspection";
+import { Services } from "../src/shared/constants";
+
+it("provides a recall example whose options survive Koishi's greedy text argument", () => {
+    const app = new Context();
+    app.set(Services.Logger, { getLogger: () => ({}) } as any);
+    new HistoryCommandManager(app, {} as any, {} as any).register();
+    const command = app.$commander.get("history.recall")!;
+    const example = command._examples[0].replace(/^history\.recall\s+/, "");
+    const parsed = command.parse(example);
+    expect(parsed.options).toMatchObject({ kind: "messages", display: true });
+    expect(parsed.args).toEqual(["旅行"]);
+});
+
+it("rejects help and short options as missing filter values while preserving explicitly quoted values", () => {
+    for (const option of ["-h", "-x", "--full"]) {
+        expect(() => parseInspectionOptions(`history.context --provider ${option}`)).toThrow("--provider 缺少参数");
+    }
+    expect(parseInspectionOptions('history.context --provider "-h"').provider).toEqual(["-h"]);
+    expect(parseInspectionOptions("history.context --provider=-h").provider).toEqual(["-h"]);
+});
+
+it("returns a useful missing-provider error through real Koishi command dispatch", async (t) => {
+    const app = new Context();
+    t.onTestFinished(() => app.stop());
+    app.plugin(memory);
+    app.plugin((pluginMock as any).default ?? pluginMock);
+    app.plugin((ctx) => registerHistoryInspection(ctx, ctx.command("history", "历史", { authority: 3 })));
+    await app.start();
+    await app.mock.initUser("admin", 3);
+    await app.mock.initChannel("group");
+    const output = (await app.mock.client("admin", "group").receive("history.context --provider -h")).join("\n");
+    expect(output).toContain("--provider 缺少参数");
+    const command = app.$commander.get("history.context")!;
+    expect(String(command._usage)).toContain("--target");
+    expect(command._examples).toContain("history.context --adapter onebot --target onebot:857518324");
+});
 
 it("accepts an exact bounded trace option and prevents trace from being ignored during a statistics reset", () => {
     expect(parseInspectionOptions('history.context --trace "exact-id"').traceId).toBe("exact-id");

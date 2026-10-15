@@ -54,6 +54,8 @@ async function setup(t, config = {}, capabilities = true) {
             const spec = { name, description, options, action: null, optionDeclarations: [] };
             commands.set(name.split(" ")[0], spec);
             const chain = {
+                usage: () => chain,
+                example: () => chain,
                 option: (...option) => {
                     spec.optionDeclarations.push(option);
                     return chain;

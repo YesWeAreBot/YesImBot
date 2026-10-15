@@ -1,5 +1,6 @@
 import { Context, Schema, h, type Session } from "koishi";
 
+import { describePeopleCommand } from "./command-help";
 import { identityWarning, renderPeople } from "./context";
 import { applySharedMemory } from "./shared-runtime";
 import { PersonStore, registerModels, sceneKey, type Audit, type LinkProposal, type Mode, type Person, type Proposal, type SceneInput } from "./store";
@@ -31,8 +32,12 @@ export interface Config {
 }
 export const Config: Schema<Config> = Schema.intersect([
     Schema.object({
-        enabled: Schema.boolean().default(true).description("启用当前场景的人物记忆与账号关联"),
-        mode: Schema.union([Schema.const("off"), Schema.const("review"), Schema.const("auto")])
+        enabled: Schema.boolean().default(true).description("启用人物记忆与账号关联；作用于当前场景或下方配置的共同记忆域"),
+        mode: Schema.union([
+            Schema.const("off").description("关闭：保留数据，停止记忆功能"),
+            Schema.const("review").description("审核：候选经管理员批准后生效"),
+            Schema.const("auto").description("自动：模型维护，管理员仍可干预"),
+        ])
             .default("review")
             .description("默认模式：off 停止新记忆功能；review 人工审核；共同记忆 auto 可自动接受画像与账号关联"),
     })
@@ -40,10 +45,14 @@ export const Config: Schema<Config> = Schema.intersect([
         .role("yib-section"),
     Schema.object({
         sharedMemory: Schema.boolean().default(false).description("实验性共同记忆：跨上下文复用人物认识，支持主动回忆与自动关联"),
-        memoryDomain: Schema.string().default("").description("共同记忆域；留空按机器人账号区分。相同域名可显式连接同一人格的不同平台账号"),
-        recallScope: Schema.union([Schema.const("current"), Schema.const("mind")])
+        memoryDomain: Schema.string()
+            .default("")
+            .description(
+                "共同记忆域名称，例如 suni。留空按平台和机器人账号分别管理；填写相同名称会共享人物认识。更改名称会切换数据域，不会自动搬迁旧档案；旧场景需用 people.import 显式导入",
+            ),
+        recallScope: Schema.union([Schema.const("current").description("仅当前会话"), Schema.const("mind").description("共同域内允许的会话")])
             .default("mind")
-            .description("回忆范围：当前会话或共同域内当前配置允许的会话"),
+            .description("仅控制经历召回范围，不控制人物画像的共享。mind 也只读取域内已记录且当前配置允许访问的会话，不会读取任意群或平台历史"),
         automaticRecall: Schema.boolean().default(true).description("明确提及往事时自动查找相关记忆；也可通过 person_recall 主动查询"),
         memoryRetentionDays: Schema.number()
             .min(0)
@@ -57,7 +66,11 @@ export const Config: Schema<Config> = Schema.intersect([
         .description("共同记忆与主动召回（实验性）")
         .role("yib-section"),
     Schema.object({
-        modelGroup: Schema.string().default("").description("后台总结使用的 YIB 模型组；留空不调用后台模型，仍可人工编辑和审核模型工具提交的候选"),
+        modelGroup: Schema.dynamic("modelService.availableGroups")
+            .default("")
+            .description(
+                "从核心已配置的模型组中选择后台总结模型组；核心启动或重载后更新列表。留空不调用后台模型，仍可人工编辑和审核候选。不会自动选择对话组或新增模型调用",
+            ),
         summaryThreshold: Schema.number().min(2).max(100).step(1).default(6).description("同一账号累计多少条新消息后尝试总结"),
         cooldownSeconds: Schema.number().min(30).max(86400).default(600).description("同一场景账号两次自动总结至少间隔的秒数"),
         summaryMaxTokens: Schema.natural()
@@ -442,22 +455,24 @@ export function apply(ctx: Context, config: Config) {
         description: string,
         action: (scope: string, actor: string, args: any[], session: Session, options: Record<string, any>) => Promise<string>,
     ) {
-        return ctx.command(declaration, description, { authority: 3 }).action(async ({ session, options }, ...args) => {
-            try {
-                if (!session || !allowed(session)) throw new Error("当前场景未启用人物记忆");
-                const authority =
-                    (session.user as { authority?: number } | undefined)?.authority ?? (await session.observeUser<"authority">(["authority"])).authority;
-                if (authority < 3) throw new Error("仅管理员可以管理人物记忆（authority ≥ 3）");
-                const result = await action(key(session), `admin:${session.platform}:${session.userId}`, args, session, options || {});
-                if (result.length <= 1800) return h.escape(result);
-                for (let start = 0; start < Math.min(result.length, 36000); start += 1800) await session.send(h.escape(result.slice(start, start + 1800)));
-                return result.length > 36000 ? "输出已截断，请缩小查询范围。" : "";
-            } catch (error) {
-                return `人物记忆：${error instanceof Error ? error.message : String(error)}`;
-            }
-        });
+        return describePeopleCommand(ctx.command(declaration, description, { authority: 3 }), declaration, false).action(
+            async ({ session, options }, ...args) => {
+                try {
+                    if (!session || !allowed(session)) throw new Error("当前场景未启用人物记忆");
+                    const authority =
+                        (session.user as { authority?: number } | undefined)?.authority ?? (await session.observeUser<"authority">(["authority"])).authority;
+                    if (authority < 3) throw new Error("仅管理员可以管理人物记忆（authority ≥ 3）");
+                    const result = await action(key(session), `admin:${session.platform}:${session.userId}`, args, session, options || {});
+                    if (result.length <= 1800) return h.escape(result);
+                    for (let start = 0; start < Math.min(result.length, 36000); start += 1800) await session.send(h.escape(result.slice(start, start + 1800)));
+                    return result.length > 36000 ? "输出已截断，请缩小查询范围。" : "";
+                } catch (error) {
+                    return `人物记忆：${error instanceof Error ? error.message : String(error)}`;
+                }
+            },
+        );
     }
-    ctx.command("people", "管理人物画像、账号关联、候选审核与回滚；范围由记忆模式决定", { authority: 3 });
+    describePeopleCommand(ctx.command("people", "管理人物画像、账号关联、候选审核与回滚；范围由记忆模式决定", { authority: 3 }), "people", false);
     command("people.status", "查看维护模式、总结队列、最近结果或失败", async (scope) => {
         const state = await store.read(scope);
         const profilePending = Object.keys(state.proposals).length,
@@ -492,7 +507,10 @@ export function apply(ctx: Context, config: Config) {
     });
     command("people.show <ref:string>", "按账号 ID 或人物 UUID 查看画像及关联", async (scope, _actor, [ref]) => {
         const found = await store.find(scope, ref);
-        if (!found) throw new Error("当前场景查无此人");
+        if (!found)
+            throw new Error(
+                "当前场景查无此账号 ID 或人物 UUID；不支持用昵称查询。先执行 people.list 获取编号，例如 people.show 123456；详细说明见 people.show -h。",
+            );
         return `${show(found.person)}\n账号：\n${found.accounts.map((a) => `${a.userId} / ${a.name} → ${a.confidence}；关联版本 ${a.revision}`).join("\n")}`;
     });
     command(

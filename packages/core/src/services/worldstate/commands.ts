@@ -37,6 +37,10 @@ export class HistoryCommandManager {
 
     public register(): void {
         const historyCmd = this.ctx.command("history", "管理聊天历史、记忆召回、上下文、用量与备份", { authority: 3 });
+        historyCmd.usage(
+            "权限：管理员（等级至少为 3）。count/recall/diary 默认作用于当前会话；context/tokens 默认查询整个实例。clear 可扩大删除范围，backup 仅覆盖核心历史，具体范围请查看对应子指令的 -h。",
+        );
+        historyCmd.example("history.context -h").example("history.recall -k messages --display 旅行");
         registerHistoryInspection(this.ctx, historyCmd);
         registerHistoryBackup(this.ctx, historyCmd, this.service);
 
@@ -49,6 +53,11 @@ export class HistoryCommandManager {
             .option("offset", "-o <offset:natural> 分页位置")
             .option("limit", "-n <limit:natural> 返回条数，最多 20")
             .option("display", "--display 同时向聊天窗口显示原文")
+            .usage(
+                "范围：当前允许的会话。-k messages 查聊天原文，l2 查记忆片段，l3 查日记（默认）；-u 填原消息发送者账号 ID。结果默认静默注入，--display 才显示到聊天窗口，不强制机器人立即回复。选项必须放在查询词之前；分页从 -o 0 开始。",
+            )
+            .example("history.recall -k messages --display 旅行")
+            .example("history.recall -k messages -u 123456 --start 2026-10-01 --end 2026-10-02")
             .action(async ({ session, options }, query) => {
                 if (!session || !options) return;
                 try {
@@ -71,6 +80,11 @@ export class HistoryCommandManager {
         historyCmd
             .subcommand(".diary [date:string]", "手动生成 L3 日记并注入当前上下文", { authority: 3 })
             .option("display", "--display 同时向聊天窗口显示完整结果")
+            .usage(
+                "范围：当前会话。需要启用 L3 并有足够的新消息材料；省略日期时生成今天的日记。结果默认静默注入，--display 才显示到聊天窗口。日期使用服务器本地时区。",
+            )
+            .example("history.diary")
+            .example("history.diary 2026-10-14 --display")
             .action(async ({ session, options }, date) => {
                 if (!session || !options) return;
                 try {
@@ -88,6 +102,8 @@ export class HistoryCommandManager {
             .option("platform", "-p <platform:string> 指定平台")
             .option("channel", "-c <channel:string> 指定频道ID")
             .option("target", "-t <target:string> 指定目标 'platform:channelId'")
+            .usage("默认统计当前会话保存的消息数量，不是 L1 实际窗口的长度。跨平台指定频道时请填写 -t 平台:频道ID，或同时填写 -p 平台与 -c 频道ID。")
+            .example("history.count -t onebot:857518324")
             .action(async ({ session, options }) => {
                 if (!session || !options) return;
                 let platform = options.platform || session.platform;

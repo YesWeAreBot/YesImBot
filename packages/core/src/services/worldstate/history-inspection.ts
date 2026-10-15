@@ -47,8 +47,10 @@ export function parseInspectionOptions(source: string, fallback: Record<string, 
             continue;
         }
         if (name !== "page" && name !== "trace" && !isDimension(name)) throw new Error(`未知参数 --${name}`);
-        const next = inline.length ? inline.join("=") : tokens[++i]?.content;
-        if (!next || next.startsWith("--")) throw new Error(`--${name} 缺少参数`);
+        const valueToken = inline.length ? undefined : tokens[++i];
+        const next = inline.length ? inline.join("=") : valueToken?.content;
+        if (!next || (!inline.length && !valueToken?.quoted && next.startsWith("-")))
+            throw new Error(`--${name} 缺少参数；请填写筛选值。查看帮助请单独执行 history.context -h 或 history.tokens -h。`);
         if (name === "trace") result.traceId = next;
         else if (name === "page") {
             explicitPage = true;
@@ -376,7 +378,20 @@ export function registerHistoryInspection(ctx: Context, historyCmd: any): void {
     const cache = new InspectionPages();
     for (const kind of ["tokens", "context"] as const) {
         const command = historyCmd.subcommand(`.${kind}`, kind === "tokens" ? "查询实例用量统计" : "只读查看实例上下文", { authority: 3 });
-        for (const name of dimensions) command.option(name, `--${name} <value:string> 筛选${name}（可重复）`);
+        const labels: Record<Dimension, string> = {
+            adapter: "平台名，例如 onebot（不含群号）",
+            bot: "机器人账号 ID",
+            provider: "配置中的提供商名称",
+            model: "模型 ID",
+            target: "频道 ID 或 平台:频道ID，例如 onebot:857518324",
+        };
+        command.usage?.(
+            `范围：默认查询整个插件实例，非仅当前群。筛选可重复，同类取任一值，不同类同时满足。\n参数：--adapter 是平台名；群号请用 --target。\n注意：选项后必须填写值；-h 单独使用。${kind === "tokens" ? "\n筛选作用于用量记录；--reset 会清空整个实例统计，不能与筛选组合，不清历史。" : "\n提供商、模型、机器人筛选只作用于请求快照，不用于划分共享存储。--details 可能将完整内容发到聊天窗口。"}`,
+        );
+        command.example?.(`history.${kind} --adapter onebot --target onebot:857518324`);
+        command.example?.(`history.${kind} --provider "我的提供商" --model "模型ID" --full`);
+        command.example?.(`history.${kind} -h`);
+        for (const name of dimensions) command.option(name, `--${name} <value:string> ${labels[name]}（可重复）`);
         command.option("page", "--page <page:posint> 页码").option("full", "--full 按类别展开");
         if (kind === "tokens") command.option("reset", "--reset 重置整个实例统计").option("restart", "--restart 重置整个实例统计");
         else command.option("details", "--details 展示完整存储内容和请求快照").option("trace", "--trace <id:string> 精确筛选决策/回复轮 ID");
@@ -427,6 +442,8 @@ export function registerHistoryInspection(ctx: Context, historyCmd: any): void {
                     `统计起点：${new Date(snapshot.startedAt).toISOString()} · 周期 ${snapshot.period}`,
                     `第 ${options.page}/${pages.length} 页 · 1K=1000 token`,
                 ];
+                if (options.adapter.some((value) => value.includes(":")))
+                    header.push("筛选提示：如要查询 onebot 的某个群，请使用 --adapter onebot --target onebot:群号；--adapter 通常只填写平台名。");
                 if (kind === "tokens" && options.page > 1) header.push("范围总量（查询快照）：", ...lines.slice(0, 3));
                 return h
                     .text(

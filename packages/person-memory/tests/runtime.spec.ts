@@ -42,11 +42,16 @@ test("real Koishi lifecycle, command parser and authority gate operate against a
     await app.mock.initChannel("g");
     const admin = app.mock.client("admin", "g"),
         member = app.mock.client("member", "g");
+    const showHelp = app.$commander.get("people.show")!;
+    assert.match(String(showHelp._usage), /账号 ID.*UUID/);
+    assert.match(String(showHelp._usage), /昵称/);
+    assert.ok(showHelp._examples.some((example) => example.includes("people.show 123456")));
     const denied = await member.receive("people.create 禁止");
     assert.ok(!denied.join("").includes("已创建"));
     const created = await admin.receive("people.create 许仙");
     const id = created.join("").match(/[0-9a-f-]{36}/)?.[0];
     assert.ok(id, created.join(""));
+    assert.match((await admin.receive("people.show 许仙")).join(""), /不支持用昵称查询/);
     assert.match((await admin.receive(`people.bind member ${id} 0.9`)).join(""), /已关联/);
     assert.match((await admin.receive("people.show member")).join(""), /许仙/);
     assert.match((await admin.receive("people.edit member 喜欢 Python")).join(""), /喜欢 Python/);
@@ -202,6 +207,7 @@ for (const sharedMemory of [false, true])
         await app.mock.initUser("admin", 3);
         await app.mock.initChannel("g");
         const admin = app.mock.client("admin", "g");
+        assert.match(String(app.$commander.get("people.show")!._usage), sharedMemory ? /共同记忆域/ : /当前平台/);
         const created = (await admin.receive("people.create Original")).join("");
         const id = created.match(/[0-9a-f-]{36}/)?.[0];
         assert.ok(id, created);
