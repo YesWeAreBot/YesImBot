@@ -457,7 +457,7 @@ export function apply(ctx: Context, config: Config) {
             }
         });
     }
-    ctx.command("people", "人物记忆管理：查看、认人、记人、审核与回滚，限当前场景", { authority: 3 });
+    ctx.command("people", "管理人物画像、账号关联、候选审核与回滚；范围由记忆模式决定", { authority: 3 });
     command("people.status", "查看维护模式、总结队列、最近结果或失败", async (scope) => {
         const state = await store.read(scope);
         const profilePending = Object.keys(state.proposals).length,

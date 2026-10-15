@@ -6,8 +6,8 @@ import { checkConfiguration } from "./config-check";
 export const name = "yesimbot.command.config";
 
 export function apply(ctx: Context, config: Config) {
-    ctx.command("conf.check", "检查模型配置与能力声明", { authority: 3 }).action(() => checkConfiguration(config));
-    ctx.command("conf.get [key:string]", { authority: 3 }).action(async ({ session, options }, key) => {
+    ctx.command("conf.check", "检查模型引用、任务分配与能力声明（不发起模型请求）", { authority: 3 }).action(() => checkConfiguration(config));
+    ctx.command("conf.get [key:string]", "读取当前插件实例的指定配置项", { authority: 3 }).action(async ({ session, options }, key) => {
         if (isEmpty(key)) return "请输入有效的配置键";
         let parsedKeyChain: Array<string | number>;
         try {
@@ -21,7 +21,7 @@ export function apply(ctx: Context, config: Config) {
         return JSON.stringify(data, null, 2) || "未找到配置";
     });
 
-    ctx.command("conf.set [key:string] [value:string]", { authority: 3 })
+    ctx.command("conf.set [key:string] [value:string]", "修改当前插件实例的指定配置项", { authority: 3 })
         .option("force", "-f <force:boolean>")
         .action(async ({ session, options }, key, value) => {
             if (isEmpty(key)) return "请输入有效的配置键";

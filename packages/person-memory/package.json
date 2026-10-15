@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-yesimbot-extension-person-memory",
   "version": "0.1.0",
-  "description": "YesImBot 人物记忆、账号关联与管理员审核",
+  "description": "YesImBot 人物记忆与账号关联扩展",
   "keywords": [
     "koishi",
     "memory",
@@ -26,7 +26,7 @@
   },
   "koishi": {
     "description": {
-      "zh": "人物记忆与账号关联，支持管理员干预和候选审核"
+      "zh": "人物记忆：画像、账号关联、候选审核与人工纠错"
     },
     "service": {
       "required": [

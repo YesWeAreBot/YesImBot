@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-yesimbot-extension-durable-tasks",
   "version": "0.1.0",
-  "description": "Opt-in persistent session-bound reminders for YesImBot",
+  "description": "YesImBot 持久提醒扩展",
   "license": "MIT",
   "files": [
     "lib",
@@ -20,7 +20,7 @@
   },
   "koishi": {
     "description": {
-      "zh": "YesImBot 持久提醒（默认关闭，仅提交 Agent 唤醒）"
+      "zh": "持久提醒：默认关闭，到期提交 Agent 处理"
     },
     "service": {
       "required": [

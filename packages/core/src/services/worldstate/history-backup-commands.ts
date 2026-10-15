@@ -4,7 +4,8 @@ import { sessionChannelType } from "./channel-metadata";
 import { HistoryBackupManager, type BackupTarget } from "./history-backup";
 import type { WorldStateService } from "./service";
 
-const limitation = "四表是平台/频道共享事实；归属标记仅表示导出实例。Agent日志仅导出和预检，不恢复；不含配置文件、人物库或决策日志。";
+const limitation =
+    "备份包含当前平台与频道的消息、系统事件、L2记忆和L3日记，这四类历史由共库实例共享；备份标记用于核对导出实例。Agent日志仅导出和预检，不恢复；不含配置、人物资料、决策日志、用量统计或持久提醒。";
 const count = (value: object) =>
     Object.entries(value)
         .map(([kind, total]) => `${kind}=${total}`)

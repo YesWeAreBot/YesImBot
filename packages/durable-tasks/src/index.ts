@@ -168,7 +168,7 @@ export function apply(ctx: Context, config: Config) {
             }
         },
     });
-    ctx.command("reminder", "当前会话的持久提醒管理", { authority: 3 });
+    ctx.command("reminder", "管理当前机器人与会话的持久提醒", { authority: 3 });
     ctx.command("reminder.list", "列出当前机器人、当前频道的最近 100 条提醒", { authority: 3 }).action(async ({ session }) => {
         if (!session || !allowed(session)) return h.text("当前会话未启用持久提醒");
         const boundTarget = target(session);
@@ -177,19 +177,19 @@ export function apply(ctx: Context, config: Config) {
         return h.text(rows.map((row) => `${row.id} ${row.status} ${new Date(row.deadline).toISOString()} ${row.error}`).join("\n") || "暂无提醒");
     });
     for (const action of ["cancel", "retry"] as const) {
-        ctx.command(`reminder.${action} <id:string>`, action === "cancel" ? "取消当前会话的提醒" : "显式重试失败提醒（可能重复唤醒）", { authority: 3 }).action(
-            async ({ session }, id) => {
-                if (!session || !allowed(session)) return h.text("当前会话未启用持久提醒");
-                const boundTarget = target(session);
-                const isCurrent = () => allowed(session) && sameTarget(boundTarget, session) && boundTarget.requester === session.userId;
-                const task = id && (await store.get(id));
-                if (!isCurrent()) return h.text("当前会话未启用持久提醒");
-                if (!task || !sameTarget(task, session)) return h.text("提醒不存在或不属于当前会话");
-                const changed = action === "cancel" ? await store.cancel(task.id) : await store.retry(task.id, Date.now());
-                if (!isCurrent()) return h.text(`会话已失效；数据库${action}操作${changed ? "已接受" : "未改变状态"}，已提交的操作无法撤回`);
-                return h.text(changed ? (action === "cancel" ? "已取消；已经投递的唤醒无法撤回" : "已排队重试；completed 仅表示提交唤醒") : "状态不允许此操作");
-            },
-        );
+        ctx.command(`reminder.${action} <id:string>`, action === "cancel" ? "取消当前会话的提醒" : "重试当前会话的失败提醒（可能重复提交处理）", {
+            authority: 3,
+        }).action(async ({ session }, id) => {
+            if (!session || !allowed(session)) return h.text("当前会话未启用持久提醒");
+            const boundTarget = target(session);
+            const isCurrent = () => allowed(session) && sameTarget(boundTarget, session) && boundTarget.requester === session.userId;
+            const task = id && (await store.get(id));
+            if (!isCurrent()) return h.text("当前会话未启用持久提醒");
+            if (!task || !sameTarget(task, session)) return h.text("提醒不存在或不属于当前会话");
+            const changed = action === "cancel" ? await store.cancel(task.id) : await store.retry(task.id, Date.now());
+            if (!isCurrent()) return h.text(`会话已失效；数据库${action}操作${changed ? "已接受" : "未改变状态"}，已提交的操作无法撤回`);
+            return h.text(changed ? (action === "cancel" ? "已取消；已经投递的唤醒无法撤回" : "已排队重试；completed 仅表示提交唤醒") : "状态不允许此操作");
+        });
     }
     ctx.on("ready", async () => {
         await ctx.database.prepared();

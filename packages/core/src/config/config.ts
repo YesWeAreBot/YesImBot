@@ -45,9 +45,9 @@ export const Config: Schema<Config> = Schema.intersect(
         AgentBehaviorConfigSchema,
         PromptServiceConfigSchema,
 
-        MemoryConfigSchema.description("记忆能力配置"),
+        MemoryConfigSchema.description("核心记忆文件"),
         HistoryConfigSchema,
-        ToolServiceConfigSchema.description("工具能力配置"),
+        ToolServiceConfigSchema.description("工具与扩展"),
 
         AssetServiceConfigSchema.collapse().description("资源存储与处理"),
         //TelemetryConfigSchema,

@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-yesimbot-extension-onebot-directory",
   "version": "0.1.0",
-  "description": "OneBot contacts tool and persistent Koishi database cache for YesImBot",
+  "description": "YesImBot OneBot 名单查询扩展",
   "keywords": [
     "koishi",
     "onebot",
@@ -27,7 +27,7 @@
   },
   "koishi": {
     "description": {
-      "zh": "YesImBot OneBot 联系人查询与缓存"
+      "zh": "OneBot 名单：查询好友、群与群成员"
     },
     "service": {
       "required": [

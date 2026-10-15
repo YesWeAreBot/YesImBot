@@ -25,40 +25,38 @@ YesImBot (Athena) 是一个基于 [Koishi](https://koishi.chat/zh-CN/) 的智能
 - **📱 Web 管理界面**：提供直观的 Web 界面进行配置和管理
 - **🔌 MCP 扩展支持**：支持 Model Context Protocol 扩展，实现更强大的功能集成
 
-## 📦 项目结构
+## 📦 功能与扩展
 
-本项目采用 monorepo 架构，包含以下主要包：
+先安装核心插件，再按用途选择扩展。配置、管理指令与操作范围见[功能与管理入口](docs/feature-guide.md)。各包是否可独立升级，请以其兼容要求为准。
 
-```
-YesImBot/
-├── packages/
-│   ├── core/          # 🎯 核心插件包
-│   ├── mcp/           # 🔌 MCP扩展包
-│   └── webui/         # 📱 Web管理界面
-├── package.json       # 项目根配置
-└── README.md          # 项目说明
-```
+| 用途                                       | 包目录             | NPM 包名                                            |
+| ------------------------------------------ | ------------------ | --------------------------------------------------- |
+| 对话、回复调度、模型、工具及 L1/L2/L3 记忆 | `core`             | `koishi-plugin-yesimbot`                            |
+| 人物画像、账号关联与审核                   | `person-memory`    | `koishi-plugin-yesimbot-extension-person-memory`    |
+| 持久提醒（默认关闭）                       | `durable-tasks`    | `koishi-plugin-yesimbot-extension-durable-tasks`    |
+| 好友、群和群成员名单查询                   | `onebot-directory` | `koishi-plugin-yesimbot-extension-onebot-directory` |
+| 日程生成与查询                             | `daily-planner`    | `koishi-plugin-yesimbot-extension-daily-planner`    |
+| 好感度                                     | `favor`            | `@yesimbot/koishi-plugin-favor`                     |
+| 表情包管理                                 | `sticker-manager`  | `koishi-plugin-yesimbot-extension-sticker-manager`  |
+| 语音合成                                   | `tts`              | `@yesimbot/koishi-plugin-tts`                       |
+| 图片理解                                   | `vision-tools`     | `@yesimbot/koishi-plugin-vision-tools`              |
+| 图片生成                                   | `rr3`              | `@yesimbot/koishi-plugin-rr3`                       |
+| 代码块转图片                               | `code2image`       | `@yesimbot/koishi-plugin-code2image`                |
+| 代码执行                                   | `code-executor`    | `@yesimbot/koishi-plugin-code-executor`             |
+| 接入 MCP 工具                              | `mcp`              | `@yesimbot/koishi-plugin-mcp`                       |
 
-### 📦 包说明
-
-| 包名              | 描述                           | NPM 包名                                         |
-| ----------------- | ------------------------------ | ------------------------------------------------ |
-| **core**          | 核心聊天机器人功能             | `koishi-plugin-yesimbot`                         |
-| **mcp**           | Model Context Protocol 扩展    | `koishi-plugin-yesimbot-extension-mcp`           |
-| **person-memory** | 人物画像、账号关联与管理员审核 | `koishi-plugin-yesimbot-extension-person-memory` |
-| **webui**         | Web 管理界面                   | _开发中_                                         |
+核心插件包含 Koishi 控制台页面；无需安装独立的 `webui` 包。`yakumo-client` 是构建辅助包，不是聊天扩展。
 
 ## 📋 文档导航
 
 除了文档站（[https://docs.yesimbot.chat/](https://docs.yesimbot.chat/)）的文档外，仓库内还有内置的文档可供参考：
 
-| 文档类型        | 文件路径                                                                         | 描述                                |
-| --------------- | -------------------------------------------------------------------------------- | ----------------------------------- |
-| 🎯 **核心功能** | [packages/core/README.md](packages/core/README.md)                               | 核心插件的详细使用说明和配置指南    |
-| 🏗️ **架构设计** | [packages/core/DESIGN.md](packages/core/DESIGN.md)                               | 系统架构、中间件设计和核心组件说明  |
-| 🔧 **扩展开发** | [packages/core/src/extensions/README.md](packages/core/src/extensions/README.md) | 扩展系统开发指南和 API 文档         |
-| 🔌 **MCP 扩展** | [packages/mcp/README.md](packages/mcp/README.md)                                 | Model Context Protocol 扩展使用说明 |
-| 📱 **Web 界面** | [packages/webui/README.md](packages/webui/README.md)                             | Web 管理界面使用和开发文档          |
+| 文档类型        | 文件路径                                                                                         | 描述                                |
+| --------------- | ------------------------------------------------------------------------------------------------ | ----------------------------------- |
+| 🎯 **核心功能** | [packages/core/README.md](packages/core/README.md)                                               | 核心插件的详细使用说明和配置指南    |
+| 🔧 **扩展开发** | [packages/core/src/services/extension/README.md](packages/core/src/services/extension/README.md) | 扩展系统开发指南和 API 文档         |
+| 🔌 **MCP 扩展** | [packages/mcp/README.md](packages/mcp/README.md)                                                 | Model Context Protocol 扩展使用说明 |
+| 🧭 **功能导航** | [docs/feature-guide.md](docs/feature-guide.md)                                                   | 功能分类、指令入口和操作范围        |
 
 ## 🤝 贡献
 
