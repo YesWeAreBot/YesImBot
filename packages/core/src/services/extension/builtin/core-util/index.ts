@@ -1,11 +1,11 @@
 import { Bot, Context, h, Logger, Schema, Session, sleep, Universal } from "koishi";
 
-import { assertReplyDestination, guardReplyBot, replyTurnSignal } from "../../../../agent/reply-turn";
 import { AssetService } from "../../../../services/assets";
 import { Extension, Tool, withInnerThoughts } from "../../../../services/extension/decorators";
 import { Failed, Success } from "../../../../services/extension/helpers";
 import { Infer } from "../../../../services/extension/types";
 import { IChatModel, ModelDescriptor } from "../../../../services/model";
+import { assertReplyDestination, guardReplyBot, replyTurnSignal } from "../../../../shared";
 import { Services } from "../../../../shared/constants";
 import { isEmpty } from "../../../../shared/utils";
 import { withUsageScope } from "../../../model/usage";

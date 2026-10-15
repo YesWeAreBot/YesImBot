@@ -1,14 +1,16 @@
 import { Context, Service, Session, Random } from "koishi";
 
 import { Config } from "../config";
-import { ChatModelSwitcher, ModelService, TaskType } from "../services/model";
+import type { ChatModelSwitcher, ModelService } from "../services/model";
+import { TaskType } from "../services/model/config";
 import { loadTemplate, PromptService } from "../services/prompt";
 import { AgentStimulus } from "../services/worldstate";
 import { WorldStateService } from "../services/worldstate/index";
+import { getInstanceDirectory } from "../shared";
+import { guardReplySession, withReplyTurn } from "../shared";
 import { Services } from "../shared/constants";
 import { AppError, handleError } from "../shared/errors";
 import { ErrorDefinitions } from "../shared/errors/definitions";
-import { getInstanceDirectory } from "../shared/instance-scope";
 import { PromptContextBuilder } from "./context-builder";
 import { registerDecisionCommands } from "./decision-commands";
 import { DecisionJournal } from "./decision-journal";
@@ -17,7 +19,6 @@ import { HeartbeatProcessor } from "./heartbeat-processor";
 import { isBotMention } from "./mention";
 import { registerReplyCommands } from "./reply-commands";
 import { ReplyControl, ReplyCategory, ReplyTarget, messageCategories, replyKey } from "./reply-control";
-import { guardReplySession, withReplyTurn } from "./reply-turn";
 import { StimulusScheduler } from "./scheduler";
 import { TopicManager, TopicSnapshot } from "./topics";
 import { TypeSafeEvaluator } from "./typesafe";

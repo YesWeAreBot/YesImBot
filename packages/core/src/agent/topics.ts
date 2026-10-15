@@ -1,6 +1,6 @@
 import type { Context, Session } from "koishi";
 
-import { withUsageScope } from "../services/model/usage";
+import { withUsageScope } from "../services";
 import { Services, TableName } from "../shared/constants";
 
 export interface TopicConfig {

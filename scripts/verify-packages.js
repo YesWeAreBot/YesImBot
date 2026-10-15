@@ -21,7 +21,16 @@ try {
     // this outside the checkout prevents workspace dependencies masking omissions.
     execFileSync(
         "npm",
-        ["install", "--prefix", temporary, "--ignore-scripts", "--no-audit", "--no-fund", ...tarballs.map((name) => path.join(artifacts, name))],
+        [
+            "install",
+            "--prefix",
+            temporary,
+            "--ignore-scripts",
+            "--no-audit",
+            "--no-fund",
+            "@koishijs/plugin-database-memory@^3.7.0",
+            ...tarballs.map((name) => path.join(artifacts, name)),
+        ],
         {
             timeout: 180_000,
             stdio: "inherit",
@@ -75,6 +84,12 @@ try {
         console.log(`Verified packed entries: ${manifest.name}`);
     }
     assert.deepEqual([...verified].sort(), expected.sort(), "A publishable workspace has no verified artifact");
+    execFileSync(process.execPath, [path.join(root, "scripts/verify-runtime.js")], {
+        cwd: temporary,
+        env: { ...process.env, YESIMBOT_SMOKE_ROOT: temporary },
+        timeout: 30_000,
+        stdio: "inherit",
+    });
 } finally {
     await rm(temporary, { recursive: true, force: true });
 }

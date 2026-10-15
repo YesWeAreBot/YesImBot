@@ -4,9 +4,9 @@ import path from "path";
 import { Context, h, Logger } from "koishi";
 import { v4 as uuidv4 } from "uuid";
 
+import { getInstanceDirectory } from "../../shared";
 import { Services, TableName } from "../../shared/constants";
 import { sanitizeDiagnostic } from "../../shared/diagnostic-sanitizer";
-import { getInstanceDirectory } from "../../shared/instance-scope";
 import { HISTORY_CHANNELS } from "./channel-metadata";
 import { HistoryConfig } from "./config";
 import { retainPendingRecalls } from "./manual-recall";

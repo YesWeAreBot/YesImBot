@@ -9,3 +9,5 @@ export * from "./provider-instance";
 
 export * from "./evaluation-model";
 export * from "./evaluation-client";
+
+export { withUsageScope } from "./usage";

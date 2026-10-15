@@ -4,16 +4,16 @@ import { Message } from "@xsai/shared-chat";
 import { Context, h, Logger, Session } from "koishi";
 import { v4 as uuidv4 } from "uuid";
 
-import { assertReplyTurn, isReplyTurnCancelled, replyTurnSignal } from "../agent/reply-turn";
+import { withUsageScope } from "../services";
 import { Properties, ToolSchema, ToolService } from "../services/extension";
 import { toolJSONSchema } from "../services/extension/json-schema";
 import { ChatModelSwitcher } from "../services/model";
 import type { ValidationOptions } from "../services/model/chat-model";
-import { withUsageScope } from "../services/model/usage";
 import { PromptService } from "../services/prompt";
 import { AgentResponse, AgentStimulus } from "../services/worldstate";
 import { InteractionManager } from "../services/worldstate/interaction-manager";
 import { manualRecallOwners } from "../services/worldstate/manual-recall";
+import { assertReplyTurn, isReplyTurnCancelled, replyTurnSignal } from "../shared";
 import { Services } from "../shared/constants";
 import { AppError, ErrorDefinitions, handleError } from "../shared/errors";
 import { estimateTokensByRegex, formatDate, JsonParser, StreamParser } from "../shared/utils";

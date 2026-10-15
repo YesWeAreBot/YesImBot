@@ -2,9 +2,9 @@ import { randomUUID } from "node:crypto";
 
 import { Context, ForkScope, h, Logger, resolveConfig, Schema, Service, Session } from "koishi";
 
-import { assertReplyTurn, awaitReplyTurn } from "../../agent/reply-turn";
 import { Config } from "../../config";
 import { PromptService } from "../../services/prompt";
+import { assertReplyTurn, awaitReplyTurn } from "../../shared";
 import { Services } from "../../shared/constants";
 import { sanitizeDiagnostic } from "../../shared/diagnostic-sanitizer";
 import { isEmpty, stringify, truncate } from "../../shared/utils";

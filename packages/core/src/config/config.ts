@@ -1,14 +1,14 @@
 import { Schema } from "koishi";
 
 import { AgentBehaviorConfig, AgentBehaviorConfigSchema } from "../agent";
-import { AssetServiceConfig, AssetServiceConfigSchema } from "../services/assets";
-import { ToolServiceConfig, ToolServiceConfigSchema } from "../services/extension";
+import { AssetServiceConfig, AssetServiceConfigSchema } from "../services/assets/config";
+import { ToolServiceConfig, ToolServiceConfigSchema } from "../services/extension/config";
 import { LoggingConfig, LoggingConfigSchema } from "../services/logger";
-import { MemoryConfig, MemoryConfigSchema } from "../services/memory";
-import { ModelServiceConfig, ModelServiceConfigSchema } from "../services/model";
-import { PromptServiceConfig, PromptServiceConfigSchema } from "../services/prompt";
+import { MemoryConfig, MemoryConfigSchema } from "../services/memory/config";
+import { ModelServiceConfig, ModelServiceConfigSchema } from "../services/model/config";
+import { PromptServiceConfig, PromptServiceConfigSchema } from "../services/prompt/config";
 //import { TelemetryConfig, TelemetryConfigSchema } from "../services/telemetry";
-import { HistoryConfig, HistoryConfigSchema } from "../services/worldstate";
+import { HistoryConfig, HistoryConfigSchema } from "../services/worldstate/config";
 import { ErrorReporterConfig, ErrorReporterConfigSchema } from "../shared/errors";
 
 export const CONFIG_VERSION = "2.0.1";
