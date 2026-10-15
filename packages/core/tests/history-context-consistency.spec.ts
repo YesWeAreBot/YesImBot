@@ -71,3 +71,25 @@ it("preserves a context when only another channel is cleared", async () => {
     release.resolve();
     expect(await building).toEqual({ content: "retained" });
 });
+
+it("waits for an active deletion before reading an explicit recall", async () => {
+    const deleting = deferred(),
+        release = deferred();
+    let deleted = false;
+    const f = fixture(async () => ({}));
+    Object.assign(f.world.ctx, {
+        filter: () => true,
+        database: { get: async () => (deleted ? [] : [{ ...f.session, id: "old", content: "deleted secret" }]) },
+    });
+    f.world.config = { allowedChannels: [{ platform: "onebot", type: "guild", id: "*" }] };
+    const clearing = f.memory.clearHistory(f.session, async () => {
+        deleting.resolve();
+        await release.promise;
+        deleted = true;
+    });
+    await deleting.promise;
+    const recalling = f.world.recallContext(f.session, { kind: "messages" });
+    release.resolve();
+    await clearing;
+    expect((await recalling).records).toEqual([]);
+});

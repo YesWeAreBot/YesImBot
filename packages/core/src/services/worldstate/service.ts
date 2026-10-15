@@ -135,6 +135,7 @@ export class WorldStateService extends Service<Config> {
         const { platform, channelId } = session;
         if (!platform || !channelId) throw new Error("当前会话缺少平台或频道");
         const target = { platform, channelId };
+        await this.l2_manager.waitForHistoryClear(target);
         const historyGeneration = this.l2_manager.getHistoryGeneration(target);
         const page = await recallRawPage(this.ctx.database, target, options);
         if (page.kind !== "messages") {

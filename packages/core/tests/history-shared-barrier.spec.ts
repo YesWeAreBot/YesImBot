@@ -76,3 +76,24 @@ it("keeps independent databases isolated", async () => {
     await left.a.clearHistory(target, async () => {});
     expect(right.a.getHistoryGeneration(target)).toBe(before);
 });
+
+it("coordinates database service proxies belonging to different caller contexts", async () => {
+    const { Context, Service } = await import("koishi");
+    class DatabaseOwner extends Service {
+        constructor(ctx: InstanceType<typeof Context>) {
+            super(ctx, "database", true);
+        }
+    }
+    const app = new Context();
+    const database = new DatabaseOwner(app);
+    app.set("database", database as any);
+    app.set(Services.Logger, { getLogger: () => ({}) } as any);
+    const left = app.extend(),
+        right = app.extend();
+    const a = new SemanticMemoryManager(left, {} as any),
+        b = new SemanticMemoryManager(right, {} as any);
+    const generation = b.getHistoryGeneration(target);
+    await a.clearHistory(target, async () => {});
+    expect(b.getHistoryGeneration(target)).toBe(generation + 1);
+    await app.stop();
+});
