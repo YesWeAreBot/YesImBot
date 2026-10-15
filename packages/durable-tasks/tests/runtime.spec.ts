@@ -161,3 +161,136 @@ it("does not let a session sharing a raw channel id cancel reminders from anothe
     }
     expect((await f.ctx.database.get(TABLE, { id: created.result.id }))[0].status).toBe("queued");
 });
+
+for (const invalidation of ["dispose", "permission", "target"] as const)
+    it(`does not create a queued reminder after ${invalidation} during dedup lookup`, async (t) => {
+        const f = await fixture(t);
+        const tool = f.tools.get("schedule_reminder");
+        const get = f.ctx.database.get.bind(f.ctx.database);
+        let release!: () => void, entered!: () => void;
+        const waiting = new Promise<void>((r) => (release = r)),
+            started = new Promise<void>((r) => (entered = r));
+        let once = true;
+        f.ctx.database.get = (async (table: any, query: any, ...rest: any[]) => {
+            if (table === TABLE && query?.id && once) {
+                once = false;
+                entered();
+                await waiting;
+            }
+            return get(table, query, ...(rest as any));
+        }) as any;
+        const session = f.session();
+        const pending = tool.execute({ session, deadline: Date.now() + 3600000, content: "late", idempotency_key: "late" });
+        await started;
+        if (invalidation === "dispose") f.fork.dispose();
+        if (invalidation === "permission") f.world.isChannelAllowed = () => false;
+        if (invalidation === "target") session.guildId = "other-guild";
+        release();
+        expect((await pending).status).toBe("error");
+        expect(await get(TABLE, {})).toHaveLength(0);
+    });
+
+it("reports accepted database facts if disposal happens after create was dispatched", async (t) => {
+    const f = await fixture(t);
+    const create = f.ctx.database.create.bind(f.ctx.database);
+    let release!: () => void, entered!: () => void;
+    const waiting = new Promise<void>((r) => (release = r)),
+        started = new Promise<void>((r) => (entered = r));
+    f.ctx.database.create = (async (table: any, row: any) => {
+        if (table === TABLE) {
+            entered();
+            await waiting;
+        }
+        return create(table, row);
+    }) as any;
+    const pending = f.tools
+        .get("schedule_reminder")
+        .execute({ session: f.session(), deadline: Date.now() + 3600000, content: "late", idempotency_key: "late-create" });
+    await started;
+    f.fork.dispose();
+    release();
+    const result = await pending;
+    expect(result.status).toBe("error");
+    expect(result.accepted).toMatchObject({ status: "queued" });
+    expect((await f.ctx.database.get(TABLE, {}))[0].id).toBe(result.accepted.id);
+});
+
+it("does not cancel a reminder if disposal happens during its target lookup", async (t) => {
+    const f = await fixture(t);
+    const created = await f.tools
+        .get("schedule_reminder")
+        .execute({ session: f.session(), deadline: Date.now() + 3600000, content: "x", idempotency_key: "cancel-dispose" });
+    const get = f.ctx.database.get.bind(f.ctx.database);
+    let release!: () => void, entered!: () => void;
+    const waiting = new Promise<void>((r) => (release = r)),
+        started = new Promise<void>((r) => (entered = r));
+    f.ctx.database.get = (async (table: any, query: any, ...rest: any[]) => {
+        if (table === TABLE && query?.id) {
+            entered();
+            await waiting;
+        }
+        return get(table, query, ...(rest as any));
+    }) as any;
+    const pending = f.tools.get("cancel_reminder").execute({ session: f.session(), id: created.result.id });
+    await started;
+    f.fork.dispose();
+    release();
+    expect((await pending).status).toBe("error");
+    expect((await get(TABLE, { id: created.result.id }))[0].status).toBe("queued");
+});
+
+for (const action of ["cancel", "retry"] as const)
+    it(`does not administratively ${action} after disposal during target lookup`, async (t) => {
+        const f = await fixture(t);
+        const mock = (f.ctx as any).mock;
+        await mock.initUser("admin", 3);
+        await mock.initChannel("g");
+        const session = { ...f.session(), platform: "mock", selfId: f.ctx.bots[0].selfId, guildId: "g" };
+        const created = await f.tools
+            .get("schedule_reminder")
+            .execute({ session, deadline: Date.now() + 3600000, content: "x", idempotency_key: `admin-dispose-${action}` });
+        if (action === "retry") await f.ctx.database.set(TABLE, { id: created.result.id }, { status: "failed" });
+        const get = f.ctx.database.get.bind(f.ctx.database);
+        let release!: () => void, entered!: () => void;
+        const waiting = new Promise<void>((r) => (release = r)),
+            started = new Promise<void>((r) => (entered = r));
+        f.ctx.database.get = (async (table: any, query: any, ...rest: any[]) => {
+            if (table === TABLE && query?.id) {
+                entered();
+                await waiting;
+            }
+            return get(table, query, ...(rest as any));
+        }) as any;
+        const pending = mock.client("admin", "g").receive(`reminder.${action} ${created.result.id}`);
+        await started;
+        f.fork.dispose();
+        release();
+        expect((await pending).join("")).not.toContain(action === "cancel" ? "已取消" : "已排队重试");
+        expect((await get(TABLE, { id: created.result.id }))[0].status).toBe(action === "cancel" ? "queued" : "failed");
+    });
+
+it("reports an already dispatched cancellation accurately after disposal", async (t) => {
+    const f = await fixture(t);
+    const created = await f.tools
+        .get("schedule_reminder")
+        .execute({ session: f.session(), deadline: Date.now() + 3600000, content: "x", idempotency_key: "cancel-accepted" });
+    const set = f.ctx.database.set.bind(f.ctx.database);
+    let release!: () => void, entered!: () => void;
+    const waiting = new Promise<void>((r) => (release = r)),
+        started = new Promise<void>((r) => (entered = r));
+    f.ctx.database.set = (async (table: any, query: any, update: any) => {
+        if (table === TABLE && update.status === "cancelled") {
+            entered();
+            await waiting;
+        }
+        return set(table, query, update);
+    }) as any;
+    const pending = f.tools.get("cancel_reminder").execute({ session: f.session(), id: created.result.id });
+    await started;
+    f.fork.dispose();
+    release();
+    const result = await pending;
+    expect(result.status).toBe("error");
+    expect(result.applied).toEqual({ id: created.result.id, cancelled: true });
+    expect((await f.ctx.database.get(TABLE, { id: created.result.id }))[0].status).toBe("cancelled");
+});

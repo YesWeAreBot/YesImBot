@@ -58,12 +58,22 @@ export const taskOwner = (coreScope: string, pluginScope: string) =>
         .update(JSON.stringify([coreScope, pluginScope]))
         .digest("hex");
 
+export class TaskAcceptedAfterInvalidation extends Error {
+    constructor(public readonly task: DurableTask) {
+        super(`请求已失效，但数据库已经接受提醒 ${task.id}（${task.status}）；请核查或显式取消，不要自动重试。`);
+    }
+}
+
 export class TaskStore {
     constructor(
         private readonly db: Context["database"],
         public readonly owner: string,
     ) {}
-    public async enqueue(input: ReminderInput, now = Date.now()): Promise<DurableTask> {
+    public async enqueue(input: ReminderInput, now = Date.now(), isCurrent: () => boolean = () => true): Promise<DurableTask> {
+        const checkCurrent = () => {
+            if (!isCurrent()) throw new Error("reminder_request_invalidated");
+        };
+        checkCurrent();
         for (const field of ["platform", "selfId", "channelId", "requester"] as const) {
             if (typeof input[field] !== "string" || !input[field] || input[field].length > 256) throw new Error(`Invalid target ${field}`);
         }
@@ -87,16 +97,24 @@ export class TaskStore {
             )
             .digest("hex");
         const existing = await this.get(id);
+        checkCurrent();
         if (existing) return existing;
         const row: DurableTask = { ...input, id, owner: this.owner, status: "queued", error: "", createdAt: now, updatedAt: now };
+        let created: DurableTask;
         try {
-            return await this.db.create(TABLE, row);
+            // No await between the final lifecycle check and dispatching SQL.
+            checkCurrent();
+            created = await this.db.create(TABLE, row);
         } catch (error) {
             // SQL primary-key uniqueness arbitrates concurrent duplicate submissions.
             const duplicate = await this.get(id);
+            checkCurrent();
             if (duplicate) return duplicate;
             throw error;
         }
+        // A dispatched write cannot be retracted: report its actual accepted row.
+        if (!isCurrent()) throw new TaskAcceptedAfterInvalidation(created);
+        return created;
     }
     public async get(id: string): Promise<DurableTask | undefined> {
         return (await this.db.get(TABLE, { id, owner: this.owner }))[0];

@@ -1,19 +1,34 @@
 # YesImBot 持久提醒
 
-独立、默认关闭的 Koishi 插件。启用 `enabled: true` 后，提醒保存到 Koishi 数据库，到期提交一次定向 Agent 唤醒；它不直接发送消息，也不保存或执行任意工具调用。
+在当前会话预约一条提醒，重启后继续保留尚未到期的任务。插件默认关闭；到期后会请 Agent 处理提醒，由 Agent 决定是否回复。**创建成功或状态为 `completed`，都不表示消息已经发出或用户已经收到。**
 
-需要数据库服务，以及支持以下接口的 YesImBot core：公开 `shared.getInstanceScope(ctx, warn, { owner })`、可信工具会话和按注册实例注销工具、`world.stimulusOwnerId` 定向刺激、历史 generation 保护、带 botKey 的频道事件隔离，以及系统事件持久写失败向调用者抛出。仅包版本号无法判断这些能力；启用时会检查关键接口。生产环境请使用持久数据库，内存数据库不会跨进程保留提醒。
+## 安装与启用
 
-## 配置与调用
+1. 安装此扩展，并使用同一发行版本配套的 YesImBot core。旧版 core 可能缺少所需能力，不能只凭版本号判断兼容性；不兼容时插件会拒绝启用。
+2. 在 Koishi 中配置可持久保存数据的数据库，并加载 YesImBot 与此扩展。内存数据库不能在进程退出后保留提醒。
+3. 保留稳定的插件配置项，设置 `enabled: true`，并确认当前频道已被 YesImBot 允许。
+4. 按需调整 `pollIntervalSeconds`：默认每 5 秒检查一次，可设为 1–60 秒。到期时间不是精确发送保证。
 
-- `enabled`：默认 `false`。
-- `pollIntervalSeconds`：到期检查间隔，1–60 秒，默认 5 秒；到期时间不是精确发送保证。
-- `schedule_reminder`：`deadline` 为未来 366 天内的 Unix 毫秒整数，`content` 为 1–2000 字符正文，`idempotency_key` 为 1–128 字符请求键。截止时间必须明确转换到 UTC 时间戳。
-- `cancel_reminder`：传入提醒 `id`，只能取消当前用户在当前机器人、当前频道创建的待处理提醒。
+如果启动时提示无法识别稳定的插件配置项，请先修复配置再使用；这种情况下重启无法可靠接续原来的提醒。删除或重建配置项后，也不要假定旧提醒会自动归入新的实例。
 
-工具目标从 core 注入的可信 Session 获取，模型无法指定其他 platform、selfId、channelId 或 requester。正文作为普通系统事件的 `message` 保存；它不会成为 system prompt、工具配置或代码。刺激只包含任务 ID，正文由正常上下文链路读取。
+## 创建与取消
 
-管理员（Koishi authority ≥ 3）可在当前机器人、当前频道执行：
+启用后，Agent 可使用以下工具处理用户的提醒请求：
+
+| 工具                | 参数                                     | 作用                                   |
+| ------------------- | ---------------------------------------- | -------------------------------------- |
+| `schedule_reminder` | `deadline`、`content`、`idempotency_key` | 在当前会话创建提醒                     |
+| `cancel_reminder`   | `id`                                     | 取消当前用户在当前会话创建的待处理提醒 |
+
+`deadline` 是未来 366 天内的 Unix 毫秒时间戳；预约时需要明确日期、时间和时区。`content` 为 1–2000 字符正文，`idempotency_key` 为 1–128 字符请求键，同一次请求重复提交会返回已有提醒。
+
+提醒只能发往创建它的机器人与会话，不能通过工具指定其他收件人或频道。群聊与私聊即使使用相同频道编号，也分别管理；不同群的相同频道编号也分别管理。群归属未知的提醒只匹配同样归属未知的会话，不会扩大到其他群。
+
+正文按普通提醒内容处理，不用于执行任意工具或代码。取消只能阻止尚未提交的处理，不能撤回已经提交的提醒内容、Agent 唤醒或已经开始的回复。
+
+## 管理员命令
+
+Koishi 权限等级至少为 3 的管理员可在当前会话执行：
 
 ```text
 reminder.list
@@ -21,29 +36,28 @@ reminder.cancel <id>
 reminder.retry <id>
 ```
 
-`list` 返回最近 100 条状态、截止时间和错误码；管理员可管理当前频道其他用户的提醒。目标同时匹配会话类型与 guildId；未知 guildId 只匹配未知目标，不扩大到其他群。命令不提供跨机器人或跨频道目标参数。`retry` 只接受 `failed`，立即重新排队，必须显式调用。
+- `list`：查看当前机器人、当前会话最近 100 条提醒的编号、状态、截止时间和失败原因，包含其他用户创建的提醒。
+- `cancel`：取消仍在排队或处理中的提醒。
+- `retry`：立即重新排队一条失败的提醒。只接受 `failed`，需要管理员明确执行，可能重复此前已经提交的处理。
 
-## 持久化与隔离
+命令不支持跨机器人、跨私聊或群聊、跨群管理提醒。
 
-表 `yesimbot.durable_tasks` 保存 `queued / running / completed / failed / cancelled`。owner 组合 core 与独立插件的持久实例 scope；幂等 ID 再组合 platform、selfId、channelId、会话类型、明确已知的 guildId（未知为空串）、requester 与请求键，数据库主键处理并发重复提交，数据库条件更新决定唯一 claim。
+## 状态与恢复
 
-插件需要 Koishi Loader 提供稳定配置项标识。找不到稳定 scope 时 core 会告警并提供独立临时标识；此时重启不会接管旧任务，不能把这种部署视为可靠恢复。
+| 状态        | 含义                                   |
+| ----------- | -------------------------------------- |
+| `queued`    | 等待到期检查                           |
+| `running`   | 正在核验并提交处理                     |
+| `completed` | 已提交 Agent 唤醒；不是消息发送回执    |
+| `failed`    | 核验或提交失败，等待人工处理           |
+| `cancelled` | 已取消；先前已经提交的处理可能无法撤回 |
 
-启动时保留 `queued`，将该 owner 遗留的 `running` 转为 `failed`，错误码 `interrupted_requires_retry`。不自动重放不确定副作用。投递失败同样不自动重试。显式重试可能重复已有的唤醒或普通事件。
+重启会保留待处理的 `queued` 提醒。中断时处于 `running` 的提醒会变为 `failed`，原因为 `interrupted_requires_retry`；插件不会自动重放，因为此前的处理可能已经提交。其他失败也不会自动重试。
 
-到期时重新核验 bot 在线、适配器可读取目标频道及频道类型、插件过滤器、core 允许频道、bot 禁言与 `scheduled`/`all` 暂停规则。无法核验就失败关闭。私聊适配器若不能通过 `getChannel` 验证私聊频道，也不会投递；没有绕过验证的回退发送。
+到期时会重新检查机器人在线状态、目标频道是否仍可访问、频道许可、禁言和暂停回复设置。任何一项无法确认，就不提交处理。某些适配器无法验证私聊频道，因此不能用于私聊提醒；插件不会跳过验证发送。
 
-投递先使用历史 generation 保护记录普通频道事件（`eventScope: channel`，`botKey: [platform,selfId]`），然后再次检查运行状态、权限、实例 owner 和 generation，通过 `ctx.emit(session, 'agent/stimulus', stimulus, world.stimulusOwnerId)` 定向唤醒。清历史或卸载期间的迟到工作不会重新唤醒。取消会阻止尚未提交的投递，但无法撤回已提交事件、唤醒或 Agent 开始的回复。
+卸载插件、撤销权限或改变当前会话，会阻止尚未提交的请求。如果数据库已经接受创建或修改请求，随后会话才失效，返回结果会明确说明已经接受的任务或操作；这不表示已经撤回，重新启用后仍需核查其状态。
 
-`completed` **只表示已提交 Agent 唤醒**，不代表模型接受、消息发送或用户收到。数据库与事件总线之间不存在分布式事务；这里提供数据库 claim 去重与不确定状态的显式重试，不承诺跨崩溃的 exactly-once。终态记录保留用于幂等和审计，尚无自动清理策略。
+清除聊天历史期间的迟到处理不会重新唤醒 Agent，但清历史本身不等于取消尚未到期的提醒。需要停止提醒时请明确执行取消。
 
-## 验证
-
-```sh
-yarn vitest run packages/durable-tasks/tests
-yarn tsc -p packages/durable-tasks
-yarn oxlint packages/durable-tasks
-yarn oxfmt --check packages/durable-tasks
-```
-
-测试使用真实 Koishi 内存数据库和 mock bot，覆盖 CAS、重启恢复、跨 owner/目标隔离、取消/卸载竞争、generation 和 owner 变化、真实命令权限及到期 event/stimulus 链路。线上数据库与真实适配器仍需部署环境验证。
+提醒不是跨故障的“恰好处理一次”保证：系统中断后无法确认的任务需要人工核查，显式重试可能重复。终态记录会保留用于去重和查询，目前不自动清理。
