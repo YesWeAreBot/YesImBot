@@ -1,5 +1,6 @@
 import { Argv, Context, h } from "koishi";
 
+import type { ContextBudgetReport } from "../../agent/context-budget";
 import { Services, TableName } from "../../shared/constants";
 import { getContextSnapshots } from "../model/context-snapshot";
 import { estimateTokens, getUsageLedger, TokenUsage, UsageRecord } from "../model/usage";
@@ -349,6 +350,12 @@ async function contextLines(ctx: Context, options: InspectionOptions): Promise<s
         if (capacity)
             lines.push(
                 `最大上下文：${capacity.tokens === undefined ? "未知" : `${capacity.tokens / 1000}K`} · ${capacity.mode} · ${capacity.source || capacity.reason || capacity.status}${capacity.checkedAt ? ` · ${new Date(capacity.checkedAt).toISOString()}` : ""}`,
+            );
+        const budget = (row as typeof row & { contextBudget?: ContextBudgetReport }).contextBudget;
+        if (budget)
+            lines.push(
+                `预算估算：输入 ≈${budget.originalInputTokens} → ≈${budget.inputTokens} token · 输出预留 ${budget.reservedOutputTokens} · 移除 ${budget.droppedMessages} 条`,
+                `预算原因：${budget.reason}${budget.multimodal ? "；多模态使用固定额度估算，不代表服务商实际用量" : ""}`,
             );
         if (row.unavailable) lines.push(`完整内容不可用：${row.unavailable}`);
         else if (options.details) lines.push(row.content || "无内容");

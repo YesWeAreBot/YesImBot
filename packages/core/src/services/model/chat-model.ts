@@ -3,13 +3,15 @@ import type { GenerateTextResult } from "@xsai/generate-text";
 import type { ChatOptions, CompletionStep, CompletionToolCall, CompletionToolResult, Message } from "@xsai/shared-chat";
 import { Context } from "koishi";
 
+import { budgetContext } from "../../agent/context-budget";
 import { generateText, streamText } from "../../dependencies/xsai";
 import { AppError, ErrorDefinitions } from "../../shared/errors";
 import { isEmpty, isNotEmpty, JsonParser, toBoolean } from "../../shared/utils";
 import { BaseModel, formatModelIdentity } from "./base-model";
 import { ModelAbility, ModelConfig } from "./config";
+import { parseContextLimit } from "./context-limit";
 import { StreamDiagnostics } from "./stream-diagnostics";
-import { observeUsageFetch } from "./usage";
+import { observeUsageFetch, withUsageScope } from "./usage";
 
 /**
  * 验证器函数的返回值
@@ -127,13 +129,21 @@ export class ChatModel extends BaseModel implements IChatModel {
         const useStream = options.stream ?? this.config.parameters?.stream ?? true;
         const requestId = `chat-${++ChatModel.requestSequence}`;
         const chatOptions = this.buildChatOptions(options);
+        const capacity =
+            this.config.contextLimit?.mode === "custom"
+                ? parseContextLimit(this.config.contextLimit.value ?? "")
+                : this.ctx?.["yesimbot.model"]?.peekContextLimit(this.config.providerName ?? "", this.id)?.tokens;
+        const budget = budgetContext(chatOptions, capacity);
+        chatOptions.messages = budget.messages;
 
         this.logger.info(`🚀 [请求开始] [${requestId}] [${useStream ? "流式" : "非流式"}] 模型: ${this.id} | 用途: ${options.requestPurpose ?? "未标注"}`);
 
         try {
-            return useStream
-                ? await this._executeStream(chatOptions, options.onStreamStart, options.validation, requestId)
-                : await this._executeNonStream(chatOptions, options.singleStep, options.validation, requestId);
+            return await withUsageScope({ contextBudget: budget.report }, () =>
+                useStream
+                    ? this._executeStream(chatOptions, options.onStreamStart, options.validation, requestId)
+                    : this._executeNonStream(chatOptions, options.singleStep, options.validation, requestId),
+            );
         } catch (error) {
             this.logger.debug(
                 `[${requestId}] 请求异常 | 类型: ${error.name} | 错误码: ${error.code ?? "未知"} | 已取消: ${options.abortSignal?.aborted ?? false}`,
