@@ -7,9 +7,11 @@ import { cosineSimilarity } from "../../shared/utils";
 import { withUsageScope } from "../model/usage";
 import { HistoryConfig } from "./config";
 import { historyCoordinator } from "./history-coordinator";
+import { keywordRelevance, recallKeywordCandidates, recallTokens, withinRecallScope } from "./hybrid-recall";
 import { ContextualMessage, HistoryChannelType, MemoryChunkData, MessageData } from "./types";
 
 export type SemanticMemoryScope = { platform: string; channelId: string } | { type: "private" | "guild" | "all" };
+export type MemorySearchResult = MemoryChunkData & { similarity: number; retrievalMethod: "semantic" | "keyword" | "hybrid" };
 export type MemoryTarget = { platform: string; channelId: string; channelType?: HistoryChannelType };
 
 function splitContent(content: string, takeFirstHalf: boolean): string {
@@ -237,7 +239,7 @@ export class SemanticMemoryManager {
 
     /**
      * 根据查询文本检索相关的记忆片段。
-     * 1. 高效获取候选池：一次性加载所有相关chunks，在内存中计算相似度，避免全表扫描和N+1查询。
+     * 1. 有界混合候选池：向量最多200块，完整会话范围内额外检索关键词块和真实消息来源。
      * 2. 精确近邻扩展：按配置对Top-K候选块，在各会话时间线中查找前后邻居。
      * 3. 智能合并：按会话连续性分组，保留命中块全文，仅裁切边缘上下文邻居。
      * 4. 向量兼容性处理：自动检测并处理因更换模型导致的向量维度不一致问题，通过后台任务重建索引。
@@ -248,56 +250,85 @@ export class SemanticMemoryManager {
     public async search(
         queryText: string,
         options?: { platform?: string; channelId?: string; k?: number; startTimestamp?: Date; endTimestamp?: Date },
-    ): Promise<Array<MemoryChunkData & { similarity: number }>> {
-        const k = options?.k ?? 5;
-        if (!this.embedModel || k <= 0) return [];
-        const embedModel = this.embedModel;
+    ): Promise<MemorySearchResult[]> {
+        const requestedK = options?.k ?? 5;
+        if (!Number.isFinite(requestedK) || requestedK <= 0 || typeof queryText !== "string" || !queryText.trim()) return [];
+        const k = Math.min(12, Math.floor(requestedK));
+        if (!k) return [];
+        options ??= {};
+        if (
+            [options.startTimestamp, options.endTimestamp].some((date) => date && !Number.isFinite(date.getTime())) ||
+            (options.startTimestamp && options.endTimestamp && options.startTimestamp > options.endTimestamp)
+        )
+            return [];
+        queryText = queryText.slice(-2000);
         const minAllowedSim = this.config.l2_memory.retrievalMinSimilarity ?? 0.5;
-
-        const queryEmbedding = await withUsageScope({ platform: options?.platform, target: options?.channelId, purpose: "L2记忆检索" }, () =>
-            embedModel.embed(queryText),
-        );
-        const expectedDim = queryEmbedding.embedding.length;
-
-        const allChunks = await this.ctx.database.get(TableName.L2Chunks, {
-            platform: options?.platform || {},
-            channelId: options?.channelId || {},
-            startTimestamp: { $gte: options?.startTimestamp || new Date(0) },
-            endTimestamp: { $lte: options?.endTimestamp || new Date() },
-        });
-
-        if (allChunks.length === 0) return [];
-
-        const validChunks = allChunks.filter((c) => c.embedding?.length === expectedDim);
-        if (validChunks.length < allChunks.length) {
-            this.rebuildIndex();
+        let vector: number[] | undefined;
+        if (this.embedModel) {
+            try {
+                const result = await withUsageScope({ platform: options.platform, target: options.channelId, purpose: "L2记忆检索" }, () =>
+                    this.embedModel!.embed(queryText),
+                );
+                if (!result.embedding.length || !result.embedding.every(Number.isFinite) || !result.embedding.some((value) => value !== 0))
+                    throw new Error("无效检索向量");
+                vector = result.embedding;
+            } catch (error) {
+                this.logger.warn(`L2 嵌入检索失败，降级为有界关键词检索: ${error instanceof Error ? error.message : String(error)}`);
+            }
         }
-
-        if (validChunks.length === 0) return [];
-
+        if (!this.embedModel && options.platform && options.channelId) this.logger.warn("L2 无可用嵌入模型，使用有界关键词/来源检索");
+        const keywordChunks = await recallKeywordCandidates(this.ctx.database, queryText, options);
+        if (!vector && !keywordChunks.length) return [];
+        const semanticChunks = vector
+            ? (
+                  await this.ctx.database.get(
+                      TableName.L2Chunks,
+                      {
+                          platform: options.platform || {},
+                          channelId: options.channelId || {},
+                          startTimestamp: { $gte: options.startTimestamp || new Date(0) },
+                          endTimestamp: { $lte: options.endTimestamp || new Date() },
+                      },
+                      { limit: 200, sort: { endTimestamp: "desc" } },
+                  )
+              )
+                  .slice(0, 200)
+                  .filter((chunk) => withinRecallScope(chunk, options!))
+            : [];
+        const sourceChunks = keywordChunks.filter((chunk) => chunk.id.startsWith("message:"));
+        const allChunks = [
+            ...new Map([...semanticChunks, ...keywordChunks.filter((chunk) => !chunk.id.startsWith("message:"))].map((chunk) => [chunk.id, chunk])).values(),
+        ];
+        const validChunks = vector ? allChunks.filter((chunk) => chunk.embedding?.length === vector.length) : [];
+        if (vector && validChunks.length < allChunks.length) void this.rebuildIndex();
+        const tokens = recallTokens(queryText);
+        const relevance = (chunk: MemoryChunkData): number => {
+            const semantic = vector && chunk.embedding?.length === vector.length ? cosineSimilarity(vector, chunk.embedding) : 0;
+            const lexical = options.platform && options.channelId ? keywordRelevance(chunk.content, tokens) : 0;
+            // A lexical score denotes lexical evidence, never a fabricated cosine similarity.
+            return Math.max(Number.isFinite(semantic) && semantic >= minAllowedSim ? semantic : 0, lexical);
+        };
         // 各会话分别建立时间线，宽范围检索也不能把不同会话作为邻居。
         allChunks.sort((a, b) => new Date(a.startTimestamp).getTime() - new Date(b.startTimestamp).getTime());
 
         const chunkIndexMap = new Map<string, number>();
         const chunkMap = new Map<string, MemoryChunkData>();
         const timelines = new Map<string, MemoryChunkData[]>();
+        const timelineIds = new Set(semanticChunks.map((chunk) => chunk.id));
         allChunks.forEach((chunk) => {
+            chunkMap.set(chunk.id, chunk);
+            // Keyword pools omit non-matches, so adjacency can only come from the contiguous semantic window.
+            if (!timelineIds.has(chunk.id)) return;
             const key = this.targetKey(chunk);
             const timeline = timelines.get(key) || [];
             timelines.set(key, timeline);
             chunkIndexMap.set(chunk.id, timeline.length);
             timeline.push(chunk);
-            chunkMap.set(chunk.id, chunk);
         });
 
-        const resultsWithSimilarity = validChunks.map((chunk) => ({
-            ...chunk,
-            similarity: cosineSimilarity(queryEmbedding.embedding, chunk.embedding),
-        }));
-
-        resultsWithSimilarity.sort((a, b) => b.similarity - a.similarity);
-
-        const candidateChunks = resultsWithSimilarity.slice(0, k).filter((c) => c.similarity >= minAllowedSim);
+        const resultsWithSimilarity = allChunks.map((chunk) => ({ ...chunk, similarity: relevance(chunk) }));
+        resultsWithSimilarity.sort((a, b) => b.similarity - a.similarity || new Date(b.endTimestamp).getTime() - new Date(a.endTimestamp).getTime());
+        const candidateChunks = resultsWithSimilarity.filter((chunk) => chunk.similarity > 0).slice(0, k);
         const candidateIds = new Set(candidateChunks.map((chunk) => chunk.id));
 
         const finalChunkIds = new Set<string>();
@@ -327,7 +358,27 @@ export class SemanticMemoryManager {
 
         finalChunks.sort((a, b) => new Date(a.startTimestamp).getTime() - new Date(b.startTimestamp).getTime());
 
-        return this.groupAndMergeChunks(finalChunks, chunkIndexMap, candidateIds);
+        const merged = this.groupAndMergeChunks(finalChunks, chunkIndexMap, candidateIds);
+        // Prefer an existing indexed conversation over a duplicate source line in that conversation.
+        const sources = sourceChunks.filter(
+            (source) =>
+                !merged.some((chunk) => chunk.platform === source.platform && chunk.channelId === source.channelId && chunk.content.includes(source.content)),
+        );
+        const seen = new Set<string>();
+        const method: MemorySearchResult["retrievalMethod"] = vector ? (options.platform && options.channelId ? "hybrid" : "semantic") : "keyword";
+        return [
+            ...merged.map((chunk) => ({ ...chunk, retrievalMethod: method })),
+            ...sources.map((chunk) => ({ ...chunk, similarity: keywordRelevance(chunk.content, tokens), retrievalMethod: "keyword" as const })),
+        ]
+            .sort((a, b) => b.similarity - a.similarity || new Date(b.endTimestamp).getTime() - new Date(a.endTimestamp).getTime())
+            .filter((chunk) => {
+                const key = JSON.stringify([chunk.platform, chunk.channelId, chunk.content]);
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            })
+            .slice(0, k)
+            .sort((a, b) => new Date(a.startTimestamp).getTime() - new Date(b.startTimestamp).getTime());
     }
 
     /**
