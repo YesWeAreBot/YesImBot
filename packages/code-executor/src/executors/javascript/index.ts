@@ -2,8 +2,7 @@
 // import fs from "fs/promises";
 // import ivm from "isolated-vm";
 // import { Context, Logger, Schema } from "koishi";
-// import { AssetService, ToolDefinition, withInnerThoughts } from "koishi-plugin-yesimbot/services";
-// import { Services } from "koishi-plugin-yesimbot/shared";
+// import { AssetService, ToolDefinition, withInnerThoughts } from "koishi-plugin-yesimbot";
 // import path from "path";
 // import { promisify } from "util";
 
@@ -73,7 +72,7 @@
 //         private sharedConfig: SharedConfig
 //     ) {
 //         this.logger = ctx.logger(`[executor:${this.type}]`);
-//         this.assetService = ctx.get(Services.Asset);
+//         this.assetService = ctx.yesimbot.asset;
 
 //         if (this.config.enabled) {
 //             this.initializeIsolate();

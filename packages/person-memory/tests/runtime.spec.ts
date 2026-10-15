@@ -6,7 +6,7 @@ import { test } from "vitest";
 // The CJS build exposes the mock instance through a "default" export key.
 const mock = (pluginMock as any).default ?? pluginMock;
 
-import { EventListenerManager } from "../../core/src/services/worldstate/event-listener";
+import { EventListenerManager } from "../../core/src/world/event-listener";
 import * as plugin from "../src/index";
 import { registerModels } from "../src/store";
 import { fixture, fixtureContext } from "./helpers";
@@ -17,20 +17,22 @@ test("real Koishi lifecycle, command parser and authority gate operate against a
     let injection, mockFork;
     const app = await fixture(t, (ctx) => {
         mockFork = ctx.plugin(mock);
-        ctx.set("yesimbot.tool", {
-            capabilities: { trustedToolSession: 1 },
-            registerTool: (tool) => tools.set(tool.name, tool),
-            unregisterTool: (name) => tools.delete(name),
-        });
-        ctx.set("yesimbot.prompt", {
-            inject: (_name, _priority, fn) => {
-                injection = fn;
-                return () => {
-                    injection = undefined;
-                };
+        ctx.set("yesimbot", {
+            tool: {
+                capabilities: { trustedToolSession: 1 },
+                registerTool: (tool) => tools.set(tool.name, tool),
+                unregisterTool: (name) => tools.delete(name),
             },
+            prompt: {
+                inject: (_name, _priority, fn) => {
+                    injection = fn;
+                    return () => {
+                        injection = undefined;
+                    };
+                },
+            },
+            world: { capabilities: { beforeUserStimulus: 1 }, isChannelAllowed: () => true },
         });
-        ctx.set("yesimbot.world-state", { capabilities: { beforeUserStimulus: 1 }, isChannelAllowed: () => true });
         // Equivalent to core's command handling marker; command dispatch itself is real Koishi.
         ctx.on("command/before-execute", (argv) => {
             argv.session.__commandHandled = true;
@@ -74,19 +76,6 @@ for (const registration of ["before", "after"])
             });
             registerModels(ctx);
             ctx.model.extend("worldstate.system_events", { id: "string", payload: "json" }, { primary: "id" });
-            ctx.set("yesimbot.tool", {
-                capabilities: { trustedToolSession: 1 },
-                registerTool: (tool) => tools.set(tool.name, tool),
-                unregisterTool: (name) => tools.delete(name),
-            });
-            ctx.set("yesimbot.prompt", {
-                inject: (_name, _priority, fn) => {
-                    injection = fn;
-                    return () => {
-                        injection = undefined;
-                    };
-                },
-            });
             world = {
                 capabilities: { beforeUserStimulus: 1 },
                 isChannelAllowed: (s) => s.channelId !== "blocked",
@@ -96,9 +85,24 @@ for (const registration of ["before", "after"])
                 // the stimulus flow now records the channel before emitting.
                 observeChannel: async () => {},
             };
-            ctx.set("yesimbot.world-state", world);
-            ctx.set("yesimbot.logger", { getLogger: () => ({ debug() {}, info() {}, error() {} }) });
-            ctx.set("yesimbot.asset", { transform: async (content) => content });
+            ctx.set("yesimbot", {
+                tool: {
+                    capabilities: { trustedToolSession: 1 },
+                    registerTool: (tool) => tools.set(tool.name, tool),
+                    unregisterTool: (name) => tools.delete(name),
+                },
+                prompt: {
+                    inject: (_name, _priority, fn) => {
+                        injection = fn;
+                        return () => {
+                            injection = undefined;
+                        };
+                    },
+                },
+                world,
+                logging: { getLogger: () => ({ debug() {}, info() {}, error() {} }) },
+                asset: { transform: async (content) => content },
+            });
             ctx.on("agent/stimulus", (stimulus) => {
                 observed.push(
                     (async () => {
@@ -122,7 +126,7 @@ for (const registration of ["before", "after"])
                 );
             });
         });
-        manager = new EventListenerManager(app, world, {});
+        manager = new EventListenerManager(app, world, {}, app.yesimbot.logging, app.yesimbot.asset);
         if (registration === "before") personFork = app.plugin(plugin, defaults);
         manager.start();
         if (registration === "after") personFork = app.plugin(plugin, defaults);
@@ -150,13 +154,15 @@ test("real Koishi parses history page filters and archive revision without consu
     const app = await fixture(t, (ctx) => {
         mockFork = ctx.plugin(mock);
         t.onTestFinished(() => mockFork.dispose());
-        ctx.set("yesimbot.tool", {
-            capabilities: { trustedToolSession: 1 },
-            registerTool: (tool) => tools.set(tool.name, tool),
-            unregisterTool: (name) => tools.delete(name),
+        ctx.set("yesimbot", {
+            tool: {
+                capabilities: { trustedToolSession: 1 },
+                registerTool: (tool) => tools.set(tool.name, tool),
+                unregisterTool: (name) => tools.delete(name),
+            },
+            prompt: { inject: () => () => {} },
+            world: { capabilities: { beforeUserStimulus: 1 }, isChannelAllowed: () => true },
         });
-        ctx.set("yesimbot.prompt", { inject: () => () => {} });
-        ctx.set("yesimbot.world-state", { capabilities: { beforeUserStimulus: 1 }, isChannelAllowed: () => true });
         ctx.on("command/before-execute", (argv) => {
             adminSession = argv.session;
             argv.session.__commandHandled = true;

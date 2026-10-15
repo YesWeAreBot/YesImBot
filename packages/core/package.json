@@ -33,18 +33,12 @@
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "exports": {
-    ".": "./lib/index.js",
-    "./package.json": "./package.json",
-    "./services": {
-      "types": "./lib/services/index.d.ts",
-      "import": "./lib/services/index.js",
-      "require": "./lib/services/index.js"
+    ".": {
+      "import": "./lib/index.js",
+      "require": "./lib/index.cjs",
+      "types": "./lib/index.d.ts"
     },
-    "./shared": {
-      "types": "./lib/shared/index.d.ts",
-      "import": "./lib/shared/index.js",
-      "require": "./lib/shared/index.js"
-    }
+    "./package.json": "./package.json"
   },
   "dependencies": {
     "@miaowfish/gifwrap": "^0.10.1",

@@ -1,13 +1,13 @@
 import { ImagePart, TextPart } from "@xsai/shared-chat";
 import { Context, Logger } from "koishi";
 
+import { AssetService } from "../asset";
 import { Config } from "../config";
-import { AssetService } from "../services/assets";
-import { ToolService } from "../services/extension";
-import { MemoryService } from "../services/memory";
-import { ChatModelSwitcher } from "../services/model";
-import { AgentStimulus, ContextualMessage, UserMessagePayload, WorldState, WorldStateService } from "../services/worldstate";
-import { Services } from "../shared/constants";
+import { ToolService } from "../extension";
+import type { LoggerService } from "../logger";
+import { MemoryService } from "../memory";
+import { ChatModelSwitcher } from "../model";
+import { AgentStimulus, ContextualMessage, UserMessagePayload, WorldState, WorldStateService } from "../world";
 
 interface ImageCandidate {
     id: string;
@@ -25,18 +25,27 @@ export class PromptContextBuilder {
     private readonly memoryService: MemoryService;
     private readonly toolService: ToolService;
     private readonly worldStateService: WorldStateService;
+    private readonly modelSwitcher: ChatModelSwitcher;
     private imageLifecycleTracker = new Map<string, number>();
 
     constructor(
         private readonly ctx: Context,
         private readonly config: Config,
-        private readonly modelSwitcher: ChatModelSwitcher,
+        deps: {
+            model: ChatModelSwitcher;
+            logging: LoggerService;
+            asset: AssetService;
+            memory: MemoryService;
+            tool: ToolService;
+            world: WorldStateService;
+        },
     ) {
-        this.logger = ctx[Services.Logger].getLogger("[上下文构建器]");
-        this.assetService = ctx[Services.Asset];
-        this.memoryService = ctx[Services.Memory];
-        this.toolService = ctx[Services.Tool];
-        this.worldStateService = ctx[Services.WorldState];
+        this.logger = deps.logging.getLogger("[上下文构建器]");
+        this.assetService = deps.asset;
+        this.memoryService = deps.memory;
+        this.toolService = deps.tool;
+        this.worldStateService = deps.world;
+        this.modelSwitcher = deps.model;
     }
 
     /**

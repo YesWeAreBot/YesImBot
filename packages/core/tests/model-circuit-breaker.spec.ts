@@ -3,14 +3,14 @@ import type { Context } from "koishi";
 // Build the core package before running this integration test.
 import { afterEach, expect, it, vi, type MockInstance } from "vitest";
 
-import { BaseModel } from "../src/services/model/base-model";
-import type { ChatRequestOptions, IChatModel } from "../src/services/model/chat-model";
-import { ModelAbility } from "../src/services/model/config";
-import { ChatModelSwitcher } from "../src/services/model/service";
-import { Services } from "../src/shared/constants";
+import { BaseModel } from "../src/model/base-model";
+import type { ChatRequestOptions, IChatModel } from "../src/model/chat-model";
+import { ModelAbility } from "../src/model/config";
+import { ChatModelSwitcher } from "../src/model/service";
+import { loggingStub, stubCtx } from "./helpers/yesimbot";
 
 const logger = { extend: () => logger, debug() {}, info() {}, success() {}, warn() {}, error() {} };
-const ctx = { [Services.Logger]: { getLogger: () => logger } } as unknown as Context;
+const ctx = stubCtx({ logging: { getLogger: () => logger } }) as unknown as Context;
 const options = (abortSignal?: AbortSignal): ChatRequestOptions => ({ messages: [{ role: "user", content: "hello" }], abortSignal });
 const response = (text: string): GenerateTextResult => ({
     text,
@@ -42,6 +42,7 @@ class ExternalModel extends BaseModel implements IChatModel {
                 timeoutPolicy: { firstTokenTimeout: 60, totalTimeout: 60 },
             },
             "test",
+            loggingStub(logger),
         );
     }
     isVisionModel() {
@@ -63,6 +64,7 @@ function switcher(entries: Array<{ provider: string; model: ExternalModel }>) {
             models: entries.map(({ provider, model }) => ({ providerName: provider, modelId: model.id })),
         },
         () => entries[index++].model,
+        loggingStub(logger),
     );
 }
 

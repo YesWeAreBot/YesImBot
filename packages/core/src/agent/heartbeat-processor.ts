@@ -5,17 +5,17 @@ import { Context, h, Logger, Session } from "koishi";
 import { v4 as uuidv4 } from "uuid";
 
 import { assertReplyTurn, replyTurnSignal } from "../agent/reply-turn";
-import { Properties, ToolSchema, ToolService } from "../services/extension";
-import { toolJSONSchema } from "../services/extension/json-schema";
-import { ChatModelSwitcher } from "../services/model";
-import type { ValidationOptions } from "../services/model/chat-model";
-import { PromptService } from "../services/prompt";
-import { AgentResponse, AgentStimulus } from "../services/worldstate";
-import { InteractionManager } from "../services/worldstate/interaction-manager";
-import { manualRecallOwners } from "../services/worldstate/manual-recall";
-import { Services } from "../shared/constants";
+import { Properties, ToolSchema, ToolService } from "../extension";
+import { toolJSONSchema } from "../extension/json-schema";
+import type { LoggerService } from "../logger";
+import { ChatModelSwitcher } from "../model";
+import type { ValidationOptions } from "../model/chat-model";
+import { PromptService } from "../prompt";
 import { AppError, ErrorDefinitions, handleError } from "../shared/errors";
 import { estimateTokensByRegex, formatDate, JsonParser, StreamParser } from "../shared/utils";
+import { AgentResponse, AgentStimulus, WorldStateService } from "../world";
+import { InteractionManager } from "../world/interaction-manager";
+import { manualRecallOwners } from "../world/manual-recall";
 import { AgentBehaviorConfig } from "./config";
 import { PromptContextBuilder } from "./context-builder";
 
@@ -25,17 +25,33 @@ import { PromptContextBuilder } from "./context-builder";
  */
 export class HeartbeatProcessor {
     private readonly logger: Logger;
+    private readonly modelSwitcher: ChatModelSwitcher;
+    private readonly promptService: PromptService;
+    private readonly toolService: ToolService;
+    private readonly interactionManager: InteractionManager;
+    private readonly contextBuilder: PromptContextBuilder;
+    private readonly world: WorldStateService;
 
     constructor(
         private readonly ctx: Context,
         private readonly config: AgentBehaviorConfig,
-        private readonly modelSwitcher: ChatModelSwitcher,
-        private readonly promptService: PromptService,
-        private readonly toolService: ToolService,
-        private readonly interactionManager: InteractionManager,
-        private readonly contextBuilder: PromptContextBuilder,
+        deps: {
+            model: ChatModelSwitcher;
+            prompt: PromptService;
+            tool: ToolService;
+            l1: InteractionManager;
+            contextBuilder: PromptContextBuilder;
+            logging: LoggerService;
+            world: WorldStateService;
+        },
     ) {
-        this.logger = ctx[Services.Logger].getLogger("[心跳处理器]");
+        this.logger = deps.logging.getLogger("[心跳处理器]");
+        this.modelSwitcher = deps.model;
+        this.promptService = deps.prompt;
+        this.toolService = deps.tool;
+        this.interactionManager = deps.l1;
+        this.contextBuilder = deps.contextBuilder;
+        this.world = deps.world;
     }
 
     /**
@@ -502,7 +518,7 @@ export class HeartbeatProcessor {
         const write = () => this.interactionManager.recordObservation(actionId, session.platform, session.channelId!, observation);
         const generation = observation.result?.historyGeneration;
         if (!Number.isSafeInteger(generation)) return write();
-        const world = this.ctx[Services.WorldState];
+        const world = this.world;
         if (!world?.l2_manager || !(await world.l2_manager.writeMemory({ platform: session.platform, channelId: session.channelId! }, generation, write))) {
             throw new Error("召回后历史已清除，请重新召回");
         }

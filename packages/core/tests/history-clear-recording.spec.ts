@@ -4,12 +4,13 @@ import path from "node:path";
 
 import { expect, it } from "vitest";
 
-import { HISTORY_CHANNELS } from "../src/services/worldstate/channel-metadata";
-import { HistoryCommandManager } from "../src/services/worldstate/commands";
-import { InteractionManager } from "../src/services/worldstate/interaction-manager";
-import { SemanticMemoryManager } from "../src/services/worldstate/l2-semantic-memory";
-import { WorldStateService } from "../src/services/worldstate/service";
-import { Services, TableName } from "../src/shared/constants";
+import { TableName } from "../src/shared/constants";
+import { HISTORY_CHANNELS } from "../src/world/channel-metadata";
+import { HistoryCommandManager } from "../src/world/commands";
+import { InteractionManager } from "../src/world/interaction-manager";
+import { SemanticMemoryManager } from "../src/world/l2-semantic-memory";
+import { WorldStateService } from "../src/world/service";
+import { stubCtx } from "./helpers/yesimbot";
 
 function deferred() {
     let resolve!: () => void;
@@ -58,40 +59,44 @@ for (const overlap of [false, true]) {
                         };
                         return cmd;
                     };
-                    const ctx: any = {
-                        baseDir: root,
-                        logger: log,
-                        command,
-                        [Services.Logger]: { getLogger: () => log },
-                        [Services.Model]: { useEmbeddingGroup: () => ({ getModels: () => [{ embed: async () => ({ embedding: [1] }) }] }) },
-                        database: {
-                            get: async (table: string, query: any) => rows.get(table)!.filter((row) => matches(row, query)),
-                            create: async (table: string, row: any) => {
-                                if (row.id === "old") {
-                                    if (commitFirst) rows.get(table)!.push(row);
-                                    entered.resolve();
-                                    await release.promise;
-                                    if (!commitFirst) rows.get(table)!.push(row);
-                                } else rows.get(table)!.push(row);
-                                return row;
-                            },
-                            remove: async (table: string, query: any) => {
-                                const old = rows.get(table)!;
-                                const keep = old.filter((row) => !matches(row, query));
-                                rows.set(table, keep);
-                                return { removed: old.length - keep.length };
+                    const ctx = stubCtx(
+                        {
+                            logging: { getLogger: () => log },
+                            model: { useEmbeddingGroup: () => ({ getModels: () => [{ embed: async () => ({ embedding: [1] }) }] }) },
+                        },
+                        {
+                            baseDir: root,
+                            logger: log,
+                            command,
+                            database: {
+                                get: async (table: string, query: any) => rows.get(table)!.filter((row) => matches(row, query)),
+                                create: async (table: string, row: any) => {
+                                    if (row.id === "old") {
+                                        if (commitFirst) rows.get(table)!.push(row);
+                                        entered.resolve();
+                                        await release.promise;
+                                        if (!commitFirst) rows.get(table)!.push(row);
+                                    } else rows.get(table)!.push(row);
+                                    return row;
+                                },
+                                remove: async (table: string, query: any) => {
+                                    const old = rows.get(table)!;
+                                    const keep = old.filter((row) => !matches(row, query));
+                                    rows.set(table, keep);
+                                    return { removed: old.length - keep.length };
+                                },
                             },
                         },
-                    };
+                    );
                     const config: any = { l2_memory: { enabled: true, messagesPerChunk: 1 }, l1_memory: { maxMessages: 10 } };
                     const world: any = Object.create(WorldStateService.prototype);
                     world.config = config;
-                    world.l1_manager = new InteractionManager(ctx, config);
-                    world.l2_manager = new SemanticMemoryManager(ctx, config);
+                    world.l1_manager = new InteractionManager(ctx, config, ctx.yesimbot.logging);
+                    world.l2_manager = new SemanticMemoryManager(ctx, config, ctx.yesimbot.logging, ctx.yesimbot.model);
                     world.l2_manager.observeChannel({ platform: "onebot", channelId: "private:user" }, "private");
                     world.l2_manager.observeChannel({ platform: "onebot", channelId: "same" }, "guild");
                     world.l2_manager.start();
-                    new HistoryCommandManager(ctx, world, config).register();
+                    new HistoryCommandManager(ctx, world, config, ctx.yesimbot.logging).register();
                     const channelId = type === "private" ? "private:user" : "same";
                     const message = (id: string, platform = "onebot") => ({
                         id,

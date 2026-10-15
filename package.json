@@ -27,8 +27,6 @@
     "test": "vitest run"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.29.5",
-    "@koishijs/client": "^5.30.11",
     "@types/node": "^26.5.0",
     "esbuild": "^0.28.2",
     "husky": "^9.1.7",

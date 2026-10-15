@@ -1,9 +1,9 @@
 import { expect, it } from "vitest";
 
 import { AgentCore } from "../src/agent/agent-core";
-import { ChatModel } from "../src/services/model/chat-model";
-import { ModelAbility } from "../src/services/model/config";
-import { ModelService } from "../src/services/model/service";
+import { ChatModel } from "../src/model/chat-model";
+import { ModelAbility } from "../src/model/config";
+import { ModelService } from "../src/model/service";
 function service(providers: any[], groups: any[], task: any) {
     const s: any = Object.create(ModelService.prototype);
     const logs: string[] = [];

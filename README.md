@@ -52,13 +52,13 @@ YesImBot/
 
 除了文档站（[https://docs.yesimbot.chat/](https://docs.yesimbot.chat/)）的文档外，仓库内还有内置的文档可供参考：
 
-| 文档类型        | 文件路径                                                                         | 描述                                |
-| --------------- | -------------------------------------------------------------------------------- | ----------------------------------- |
-| 🎯 **核心功能** | [packages/core/README.md](packages/core/README.md)                               | 核心插件的详细使用说明和配置指南    |
-| 🏗️ **架构设计** | [packages/core/DESIGN.md](packages/core/DESIGN.md)                               | 系统架构、中间件设计和核心组件说明  |
-| 🔧 **扩展开发** | [packages/core/src/extensions/README.md](packages/core/src/extensions/README.md) | 扩展系统开发指南和 API 文档         |
-| 🔌 **MCP 扩展** | [packages/mcp/README.md](packages/mcp/README.md)                                 | Model Context Protocol 扩展使用说明 |
-| 📱 **Web 界面** | [packages/webui/README.md](packages/webui/README.md)                             | Web 管理界面使用和开发文档          |
+| 文档类型        | 文件路径                                                                       | 描述                                |
+| --------------- | ------------------------------------------------------------------------------ | ----------------------------------- |
+| 🎯 **核心功能** | [packages/core/README.md](packages/core/README.md)                             | 核心插件的详细使用说明和配置指南    |
+| 🏗️ **架构设计** | [packages/core/DESIGN.md](packages/core/DESIGN.md)                             | 系统架构、中间件设计和核心组件说明  |
+| 🔧 **扩展开发** | [packages/core/src/extension/README.md](packages/core/src/extension/README.md) | 扩展系统开发指南和 API 文档         |
+| 🔌 **MCP 扩展** | [packages/mcp/README.md](packages/mcp/README.md)                               | Model Context Protocol 扩展使用说明 |
+| 📱 **Web 界面** | [packages/webui/README.md](packages/webui/README.md)                           | Web 管理界面使用和开发文档          |
 
 ## 🤝 贡献
 

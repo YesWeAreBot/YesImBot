@@ -1,8 +1,8 @@
 import { Context, Logger } from "koishi";
 
-import { AgentStimulus } from "../services/worldstate";
-import { Services } from "../shared/constants";
+import type { LoggerService } from "../logger";
 import { AppError, ErrorDefinitions, handleError } from "../shared/errors";
+import { AgentStimulus } from "../world";
 import { AgentBehaviorConfig } from "./config";
 
 type TaskCallback = (stimulus: AgentStimulus<any>) => Promise<any>;
@@ -25,9 +25,10 @@ export class StimulusScheduler {
         private readonly ctx: Context,
         private readonly config: AgentBehaviorConfig,
         private readonly taskCallback: TaskCallback,
+        logging: LoggerService,
         private readonly observe?: (stimulus: AgentStimulus<any>, stage: string, reason?: string) => void,
     ) {
-        this.logger = ctx[Services.Logger].getLogger("[刺激调度器]");
+        this.logger = logging.getLogger("[刺激调度器]");
     }
 
     public isBusy(channelKey: string): boolean {

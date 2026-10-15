@@ -2,10 +2,10 @@ import type { Message } from "@xsai/shared-chat";
 import type { Context } from "koishi";
 import { describe, expect, it } from "vitest";
 
-import { ChatModel, ChatRequestOptions } from "../src/services/model/chat-model";
-import { ContentFailureAction, ModelAbility } from "../src/services/model/config";
-import { ChatModelSwitcher } from "../src/services/model/service";
-import { Services } from "../src/shared/constants";
+import { ChatModel, ChatRequestOptions } from "../src/model/chat-model";
+import { ContentFailureAction, ModelAbility } from "../src/model/config";
+import { ChatModelSwitcher } from "../src/model/service";
+import { loggingStub, stubCtx } from "./helpers/yesimbot";
 
 const malformedResponse = "thoughts observe analyze_infer plan actions function params: incomplete JSON";
 const validResponse = '{"thoughts":{"observe":"hello","analyze_infer":"greeting","plan":"reply"},"actions":[],"request_heartbeat":false}';
@@ -58,7 +58,7 @@ function fixture(responses: Array<string | Error>) {
         debug() {},
         success() {},
     };
-    const ctx = { [Services.Logger]: { getLogger: () => logger } } as unknown as Context;
+    const ctx = stubCtx({ logging: { getLogger: () => logger } }) as unknown as Context;
     const requests: Array<{ model: string; messages: Message[]; stream: boolean }> = [];
     // 仅替换外部 HTTP 响应；真实 ChatModel 负责流式内容验证和错误分类。
     const fetch = (async (_url, init) => {
@@ -81,12 +81,14 @@ function fixture(responses: Array<string | Error>) {
                     retryPolicy: { maxRetries: modelId === "primary" ? 1 : 0, onContentFailure: ContentFailureAction.AugmentAndRetry },
                 },
                 fetch,
+                loggingStub(logger),
             ),
     );
     const switcher = new ChatModelSwitcher(
         ctx,
         { name: "test", models: models.map((model) => ({ providerName: "test", modelId: model.id })) },
         (_provider, modelId) => models.find((model) => model.id === modelId) ?? null,
+        loggingStub(logger),
     );
     const options: ChatRequestOptions = { messages: originalMessages(), stream: true, validation: { format: "json" } };
     return { switcher, requests, options };

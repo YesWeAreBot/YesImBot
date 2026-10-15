@@ -13,7 +13,7 @@ declare module "koishi" {
 }
 
 export const name = "yesimbot-person-memory";
-export const inject = { required: ["database", "yesimbot.prompt", "yesimbot.tool", "yesimbot.world-state"], optional: ["yesimbot.model"] };
+export const inject = { required: ["database", "yesimbot"] };
 export interface Config {
     enabled: boolean;
     mode: Mode;
@@ -84,11 +84,28 @@ interface Models {
     useChatGroup(name: string): { chat(options: any): Promise<{ text?: string }> } | undefined;
     withUsageScope?<T>(scope: NonNullable<Parameters<SummaryModel>[2]>, callback: () => T): T;
 }
-interface Dependencies {
-    "yesimbot.tool": Tools;
-    "yesimbot.prompt": Prompt;
-    "yesimbot.world-state": { capabilities?: { beforeUserStimulus?: number; memoryCorrectionFilter?: number }; isChannelAllowed(session: Session): boolean };
-    "yesimbot.model"?: Models;
+/** 旧核心 recallMemory 返回的历史摘要；共同记忆只读取这几个字段做纠错校验。 */
+export interface RecalledSummary {
+    platform: string;
+    channelId: string;
+    participants: string[];
+    timestamp: number;
+    startedAt?: number;
+}
+export interface Dependencies {
+    yesimbot: {
+        tool: Tools;
+        prompt: Prompt;
+        world: {
+            capabilities?: { beforeUserStimulus?: number; memoryCorrectionFilter?: number };
+            isChannelAllowed(session: Session): boolean;
+            /** 以下维护接口在旧核心中可能不存在，插件在运行时逐个探测。 */
+            recordSystemEvent?(event: object, expectedGeneration?: number): Promise<unknown>;
+            recallMemory?(options: object): Promise<RecalledSummary[]>;
+            getFrameworkEvents?(memoryDomain: string): Promise<unknown[]>;
+        };
+        model?: Models;
+    };
 }
 const Success = (result: unknown) => ({ status: "success", result });
 const Failed = (error: unknown) => ({ status: "error", error: { name: "PersonMemoryError", message: error instanceof Error ? error.message : String(error) } });
@@ -186,11 +203,11 @@ function candidate(p: Proposal | LinkProposal) {
 export function apply(ctx: Context, config: Config) {
     if (!config.enabled || config.mode === "off") return;
     const deps = ctx as unknown as Dependencies;
-    if (deps["yesimbot.world-state"].capabilities?.beforeUserStimulus !== 1 || deps["yesimbot.tool"].capabilities?.trustedToolSession !== 1) {
+    if (deps.yesimbot.world.capabilities?.beforeUserStimulus !== 1 || deps.yesimbot.tool.capabilities?.trustedToolSession !== 1) {
         throw new Error("人物记忆需要 YesImBot 3.0.4 或包含 beforeUserStimulus v1 与 trustedToolSession v1 能力的源码核心，请升级核心后重新启用插件");
     }
     if (config.sharedMemory) {
-        if (deps["yesimbot.world-state"].capabilities?.memoryCorrectionFilter !== 1)
+        if (deps.yesimbot.world.capabilities?.memoryCorrectionFilter !== 1)
             throw new Error("共同记忆需要同时更新本试开发的核心和人物插件；旧核心缺少旧摘要纠错过滤能力");
         return applySharedMemory(ctx, config);
     }
@@ -200,11 +217,11 @@ export function apply(ctx: Context, config: Config) {
     let active = true;
     const modes = new Map<string, Mode>(),
         generations = new Map<string, number>();
-    const allowed = (session: Session) => active && ctx.filter(session) && deps["yesimbot.world-state"].isChannelAllowed(session);
+    const allowed = (session: Session) => active && ctx.filter(session) && deps.yesimbot.world.isChannelAllowed(session);
     let model: SummaryModel | undefined;
     if (config.modelGroup)
         model = async (messages, signal, attribution) => {
-            const group = deps["yesimbot.model"]?.useChatGroup(config.modelGroup);
+            const group = deps.yesimbot.model?.useChatGroup(config.modelGroup);
             if (!group) throw new Error("总结模型组不存在或模型服务不可用");
             const request = () =>
                 group.chat({
@@ -216,7 +233,7 @@ export function apply(ctx: Context, config: Config) {
                     maxTokens: config.summaryMaxTokens ?? 4096,
                     requestPurpose: "人物记忆总结",
                 });
-            const models = deps["yesimbot.model"];
+            const models = deps.yesimbot.model;
             const result = await (models?.withUsageScope ? models.withUsageScope(attribution || { purpose: "人物记忆摘要" }, request) : request());
             return summaryResponseText(result, config.summaryMaxTokens ?? 4096);
         };
@@ -226,7 +243,7 @@ export function apply(ctx: Context, config: Config) {
         { threshold: config.summaryThreshold, cooldownMs: config.cooldownSeconds * 1000, timeoutMs: config.timeoutSeconds * 1000, maxQueue: config.maxQueue },
         (error) => logger.warn(`后台人物总结未接受：${String(error)}`),
     );
-    const removeInjection = deps["yesimbot.prompt"].inject("person_memory", 35, async (view) => {
+    const removeInjection = deps.yesimbot.prompt.inject("person_memory", 35, async (view) => {
         if (!view.session || !allowed(view.session)) return "";
         const scope = key(view.session),
             state = await store.read(scope);
@@ -428,12 +445,12 @@ export function apply(ctx: Context, config: Config) {
             }
         },
     };
-    const removeTool = deps["yesimbot.tool"].registerTool(tool);
+    const removeTool = deps.yesimbot.tool.registerTool(tool);
     ctx.on("dispose", () => {
         active = false;
         worker.stop();
         if (typeof removeTool === "function") removeTool();
-        else deps["yesimbot.tool"].unregisterTool(tool.name);
+        else deps.yesimbot.tool.unregisterTool(tool.name);
         if (typeof removeInjection === "function") removeInjection();
     });
 

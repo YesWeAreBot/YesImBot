@@ -32,23 +32,25 @@ async function setup(t, config = {}, capabilities = true) {
         // External YIB services and Koishi command dispatch only; DB remains a real database.
         // filter mirrors Koishi's Context.filter, which defaults to admitting every session.
         const facade = { model: ctx.model, database: ctx.database, filter: () => true };
-        facade["yesimbot.tool"] = {
-            registerTool: (tool) => tools.set(tool.name, tool),
-            unregisterTool: (name) => tools.delete(name),
-            ...(capabilities ? { capabilities: { trustedToolSession: 1 } } : {}),
-        };
-        facade["yesimbot.prompt"] = {
-            inject: (_name, _priority, fn) => {
-                injection = fn;
-                return () => {
-                    disposed = true;
-                    injection = undefined;
-                };
+        facade.yesimbot = {
+            tool: {
+                registerTool: (tool) => tools.set(tool.name, tool),
+                unregisterTool: (name) => tools.delete(name),
+                ...(capabilities ? { capabilities: { trustedToolSession: 1 } } : {}),
             },
-        };
-        facade["yesimbot.world-state"] = {
-            isChannelAllowed: (s) => s.channelId !== "blocked",
-            ...(capabilities ? { capabilities: { beforeUserStimulus: 1 } } : {}),
+            prompt: {
+                inject: (_name, _priority, fn) => {
+                    injection = fn;
+                    return () => {
+                        disposed = true;
+                        injection = undefined;
+                    };
+                },
+            },
+            world: {
+                isChannelAllowed: (s) => s.channelId !== "blocked",
+                ...(capabilities ? { capabilities: { beforeUserStimulus: 1 } } : {}),
+            },
         };
         facade.command = (name, description, options) => {
             const spec = { name, description, options, action: null, optionDeclarations: [] };
@@ -406,9 +408,11 @@ test("legacy core without required capabilities fails before registering busines
     for (const missing of ["both", "world", "tool"]) {
         const effects = [];
         const ctx = {
-            "yesimbot.world-state": { isChannelAllowed: () => true, ...(missing === "tool" ? { capabilities: { beforeUserStimulus: 1 } } : {}) },
-            "yesimbot.tool": { registerTool: () => effects.push("tool"), ...(missing === "world" ? { capabilities: { trustedToolSession: 1 } } : {}) },
-            "yesimbot.prompt": { inject: () => effects.push("prompt") },
+            yesimbot: {
+                world: { isChannelAllowed: () => true, ...(missing === "tool" ? { capabilities: { beforeUserStimulus: 1 } } : {}) },
+                tool: { registerTool: () => effects.push("tool"), ...(missing === "world" ? { capabilities: { trustedToolSession: 1 } } : {}) },
+                prompt: { inject: () => effects.push("prompt") },
+            },
             model: { extend: () => effects.push("model") },
             on: () => effects.push("listener"),
             command: () => effects.push("command"),

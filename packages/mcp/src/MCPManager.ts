@@ -3,7 +3,7 @@ import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Context, Schema } from "koishi";
-import { Failed, Infer, type ToolCallResult, type ToolService } from "koishi-plugin-yesimbot/services";
+import { Failed, Infer, type ToolCallResult, type ToolService } from "koishi-plugin-yesimbot";
 
 import { CommandResolver } from "./CommandResolver";
 import { Config } from "./Config";

@@ -1,20 +1,24 @@
 import { expect, it } from "vitest";
 
-import { EventListenerManager } from "../src/services/worldstate/event-listener";
-import { Services } from "../src/shared/constants";
+import type { AssetService } from "../src/asset";
+import { EventListenerManager } from "../src/world/event-listener";
+import { loggingStub, stubCtx } from "./helpers/yesimbot";
 it("records mixed adapter role formats as IDs while keeping message XML", async () => {
     const messages: any[] = [],
         members: any[] = [];
-    const ctx = {
-        [Services.Logger]: { getLogger: () => ({ debug() {}, info() {}, error() {} }) },
-        [Services.Asset]: { transform: async (s: string) => s },
-        database: {
-            get: async () => [],
-            create: async (_table: string, value: any) => {
-                members.push(value);
+    const logger = { debug() {}, info() {}, error() {} };
+    const asset = { transform: async (message: string) => message };
+    const ctx = stubCtx(
+        { logging: { getLogger: () => logger }, asset },
+        {
+            database: {
+                get: async () => [],
+                create: async (_table: string, value: any) => {
+                    members.push(value);
+                },
             },
         },
-    };
+    );
     const listener = new EventListenerManager(
         ctx as any,
         {
@@ -24,6 +28,9 @@ it("records mixed adapter role formats as IDs while keeping message XML", async 
             observeChannel: async () => {},
         } as any,
         {} as any,
+        loggingStub(logger),
+        // 测试桩只实现被测路径读取的 transform，无法满足完整 AssetService 契约。
+        asset as unknown as AssetService,
     );
     await (listener as any).recordUserMessage({
         author: { name: "user", roles: ["member", { id: "admin" }] },
@@ -42,7 +49,7 @@ it("records mixed adapter role formats as IDs while keeping message XML", async 
     expect(messages[0].content).toBe('<at id="bot"/>text');
 });
 it("reads operation events only from the requested platform into the visible context", async () => {
-    const { InteractionManager } = await import("../src/services/worldstate/interaction-manager");
+    const { InteractionManager } = await import("../src/world/interaction-manager");
     const now = new Date();
     const events = [
         { id: "1", platform: "onebot", channelId: "same", type: "reply-control", timestamp: now, message: "暂停 at 到期时间" },

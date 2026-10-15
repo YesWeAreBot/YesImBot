@@ -1,15 +1,21 @@
 import path from "node:path";
 
-import {} from "@koishijs/plugin-console";
-import {} from "@koishijs/plugin-notifier";
-import { Context, ForkScope, Service } from "koishi";
+import type {} from "@koishijs/plugin-console";
+import type {} from "@koishijs/plugin-notifier";
+import { Context, Service } from "koishi";
 
 import { AgentCore } from "./agent";
+import { AssetService } from "./asset";
 import * as ConfigCommand from "./commands/config";
 import { Config, CONFIG_VERSION, migrateConfig } from "./config";
-import { AssetService, LoggerService, MemoryService, ModelService, PromptService, ToolService, WorldStateService } from "./services";
-import { Services } from "./shared/constants";
+import { ToolService } from "./extension";
+import { LoggerService } from "./logger";
+import { MemoryService } from "./memory";
+import { ModelService } from "./model";
+import { PromptService } from "./prompt";
 import { handleError, initializeErrorReporter } from "./shared/errors";
+import { YesImBotService } from "./shared/service";
+import { WorldStateService } from "./world";
 
 declare module "koishi" {
     interface Context {
@@ -20,7 +26,7 @@ declare module "koishi" {
 export default class YesImBot extends Service<Config> {
     static readonly Config = Config;
     static readonly inject = {
-        required: ["console", "database", "notifier"],
+        required: ["console", "database", "notifier", "server", "http"],
         optional: ["puppeteer"],
     };
     static readonly name = "yesimbot";
@@ -28,6 +34,28 @@ export default class YesImBot extends Service<Config> {
 使用请阅读 [文档](https://docs.yesimbot.chat/) ，推荐使用 [GPTGOD](https://gptgod.online/#/register?invite_code=envrd6lsla9nydtipzrbvid2r) 提供的 \`deepseek-v3\` 模型以获得最高性价比。目前已知效果最佳模型：\`gemini-2.5-pro-preview-06-05\`
 \n
 官方交流群：[857518324](http://qm.qq.com/cgi-bin/qm/qr?_wv=1027&k=k3O5_1kNFJMERGxBOj1ci43jHvLvfru9&authKey=TkOxmhIa6kEQxULtJ0oMVU9FxoY2XNiA%2B7bQ4K%2FNx5%2F8C8ToakYZeDnQjL%2B31Rx%2B&noverify=0&group_code=857518324)\n`;
+
+    /**
+     * 日志服务。命名为 `logging` 而非 `logger`，避免与 Koishi `Service` 上已废弃的
+     * `logger: Logger` 成员冲突（派生类成员类型必须兼容基类）。
+     */
+    public readonly logging: LoggerService;
+    public readonly asset: AssetService;
+    public readonly prompt: PromptService;
+    public readonly memory: MemoryService;
+    public readonly model: ModelService;
+    public readonly world: WorldStateService;
+    public readonly tool: ToolService;
+    public readonly agent: AgentCore;
+
+    /** 子服务实例，按依赖顺序排列：即构造顺序与启动顺序，卸载时反向停止。 */
+    private readonly services: YesImBotService[];
+    private stopping = false;
+    private stopPromise?: Promise<void>;
+
+    /** 全部子服务启动流程结束后兑现（失败时已记录日志并通知，不向外抛出）。 */
+    public readonly ready: Promise<void>;
+
     constructor(ctx: Context, config: Config) {
         super(ctx, "yesimbot", true);
 
@@ -65,111 +93,88 @@ export default class YesImBot extends Service<Config> {
                 ctx.logger.error("配置迁移失败:", error.message);
                 ctx.logger.debug(error);
             }
-        } else {
         }
 
         this.config = config;
 
+        ctx.plugin(ConfigCommand, config);
+
+        // 子服务由 YesImBot 直接持有，不再注册为独立的 Koishi 服务。
+        // 依赖通过构造参数注入：构造期间 `ctx.yesimbot` 尚未注册，任何服务都不得在
+        // 初始化阶段读取它。构造顺序即依赖顺序，与下方 services 数组、启动顺序一致。
+        this.logging = new LoggerService(ctx, config);
+        this.asset = new AssetService(ctx, config, this.logging);
+        this.prompt = new PromptService(ctx, config, this.logging);
+        this.memory = new MemoryService(ctx, config, this.logging);
+        this.model = new ModelService(ctx, config, this.logging);
+        this.world = new WorldStateService(ctx, config, { logging: this.logging, asset: this.asset, model: this.model });
+        this.tool = new ToolService(ctx, config, { logging: this.logging, prompt: this.prompt, world: this.world });
+        this.agent = new AgentCore(ctx, config, {
+            logging: this.logging,
+            world: this.world,
+            model: this.model,
+            prompt: this.prompt,
+            tool: this.tool,
+            asset: this.asset,
+            memory: this.memory,
+        });
+
+        this.services = [this.logging, this.asset, this.prompt, this.memory, this.model, this.world, this.tool, this.agent];
+
+        initializeErrorReporter(
+            config.errorReporting,
+            this.ctx.logger("[错误报告]"),
+            (id, error) => this.logging.recordError(id, error),
+            config.providers?.map((provider) => provider.apiKey).filter(Boolean),
+        );
+
+        this.ctx.on("dispose", () => this.stopServices());
+
+        this.ready = this.startServices();
+    }
+
+    private async startServices(): Promise<void> {
         try {
-            ctx.plugin(ConfigCommand, config);
-
-            // 注册日志服务
-            const loggerService = ctx.plugin(LoggerService, config);
-
-            // 注册资源中心服务
-            const assetService = ctx.plugin(AssetService, config);
-
-            // 注册提示词管理器
-            const promptService = ctx.plugin(PromptService, config);
-
-            // 注册工具管理器
-            const toolService = ctx.plugin(ToolService, config);
-
-            // 注册模型服务
-            const modelService = ctx.plugin(ModelService, config);
-
-            // 注册记忆管理层
-            const memoryService = ctx.plugin(MemoryService, config);
-
-            // 注册 WorldState 服务
-            const worldStateService = ctx.plugin(WorldStateService, config);
-
-            const agentCore = ctx.plugin(AgentCore, config);
-
-            const services = [loggerService, assetService, promptService, toolService, modelService, memoryService, worldStateService, agentCore];
-
-            initializeErrorReporter(
-                config.errorReporting,
-                this.ctx.logger("[错误报告]"),
-                (id, error) => this.ctx[Services.Logger].recordError(id, error),
-                config.providers?.map((provider) => provider.apiKey).filter(Boolean),
-            );
-
-            waitForServices(ctx, services)
-                .then((ready) => {
-                    if (!ready) return;
-                    this.ctx.logger.info("所有服务已就绪");
-                    this.ctx.logger.info(`Version: ${require("../package.json").version}`);
-                })
-                .catch((error) => {
-                    this.ctx.logger.error(error.message);
-                    ctx.notifier.create("初始化时发生错误");
-                    // services.forEach((service) => {
-                    //     try {
-                    //         service.dispose();
-                    //     } catch (error) {
-                    //     }
-                    // });
-                });
+            for (const service of this.services) {
+                if (this.stopping) return;
+                await service.start();
+                if (this.stopping) return;
+            }
+            this.ctx.logger.info("所有服务已就绪");
+            this.ctx.logger.info(`Version: ${require("../package.json").version}`);
         } catch (error) {
-            ctx.notifier.create("初始化时发生错误");
-            // this.ctx.logger.error("初始化时发生错误:", error.message);
-            // this.ctx.logger.error(error.stack);
-            handleError(this.ctx.logger("yesimbot"), error, "初始化时发生错误");
-            this.ctx.stop();
+            if (this.stopping) return;
+            this.ctx.logger.error(error.message);
+            this.ctx.notifier.create("初始化时发生错误");
+            handleError(this.ctx.logger("yesimbot"), error, "服务初始化时发生错误");
         }
+    }
+
+    private stopServices(): Promise<void> {
+        if (this.stopPromise) return this.stopPromise;
+        // Fence startup synchronously, then let its in-flight operation settle
+        // before cleanup. Otherwise an await inside start() can recreate resources
+        // after stop() has already released them.
+        this.stopping = true;
+        this.stopPromise = (async () => {
+            await this.ready;
+            for (const service of [...this.services].reverse()) {
+                try {
+                    await service.stop();
+                } catch (error) {
+                    this.ctx.logger.error(error?.message ?? String(error));
+                }
+            }
+        })();
+        return this.stopPromise;
     }
 }
 
-function waitForServices(ctx: Context, services: ForkScope[]): Promise<boolean> {
-    // 未就绪服务
-    const notReadyServices = new Set(services.map((service) => service.ctx.name));
-
-    return new Promise<boolean>((resolve, reject) => {
-        let finished = false;
-        let cancelDeadline: () => void;
-        let cancelPoll: () => void;
-        let removeDisposeListener: () => void;
-        const finish = (ready: boolean, error?: Error) => {
-            if (finished) return;
-            finished = true;
-            cancelDeadline?.();
-            cancelPoll?.();
-            removeDisposeListener?.();
-            if (error) reject(error);
-            else resolve(ready);
-        };
-        removeDisposeListener = ctx.on("dispose", () => finish(false));
-        cancelDeadline = ctx.setTimeout(() => {
-            if (services.every((service) => service.ready)) finish(true);
-            else finish(false, new Error(`服务初始化超时: ${Array.from(notReadyServices).join(", ")}`));
-        }, 11000);
-        const check = () => {
-            if (finished) return;
-            for (const service of services) {
-                if (service.ready && notReadyServices.has(service.ctx.name)) {
-                    notReadyServices.delete(service.ctx.name);
-                }
-            }
-            if (notReadyServices.size === 0) {
-                finish(true);
-            } else {
-                cancelPoll = ctx.setTimeout(check, 100);
-            }
-        };
-        cancelPoll = ctx.setTimeout(check, 1000);
-    });
-}
-
-export * from "./services";
+export * from "./asset";
+export * from "./extension";
+export * from "./logger";
+export * from "./memory";
+export * from "./model";
+export * from "./prompt";
 export * from "./shared";
+export * from "./world";

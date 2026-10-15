@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import InteractionsExtension from "../src/services/extension/builtin/interactions";
-import { Services } from "../src/shared/constants";
+import InteractionsExtension from "../src/extension/builtin/interactions";
 import { formatDate } from "../src/shared/utils/toolkit";
+import { stubCtx } from "./helpers/yesimbot";
 
 const sender = { user_id: 123, nickname: "Alice" };
 const time = 1700000000;
@@ -10,10 +10,7 @@ const text = (value: string) => ({ type: "text", data: { text: value } });
 
 async function getForward(payload: unknown, transform?: (elements: any[]) => Promise<string>) {
     const extension = Object.create(InteractionsExtension.prototype);
-    extension.ctx = {
-        logger: { error() {} },
-        [Services.Asset]: { transform: transform || (async (elements: any[]) => elements.join("")) },
-    };
+    extension.ctx = stubCtx({ asset: { transform: transform || (async (elements: any[]) => elements.join("")) } }, { logger: { error() {} } });
     return extension.getForwardMsg({
         session: { selfId: "bot", onebot: { getForwardMsg: async () => payload } },
         id: "forward-id",

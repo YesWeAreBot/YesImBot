@@ -4,8 +4,7 @@ import path from "path";
 
 import { Context, Schema, sleep } from "koishi";
 import {} from "koishi-plugin-puppeteer";
-import { Extension, Failed, Infer, Success, Tool, ToolCallResult, withInnerThoughts } from "koishi-plugin-yesimbot/services";
-import { Services } from "koishi-plugin-yesimbot/shared";
+import { Extension, Failed, Infer, Success, Tool, ToolCallResult, withInnerThoughts } from "koishi-plugin-yesimbot";
 import type { Page } from "puppeteer-core";
 import { FormData, ProxyAgent, RequestInit, fetch as ufetch } from "undici";
 
@@ -247,7 +246,7 @@ const scriptToInject = () => {
 })
 export default class VisionTools {
     static readonly inject = {
-        required: [Services.Asset],
+        required: ["yesimbot"],
         optional: ["puppeteer"],
     };
     static readonly Config = Config;
@@ -309,7 +308,7 @@ export default class VisionTools {
         const { image_id, method } = args;
         this.ctx.logger.info(`请求使用方法: ${method}`);
 
-        const assetService = this.ctx.get(Services.Asset)!;
+        const assetService = this.ctx.yesimbot.asset;
         const image = (await assetService.read(image_id, { format: "data-url" })) as string;
         const imageInfo = await assetService.getInfo(image_id);
         if (!image || !imageInfo?.mime.startsWith("image/")) {
@@ -606,7 +605,7 @@ export default class VisionTools {
             return null;
         }
 
-        const assetService = this.ctx.get(Services.Asset)!;
+        const assetService = this.ctx.yesimbot.asset;
         const imageBuffer = await assetService.read(image_id);
         //@ts-ignore
         const file = new File([imageBuffer], `image.${image.data.mime.split("/")[1] || "jpeg"}`, {

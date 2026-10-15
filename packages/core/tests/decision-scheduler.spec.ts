@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 
 import { StimulusScheduler } from "../src/agent/scheduler";
-import { Services } from "../src/shared/constants";
+import { loggingStub, stubCtx } from "./helpers/yesimbot";
 
 function setup(strategy = "skip") {
     const events: string[] = [];
@@ -14,18 +14,21 @@ function setup(strategy = "skip") {
     const start = new Promise<void>((resolve) => {
         started = resolve;
     });
-    const ctx: any = {
-        [Services.Logger]: { getLogger: () => ({ debug() {}, warn() {} }) },
-        debounce(fn: any, ms: number) {
-            let timer: any;
-            const task: any = (s: any) => {
-                clearTimeout(timer);
-                timer = setTimeout(() => fn(s), ms);
-            };
-            task.dispose = () => clearTimeout(timer);
-            return task;
+    const logger = { debug() {}, warn() {} };
+    const ctx = stubCtx(
+        { logging: { getLogger: () => logger } },
+        {
+            debounce(fn: any, ms: number) {
+                let timer: any;
+                const task: any = (s: any) => {
+                    clearTimeout(timer);
+                    timer = setTimeout(() => fn(s), ms);
+                };
+                task.dispose = () => clearTimeout(timer);
+                return task;
+            },
         },
-    };
+    );
     const scheduler = new StimulusScheduler(
         ctx,
         { debounceMs: 2, newMessageStrategy: strategy, deferredProcessingTime: 5 } as any,
@@ -34,6 +37,7 @@ function setup(strategy = "skip") {
             started();
             await waiting;
         },
+        loggingStub(logger),
         (s: any, stage: string, reason?: string) => events.push(`${s.id}:${stage}:${reason || ""}`),
     );
     return { scheduler, events, calls, release, start };

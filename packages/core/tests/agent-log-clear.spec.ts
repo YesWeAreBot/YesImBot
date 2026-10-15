@@ -4,8 +4,8 @@ import path from "node:path";
 
 import { afterEach, expect, it, vi } from "vitest";
 
-import { InteractionManager } from "../src/services/worldstate/interaction-manager";
-import { Services } from "../src/shared/constants";
+import { InteractionManager } from "../src/world/interaction-manager";
+import { loggingStub, stubCtx } from "./helpers/yesimbot";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -20,23 +20,27 @@ async function fixture() {
     roots.push(root);
     const logger = { info() {}, error() {}, debug() {}, warn() {} };
     const manager = new InteractionManager(
-        {
-            baseDir: root,
-            [Services.Logger]: { getLogger: () => logger },
-            database: {
-                get: async (_table: string, query: { platform?: string; channelId?: string }) => {
-                    // 频道类型只来自适配器注册的元数据，文件名不可推断。
-                    const channels = [
-                        { platform: "qq", channelId: "private:u", channelType: "private" },
-                        { platform: "qq", channelId: "private_u", channelType: "guild" },
-                    ];
-                    return channels.filter(
-                        (channel) => (!query.platform || channel.platform === query.platform) && (!query.channelId || channel.channelId === query.channelId),
-                    );
+        stubCtx(
+            { logging: { getLogger: () => logger } },
+            {
+                baseDir: root,
+                database: {
+                    get: async (_table: string, query: { platform?: string; channelId?: string }) => {
+                        // 频道类型只来自适配器注册的元数据，文件名不可推断。
+                        const channels = [
+                            { platform: "qq", channelId: "private:u", channelType: "private" },
+                            { platform: "qq", channelId: "private_u", channelType: "guild" },
+                        ];
+                        return channels.filter(
+                            (channel) =>
+                                (!query.platform || channel.platform === query.platform) && (!query.channelId || channel.channelId === query.channelId),
+                        );
+                    },
                 },
             },
-        } as any,
+        ),
         {} as any,
+        loggingStub(logger),
     );
     const logFile = path.join(root, "data/yesimbot/interactions/qq/private_u.agent.jsonl");
     await fs.mkdir(path.dirname(logFile), { recursive: true });

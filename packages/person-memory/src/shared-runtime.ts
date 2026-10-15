@@ -4,7 +4,7 @@ import { Context, Schema, h, type Session } from "koishi";
 
 import { escapeContext } from "./context";
 import { ContinuityStore, registerContinuityModels, sourceRef, summaryUnsafeIn, type RecallTarget } from "./continuity";
-import type { Config } from "./index";
+import type { Config, Dependencies } from "./index";
 import { PersonStore, accountRef, mindScope, registerModels, sceneKey, type Audit, type Mode, type SceneInput } from "./store";
 import { SummaryWorker, summaryResponseText, type SummaryModel } from "./worker";
 
@@ -53,9 +53,9 @@ const filterRecallObservations = (state: any, accept: (kind: string, item: any) 
     };
 };
 export function applySharedMemory(ctx: Context, config: Config) {
-    const deps = ctx as any,
-        world = deps["yesimbot.world-state"],
-        toolService = deps["yesimbot.tool"],
+    const deps = ctx as unknown as Dependencies,
+        world = deps.yesimbot.world,
+        toolService = deps.yesimbot.tool,
         logger = ctx.logger("shared-memory");
     registerModels(ctx);
     registerContinuityModels(ctx);
@@ -293,7 +293,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
     let model: SummaryModel | undefined;
     if (config.modelGroup)
         model = async (messages, signal, attribution) => {
-            const group = deps["yesimbot.model"]?.useChatGroup(config.modelGroup);
+            const group = deps.yesimbot.model?.useChatGroup(config.modelGroup);
             if (!group) throw new Error("总结模型组不存在");
             const request = () =>
                 group.chat({
@@ -305,8 +305,8 @@ export function applySharedMemory(ctx: Context, config: Config) {
                     maxTokens: config.summaryMaxTokens ?? 4096,
                     requestPurpose: "人物记忆总结",
                 });
-            const models = deps["yesimbot.model"];
-            const result = await (models.withUsageScope ? models.withUsageScope(attribution || { purpose: "人物记忆摘要" }, request) : request());
+            const models = deps.yesimbot.model;
+            const result = await (models?.withUsageScope ? models.withUsageScope(attribution || { purpose: "人物记忆摘要" }, request) : request());
             return summaryResponseText(result, config.summaryMaxTokens ?? 4096);
         };
     const worker = new SummaryWorker(
@@ -376,7 +376,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
             })(),
         ),
     );
-    const inject = deps["yesimbot.prompt"].inject("person_memory", 35, async (view: Record<string, any>) => {
+    const inject = deps.yesimbot.prompt.inject("person_memory", 35, async (view: Record<string, any>) => {
         const session: Session = view.session;
         if (!session || !baseAllowed(session)) return "";
         const scope = scopeOf(session),

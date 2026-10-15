@@ -1,35 +1,21 @@
 # koishi-plugin-yesimbot-extension-daily-planner
 
-## 0.1.1
+All notable changes to this package will be documented in this file.
 
-### Patch Changes
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-- 018350c: fix(core): 修复上下文处理中的异常捕获
-    - 过滤空行以优化日志读取
-    - 增加日志长度限制和定期清理历史数据功能
+## [Unreleased]
 
-    fix(core): 响应频道支持直接填写用户 ID
-    - closed [#152](https://github.com/YesWeAreBot/YesImBot/issues/152)
+### Changed
+- injects the consolidated `yesimbot` core service and reads `ctx.yesimbot`; the old per-service registrations are gone, so this version pairs with the matching `koishi-plugin-yesimbot` release.
+- injects the consolidated `yesimbot` core service and reads `ctx.yesimbot`; the old per-service registrations are gone, so this version pairs with the matching `koishi-plugin-yesimbot` release
 
-    refactor(tts): 优化 TTS 适配器的停止逻辑和临时目录管理
+### Fixed
+- schedule generation stops on dispose, prompt injections and snippets are unregistered, per-day generation is deduplicated, and dates are formatted in local time. (#231)
+## [0.1.1] - 2025-09-15
 
-    refactor(daily-planner): 移除不必要的依赖和清理代码结构
+### Changed
 
-- 018350c: refactor(logger): 更新日志记录方式，移除对 Logger 服务的直接依赖
-- Updated dependencies [018350c]
-- Updated dependencies [018350c]
-    - koishi-plugin-yesimbot@3.0.2
-
-## 0.1.0
-
-### Minor Changes
-
-- 0c77684: prerelease
-
-### Patch Changes
-
-- Updated dependencies [b74e863]
-- Updated dependencies [106be97]
-- Updated dependencies [1cc0267]
-- Updated dependencies [b852677]
-    - koishi-plugin-yesimbot@3.0.0
+- dropped unnecessary dependencies and cleaned up the structure.
+- logging no longer depends on a standalone Logger service.

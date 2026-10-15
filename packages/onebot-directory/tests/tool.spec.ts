@@ -21,11 +21,13 @@ async function setup(t, config = {}) {
         logger: { warn() {} },
         on() {},
         filter: () => true,
-        "yesimbot.tool": {
-            registerTool(item) {
-                tool = item;
+        yesimbot: {
+            tool: {
+                registerTool(item) {
+                    tool = item;
+                },
+                unregisterTool() {},
             },
-            unregisterTool() {},
         },
         command(name) {
             activity.commands++;

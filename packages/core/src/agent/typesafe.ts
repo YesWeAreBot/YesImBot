@@ -1,8 +1,9 @@
 import { Context, Session } from "koishi";
 
 import { Config } from "../config";
-import { withUsageScope } from "../services/model/usage";
-import { Services, TableName } from "../shared/constants";
+import type { ModelService } from "../model";
+import { withUsageScope } from "../model/usage";
+import { TableName } from "../shared/constants";
 
 const positive = (n: number) => Math.max(0, n * 2 - 1);
 
@@ -37,6 +38,7 @@ export class TypeSafeEvaluator {
     constructor(
         private readonly ctx: Context,
         private readonly config: Config,
+        private readonly model: ModelService,
     ) {}
 
     public async evaluate(
@@ -74,7 +76,7 @@ export class TypeSafeEvaluator {
     ): Promise<number | null> {
         const config = this.config.typesafe!;
         const selected = config.evaluationModel;
-        const model = this.ctx[Services.Model].getEvaluationModel(selected.providerName, selected.modelId);
+        const model = this.model.getEvaluationModel(selected.providerName, selected.modelId);
         if (!model) return null;
         const state = {
             bot: {

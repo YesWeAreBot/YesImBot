@@ -1,6 +1,5 @@
 import { Context } from "koishi";
-import { IChatModel, MemoryBlockData, MemoryService } from "koishi-plugin-yesimbot/services";
-import { Services } from "koishi-plugin-yesimbot/shared";
+import { IChatModel, MemoryBlockData, MemoryService } from "koishi-plugin-yesimbot";
 
 import { DailyPlannerConfig } from ".";
 
@@ -37,8 +36,8 @@ export class DailyPlannerService {
         ctx.on("dispose", () => {
             this.disposed = true;
         });
-        this.memoryService = ctx[Services.Memory];
-        this.chatModel = ctx[Services.Model].getChatModel(this.config.model.providerName, config.model.modelId);
+        this.memoryService = ctx.yesimbot.memory;
+        this.chatModel = ctx.yesimbot.model.getChatModel(this.config.model.providerName, config.model.modelId);
         this.registerDatabaseModel();
         this.registerPromptSnippet();
         this.ctx.logger.info("日程服务已初始化");
@@ -59,7 +58,7 @@ export class DailyPlannerService {
     }
 
     private registerPromptSnippet() {
-        const promptService = this.ctx[Services.Prompt];
+        const promptService = this.ctx.yesimbot.prompt;
         if (!promptService) return;
 
         // 注册当前日程动态片段
@@ -103,7 +102,7 @@ export class DailyPlannerService {
         // 1. 获取核心记忆和近期事件
         const coreMemories = await this.getCoreMemories();
 
-        const recentEvents = await this.ctx[Services.WorldState].l2_manager.search("我");
+        const recentEvents = await this.ctx.yesimbot.world.l2_manager.search("我");
 
         // 2. 构建提示词
         const prompt = this.buildSchedulePrompt(

@@ -1,7 +1,9 @@
-import type { Context, Session } from "koishi";
+import type { Context, Logger, Session } from "koishi";
 
-import { withUsageScope } from "../services/model/usage";
-import { Services, TableName } from "../shared/constants";
+import type { LoggerService } from "../logger";
+import type { ModelService } from "../model";
+import { withUsageScope } from "../model/usage";
+import { TableName } from "../shared/constants";
 
 export interface TopicConfig {
     enabled: boolean;
@@ -45,14 +47,19 @@ const bounded = (value: number, fallback: number, min: number, max: number) => (
 export class TopicManager {
     private readonly states = new Map<string, ChannelState>();
     private readonly config: TopicConfig;
+    private readonly logger: Logger;
+    private readonly modelService: ModelService;
     private disposed = false;
 
     constructor(
         private readonly ctx: Context,
         config: TopicConfig,
+        deps: { logging: LoggerService; model: ModelService },
         private readonly interests: (session: Session) => string = () => "",
         private readonly onReset?: (channelKey: string) => void,
     ) {
+        this.logger = deps.logging.getLogger("[话题分析]");
+        this.modelService = deps.model;
         this.config = {
             enabled: config.enabled === true,
             model: config.model,
@@ -90,7 +97,7 @@ export class TopicManager {
             state.controller = new AbortController();
             const controller = state.controller;
             const timer = setTimeout(() => {
-                this.ctx[Services.Logger]?.getLogger("[话题分析]").debug(`[${channelKey}] 分析超时 | 限制: ${this.config.timeoutMs}ms | 沿用普通意愿`);
+                this.logger.debug(`[${channelKey}] 分析超时 | 限制: ${this.config.timeoutMs}ms | 沿用普通意愿`);
                 controller.abort(new DOMException("话题分析超时，沿用普通意愿", "AbortError"));
             }, this.config.timeoutMs);
             let cancel: () => void;
@@ -224,7 +231,7 @@ export class TopicManager {
 
     private async request(session: Session, state: ChannelState, signal: AbortSignal): Promise<{ topics: TopicFocus[]; currentTopicId: string } | undefined> {
         const selected = this.config.model!;
-        const model = this.ctx[Services.Model].getChatModel(selected.providerName, selected.modelId);
+        const model = this.modelService.getChatModel(selected.providerName, selected.modelId);
         if (!model || signal.aborted) return undefined;
         const data = {
             bot: { id: session.bot.selfId, name: session.bot.user?.name, interests: this.interests(session) },

@@ -5,15 +5,16 @@ import { expect, it, vi } from "vitest";
 import { AgentCore } from "../src/agent/agent-core";
 import { replyTurnSignal } from "../src/agent/reply-turn";
 import { Config } from "../src/config";
-import CoreUtilExtension from "../src/services/extension/builtin/core-util";
-import { EventListenerManager } from "../src/services/worldstate/event-listener";
-import { WorldStateService } from "../src/services/worldstate/service";
-import { Services, TableName } from "../src/shared/constants";
+import CoreUtilExtension from "../src/extension/builtin/core-util";
+import { TableName } from "../src/shared/constants";
+import { EventListenerManager } from "../src/world/event-listener";
+import { WorldStateService } from "../src/world/service";
+import { stubYesImBot } from "./helpers/yesimbot";
 
 const logger = { debug() {}, info() {}, warn() {}, error() {} };
 export function muteFixture(rows: any[] = []) {
     const ctx = new Context();
-    ctx[Services.Logger] = { getLogger: () => logger } as any;
+    Object.assign(ctx, { yesimbot: stubYesImBot({ logging: { getLogger: () => logger } }) });
     ctx.bots.push({ platform: "onebot", selfId: "a" } as any, { platform: "onebot", selfId: "b" } as any, { platform: "other", selfId: "a" } as any);
     let reads = 0;
     const states: any[] = [];
@@ -123,7 +124,7 @@ it("expires at the deadline and keeps diagnostics a pure read", () => {
 it("recognizes numeric/string zero target as whole-group lift without clearing individual mute", async () => {
     for (const userId of [0, "0"]) {
         const { ctx, world, recorded } = muteFixture();
-        const listener: any = new EventListenerManager(ctx, world, {} as any);
+        const listener: any = new EventListenerManager(ctx, world, {} as any, ctx.yesimbot.logging, ctx.yesimbot.asset);
         await listener.handleGuildMember(notice("a", userId, -1));
         world.updateMuteStatus("onebot:g", Date.now() + 60000, "a");
         await listener.handleGuildMember(notice("a", userId, 0));
@@ -137,7 +138,7 @@ it("recognizes numeric/string zero target as whole-group lift without clearing i
 
 it("ignores malformed durations and unrelated member releases", async () => {
     const { ctx, world, recorded } = muteFixture();
-    const listener: any = new EventListenerManager(ctx, world, {} as any);
+    const listener: any = new EventListenerManager(ctx, world, {} as any, ctx.yesimbot.logging, ctx.yesimbot.asset);
     world.updateMuteStatus("onebot:g", Date.now() + 60000, "a");
     await listener.handleGuildMember({ ...notice("a", 10, 0), event: { user: { id: "other" }, _data: { duration: 0 } } });
     await listener.handleGuildMember({ ...notice("a", 10, 0), event: { user: { id: "a" }, _data: { duration: "invalid" } } });
@@ -198,10 +199,20 @@ it("restores legacy whole-group records and their old zero-target release", asyn
 
 function replyFixture() {
     const fixture = muteFixture();
-    fixture.ctx[Services.WorldState] = fixture.world;
-    fixture.ctx[Services.Model] = { useChatGroup: () => ({}) } as any;
-    fixture.ctx[Services.Prompt] = {} as any;
-    const core: any = new AgentCore(fixture.ctx, Config({ newMessageStrategy: "immediate" }));
+    Object.assign(fixture.ctx.yesimbot, {
+        world: fixture.world,
+        model: { useChatGroup: () => ({}) },
+        prompt: {},
+    });
+    const core: any = new AgentCore(fixture.ctx, Config({ newMessageStrategy: "immediate" }), {
+        logging: fixture.ctx.yesimbot.logging,
+        world: fixture.ctx.yesimbot.world,
+        model: fixture.ctx.yesimbot.model,
+        prompt: fixture.ctx.yesimbot.prompt,
+        tool: fixture.ctx.yesimbot.tool,
+        asset: fixture.ctx.yesimbot.asset,
+        memory: fixture.ctx.yesimbot.memory,
+    });
     let sends = 0;
     const session: any = {
         platform: "onebot",
@@ -388,12 +399,14 @@ it("skips assessment while muted and discards a pending assessment on mute", asy
     const response = new Promise((resolve) => {
         release = resolve;
     });
-    (f.ctx[Services.Model] as any).getEvaluationModel = () => ({
-        evaluate: async (_state: any, _questions: any, abort: AbortSignal) => {
-            evaluations++;
-            signal = abort;
-            return response;
-        },
+    Object.assign(f.ctx.yesimbot.model, {
+        getEvaluationModel: () => ({
+            evaluate: async (_state: any, _questions: any, abort: AbortSignal) => {
+                evaluations++;
+                signal = abort;
+                return response;
+            },
+        }),
     });
     let scheduled = 0;
     f.core.scheduler.schedule = () => {
@@ -477,7 +490,7 @@ for (const mode of ["before-send", "chunks", "upload", "explicit-target"] as con
             });
         }
         f.stimulus.session = bot.session({ type: "message", channel: { id: "g" }, user: { id: "user" } });
-        f.ctx[Services.Asset] = { encode: async (value: string) => value } as any;
+        Object.assign(f.ctx.yesimbot, { asset: { encode: async (value: string) => value } });
         const tool =
             mode === "explicit-target"
                 ? new CoreUtilExtension(f.ctx, { typing: { minDelay: 0, maxDelay: 0, baseDelay: 0, charPerSecond: 5 } } as any)

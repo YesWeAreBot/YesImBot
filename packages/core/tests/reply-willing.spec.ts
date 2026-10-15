@@ -1,16 +1,17 @@
 import { expect, it } from "vitest";
 
 import { WillingnessManager } from "../src/agent/willing";
-import { Services } from "../src/shared/constants";
+import { loggingStub, stubCtx } from "./helpers/yesimbot";
 it("only counts allowed at gain from a text/at/quote/private message", () => {
-    const ctx = { on() {}, [Services.Logger]: { getLogger: () => ({ debug() {} }) } };
+    const logger = { debug() {} };
+    const ctx = stubCtx({ logging: { getLogger: () => logger } }, { on() {} });
     const config = {
         base: { text: 12 },
         attribute: { atMention: 25, isQuote: 15, isDirectMessage: 40 },
         interest: { keywords: [], keywordMultiplier: 1.2, defaultMultiplier: 1 },
         lifecycle: { maxWillingness: 100, probabilityThreshold: 99, probabilityAmplifier: 1 },
     };
-    const willing = new WillingnessManager(ctx as any, config as any);
+    const willing = new WillingnessManager(ctx as any, config as any, loggingStub(logger));
     const session = {
         cid: "onebot:g",
         content: "hi",

@@ -4,8 +4,8 @@ import path from "node:path";
 
 import { afterEach, expect, it } from "vitest";
 
-import { InteractionManager } from "../src/services/worldstate/interaction-manager";
-import { Services } from "../src/shared/constants";
+import { InteractionManager } from "../src/world/interaction-manager";
+import { loggingStub, stubCtx } from "./helpers/yesimbot";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -17,12 +17,9 @@ async function fixture() {
     roots.push(root);
     const logger = { info() {}, error() {}, debug() {}, warn() {} };
     const manager = new InteractionManager(
-        {
-            baseDir: root,
-            [Services.Logger]: { getLogger: () => logger },
-            database: { get: async () => [] },
-        } as any,
+        stubCtx({ logging: { getLogger: () => logger } }, { baseDir: root, database: { get: async () => [] } }),
         {} as any,
+        loggingStub(logger),
     );
     const seed = async (relativePath: string, rows: Array<string | Record<string, unknown>>) => {
         const file = path.join(root, "data/yesimbot/interactions", relativePath);

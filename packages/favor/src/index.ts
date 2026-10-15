@@ -1,6 +1,5 @@
 import { Context, Schema, Session } from "koishi";
-import { Extension, Failed, Infer, PromptService, Success, Tool, withInnerThoughts } from "koishi-plugin-yesimbot/services";
-import { Services } from "koishi-plugin-yesimbot/shared";
+import { Extension, Failed, Infer, PromptService, Success, Tool, withInnerThoughts } from "koishi-plugin-yesimbot";
 
 // --- 配置项接口定义 ---
 export interface FavorSystemConfig {
@@ -54,7 +53,7 @@ export default class FavorExtension {
     });
 
     // --- 依赖注入 ---
-    static readonly inject = ["database", Services.Prompt];
+    static readonly inject = ["database", "yesimbot"];
 
     private disposed = false;
     private logger: ReturnType<Context["logger"]>;
@@ -101,7 +100,7 @@ export default class FavorExtension {
         this.ctx.scope.update(this.config, false);
 
         // 注入 Koishi 的 Prompt 服务 (来自 yesimbot)
-        const promptService: PromptService = this.ctx[Services.Prompt];
+        const promptService: PromptService = this.ctx.yesimbot.prompt;
 
         this.ctx.on(
             "dispose",

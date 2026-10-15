@@ -31,9 +31,7 @@
     "service": {
       "required": [
         "database",
-        "yesimbot.prompt",
-        "yesimbot.tool",
-        "yesimbot.world-state"
+        "yesimbot"
       ]
     }
   }

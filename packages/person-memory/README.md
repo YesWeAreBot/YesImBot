@@ -45,7 +45,7 @@ modelGroup: "" # 留空不调用后台总结模型，主模型仍可使用工具
 
 ## 启用
 
-安装插件，启用数据库和 YesImBot，在 Koishi 控制台添加 `yesimbot-extension-person-memory`。需要 YesImBot ≥ 3.0.4，或同时提供 `beforeUserStimulus: 1` 与 `trustedToolSession: 1` 核心服务能力的源码构建，确保本轮推理前已经完成账号识别和消息来源记录。旧发布核心 3.0.3 不支持这两项能力，插件会在注册模型、工具、命令、监听及后台任务前明确拒绝启用，请先升级核心；不会回退到不可信的模型工具会话。插件所用服务为 `database`、`yesimbot.prompt`、`yesimbot.tool`、`yesimbot.world-state`，后台总结还会使用 `yesimbot.model`。
+安装插件，启用数据库和 YesImBot，在 Koishi 控制台添加 `yesimbot-extension-person-memory`。需要 YesImBot ≥ 3.0.4，或同时公开 `beforeUserStimulus v1` 与 `trustedToolSession v1` 能力的源码构建，确保本轮推理前已经完成账号识别和消息来源记录。旧发布核心 3.0.3 不支持这两项能力，插件会在注册模型、工具、命令、监听及后台任务前明确拒绝启用，请先升级核心；不会回退到不可信的模型工具会话。插件所用 Koishi 服务为 `database` 与 `yesimbot`：核心子服务通过 `ctx.yesimbot.prompt`、`ctx.yesimbot.tool`、`ctx.yesimbot.world` 访问，后台总结还会使用 `ctx.yesimbot.model`。
 
 先使用默认 `review` 模式。后台总结模型组留空时，不额外调用模型；人工编辑和主模型提交候选仍可用。
 

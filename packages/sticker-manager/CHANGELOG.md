@@ -1,25 +1,27 @@
 # koishi-plugin-yesimbot-extension-sticker-manager
 
-## 1.2.1
+All notable changes to this package will be documented in this file.
 
-### Patch Changes
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-- 018350c: refactor(logger): 更新日志记录方式，移除对 Logger 服务的直接依赖
-- Updated dependencies [018350c]
-- Updated dependencies [018350c]
-    - koishi-plugin-yesimbot@3.0.2
+## [Unreleased]
 
-## 1.2.0
+### Changed
+- injects the consolidated `yesimbot` core service and reads `ctx.yesimbot`; the old per-service registrations are gone, so this version pairs with the matching `koishi-plugin-yesimbot` release.
+- each plugin instance owns its own service instead of sharing a process-wide singleton. (#231)
+- injects the consolidated `yesimbot` core service and reads `ctx.yesimbot`; the old per-service registrations are gone, so this version pairs with the matching `koishi-plugin-yesimbot` release
 
-### Minor Changes
+### Fixed
+- prompt snippets and pending startup work are released when the plugin is disposed. (#231)
+## [1.2.1] - 2025-09-15
 
-- 0c77684: prerelease
+### Changed
 
-### Patch Changes
+- logging no longer depends on a standalone Logger service.
 
-- b74e863: use koishi-plugin-sharp
-- Updated dependencies [b74e863]
-- Updated dependencies [106be97]
-- Updated dependencies [1cc0267]
-- Updated dependencies [b852677]
-    - koishi-plugin-yesimbot@3.0.0
+## [1.2.0] - 2025-09-07
+
+### Changed
+
+- switched to `koishi-plugin-sharp`.

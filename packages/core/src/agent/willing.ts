@@ -1,7 +1,7 @@
 import { Context, Eval, Logger, Session } from "koishi";
 
 import { Config } from "../config";
-import { Services } from "../shared/constants";
+import type { LoggerService } from "../logger";
 import { WillingnessConfig } from "./config";
 import type { WillingnessCalculation } from "./decision-record";
 import type { ReplyCategory } from "./reply-control";
@@ -73,10 +73,10 @@ export class WillingnessManager {
 
     private decayInterval: NodeJS.Timeout | null = null;
 
-    constructor(ctx: Context, config: Config) {
+    constructor(ctx: Context, config: Config, logging: LoggerService) {
         this.ctx = ctx;
         this.baseConfig = config;
-        this.logger = ctx[Services.Logger].getLogger("[意愿管理器]");
+        this.logger = logging.getLogger("[意愿管理器]");
 
         ctx.on("dispose", () => {
             this.stopDecayCycle();

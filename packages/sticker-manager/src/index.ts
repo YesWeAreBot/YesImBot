@@ -1,8 +1,7 @@
 import { readFile } from "fs/promises";
 
 import { Context, Schema, h } from "koishi";
-import { AssetService, Extension, Failed, Infer, PromptService, Success, Tool } from "koishi-plugin-yesimbot/services";
-import { Services } from "koishi-plugin-yesimbot/shared";
+import { AssetService, Extension, Failed, Infer, PromptService, Success, Tool } from "koishi-plugin-yesimbot";
 
 import { StickerConfig } from "./config";
 import { StickerService } from "./service";
@@ -15,7 +14,7 @@ import { StickerService } from "./service";
     version: "1.0.0",
 })
 export default class StickerTools {
-    static readonly inject = ["database", Services.Asset, Services.Model, Services.Prompt, Services.Tool];
+    static readonly inject = ["database", "yesimbot"];
 
     static readonly Config: Schema<StickerConfig> = Schema.object({
         storagePath: Schema.path({ allowCreate: true, filters: ["directory"] })
@@ -39,7 +38,7 @@ export default class StickerTools {
         public ctx: Context,
         public config: StickerConfig,
     ) {
-        this.assetService = ctx[Services.Asset];
+        this.assetService = ctx.yesimbot.asset;
         this.stickerService = new StickerService(ctx, config);
         ctx.on("dispose", () => {
             this.disposed = true;
@@ -290,7 +289,7 @@ export default class StickerTools {
     private initialized = false;
 
     private registerSnippets() {
-        const promptService: PromptService = this.ctx[Services.Prompt];
+        const promptService: PromptService = this.ctx.yesimbot.prompt;
 
         const removeSnippet: unknown = promptService.registerSnippet("sticker.categories", async () => {
             if (this.disposed) return "";

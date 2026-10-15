@@ -4,7 +4,7 @@ import { AgentCore } from "../src/agent/agent-core";
 import { DecisionRecords } from "../src/agent/decision-record";
 import { ReplyControl } from "../src/agent/reply-control";
 import { WillingnessManager } from "../src/agent/willing";
-import { Services } from "../src/shared/constants";
+import { loggingStub, stubCtx } from "./helpers/yesimbot";
 
 function setup() {
     const target = { platform: "qq", selfId: "bot", channelId: "g", isDirect: false };
@@ -25,7 +25,8 @@ function setup() {
         lifecycle: { maxWillingness: 100, probabilityThreshold: 10, probabilityAmplifier: 1, replyCost: 35 },
     };
     const core: any = Object.create(AgentCore.prototype);
-    const ctx: any = { on() {}, [Services.Logger]: { getLogger: () => ({ debug() {} }) } };
+    const logger = { debug() {} };
+    const ctx = stubCtx({ logging: { getLogger: () => logger } }, { on() {} });
     const scheduled: any[] = [];
     const decisions = new DecisionRecords();
     Object.assign(core, {
@@ -34,7 +35,7 @@ function setup() {
         decisions,
         pendingAssessments: new Map(),
         activeTurns: new Map(),
-        willing: new WillingnessManager(ctx, config),
+        willing: new WillingnessManager(ctx, config, loggingStub(logger)),
         scheduler: { noteUserMessage() {}, isBusy: () => false, schedule: (s: any) => scheduled.push(s) },
         worldState: { isBotMuted: () => false, peekBotMuted: () => false },
     });
@@ -83,14 +84,17 @@ it("keeps observe-mode semantic results while applying the original gain", async
         influence: 0.5,
     };
     t.session.toJSON = () => ({ message: { content: t.session.content } });
-    t.ctx[Services.Model] = {
-        getEvaluationModel: () => ({
-            evaluate: async () => {
-                evaluations++;
-                return { answers: { addressed: { noul: 1 }, interested: { noul: 0 }, others: { noul: 0 } } };
-            },
-        }),
-    };
+    // 构造注入后 AgentCore 通过 this.modelService 取接话评估模型，不再读取 ctx 上的服务。
+    Object.assign(t.core, {
+        modelService: {
+            getEvaluationModel: () => ({
+                evaluate: async () => {
+                    evaluations++;
+                    return { answers: { addressed: { noul: 1 }, interested: { noul: 0 }, others: { noul: 0 } } };
+                },
+            }),
+        },
+    });
     t.core.receiveStimulus({ type: "user_message", session: t.session });
     await new Promise((resolve) => setTimeout(resolve, 0));
     const record = t.decisions.latest(t.target)!;

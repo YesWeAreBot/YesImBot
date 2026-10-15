@@ -1,8 +1,8 @@
 import { expect, it } from "vitest";
 
-import { ChatModelSwitcher } from "../src/services/model/service";
-import { Services } from "../src/shared/constants";
+import { ChatModelSwitcher } from "../src/model/service";
 import { AppError, ErrorDefinitions } from "../src/shared/errors";
+import { loggingStub, stubCtx } from "./helpers/yesimbot";
 
 function setup(chat: (options: any) => Promise<any>, maxRetries = 1) {
     const logs: string[] = [];
@@ -15,9 +15,10 @@ function setup(chat: (options: any) => Promise<any>, maxRetries = 1) {
         isVisionModel: () => false,
     };
     const switcher = new ChatModelSwitcher(
-        { [Services.Logger]: { getLogger: () => logger } } as any,
+        stubCtx({ logging: { getLogger: () => logger } }) as any,
         { name: "test", models: [{ providerName: "test", modelId: model.id }] },
         () => model,
+        loggingStub(logger),
     );
     return { switcher, logs };
 }

@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 
-import { WorldStateService } from "../src/services/worldstate/service";
+import { WorldStateService } from "../src/world/service";
 
 const group = { platform: "onebot", channelId: "channel", guildId: "guild", userId: "user", isDirect: false };
 const direct = { ...group, channelId: "private:user", guildId: undefined, isDirect: true };

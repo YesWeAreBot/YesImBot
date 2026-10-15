@@ -3,7 +3,7 @@ import { expect, it } from "vitest";
 
 import { AgentCore } from "../src/agent/agent-core";
 import { ReplyControl } from "../src/agent/reply-control";
-import { Services } from "../src/shared/constants";
+import { stubCtx } from "./helpers/yesimbot";
 
 async function setup() {
     let now = 0;
@@ -16,9 +16,12 @@ async function setup() {
     const core: any = Object.create(AgentCore.prototype);
     const target = { platform: "qq", selfId: "bot", channelId: "group" };
     const key = '["qq","bot","group"]';
+    const model = { getEvaluationModel: () => ({ evaluate: async () => response }) };
     Object.assign(core, {
         stopped: false,
         pendingAssessments: new Map(),
+        // 构造注入后 AgentCore 通过 this.modelService 取接话评估模型。
+        modelService: model,
         config: {
             typesafe: {
                 mode: "adjust",
@@ -40,7 +43,9 @@ async function setup() {
         scheduler: { noteUserMessage() {}, isBusy: () => false, cancel() {}, schedule: (stimulus: any) => scheduled.push(stimulus) },
         worldState: { isBotMuted: () => false },
     });
-    Object.defineProperty(core, "ctx", { value: { [Services.Model]: { getEvaluationModel: () => ({ evaluate: async () => response }) } } });
+    Object.defineProperty(core, "ctx", {
+        value: stubCtx({ model }),
+    });
     Object.defineProperty(core, "logger", { value: { debug() {}, info() {}, warn() {} } });
     core.replyControl = new ReplyControl(
         { load: async () => [], save: async () => {}, remove: async () => {} },

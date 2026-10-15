@@ -1,10 +1,11 @@
 import { expect, it } from "vitest";
 
-import { HISTORY_CHANNELS } from "../src/services/worldstate/channel-metadata";
-import { HistoryCommandManager } from "../src/services/worldstate/commands";
-import { SemanticMemoryManager } from "../src/services/worldstate/l2-semantic-memory";
-import { MessageData, MemoryChunkData } from "../src/services/worldstate/types";
-import { Services, TableName } from "../src/shared/constants";
+import { TableName } from "../src/shared/constants";
+import { HISTORY_CHANNELS } from "../src/world/channel-metadata";
+import { HistoryCommandManager } from "../src/world/commands";
+import { SemanticMemoryManager } from "../src/world/l2-semantic-memory";
+import { MessageData, MemoryChunkData } from "../src/world/types";
+import { stubCtx } from "./helpers/yesimbot";
 
 const defaultEmbed = async (_text: string) => ({ embedding: [1, 0] });
 const noop = async () => {};
@@ -94,18 +95,18 @@ function fixture(chunkSize = 2) {
         };
         return instance;
     };
-    const ctx: any = {
-        database,
-        logger: log,
-        command,
-        [Services.Logger]: { getLogger: () => log },
-        [Services.Model]: { useEmbeddingGroup: () => ({ getModels: () => [{ embed: (text: string) => embed(text) }] }) },
-    };
+    const ctx = stubCtx(
+        {
+            logging: { getLogger: () => log },
+            model: { useEmbeddingGroup: () => ({ getModels: () => [{ embed: (text: string) => embed(text) }] }) },
+        },
+        { database, logger: log, command },
+    );
     const config: any = { l2_memory: { enabled: true, messagesPerChunk: chunkSize }, l1_memory: { maxMessages: 10 } };
-    const memory = new SemanticMemoryManager(ctx, config);
+    const memory = new SemanticMemoryManager(ctx, config, ctx.yesimbot.logging, ctx.yesimbot.model);
     for (const { platform, channelId, channelType } of channelRows) memory.observeChannel({ platform, channelId }, channelType);
     memory.start();
-    new HistoryCommandManager(ctx, { l2_manager: memory, l1_manager: { clearAgentHistory: async () => {} } } as any, config).register();
+    new HistoryCommandManager(ctx, { l2_manager: memory, l1_manager: { clearAgentHistory: async () => {} } } as any, config, ctx.yesimbot.logging).register();
     return {
         memory,
         rows,

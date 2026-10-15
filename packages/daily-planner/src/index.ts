@@ -1,7 +1,6 @@
 import { Context, Schema } from "koishi";
 import {} from "koishi-plugin-cron";
-import { Extension, Failed, Infer, ModelDescriptor, PromptService, Success, Tool } from "koishi-plugin-yesimbot/services";
-import { Services } from "koishi-plugin-yesimbot/shared";
+import { Extension, Failed, Infer, ModelDescriptor, PromptService, Success, Tool } from "koishi-plugin-yesimbot";
 
 import { DailyPlannerService } from "./service";
 
@@ -21,7 +20,7 @@ export interface DailyPlannerConfig {
     version: "1.0.0",
 })
 export default class DailyPlannerExtension {
-    static readonly inject = ["cron", "database", "yesimbot", Services.Prompt, Services.Tool, Services.Model, Services.Memory, Services.WorldState];
+    static readonly inject = ["cron", "database", "yesimbot"];
 
     static readonly Config: Schema<DailyPlannerConfig> = Schema.object({
         scheduleGenerationTime: Schema.string().default("03:00").description("每日生成日程的时间 (HH:mm 格式)"),
@@ -54,7 +53,7 @@ export default class DailyPlannerExtension {
 
         ctx.on("ready", () => {
             if (this.disposed) return;
-            const promptService: PromptService = ctx.get(Services.Prompt)!;
+            const promptService: PromptService = ctx.yesimbot.prompt;
 
             ctx.on(
                 "dispose",

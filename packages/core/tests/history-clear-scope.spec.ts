@@ -4,11 +4,11 @@ import path from "node:path";
 
 import { afterEach, expect, it } from "vitest";
 
-import { HISTORY_CHANNELS } from "../src/services/worldstate/channel-metadata";
-import { HistoryCommandManager } from "../src/services/worldstate/commands";
-import { InteractionManager } from "../src/services/worldstate/interaction-manager";
-import { SemanticMemoryManager } from "../src/services/worldstate/l2-semantic-memory";
-import { Services } from "../src/shared/constants";
+import { HISTORY_CHANNELS } from "../src/world/channel-metadata";
+import { HistoryCommandManager } from "../src/world/commands";
+import { InteractionManager } from "../src/world/interaction-manager";
+import { SemanticMemoryManager } from "../src/world/l2-semantic-memory";
+import { stubCtx } from "./helpers/yesimbot";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -50,23 +50,25 @@ async function fixture() {
         };
         return instance;
     };
-    const ctx: any = {
-        baseDir: root,
-        [Services.Logger]: { getLogger: () => logger },
-        logger,
-        command,
-        database: {
-            get: async (table: string, query: { channelType?: string } = {}) =>
-                (table === HISTORY_CHANNELS ? channels : []).filter((row) => !query.channelType || row.channelType === query.channelType),
-            remove: async (table: string, query: any) => {
-                removals.push({ table, query });
-                return { removed: 1 };
+    const ctx = stubCtx(
+        { logging: { getLogger: () => logger } },
+        {
+            baseDir: root,
+            logger,
+            command,
+            database: {
+                get: async (table: string, query: { channelType?: string } = {}) =>
+                    (table === HISTORY_CHANNELS ? channels : []).filter((row) => !query.channelType || row.channelType === query.channelType),
+                remove: async (table: string, query: any) => {
+                    removals.push({ table, query });
+                    return { removed: 1 };
+                },
             },
         },
-    };
-    const manager = new InteractionManager(ctx, {} as any);
-    const memory = new SemanticMemoryManager(ctx, { l2_memory: { enabled: false } } as any);
-    new HistoryCommandManager(ctx, { l1_manager: manager, l2_manager: memory } as any, {} as any).register();
+    );
+    const manager = new InteractionManager(ctx, {} as any, ctx.yesimbot.logging);
+    const memory = new SemanticMemoryManager(ctx, { l2_memory: { enabled: false } } as any, ctx.yesimbot.logging, ctx.yesimbot.model);
+    new HistoryCommandManager(ctx, { l1_manager: manager, l2_manager: memory } as any, {} as any, ctx.yesimbot.logging).register();
     const invoke = (options: any = {}) => actions.get("history.clear")!({ session: { platform: "qq", channelId: "group" }, options });
     const exists = async (file: string) =>
         fs.access(path.join(logRoot, file)).then(

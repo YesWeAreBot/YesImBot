@@ -1,15 +1,18 @@
 import path from "node:path";
 
-import { Context, Service, Session, Random } from "koishi";
+import { Context, Logger, Session, Random } from "koishi";
 
+import { AssetService } from "../asset";
 import { Config } from "../config";
-import { ChatModelSwitcher, ModelService, TaskType } from "../services/model";
-import { loadTemplate, PromptService } from "../services/prompt";
-import { AgentStimulus } from "../services/worldstate";
-import { WorldStateService } from "../services/worldstate/index";
-import { Services } from "../shared/constants";
+import { ToolService } from "../extension";
+import type { LoggerService } from "../logger";
+import { MemoryService } from "../memory";
+import { ChatModelSwitcher, ModelService, TaskType } from "../model";
+import { loadTemplate, PromptService } from "../prompt";
 import { AppError, handleError } from "../shared/errors";
 import { ErrorDefinitions } from "../shared/errors/definitions";
+import { YesImBotService } from "../shared/service";
+import { AgentStimulus, WorldStateService } from "../world";
 import { PromptContextBuilder } from "./context-builder";
 import { registerDecisionCommands } from "./decision-commands";
 import { DecisionJournal } from "./decision-journal";
@@ -35,10 +38,9 @@ declare module "koishi" {
     }
 }
 
-export class AgentCore extends Service<Config> {
-    static readonly inject = [Services.Asset, Services.Logger, Services.Memory, Services.Model, Services.Prompt, Services.Tool, Services.WorldState];
-
+export class AgentCore extends YesImBotService<Config> {
     // 依赖的服务
+    private readonly logger: Logger;
     private readonly worldState: WorldStateService;
     private readonly modelService: ModelService;
     private readonly promptService: PromptService;
@@ -152,7 +154,7 @@ export class AgentCore extends Service<Config> {
         let answers: { addressed: number; interested: number; others: number } | undefined;
         this.recordDecision(stimulus, { stage: "assessing", assessment: { mode: config?.mode ?? "off", multiplier: null, status: "pending" } });
         const semantic = useTypeSafe
-            ? new TypeSafeEvaluator(this.ctx, this.config).evaluate(session, pending.controller.signal, (value) => {
+            ? new TypeSafeEvaluator(this.ctx, this.config, this.modelService).evaluate(session, pending.controller.signal, (value) => {
                   answers = value;
               })
             : Promise.resolve(null);
@@ -174,10 +176,21 @@ export class AgentCore extends Service<Config> {
         );
     }
 
-    constructor(ctx: Context, config: Config) {
-        super(ctx, Services.Agent, true);
-        this.config = config;
-        this.logger = ctx[Services.Logger].getLogger("[智能体核心]");
+    constructor(
+        ctx: Context,
+        config: Config,
+        deps: {
+            logging: LoggerService;
+            world: WorldStateService;
+            model: ModelService;
+            prompt: PromptService;
+            tool: ToolService;
+            asset: AssetService;
+            memory: MemoryService;
+        },
+    ) {
+        super(ctx, config);
+        this.logger = deps.logging.getLogger("[智能体核心]");
         if (config.decisionRecording?.enabled) {
             this.decisionJournal = new DecisionJournal(
                 path.resolve(ctx.baseDir, config.decisionRecording.directory || "data/yesimbot/decisions"),
@@ -186,9 +199,9 @@ export class AgentCore extends Service<Config> {
             );
         }
 
-        this.worldState = this.ctx[Services.WorldState];
-        this.modelService = this.ctx[Services.Model];
-        this.promptService = this.ctx[Services.Prompt];
+        this.worldState = deps.world;
+        this.modelService = deps.model;
+        this.promptService = deps.prompt;
 
         this.modelSwitcher = this.modelService.useChatGroup(TaskType.Chat)!;
         if (!this.modelSwitcher) {
@@ -198,25 +211,33 @@ export class AgentCore extends Service<Config> {
             });
         }
 
-        this.willing = new WillingnessManager(ctx, config);
+        this.willing = new WillingnessManager(ctx, config, deps.logging);
         if (config.topics?.enabled)
             this.topics = new TopicManager(
                 ctx,
                 config.topics,
+                { logging: deps.logging, model: deps.model },
                 (session) => config.typesafe?.interests?.trim() || session.resolve(config.interest.keywords).join("、"),
                 (key) => this.clearTopicScores(key),
             );
 
-        this.contextBuilder = new PromptContextBuilder(ctx, config, this.modelSwitcher);
-        this.processor = new HeartbeatProcessor(
-            ctx,
-            config,
-            this.modelSwitcher,
-            ctx[Services.Prompt],
-            ctx[Services.Tool],
-            this.worldState.l1_manager,
-            this.contextBuilder,
-        );
+        this.contextBuilder = new PromptContextBuilder(ctx, config, {
+            model: this.modelSwitcher,
+            logging: deps.logging,
+            asset: deps.asset,
+            memory: deps.memory,
+            tool: deps.tool,
+            world: deps.world,
+        });
+        this.processor = new HeartbeatProcessor(ctx, config, {
+            model: this.modelSwitcher,
+            prompt: deps.prompt,
+            tool: deps.tool,
+            l1: this.worldState.l1_manager,
+            contextBuilder: this.contextBuilder,
+            logging: deps.logging,
+            world: deps.world,
+        });
 
         this.replyControl = new ReplyControl(
             {
@@ -335,6 +356,7 @@ export class AgentCore extends Service<Config> {
                     participation: this.willing.getParticipation(channelCid),
                 });
             },
+            deps.logging,
             (stimulus, stage, reason) => this.recordDecision(stimulus, { stage, reason }),
         );
 
@@ -348,7 +370,7 @@ export class AgentCore extends Service<Config> {
         });
     }
 
-    protected async start(): Promise<void> {
+    public async start(): Promise<void> {
         this.ctx.model.extend(
             "yesimbot.reply_rules",
             {
@@ -469,7 +491,7 @@ export class AgentCore extends Service<Config> {
         this.scheduler.schedule({ ...stimulus, channelCid });
     }
 
-    protected async stop(): Promise<void> {
+    public async stop(): Promise<void> {
         this.stopped = true;
         for (const channelCid of this.pendingAssessments.keys()) this.cancelAssessment(channelCid, false);
         this.activeTurns.forEach((controller) => controller.abort(new Error("插件已停止")));
