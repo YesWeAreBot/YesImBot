@@ -24,7 +24,7 @@ declare module "koishi" {
     interface Events {
         "yesimbot/before-user-stimulus": (session: Session) => void | Promise<void>;
         "yesimbot/filter-recalled-memory": (session: Session, state: any) => void | Promise<void>;
-        "agent/stimulus": (stimulus: AgentStimulus<any>) => void;
+        "agent/stimulus": (stimulus: AgentStimulus<any>, ownerId?: string) => void;
         "agent/bot-muted": (target: { platform: string; selfId: string; channelId: string }) => void;
     }
     interface Tables {
@@ -38,6 +38,9 @@ declare module "koishi" {
 }
 
 export class WorldStateService extends Service<Config> {
+    /** Runtime identity survives Context service proxies, but changes on reload. */
+    public readonly stimulusOwnerId = randomUUID();
+
     /** Extension contract v1; feature detection also supports source checkouts. */
     public get capabilities() {
         return Object.freeze({

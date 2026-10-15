@@ -95,7 +95,7 @@ export class EventListenerManager {
                         priority: 5, // Normal message priority
                         payload: { messageIds: [session.messageId!] },
                     };
-                    this.ctx.emit("agent/stimulus", stimulus);
+                    this.ctx.emit(session, "agent/stimulus", stimulus, this.service.stimulusOwnerId);
                 }
                 return result;
             }),
@@ -219,7 +219,7 @@ export class EventListenerManager {
                 priority: 8,
                 payload: payload as SystemEventPayload,
             };
-            this.ctx.emit("agent/stimulus", stimulus);
+            this.ctx.emit(session, "agent/stimulus", stimulus, this.service.stimulusOwnerId);
         }
     }
 

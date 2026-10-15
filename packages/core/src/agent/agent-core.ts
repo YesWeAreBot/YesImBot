@@ -372,7 +372,13 @@ export class AgentCore extends Service<Config> {
         );
         this._registerPromptTemplates();
 
-        this.ctx.on("agent/stimulus", (stimulus) => this.receiveStimulus(stimulus));
+        this.ctx.on("agent/stimulus", (stimulus, ownerId) => {
+            if (ownerId !== undefined && ownerId !== this.worldState.stimulusOwnerId) return;
+            // Unowned extension events remain compatible, with the same scope
+            // checks as normal messages before any decision or assessment work.
+            if (!this.ctx.filter(stimulus.session) || !this.worldState.isChannelAllowed(stimulus.session)) return;
+            this.receiveStimulus(stimulus);
+        });
 
         this.willing.startDecayCycle();
     }
