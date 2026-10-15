@@ -6,6 +6,7 @@ import { Services, TableName } from "../../shared/constants";
 import { cosineSimilarity } from "../../shared/utils";
 import { withUsageScope } from "../model/usage";
 import { HistoryConfig } from "./config";
+import { historyCoordinator } from "./history-coordinator";
 import { ContextualMessage, HistoryChannelType, MemoryChunkData, MessageData } from "./types";
 
 export type SemanticMemoryScope = { platform: string; channelId: string } | { type: "private" | "guild" | "all" };
@@ -30,12 +31,19 @@ export class SemanticMemoryManager {
     private activeClears = new Set<{ scope: SemanticMemoryScope; done: Promise<void> }>();
     private pendingWrites = new Set<{ target: MemoryTarget; done: Promise<unknown> }>();
     private pendingBatches = new Set<Promise<void>>();
+    private readonly coordination: ReturnType<typeof historyCoordinator>;
     private stopped = false;
     private stopTask?: Promise<void>;
 
     constructor(ctx: Context, config: HistoryConfig) {
         this.ctx = ctx;
         this.config = config;
+        this.coordination = historyCoordinator(ctx.database ?? ctx);
+        this.channelTypes = this.coordination.channelTypes;
+        this.generations = this.coordination.generations;
+        this.activeClears = this.coordination.activeClears;
+        this.pendingWrites = this.coordination.pendingWrites;
+        this.coordination.buffers.add(new WeakRef(this.messageBuffer));
         this.logger = ctx[Services.Logger].getLogger("[L2-语义记忆]");
     }
 
@@ -100,8 +108,15 @@ export class SemanticMemoryManager {
     public async clearHistory<T>(scope: SemanticMemoryScope, clear: () => Promise<T>): Promise<T> {
         const key = "type" in scope ? scope.type : this.targetKey(scope);
         this.generations.set(key, (this.generations.get(key) || 0) + 1);
-        for (const [bufferKey, buffer] of this.messageBuffer) {
-            if (buffer.length && this.matchesScope(buffer[0], scope)) this.messageBuffer.delete(bufferKey);
+        for (const reference of this.coordination.buffers) {
+            const buffers = reference.deref();
+            if (!buffers) {
+                this.coordination.buffers.delete(reference);
+                continue;
+            }
+            for (const [bufferKey, buffer] of buffers) {
+                if (buffer.length && this.matchesScope(buffer[0], scope)) buffers.delete(bufferKey);
+            }
         }
 
         // 重叠范围按顺序清理；无关频道可独立执行。
