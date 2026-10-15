@@ -22,9 +22,10 @@
     "format:check": "oxfmt --check .",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
-    "pack": "yarn workspaces foreach -A --no-private exec npm pack",
+    "pack:all": "yarn workspaces foreach -A --no-private exec npm pack",
     "prepare": "husky",
-    "test": "vitest run"
+    "test": "vitest run",
+    "verify-packages": "node scripts/verify-packages.js"
   },
   "devDependencies": {
     "@changesets/cli": "^2.29.5",

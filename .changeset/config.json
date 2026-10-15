@@ -5,7 +5,7 @@
   "fixed": [],
   "linked": [],
   "access": "public",
-  "baseBranch": "v3",
+  "baseBranch": "v3-dev",
   "updateInternalDependencies": "patch",
   "ignore": [],
   "snapshot": {

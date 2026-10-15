@@ -1,0 +1,54 @@
+name: Build and verify packages
+
+on:
+  pull_request:
+    branches: [v3-dev]
+  push:
+    branches: [v3-dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Enable pinned Yarn
+        run: corepack enable
+      - name: Locate Yarn cache
+        id: yarn-cache
+        run: echo "path=$(yarn config get cacheFolder)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.yarn-cache.outputs.path }}
+          key: yarn-${{ runner.os }}-node${{ matrix.node }}-${{ hashFiles('yarn.lock', '.yarnrc.yml') }}
+      - run: yarn install --immutable
+      - run: yarn lint
+      - run: yarn format:check
+      - run: yarn test
+      - name: Prepare pending release versions without publishing
+        run: yarn changeset version
+      - run: yarn build
+      - run: yarn pack:all
+      - run: yarn collect-packages
+      - run: yarn verify-packages
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages-node${{ matrix.node }}
+          path: artifacts/*.tgz
+          if-no-files-found: error
+          retention-days: 7

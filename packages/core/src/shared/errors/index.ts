@@ -1,5 +1,3 @@
-import path from "path";
-
 import { Logger, Schema } from "koishi";
 import { v4 as uuidv4 } from "uuid";
 
@@ -122,7 +120,7 @@ export class ErrorReporter {
         const detailed = !!this.config.includeSensitiveInfo;
         const privacy = { partialCredentials: detailed, includeCookies: !!this.config.includeCookies };
         const cleaned = sanitizeDiagnostic({ ...context, error }, this.knownSecrets, new Set(), 0, "", privacy);
-        const packageJson = require(path.resolve(__dirname, "../../../package.json"));
+        const packageJson = require("koishi-plugin-yesimbot/package.json");
         const dump = [
             `# 智能体错误报告\n`,
             `**ID:** \`${diagnosticId(cleaned.errorId)}\`\n`,
