@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { $, Context, Logger } from "koishi";
 
@@ -252,7 +252,9 @@ export class ArchivalMemoryManager {
             );
             if (!active()) return;
             const diaryEntry: DiaryEntryData = {
-                id: `diary_${platform}_${channelId}_${dateKey}${incremental ? `_${randomUUID()}` : ""}`,
+                id: `diary_${createHash("sha256")
+                    .update(JSON.stringify([platform, channelId, dateKey]))
+                    .digest("hex")}${incremental ? `_${randomUUID()}` : ""}`,
                 generatedAt: new Date(),
                 sourceMessageCount: messages.length,
                 date: dateKey,

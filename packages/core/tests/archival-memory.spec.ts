@@ -533,3 +533,15 @@ it("does not create a hot timer loop for an invalid diary time", async () => {
         clear.mockRestore();
     }
 });
+
+it("keeps diary primary keys distinct for ambiguous platform/channel tuples", async () => {
+    const f = await fixture();
+    f.seedMessages("a_b", "c");
+    f.seedMessages("a", "b_c");
+    const first = await f.memory.generateDiaryForChannel("a_b", "c", day());
+    const second = await f.memory.generateDiaryForChannel("a", "b_c", day());
+    expect(first).toBeDefined();
+    expect(second).toBeDefined();
+    expect(second.id).not.toBe(first.id);
+    expect(f.diaries()).toHaveLength(2);
+});
