@@ -647,12 +647,6 @@ export function applySharedMemory(ctx: Context, config: Config) {
     command("people.bind <account:string> <target:string> [confidence:number]", "纠正账号归属", async (s, w, scope, [account, target, confidence = 1]) =>
         w.bind(scope, refOf(s, account), refOf(s, target), confidence, actor(s)),
     );
-    command("people.unbind <account:string>", "解除旧关联，建立独立临时档案", async (s, w, scope, [account]) => {
-        const ref = refOf(s, account),
-            found = await store.find(scope, ref);
-        if (!found) throw new Error("共同域查无此账号");
-        return w.split(scope, ref, found.accounts.find((a) => a.userId === ref)?.name || account, actor(s));
-    });
     command("people.split <account:string> <name:text>", "拆分认错的账号", async (s, w, scope, [account, name]) =>
         w.split(scope, refOf(s, account), name, actor(s)),
     );

@@ -8,7 +8,7 @@ const mock = (pluginMock as any).default ?? pluginMock;
 
 import { EventListenerManager } from "../../core/src/services/worldstate/event-listener";
 import * as plugin from "../src/index";
-import { registerModels } from "../src/store";
+import { PersonStore, accountRef, mindScope, registerModels, sceneKey } from "../src/store";
 import { fixture, fixtureContext } from "./helpers";
 
 const defaults = { enabled: true, mode: "review", modelGroup: "", summaryThreshold: 6, cooldownSeconds: 600, timeoutSeconds: 30, maxQueue: 32 };
@@ -177,3 +177,50 @@ test("real Koishi parses history page filters and archive revision without consu
     assert.match((await admin.receive(`people.archive ${id} ${read.revision}`)).join(""), /已归档/);
     assert.equal((await tools.get("person_memory").execute({ session: adminSession, action: "read", account_id: id })).status, "error");
 });
+
+for (const sharedMemory of [false, true])
+    test(`real Koishi unbind creates one provisional identity and retains original evidence (${sharedMemory ? "shared" : "scene"})`, async (t) => {
+        let currentSession;
+        const app = await fixture(t, (ctx) => {
+            ctx.plugin(mock);
+            ctx.set("yesimbot.tool", {
+                capabilities: { trustedToolSession: 1 },
+                registerTool: () => () => {},
+                unregisterTool() {},
+            });
+            ctx.set("yesimbot.prompt", { inject: () => () => {} });
+            ctx.set("yesimbot.world-state", {
+                capabilities: { beforeUserStimulus: 1, memoryCorrectionFilter: 1 },
+                isChannelAllowed: () => true,
+            });
+            ctx.on("command/before-execute", (argv) => {
+                currentSession = argv.session;
+                argv.session.__commandHandled = true;
+            });
+            ctx.plugin(plugin, { ...defaults, sharedMemory });
+        });
+        await app.mock.initUser("admin", 3);
+        await app.mock.initChannel("g");
+        const admin = app.mock.client("admin", "g");
+        const created = (await admin.receive("people.create Original")).join("");
+        const id = created.match(/[0-9a-f-]{36}/)?.[0];
+        assert.ok(id, created);
+        await admin.receive(`people.bind member ${id}`);
+        const scope = sharedMemory ? mindScope(currentSession) : sceneKey(currentSession);
+        const ref = sharedMemory ? accountRef(currentSession.platform, "member") : "member";
+        const store = new PersonStore(app.database, "review");
+        const before = await store.find(scope, ref);
+        await store.capture(scope, { id: "old-message", userId: ref, name: "Member", text: "original evidence", timestamp: 1 });
+        const evidence = await store.sources(scope, ref);
+        const auditBefore = await store.history(scope, 100);
+        const output = (await admin.receive("people.unbind member")).join("");
+        const after = await store.find(scope, ref);
+        assert.ok(after, output);
+        assert.equal(after.person.provisional, true, "unbinding creates an independent provisional identity");
+        assert.notEqual(after.person.id, before.person.id);
+        assert.ok(after.accounts[0].bindingRevision > (before.accounts[0].bindingRevision ?? 0));
+        const auditAfter = await store.history(scope, 100);
+        assert.equal(auditAfter.length, auditBefore.length + 1);
+        assert.equal(auditAfter[0].action, "unbind");
+        assert.deepEqual(await store.sources(scope, ref), evidence, "identity correction never rewrites original evidence");
+    });
