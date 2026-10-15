@@ -4,6 +4,7 @@ import { AgentStimulus } from "../services/worldstate";
 import { Services } from "../shared/constants";
 import { AppError, ErrorDefinitions, handleError } from "../shared/errors";
 import { AgentBehaviorConfig } from "./config";
+import { isBotMention } from "./mention";
 
 type TaskCallback = (stimulus: AgentStimulus<any>) => Promise<any>;
 type WithDispose<T> = T & { dispose: () => void };
@@ -51,8 +52,7 @@ export class StimulusScheduler {
 
         if (this.deferredTimers.has(channelKey)) {
             if (type === "user_message") {
-                this.replaceSkipped(stimulus);
-                this.observe?.(stimulus, "deferred", "busy");
+                if (this.replaceSkipped(stimulus)) this.observe?.(stimulus, "deferred", "busy");
                 this.setupDeferredTimer(channelKey);
                 return;
             }
@@ -85,6 +85,7 @@ export class StimulusScheduler {
         // 跟踪防抖替代结果，不改变调度时序。
         const tracked = ((stimulus: AgentStimulus<any>) => {
             const old = this.pendingStimuli.get(channelKey);
+            if (this.keepMention(old, stimulus)) return;
             if (old && old !== stimulus) this.observe?.(old, "cancelled", "debounce_replaced");
             this.pendingStimuli.set(channelKey, stimulus);
             this.observe?.(stimulus, "debounced");
@@ -167,14 +168,14 @@ export class StimulusScheduler {
         switch (strategy) {
             case "immediate":
                 // 策略2：记录被跳过的刺激，待当前任务完成后立即处理
-                this.replaceSkipped(stimulus);
+                if (!this.replaceSkipped(stimulus)) return;
                 this.observe?.(stimulus, "queued", "busy");
                 this.logger.debug(`[${channelKey}] 消息已记录，将在当前任务完成后立即处理`);
                 break;
 
             case "deferred":
                 // 策略3：记录被跳过的刺激，设置延迟处理定时器
-                this.replaceSkipped(stimulus);
+                if (!this.replaceSkipped(stimulus)) return;
                 this.observe?.(stimulus, "queued", "busy");
                 this.logger.debug(`[${channelKey}] 消息已记录，将在任务完成后开始延迟计时`);
                 break;
@@ -188,10 +189,26 @@ export class StimulusScheduler {
         }
     }
 
-    private replaceSkipped(stimulus: AgentStimulus<any>): void {
+    private keepMention(old: AgentStimulus<any> | undefined, incoming: AgentStimulus<any>): boolean {
+        if (
+            this.config.prioritizeMentions &&
+            old?.type === "user_message" &&
+            incoming.type === "user_message" &&
+            isBotMention(old.session) &&
+            !isBotMention(incoming.session)
+        ) {
+            this.observe?.(incoming, "skipped", "mention_priority");
+            return true;
+        }
+        return false;
+    }
+
+    private replaceSkipped(stimulus: AgentStimulus<any>): boolean {
         const old = this.skippedStimulus.get(stimulus.channelCid);
+        if (this.keepMention(old, stimulus)) return false;
         if (old && old !== stimulus) this.observe?.(old, "cancelled", "debounce_replaced");
         this.skippedStimulus.set(stimulus.channelCid, stimulus);
+        return true;
     }
 
     private handleSkippedMessagesAfterReply(channelKey: string) {
