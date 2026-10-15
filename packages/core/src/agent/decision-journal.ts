@@ -13,6 +13,7 @@ export interface DecisionJournalOptions {
 }
 
 export interface DecisionJournalFilter {
+    traceId?: string;
     key?: string;
     from?: number;
     to?: number;
@@ -101,6 +102,7 @@ export function sanitizeDecisionRecord(value: unknown): DecisionRecord | undefin
         stimulusType: stimuli.has(value.stimulusType) ? value.stimulusType : "unknown",
         startedAt: finite(value.startedAt) ? value.startedAt : value.time,
     };
+    if (identifier(value.messageId)) result.messageId = value.messageId;
     if (typeof value.reason === "string" && reasons.has(value.reason)) result.reason = value.reason;
     for (const field of ["decision", "success", "forcedReply"] as const) if (typeof value[field] === "boolean") result[field] = value[field];
     for (const field of ["score", "probability", "roll"] as const) if (finite(value[field])) result[field] = value[field];
@@ -459,6 +461,7 @@ export class DecisionJournal {
             .filter(
                 ({ record }) =>
                     (filter.key === undefined || record.key === filter.key) &&
+                    (filter.traceId === undefined || record.id === filter.traceId) &&
                     (filter.from === undefined || record.time >= filter.from) &&
                     (filter.to === undefined || record.time <= filter.to),
             )

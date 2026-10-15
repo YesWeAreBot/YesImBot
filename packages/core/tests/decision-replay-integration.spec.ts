@@ -42,7 +42,7 @@ it("replays recorded live calculations across nonlinear gain and participation w
             const key = JSON.stringify(["qq", "bot", "g"]);
             if (index === 1) manager.handlePostReply(session, key);
             if (index === 2) session.elements = [{ type: "at", attrs: { id: "bot" } }];
-            const id = records.begin(target, "user_message");
+            const id = records.begin(target, "user_message", `message-${index}`);
             const result = manager.shouldReply(session, key, undefined, 1.33);
             records.update(id, { stage: "calculated", ...result });
             records.update(id, { stage: "completed", success: false });
@@ -57,6 +57,7 @@ it("replays recorded live calculations across nonlinear gain and participation w
             .trim()
             .split("\n")
             .map((line) => JSON.parse(line));
+        expect(lines.filter((line) => line.status === "replayed").map((line) => line.messageId)).toEqual(["message-0", "message-1", "message-2", "message-3"]);
         expect(lines.at(-1).summary.replayed).toBe(4);
         expect(lines.at(-1).summary.mismatches).toBe(0);
         expect(lines.filter((line) => line.status === "replayed").every((line) => line.matches)).toBe(true);

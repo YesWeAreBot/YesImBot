@@ -39,3 +39,30 @@ it("limits history queries to the invoking session and validates time bounds", a
     expect(await handler({ session, options: {} }, 101)).toContain("1 到 100");
     expect(calls).toHaveLength(1);
 });
+
+it("validates and forwards an exact trace id without changing session scope", async () => {
+    let handler: any;
+    const command: any = {
+        option() {
+            return command;
+        },
+        action(value: any) {
+            handler = value;
+            return command;
+        },
+    };
+    const calls: any[] = [];
+    registerDecisionCommands(
+        { command: () => command } as any,
+        () => "current",
+        async (session, filter) => {
+            calls.push({ session, filter });
+            return "matched";
+        },
+    );
+    const session: any = { platform: "onebot", selfId: "bot", channelId: "group" };
+    expect(await handler({ session, options: { trace: "exact-id" } }, 10)).toBe("matched");
+    expect(calls).toEqual([{ session, filter: { limit: 10, from: undefined, to: undefined, traceId: "exact-id" } }]);
+    for (const trace of ["", "x".repeat(513), "bad\ntrace"]) expect(await handler({ session, options: { trace } }, 10)).toContain("512");
+    expect(calls).toHaveLength(1);
+});

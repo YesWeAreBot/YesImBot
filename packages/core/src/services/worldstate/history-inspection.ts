@@ -19,6 +19,7 @@ export interface InspectionOptions {
     full: boolean;
     details: boolean;
     reset: boolean;
+    traceId?: string;
 }
 
 /** Koishi keeps only the final occurrence of ordinary options; read its preserved source. */
@@ -45,15 +46,22 @@ export function parseInspectionOptions(source: string, fallback: Record<string, 
             result[name === "restart" ? "reset" : name] = true;
             continue;
         }
-        if (name !== "page" && !isDimension(name)) throw new Error(`未知参数 --${name}`);
+        if (name !== "page" && name !== "trace" && !isDimension(name)) throw new Error(`未知参数 --${name}`);
         const next = inline.length ? inline.join("=") : tokens[++i]?.content;
         if (!next || next.startsWith("--")) throw new Error(`--${name} 缺少参数`);
-        if (name === "page") {
+        if (name === "trace") result.traceId = next;
+        else if (name === "page") {
             explicitPage = true;
             result.page = Number(next);
             if (!Number.isSafeInteger(result.page) || result.page < 1) throw new Error("页码必须为正整数");
         } else result[name].push(next);
     }
+    result.traceId ??= fallback.trace;
+    if (
+        result.traceId !== undefined &&
+        (typeof result.traceId !== "string" || !result.traceId.length || result.traceId.length > 512 || /\p{Cc}/u.test(result.traceId))
+    )
+        throw new Error("trace ID 应为 1 到 512 字符，且不能包含控制字符。");
     for (const name of dimensions) {
         if (!result[name].length && fallback[name] !== undefined) result[name] = Array.isArray(fallback[name]) ? fallback[name] : [fallback[name]];
         result[name] = [...new Set(result[name])].sort();
@@ -65,7 +73,7 @@ export function parseInspectionOptions(source: string, fallback: Record<string, 
         result.page = Number(fallback.page);
     }
     if (!Number.isSafeInteger(result.page) || result.page < 1) throw new Error("页码必须为正整数");
-    if (result.reset && (dimensions.some((name) => result[name].length) || explicitPage || result.full || result.details)) {
+    if (result.reset && (dimensions.some((name) => result[name].length) || explicitPage || result.full || result.details || result.traceId !== undefined)) {
         throw new Error("重置仅作用于整个实例，不能与筛选、分页或展示参数混用");
     }
     return result;
@@ -232,8 +240,8 @@ async function contextLines(ctx: Context, options: InspectionOptions): Promise<s
         "本地历史按平台/目标共享保存，旧记录没有机器人或实例标识。这里只显示当前实例可见目标。",
         "存储容量为文本估算，不等于实际请求长度；图片、嵌入向量不计入文本容量。",
     ];
-    if (options.provider.length || options.model.length || options.bot.length)
-        lines.push("服务商、模型、机器人筛选仅作用于实际请求快照；共享存储不归属某一模型或机器人。");
+    if (options.provider.length || options.model.length || options.bot.length || options.traceId !== undefined)
+        lines.push("服务商、模型、机器人、trace 筛选仅作用于实际请求快照；共享存储不归属某一模型或机器人。");
     else {
         let storedTokens = 0;
         let unknownText = 0;
@@ -319,7 +327,7 @@ async function contextLines(ctx: Context, options: InspectionOptions): Promise<s
         else storedTokens += memoryTokens;
         lines.unshift(`【本地保存容量】已知文本合计 ≈${(storedTokens / 1000).toFixed(2)}K · 无法估算 ${unknownText} 项`);
     }
-    const snapshots = getContextSnapshots(ctx).filter((row) =>
+    const snapshots = getContextSnapshots(ctx, options.traceId).filter((row) =>
         matchesUsage({ platform: row.adapter, botId: row.bot, target: row.target, provider: row.provider, model: row.model } as any, options),
     );
     if (options.full) {
@@ -346,6 +354,7 @@ async function contextLines(ctx: Context, options: InspectionOptions): Promise<s
             `${new Date(row.timestamp).toISOString()} ${row.adapter || "实例后台"}/${row.bot || "无机器人"}/${row.target || "无目标"} [${row.provider}][${row.model}] ${row.purpose || "请求"}`,
             `输入文本 ${row.inputTokens === undefined ? "未知" : `≈${(row.inputTokens / 1000).toFixed(2)}K`}`,
         );
+        if (row.traceId) lines.push(`Trace ID：${row.traceId}`);
         const capacity = ctx[Services.Model]?.peekContextLimit(row.provider, row.model);
         if (capacity)
             lines.push(
@@ -370,10 +379,11 @@ export function registerHistoryInspection(ctx: Context, historyCmd: any): void {
         for (const name of dimensions) command.option(name, `--${name} <value:string> 筛选${name}（可重复）`);
         command.option("page", "--page <page:posint> 页码").option("full", "--full 按类别展开");
         if (kind === "tokens") command.option("reset", "--reset 重置整个实例统计").option("restart", "--restart 重置整个实例统计");
-        else command.option("details", "--details 展示完整存储内容和请求快照");
+        else command.option("details", "--details 展示完整存储内容和请求快照").option("trace", "--trace <id:string> 精确筛选决策/回复轮 ID");
         command.action(async (argv: any) => {
             try {
                 const options = parseInspectionOptions(argv.source || argv.session?.argv?.source || "", argv.options || {});
+                if (kind !== "context" && options.traceId !== undefined) return "仅 history.context 支持 --trace；用量聚合不按 trace 拆分。";
                 const ledger = getUsageLedger(ctx);
                 if (options.reset) {
                     if (kind !== "tokens") return "仅 history.tokens 支持重置。";
@@ -386,10 +396,10 @@ export function registerHistoryInspection(ctx: Context, historyCmd: any): void {
                 const filter = JSON.stringify({ ...options, page: undefined });
                 const key = JSON.stringify([kind, argv.session.platform, argv.session.userId, filter]);
                 const fullScope =
-                    dimensions
-                        .filter((name) => options[name].length)
-                        .map((name) => `${name}=${options[name].join(" | ")}`)
-                        .join("；") || "整个插件实例";
+                    [
+                        ...dimensions.filter((name) => options[name].length).map((name) => `${name}=${options[name].join(" | ")}`),
+                        ...(options.traceId === undefined ? [] : [`trace=${options.traceId}`]),
+                    ].join("；") || "整个插件实例";
                 let lines = options.page > 1 ? cache.get(key, snapshot.period) : undefined;
                 if (options.page > 1 && !lines) return "查询快照已过期或不存在，请以相同条件重新查询第 1 页。";
                 if (!lines) {

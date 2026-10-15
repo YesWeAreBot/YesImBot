@@ -24,6 +24,7 @@ export interface WillingnessCalculation {
 export interface DecisionRecord {
     version: 1;
     id: string;
+    messageId?: string;
     key: string;
     time: number;
     startedAt: number;
@@ -60,7 +61,7 @@ export class DecisionRecords {
         private readonly recorded?: (record: DecisionRecord) => void,
     ) {}
 
-    public begin(target: ReplyTarget, stimulusType: string): string {
+    public begin(target: ReplyTarget, stimulusType: string, messageId?: string): string {
         const time = this.now();
         const id = `${this.instanceId}-${time}-${++this.sequence}`;
         const key = replyKey(target);
@@ -73,6 +74,7 @@ export class DecisionRecords {
             target: { ...target },
             stimulusType,
             stage: "received",
+            ...(typeof messageId === "string" && messageId.length > 0 && messageId.length <= 512 && !/\p{Cc}/u.test(messageId) ? { messageId } : {}),
         };
         this.records.set(id, record);
         this.latestIds.set(key, id);
@@ -86,7 +88,7 @@ export class DecisionRecords {
         return id;
     }
 
-    public update(id: string | undefined, update: Partial<Omit<DecisionRecord, "id" | "key" | "version" | "target" | "startedAt">>): void {
+    public update(id: string | undefined, update: Partial<Omit<DecisionRecord, "id" | "key" | "version" | "target" | "startedAt" | "messageId">>): void {
         const record = this.records.get(id!);
         if (!record || record.stage === "cancelled") return;
         const defined = Object.fromEntries(Object.entries(update).filter(([, value]) => value !== undefined));
@@ -165,6 +167,7 @@ export function formatDecision(record: DecisionRecord | undefined, state: Decisi
         `最近决策：${record.id}（${new Date(record.startedAt).toISOString()}）`,
         `状态：${stages[record.stage] || record.stage}${record.reason ? `；原因：${reasons[record.reason] || record.reason}` : ""}`,
     );
+    if (record.messageId) lines.push(`来源消息：${record.messageId}`);
     const c = record.calculation;
     if (c) {
         if (c.gains) lines.push(`增益来源：文本 ${c.gains.text}；@ ${c.gains.at}；引用 ${c.gains.quote}；私聊 ${c.gains.direct}`);

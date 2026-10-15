@@ -22,6 +22,8 @@ export interface UsageScope {
     target?: string;
     /** Snapshot-only diagnostics; excluded from persistent aggregates. */
     contextBudget?: unknown;
+    /** Existing decision/turn id; retained only in bounded context snapshots. */
+    traceId?: string;
 }
 export interface UsageMetadata extends UsageScope {
     provider: string;
@@ -215,7 +217,7 @@ export class UsageLedger {
             purpose = ticket.purpose ?? "未分类";
         let record = this.records.find((record) => usageRecordKey(record) === usageRecordKey({ ...ticket, purpose, status }));
         if (!record) {
-            const { contextBudget: _contextBudget, ...recordTicket } = ticket;
+            const { contextBudget: _contextBudget, traceId: _traceId, ...recordTicket } = ticket;
             record = {
                 ...recordTicket,
                 purpose,

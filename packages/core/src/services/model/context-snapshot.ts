@@ -15,6 +15,7 @@ export interface ContextSnapshot {
     content?: string;
     unavailable?: string;
     contextBudget?: unknown;
+    traceId?: string;
 }
 
 const stores = new WeakMap<object, Map<string, ContextSnapshot>>();
@@ -28,15 +29,28 @@ function owner(ctx: Context): object {
 
 export function captureContextSnapshot(
     ctx: Context,
-    metadata: { platform?: string; botId?: string; target?: string; provider: string; model: string; purpose?: string; contextBudget?: unknown },
+    metadata: {
+        platform?: string;
+        botId?: string;
+        target?: string;
+        provider: string;
+        model: string;
+        purpose?: string;
+        contextBudget?: unknown;
+        traceId?: string;
+    },
     payload: unknown,
     period: string,
     unavailable?: string,
 ): void {
+    const traceId =
+        typeof metadata.traceId === "string" && metadata.traceId.length > 0 && metadata.traceId.length <= 512 && !/\p{Cc}/u.test(metadata.traceId)
+            ? metadata.traceId
+            : undefined;
     const identity = owner(ctx);
     let store = stores.get(identity);
     if (!store) stores.set(identity, (store = new Map()));
-    const key = JSON.stringify([metadata.platform, metadata.botId, metadata.target, metadata.provider, metadata.model, metadata.purpose]);
+    const key = JSON.stringify([metadata.platform, metadata.botId, metadata.target, metadata.provider, metadata.model, metadata.purpose, traceId]);
     const snapshot: ContextSnapshot = {
         timestamp: Date.now(),
         period,
@@ -47,6 +61,7 @@ export function captureContextSnapshot(
         model: metadata.model,
         purpose: metadata.purpose,
         contextBudget: metadata.contextBudget,
+        traceId,
     };
     if (unavailable) snapshot.unavailable = unavailable;
     else
@@ -86,8 +101,10 @@ export function captureContextSnapshot(
     }
 }
 
-export function getContextSnapshots(ctx: Context): ContextSnapshot[] {
-    return [...(stores.get(owner(ctx))?.values() ?? [])].map((snapshot) => ({ ...snapshot }));
+export function getContextSnapshots(ctx: Context, traceId?: string): ContextSnapshot[] {
+    return [...(stores.get(owner(ctx))?.values() ?? [])]
+        .filter((snapshot) => traceId === undefined || snapshot.traceId === traceId)
+        .map((snapshot) => ({ ...snapshot }));
 }
 
 export function clearContextSnapshots(ctx: Context): void {

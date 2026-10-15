@@ -240,6 +240,7 @@ async function replay(options) {
             stimulusType: stimuli.has(record.stimulusType) ? record.stimulusType : "unknown",
             stage: stages.has(record.stage) ? record.stage : "unknown",
         };
+        if (identifier(record.messageId)) event.messageId = record.messageId;
         if (event.stimulusType === "unknown" || event.stage === "unknown") summary.unknownMetadata++;
         if (reasons.has(record.reason)) event.reason = record.reason;
         if (typeof record.decision === "boolean") event.recordedDecision = record.decision;

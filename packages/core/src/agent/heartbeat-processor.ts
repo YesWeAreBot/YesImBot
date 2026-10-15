@@ -9,6 +9,7 @@ import { Properties, ToolSchema, ToolService } from "../services/extension";
 import { toolJSONSchema } from "../services/extension/json-schema";
 import { ChatModelSwitcher } from "../services/model";
 import type { ValidationOptions } from "../services/model/chat-model";
+import { withUsageScope } from "../services/model/usage";
 import { PromptService } from "../services/prompt";
 import { AgentResponse, AgentStimulus } from "../services/worldstate";
 import { InteractionManager } from "../services/worldstate/interaction-manager";
@@ -43,7 +44,16 @@ export class HeartbeatProcessor {
      * @returns 返回 true 如果至少有一次 send_message 成功
      */
     public async runCycle(stimulus: AgentStimulus<any>): Promise<boolean> {
-        const turnId = uuidv4();
+        const decisionId = (stimulus as AgentStimulus<any> & { decisionId?: string }).decisionId;
+        const turnId =
+            typeof decisionId === "string" && decisionId.length > 0 && decisionId.length <= 512 && !/\p{Cc}/u.test(decisionId) ? decisionId : uuidv4();
+        return withUsageScope(
+            { traceId: turnId, platform: stimulus.session.platform, botId: stimulus.session.selfId, target: stimulus.session.channelId },
+            () => this.runTracedCycle(turnId, stimulus),
+        );
+    }
+
+    private async runTracedCycle(turnId: string, stimulus: AgentStimulus<any>): Promise<boolean> {
         let shouldContinueHeartbeat = true;
         let heartbeatCount = 0;
         let success = false;

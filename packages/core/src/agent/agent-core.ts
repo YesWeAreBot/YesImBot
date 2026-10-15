@@ -91,12 +91,12 @@ export class AgentCore extends Service<Config> {
             : diagnostic;
     }
 
-    public async queryDecisionRecords(session: Session, filter: { limit: number; from?: number; to?: number }): Promise<string> {
+    public async queryDecisionRecords(session: Session, filter: { limit: number; from?: number; to?: number; traceId?: string }): Promise<string> {
         if (!this.decisionJournal) return "尚未启用本地决策记录，请先开启配置中的“决策记录与回放”。";
         const records = await this.decisionJournal.list({ ...filter, key: replyKey(this.replyTarget(session)) });
         const lines = records.map(
             (record) =>
-                `${new Date(record.time).toISOString()} ${record.id}\n${describeDecisionStage(record.stage)}${record.probability === undefined ? "" : `；概率 ${(record.probability * 100).toFixed(1)}%`}${record.roll === undefined ? "" : `；随机数 ${record.roll}`}`,
+                `${new Date(record.time).toISOString()} ${record.id}${record.messageId ? `；来源消息 ${record.messageId}` : ""}\n${describeDecisionStage(record.stage)}${record.probability === undefined ? "" : `；概率 ${(record.probability * 100).toFixed(1)}%`}${record.roll === undefined ? "" : `；随机数 ${record.roll}`}`,
         );
         const diagnostics = this.decisionJournal.diagnostics;
         if (diagnostics.droppedRecords) lines.push(`本次运行已裁剪或丢弃 ${diagnostics.droppedRecords} 条快照，历史可能不完整。`);
@@ -121,7 +121,7 @@ export class AgentCore extends Service<Config> {
         if (this.stopped) return;
         const { session, type } = stimulus;
         const channelCid = replyKey(this.replyTarget(session));
-        stimulus = { ...stimulus, channelCid, decisionId: this.decisions?.begin(this.replyTarget(session), type) };
+        stimulus = { ...stimulus, channelCid, decisionId: this.decisions?.begin(this.replyTarget(session), type, session.messageId) };
         if (!this.allowedCategories(stimulus).length) {
             this.recordDecision(stimulus, { stage: "blocked", reason: "reply_suppressed", allowed: [] });
             return;
