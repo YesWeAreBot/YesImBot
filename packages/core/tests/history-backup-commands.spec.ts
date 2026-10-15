@@ -4,8 +4,8 @@ import path from "node:path";
 
 import { expect, it, onTestFinished, vi } from "vitest";
 
-import { HistoryBackupManager } from "../src/services/worldstate/history-backup";
-import { registerHistoryBackup } from "../src/services/worldstate/history-backup-commands";
+import { HistoryBackupManager } from "../src/world/history-backup";
+import { registerHistoryBackup } from "../src/world/history-backup-commands";
 
 async function fixture(allowed = true) {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "yib-backup-command-"));

@@ -8,11 +8,18 @@ const fs = require("node:fs/promises");
 const os = require("node:os");
 const repoRequire = require;
 const { Context, Service } = repoRequire("koishi");
-const plugin = repoRequire(process.env.YESIMBOT_SMOKE_ROOT ? "koishi-plugin-yesimbot" : "./packages/core/lib/index.js");
-const services = repoRequire(process.env.YESIMBOT_SMOKE_ROOT ? "koishi-plugin-yesimbot/services" : "./packages/core/lib/services/index.js");
-const shared = repoRequire(process.env.YESIMBOT_SMOKE_ROOT ? "koishi-plugin-yesimbot/shared" : "./packages/core/lib/shared/index.js");
-assert.strictEqual(plugin.withUsageScope, services.withUsageScope, "Public roots must share model usage scopes");
-assert.strictEqual(plugin.withReplyTurn, shared.withReplyTurn, "Public roots must share reply scopes");
+const plugin = repoRequire("koishi-plugin-yesimbot");
+const packageFile = repoRequire.resolve("koishi-plugin-yesimbot/package.json");
+const manifest = repoRequire(packageFile);
+// Resolve the import branch from the same installed package as createRequire,
+// including when this script is run against packed artifacts outside the repo.
+const importEntry = path.resolve(path.dirname(packageFile), manifest.exports["."].import);
+const imported = await import(pathToFileURL(importEntry).href);
+assert.strictEqual(plugin.default, imported.default, "ESM and CJS roots must share the plugin constructor");
+assert.equal(typeof plugin.withUsageScope, "function", "Root must export model usage scopes");
+assert.equal(typeof plugin.withReplyTurn, "function", "Root must export reply scopes");
+assert.strictEqual(plugin.withUsageScope, imported.withUsageScope, "ESM and CJS roots must share model usage scopes");
+assert.strictEqual(plugin.withReplyTurn, imported.withReplyTurn, "ESM and CJS roots must share reply scopes");
 const memory = repoRequire("@koishijs/plugin-database-memory");
 const errors = [];
 class Console extends Service {
@@ -73,23 +80,17 @@ class Server extends Service {
         ctx.plugin(plugin.default, config);
         await ctx.start();
         const deadline = Date.now() + 12500;
-        const names = [
-            "yesimbot.logger",
-            "yesimbot.asset",
-            "yesimbot.prompt",
-            "yesimbot.tool",
-            "yesimbot.model",
-            "yesimbot.memory",
-            "yesimbot.world-state",
-            "yesimbot.agent",
-        ];
-        while (!names.every((name) => ctx[name] && ctx[name].ctx.scope.isActive) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
-        for (const name of names) assert.ok(ctx[name]?.ctx.scope.isActive, name + " failed to become active");
+        while (!ctx.yesimbot && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
+        assert.ok(ctx.yesimbot?.ctx.scope.isActive, "yesimbot failed to become active");
+        await Promise.race([ctx.yesimbot.ready, new Promise((_, reject) => setTimeout(() => reject(new Error("yesimbot startup timed out")), 12500).unref())]);
+        for (const name of ["logging", "asset", "prompt", "tool", "model", "memory", "world", "agent"]) {
+            assert.ok(ctx.yesimbot[name], `yesimbot.${name} was not constructed`);
+        }
         await new Promise((r) => setTimeout(r, 1250));
         assert.deepEqual(errors, []);
         console.log("Built core booted with actual Koishi and in-memory database");
-        const agent = ctx["yesimbot.agent"];
-        const tools = ctx["yesimbot.tool"];
+        const agent = ctx.yesimbot.agent;
+        const tools = ctx.yesimbot.tool;
         let ready, release;
         const entered = new Promise((r) => (ready = r)),
             blocked = new Promise((r) => (release = r));
@@ -119,7 +120,7 @@ class Server extends Service {
         const cancelled = await Promise.race([outcome, new Promise((r) => setTimeout(() => r("blocked"), 50))]);
         release();
         await outcome;
-        assert.equal(cancelled, "cancelled", "Built root and services must share the active cancellation context");
+        assert.equal(cancelled, "cancelled", "Built root exports must share the active cancellation context");
         console.log("Built entry-point cancellation boundary verified");
     } finally {
         await ctx.stop();

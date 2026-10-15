@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 
 import { StimulusScheduler } from "../src/agent/scheduler";
-import { Services } from "../src/shared/constants";
+import { loggingStub } from "./helpers/yesimbot";
 
 afterEach(() => vi.useRealTimers());
 
@@ -14,7 +14,6 @@ function setup(prioritizeMentions = true, strategy = "immediate") {
         release = resolve;
     });
     const ctx = {
-        [Services.Logger]: { getLogger: () => ({ debug() {}, warn() {} }) },
         debounce(fn: (value: any) => Promise<void>, ms: number) {
             let timer: ReturnType<typeof setTimeout>;
             const task = (value: any) => {
@@ -32,6 +31,7 @@ function setup(prioritizeMentions = true, strategy = "immediate") {
             calls.push(stimulus.id);
             if (stimulus.id === "active") await active;
         },
+        loggingStub(),
         (stimulus: any, stage, reason) => events.push(`${stimulus.id}:${stage}:${reason ?? ""}`),
     );
     return { scheduler, calls, events, release };

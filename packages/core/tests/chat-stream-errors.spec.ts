@@ -1,10 +1,10 @@
 import { expect, it } from "vitest";
 
-import { ChatModel } from "../src/services/model/chat-model";
-import { ModelAbility } from "../src/services/model/config";
-import { ChatModelSwitcher } from "../src/services/model/service";
-import { Services } from "../src/shared/constants";
+import { ChatModel } from "../src/model/chat-model";
+import { ModelAbility } from "../src/model/config";
+import { ChatModelSwitcher } from "../src/model/service";
 import { AppError, ErrorDefinitions } from "../src/shared/errors";
+import { loggingStub, stubCtx } from "./helpers/yesimbot";
 
 const usage = { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 };
 const frame = (delta: any, finish_reason: string | null = null) => `data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason }] })}\n\n`;
@@ -27,13 +27,14 @@ function fixture(response: () => Response | Promise<Response>) {
     logger.extend = () => logger;
     let requests = 0;
     const model = new ChatModel(
-        { [Services.Logger]: { getLogger: () => logger } } as any,
+        stubCtx({ logging: { getLogger: () => logger } }),
         () => ({ baseURL: "https://stream-test.invalid/v1/", apiKey: "test-secret", model: "test" }),
         { modelId: "test", providerName: "test-provider", abilities: [ModelAbility.Chat], parameters: { stream: true, custom: [] } },
         (async () => {
             requests++;
             return response();
         }) as typeof fetch,
+        loggingStub(logger),
     );
     return { model, logs, debugLogs, requests: () => requests };
 }
@@ -433,9 +434,10 @@ it("routes an abnormal EOF through the existing fallback model", async () => {
         error() {},
     };
     const switcher = new ChatModelSwitcher(
-        { [Services.Logger]: { getLogger: () => logger } } as any,
+        stubCtx({ logging: { getLogger: () => logger } }),
         { name: "test", models: ["primary", "fallback"].map((modelId) => ({ providerName: "test", modelId })) },
         (_, id) => (id === "primary" ? primary.model : fallback.model),
+        loggingStub(logger),
     );
     expect((await switcher.chat({ messages: [] })).text).toBe("fallback");
     expect(primary.requests()).toBe(1);

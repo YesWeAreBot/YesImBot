@@ -1,17 +1,19 @@
 import { expect, it } from "vitest";
 
 import { WillingnessManager } from "../src/agent/willing";
-import { Services } from "../src/shared/constants";
+import { loggingStub, stubCtx } from "./helpers/yesimbot";
 
 it("records the exact calculation and single random draw used for replying", () => {
+    const logger = { debug() {} };
     const manager = new WillingnessManager(
-        { on() {}, [Services.Logger]: { getLogger: () => ({ debug() {} }) } } as any,
+        stubCtx({ logging: { getLogger: () => logger } }, { on() {} }),
         {
             base: { text: 12 },
             attribute: { atMention: 100, isQuote: 15, isDirectMessage: 40 },
             interest: { keywords: ["hi"], keywordMultiplier: 1.2, defaultMultiplier: 1 },
             lifecycle: { maxWillingness: 100, probabilityThreshold: 10, probabilityAmplifier: 0.04, replyCost: 35 },
         } as any,
+        loggingStub(logger),
     );
     const session: any = {
         cid: "qq:g",

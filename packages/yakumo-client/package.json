@@ -7,6 +7,9 @@
   "exports": {
     ".": "./index.js"
   },
+  "devDependencies": {
+    "@koishijs/client": "^5.30.11"
+  },
   "peerDependencies": {
     "@koishijs/client": "^5.30.11"
   }

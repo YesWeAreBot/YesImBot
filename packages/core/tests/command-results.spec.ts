@@ -1,13 +1,13 @@
 import { Bot, Context, MessageEncoder } from "koishi";
 import { expect, it, vi } from "vitest";
 
-import { EventListenerManager } from "../src/services/worldstate/event-listener";
-import { Services } from "../src/shared/constants";
+import { EventListenerManager } from "../src/world/event-listener";
+import { stubYesImBot } from "./helpers/yesimbot";
 
 async function fixture() {
     const ctx = new Context();
     const events: any[] = [];
-    ctx[Services.Logger] = { getLogger: () => ({ debug() {}, info() {}, error() {} }) } as any;
+    Object.assign(ctx, { yesimbot: stubYesImBot({ logging: { getLogger: () => ({ debug() {}, info() {}, error() {} }) } }) });
     ctx.database = {
         get: async (_table: string, query: any) => events.filter((e) => e.id === query.id),
         set: async (_table: string, query: any, update: any) =>
@@ -23,7 +23,7 @@ async function fixture() {
         isChannelAllowed: () => true,
         observeChannel: async () => {},
     };
-    const manager: any = new EventListenerManager(ctx, service as any, {} as any);
+    const manager: any = new EventListenerManager(ctx, service as any, {} as any, ctx.yesimbot.logging, ctx.yesimbot.asset);
     // Exercise the actual command + encoder hooks, without database observation on Session.execute.
     let clean!: () => void;
     const interval = vi.spyOn(globalThis, "setInterval").mockImplementation((callback: any) => {

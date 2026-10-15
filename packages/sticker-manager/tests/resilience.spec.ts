@@ -2,9 +2,9 @@ import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { Services } from "koishi-plugin-yesimbot/shared";
 import { afterEach, expect, it, vi } from "vitest";
 
+import { stubYesImBot } from "../../core/tests/helpers/yesimbot";
 import { StickerService } from "../src/service";
 
 const dirs: string[] = [];
@@ -25,10 +25,12 @@ async function fixture(chat: (options: any) => Promise<any>) {
         logger: { info() {}, error() {}, debug() {}, warn() {} },
         model: { extend() {} },
         database: { select: () => ({ execute: async () => records }), create: async (_table: string, record: any) => records.push(record) },
-        [Services.Asset]: {
-            read: async (_id: string, options: any) => (options.format === "buffer" ? Buffer.from("image") : "data:image/jpeg;base64,aW1hZ2U="),
-        },
-        [Services.Model]: { getChatModel: () => ({ isVisionModel: () => vision, chat }) },
+        yesimbot: stubYesImBot({
+            asset: {
+                read: async (_id: string, options: any) => (options.format === "buffer" ? Buffer.from("image") : "data:image/jpeg;base64,aW1hZ2U="),
+            },
+            model: { getChatModel: () => ({ isVisionModel: () => vision, chat }) },
+        }),
     };
     const service = new StickerService(ctx, { storagePath, classifiModel: { providerName: "test", modelId: "test" }, classificationPrompt: "{{categories}}" });
     await service.whenReady();

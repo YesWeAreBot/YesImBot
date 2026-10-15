@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 
-import { Bot, Context } from "koishi";
+import { Bot, Context, Service } from "koishi";
 import { expect, it, vi } from "vitest";
 
 import { AgentCore } from "../src/agent/agent-core";
@@ -9,17 +9,16 @@ import { DecisionRecords } from "../src/agent/decision-record";
 import { ReplyControl } from "../src/agent/reply-control";
 import { WillingnessManager } from "../src/agent/willing";
 import { Config } from "../src/config";
-import { EventListenerManager } from "../src/services/worldstate/event-listener";
-import { WorldStateService } from "../src/services/worldstate/service";
-import { Services } from "../src/shared/constants";
+import { EventListenerManager } from "../src/world/event-listener";
+import { WorldStateService } from "../src/world/service";
+import { stubYesImBot } from "./helpers/yesimbot";
 
 const logger = { debug() {}, info() {}, warn() {}, error() {} };
 async function fixture() {
     const ctx = new Context();
     const command: any = new Proxy({}, { get: () => () => command });
     Object.defineProperty(ctx, "command", { value: () => command });
-    ctx[Services.Logger] = { getLogger: () => logger } as any;
-    ctx[Services.Asset] = { transform: async (content: string) => content } as any;
+    ctx.set("yesimbot", stubYesImBot({ logging: { getLogger: () => logger }, asset: { transform: async (content: string) => content } }));
     const bot = Object.create(Bot.prototype);
     Object.assign(bot, { ctx, platform: "onebot", user: { id: "bot", name: "bot" } });
     const session = bot.session({
@@ -52,7 +51,7 @@ async function fixture() {
             activeTurns: new Map(),
             activeDecisionIds: new Map(),
             topicScores: new Map(),
-            willing: new WillingnessManager(scope, config),
+            willing: new WillingnessManager(scope, config, ctx.yesimbot.logging),
             scheduler: { noteUserMessage() {}, isBusy: () => false, schedule: (s: any) => scheduled.push(s), dispose() {}, cancel() {} },
             promptService: { registerTemplate() {}, registerSnippet() {} },
             replyControl: new ReplyControl(
@@ -66,7 +65,7 @@ async function fixture() {
         return { core, world, scheduled };
     }
     async function emitUser(world: any) {
-        const manager: any = new EventListenerManager(ctx, world, {} as any);
+        const manager: any = new EventListenerManager(ctx, world, {} as any, ctx.yesimbot.logging, ctx.yesimbot.asset);
         const initial = new Set(ctx.$processor._hooks);
         manager.start();
         try {
@@ -166,7 +165,7 @@ it("system wakeups after a bot unmute also stay with their source instance", asy
         f.session.event.subtype = "ban";
         f.session.event.user = { id: "bot" };
         f.session.event._data = { user_id: "bot", duration: 0, sub_type: "lift_ban" };
-        const manager: any = new EventListenerManager(f.ctx, a.world, {} as any);
+        const manager: any = new EventListenerManager(f.ctx, a.world, {} as any, f.ctx.yesimbot.logging, f.ctx.yesimbot.asset);
         await manager.handleGuildMember(f.session);
         expect(a.scheduled).toHaveLength(1);
         expect(b.scheduled).toHaveLength(0);
@@ -213,14 +212,24 @@ it("actual WorldState owners retain identity across service proxies and change o
     f.ctx.baseDir = tmpdir();
     try {
         const config = Config({ l2_memory: { enabled: false }, l3_memory: { enabled: false } });
-        const original = new WorldStateService(f.ctx, config);
-        f.ctx[Services.WorldState] = original;
-        const first = f.ctx[Services.WorldState];
-        const other = f.ctx.channel("allowed")[Services.WorldState];
-        expect(first).not.toBe(other);
+        const original = new WorldStateService(f.ctx, config, f.ctx.yesimbot);
+        const members = f.ctx.yesimbot;
+        class Owner extends Service {
+            world = original;
+            constructor(ctx: Context) {
+                super(ctx, "yesimbot", true);
+                Object.assign(this, members, { world: original });
+            }
+        }
+        f.ctx.set("yesimbot", undefined);
+        f.ctx.set("yesimbot", new Owner(f.ctx));
+        const first = f.ctx.yesimbot.world;
+        const other = f.ctx.channel("allowed").yesimbot.world;
+        // The plain world class is retained by its owning YesImBot service.
+        expect(first).toBe(other);
         expect(first.stimulusOwnerId).toBe(original.stimulusOwnerId);
         expect(other.stimulusOwnerId).toBe(original.stimulusOwnerId);
-        const replacement = new WorldStateService(f.ctx, config);
+        const replacement = new WorldStateService(f.ctx, config, f.ctx.yesimbot);
         expect(replacement.stimulusOwnerId).not.toBe(original.stimulusOwnerId);
     } finally {
         await f.stop();

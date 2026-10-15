@@ -3,12 +3,14 @@ import { Context, Schema, h, type Session } from "koishi";
 import { DirectoryStore, registerModels, type OneBotClient, type Query } from "./store";
 
 export const name = "yesimbot-onebot-directory";
-// Match YesImBot’s public tool service; the plugin can compile independently.
-const TOOL_SERVICE = "yesimbot.tool" as const;
-export const inject = ["database", TOOL_SERVICE];
+// Match YesImBot’s public service; the plugin can compile independently.
+const YESIMBOT = "yesimbot" as const;
+export const inject = ["database", YESIMBOT];
 type ToolRegistry = { registerTool(tool: unknown): void | (() => void); unregisterTool(name: string): void };
 function tools(ctx: Context): ToolRegistry {
-    return (ctx as unknown as Record<string, ToolRegistry>)[TOOL_SERVICE];
+    // Standalone package: Koishi does not know YesImBot's context augmentation here.
+    const yesimbotContext = ctx as unknown as { yesimbot: { tool: ToolRegistry } };
+    return yesimbotContext.yesimbot.tool;
 }
 const Success = (result: unknown) => ({ status: "success" as const, result });
 const Failed = (message: string) => ({ status: "error" as const, error: { name: "ToolError", message } });

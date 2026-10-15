@@ -12,10 +12,9 @@ export default defineConfig({
     resolve: {
         alias: {
             koishi: koishiCore,
-            // code-executor tests import the workspace core without a build step;
-            // resolve the subpath exports to their TypeScript sources.
-            "koishi-plugin-yesimbot/services": fileURLToPath(new URL("./packages/core/src/services/index.ts", import.meta.url)),
-            "koishi-plugin-yesimbot/shared": fileURLToPath(new URL("./packages/core/src/shared/index.ts", import.meta.url)),
+            // Other packages import the workspace core without a build step;
+            // resolve the package (and its subpaths) to the TypeScript sources.
+            "koishi-plugin-yesimbot": fileURLToPath(new URL("./packages/core/src", import.meta.url)),
         },
     },
     test: {

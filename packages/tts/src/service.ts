@@ -1,5 +1,5 @@
 import { Context, Schema, h } from "koishi";
-import { Failed, Infer, Success, ToolDefinition } from "koishi-plugin-yesimbot/services";
+import { Failed, Infer, Success, ToolDefinition } from "koishi-plugin-yesimbot";
 
 import { TTSAdapter } from "./adapters/base";
 import { CosyVoiceAdapter, CosyVoiceConfig } from "./adapters/cosyvoice";

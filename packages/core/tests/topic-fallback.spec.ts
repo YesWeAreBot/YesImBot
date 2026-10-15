@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 
 import { TopicManager } from "../src/agent/topics";
-import { Services } from "../src/shared/constants";
+import { loggingStub, stubCtx } from "./helpers/yesimbot";
 
 afterEach(() => vi.useRealTimers());
 
@@ -12,9 +12,8 @@ function fixture() {
     vi.useFakeTimers();
     const requests: Array<{ resolve(value: any): void; signal: AbortSignal }> = [];
     const reset: string[] = [];
-    const ctx = {
-        [Services.Logger]: { getLogger: () => ({ debug() {} }) },
-        [Services.Model]: {
+    const ctx = stubCtx({
+        model: {
             getChatModel: () => ({
                 chat: (options: any) =>
                     new Promise((resolve) => {
@@ -22,7 +21,7 @@ function fixture() {
                     }),
             }),
         },
-    };
+    });
     const manager = new TopicManager(
         ctx as any,
         {
@@ -36,6 +35,7 @@ function fixture() {
             idleTimeoutSeconds: 1,
             influence: 0.5,
         },
+        { logging: loggingStub(), model: ctx.yesimbot.model },
         undefined,
         (key) => reset.push(key),
     );

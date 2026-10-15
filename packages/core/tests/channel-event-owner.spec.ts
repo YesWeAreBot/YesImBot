@@ -1,8 +1,8 @@
 import { executeQuery } from "minato";
 import { expect, it } from "vitest";
 
-import { InteractionManager } from "../src/services/worldstate/interaction-manager";
 import { TableName } from "../src/shared/constants";
+import { InteractionManager } from "../src/world/interaction-manager";
 
 it("keeps bot-targeted channel events within both bot and channel", async () => {
     const rows = [

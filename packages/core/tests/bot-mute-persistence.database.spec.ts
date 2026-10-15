@@ -4,7 +4,7 @@ import memory from "@koishijs/plugin-database-memory";
 import { Context } from "koishi";
 import { test } from "vitest";
 
-import { WorldStateService } from "../src/services/worldstate/service";
+import { WorldStateService } from "../src/world/service";
 const logger = { debug() {}, info() {}, warn() {}, error() {} };
 const event = (id, type, timestamp, user = "a", selfId = "a") => ({
     id,

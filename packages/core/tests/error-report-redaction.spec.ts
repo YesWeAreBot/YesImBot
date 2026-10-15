@@ -4,7 +4,7 @@ import path from "path";
 
 import { afterEach, expect, it } from "vitest";
 
-import { LocalLogWriter, sanitizeLog } from "../src/services/logger/local-writer";
+import { LocalLogWriter, sanitizeLog } from "../src/logger/local-writer";
 import { AppError, ErrorDefinitions, ErrorReporter, initializeErrorReporter, handleError } from "../src/shared/errors";
 
 const originalFetch = globalThis.fetch;

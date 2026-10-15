@@ -5,7 +5,7 @@ import path from "node:path";
 
 import { test } from "vitest";
 
-import { LocalLogWriter } from "../src/services/logger/local-writer";
+import { LocalLogWriter } from "../src/logger/local-writer";
 import * as sanitizer from "../src/shared/diagnostic-sanitizer";
 
 function nested() {

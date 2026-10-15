@@ -1,39 +1,45 @@
 # @yesimbot/koishi-plugin-tts
 
-## 0.2.2
+All notable changes to this package will be documented in this file.
 
-### Patch Changes
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-- 更新 IndexTTS2 配置，增加情感控制参数
+## [Unreleased]
 
-## 0.2.1
+### Added
 
-### Patch Changes
+- multilingual configuration and localization for synthesized output.
 
-- 018350c: fix(core): 修复上下文处理中的异常捕获
-    - 过滤空行以优化日志读取
-    - 增加日志长度限制和定期清理历史数据功能
+### Changed
 
-    fix(core): 响应频道支持直接填写用户 ID
-    - closed [#152](https://github.com/YesWeAreBot/YesImBot/issues/152)
+- injects the consolidated `yesimbot` core service and reads `ctx.yesimbot`; the old per-service registrations are gone, so this version pairs with the matching `koishi-plugin-yesimbot` release.
 
-    refactor(tts): 优化 TTS 适配器的停止逻辑和临时目录管理
+### Fixed
 
-    refactor(daily-planner): 移除不必要的依赖和清理代码结构
+- synthesis is serialized and in-flight tasks settle when the plugin unloads. (#229)
 
-- 018350c: refactor(logger): 更新日志记录方式，移除对 Logger 服务的直接依赖
-- Updated dependencies [018350c]
-- Updated dependencies [018350c]
-    - koishi-plugin-yesimbot@3.0.2
+## [0.2.2] - 2025-09-16
 
-## 0.2.0
+### Changed
 
-### Minor Changes
+- IndexTTS2 configuration gains emotion control parameters.
 
-- 拆分本地 open audio 适配器，支持官方 fish audio
+## [0.2.1] - 2025-09-15
 
-## 0.1.0
+### Changed
 
-### Minor Changes
+- the adapter's stop logic and temporary directory handling were reworked.
+- logging no longer depends on a standalone Logger service.
 
-- 支持 fish audio, 初步实现 index-tts2 适配器
+## [0.2.0] - 2025-09-14
+
+### Changed
+
+- the local open-audio adapter was split out, and official Fish Audio support was added.
+
+## [0.1.0] - 2025-09-13
+
+### Added
+
+- Fish Audio support and an initial IndexTTS2 adapter.

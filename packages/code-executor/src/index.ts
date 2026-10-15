@@ -1,6 +1,5 @@
 import { Context, Logger } from "koishi";
-import { Extension, ToolService } from "koishi-plugin-yesimbot/services";
-import { Services } from "koishi-plugin-yesimbot/shared";
+import { Extension, ToolService } from "koishi-plugin-yesimbot";
 
 import { Config } from "./config";
 import { CodeExecutor } from "./executors/base";
@@ -14,7 +13,7 @@ import { PythonExecutor } from "./executors/python";
     version: "2.0.0",
 })
 export default class MultiEngineCodeExecutor {
-    static readonly inject = [Services.Tool, Services.Asset, Services.Logger];
+    static readonly inject = ["yesimbot"];
     static readonly Config = Config;
     private readonly logger: Logger;
     private executors: CodeExecutor[] = [];
@@ -27,7 +26,7 @@ export default class MultiEngineCodeExecutor {
         public config: Schemastery.TypeS<typeof Config>,
     ) {
         this.logger = ctx.logger("code-executor");
-        this.toolService = ctx[Services.Tool];
+        this.toolService = ctx.yesimbot.tool;
 
         this.ctx.on("ready", () => {
             this.initializeEngines();

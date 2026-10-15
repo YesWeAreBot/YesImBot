@@ -1,8 +1,8 @@
 import { expect, it } from "vitest";
 
-import { SemanticMemoryManager } from "../src/services/worldstate/l2-semantic-memory";
-import type { MemoryChunkData, MessageData } from "../src/services/worldstate/types";
-import { Services } from "../src/shared/constants";
+import { SemanticMemoryManager } from "../src/world/l2-semantic-memory";
+import type { MemoryChunkData, MessageData } from "../src/world/types";
+import { stubCtx } from "./helpers/yesimbot";
 
 const defaultEmbed = async (_text: string) => ({ embedding: [1, 0] });
 const noop = async () => {};
@@ -38,34 +38,43 @@ function fixture(chunks: MemoryChunkData[] = [], options: Record<string, unknown
     let beforeGet = noop;
     let beforeSet = noop;
     const log = { info() {}, debug() {}, warn() {}, error() {} };
-    const ctx: any = {
-        [Services.Logger]: { getLogger: () => log },
-        [Services.Model]: { useEmbeddingGroup: () => ({ getModels: () => [{ embed: (text: string) => embed(text) }] }) },
-        database: {
-            get: async (_table: string, query: any) => {
-                const result = chunks.filter(
-                    (row) =>
-                        (!query.platform || typeof query.platform !== "string" || row.platform === query.platform) &&
-                        (!query.channelId || typeof query.channelId !== "string" || row.channelId === query.channelId) &&
-                        (!query.startTimestamp || row.startTimestamp >= query.startTimestamp.$gte) &&
-                        (!query.endTimestamp || row.endTimestamp <= query.endTimestamp.$lte),
-                );
-                await beforeGet();
-                return result;
-            },
-            create: async (_table: string, row: MemoryChunkData) => {
-                await create(row);
-                return row;
-            },
-            set: async (_table: string, query: any, value: any) => {
-                await beforeSet();
-                chunks.filter((row) => row.id === query.id).forEach((row) => Object.assign(row, value));
+    const ctx = stubCtx(
+        {
+            logging: { getLogger: () => log },
+            model: { useEmbeddingGroup: () => ({ getModels: () => [{ embed: (text: string) => embed(text) }] }) },
+        },
+        {
+            database: {
+                get: async (_table: string, query: any) => {
+                    const result = chunks.filter(
+                        (row) =>
+                            (!query.platform || typeof query.platform !== "string" || row.platform === query.platform) &&
+                            (!query.channelId || typeof query.channelId !== "string" || row.channelId === query.channelId) &&
+                            (!query.startTimestamp || row.startTimestamp >= query.startTimestamp.$gte) &&
+                            (!query.endTimestamp || row.endTimestamp <= query.endTimestamp.$lte),
+                    );
+                    await beforeGet();
+                    return result;
+                },
+                create: async (_table: string, row: MemoryChunkData) => {
+                    await create(row);
+                    return row;
+                },
+                set: async (_table: string, query: any, value: any) => {
+                    await beforeSet();
+                    chunks.filter((row) => row.id === query.id).forEach((row) => Object.assign(row, value));
+                },
             },
         },
-    };
-    const memory = new SemanticMemoryManager(ctx, {
-        l2_memory: { enabled: true, messagesPerChunk: 2, retrievalMinSimilarity: 0.5, includeNeighborChunks: true, ...options },
-    } as any);
+    );
+    const memory = new SemanticMemoryManager(
+        ctx,
+        {
+            l2_memory: { enabled: true, messagesPerChunk: 2, retrievalMinSimilarity: 0.5, includeNeighborChunks: true, ...options },
+        } as any,
+        ctx.yesimbot.logging,
+        ctx.yesimbot.model,
+    );
     memory.start();
     return {
         memory,

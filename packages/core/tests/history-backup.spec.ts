@@ -6,14 +6,15 @@ import memory from "@koishijs/plugin-database-memory";
 import { Context } from "koishi";
 import { expect, it, onTestFinished, vi } from "vitest";
 
-import { HISTORY_CHANNELS } from "../src/services/worldstate/channel-metadata";
-import { HistoryCommandManager } from "../src/services/worldstate/commands";
-import { HistoryBackupManager, BACKUP_MAX_BYTES, BACKUP_MAX_ROWS, backupDigest } from "../src/services/worldstate/history-backup";
-import { InteractionManager } from "../src/services/worldstate/interaction-manager";
-import { SemanticMemoryManager } from "../src/services/worldstate/l2-semantic-memory";
-import { WorldStateService } from "../src/services/worldstate/service";
-import { Services, TableName } from "../src/shared/constants";
+import { TableName } from "../src/shared/constants";
 import { getInstanceDirectory } from "../src/shared/instance-scope";
+import { HISTORY_CHANNELS } from "../src/world/channel-metadata";
+import { HistoryCommandManager } from "../src/world/commands";
+import { HistoryBackupManager, BACKUP_MAX_BYTES, BACKUP_MAX_ROWS, backupDigest } from "../src/world/history-backup";
+import { InteractionManager } from "../src/world/interaction-manager";
+import { SemanticMemoryManager } from "../src/world/l2-semantic-memory";
+import { WorldStateService } from "../src/world/service";
+import { stubCtx } from "./helpers/yesimbot";
 
 const target = { platform: "qq", channelId: "room", selfId: "bot" };
 const log = { info() {}, warn() {}, error() {}, debug() {} };
@@ -37,10 +38,10 @@ async function fixture() {
         await app.stop();
         await fs.rm(dir, { recursive: true, force: true });
     });
-    const ctx: any = { baseDir: dir, database: app.database, scope: { key: "core:one" }, [Services.Logger]: { getLogger: () => log } };
+    const ctx = stubCtx({ logging: { getLogger: () => log } }, { baseDir: dir, database: app.database, scope: { key: "core:one" } });
     const config: any = { l2_memory: { enabled: false } };
-    const l1_manager = new InteractionManager(ctx, config),
-        l2_manager = new SemanticMemoryManager(ctx, config);
+    const l1_manager = new InteractionManager(ctx, config, ctx.yesimbot.logging),
+        l2_manager = new SemanticMemoryManager(ctx, config, ctx.yesimbot.logging, ctx.yesimbot.model);
     const world: any = { l1_manager, l2_manager };
     return { app, ctx, world, manager: new HistoryBackupManager(ctx, world), dir };
 }
@@ -251,7 +252,7 @@ it("refuses a snapshot if a concurrent history clear changes its generation", as
     const exporting = manager.export(target);
     await entered.promise;
     let cleared = false;
-    const clearing = new SemanticMemoryManager(f.ctx, { l2_memory: {} } as any).clearHistory(target, async () => {
+    const clearing = new SemanticMemoryManager(f.ctx, { l2_memory: {} } as any, f.ctx.yesimbot.logging, f.ctx.yesimbot.model).clearHistory(target, async () => {
         cleared = true;
     });
     expect(cleared).toBe(false);
@@ -324,7 +325,7 @@ it("restoration waits for accepted writes and blocks a second-instance clear unt
     const restore = manager.restore(target, JSON.stringify(backup));
     await inserted.promise;
     let cleared = false;
-    const clearing = new SemanticMemoryManager(f.ctx, { l2_memory: {} } as any).clearHistory(target, async () => {
+    const clearing = new SemanticMemoryManager(f.ctx, { l2_memory: {} } as any, f.ctx.yesimbot.logging, f.ctx.yesimbot.model).clearHistory(target, async () => {
         cleared = true;
     });
     expect(cleared).toBe(false);

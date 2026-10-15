@@ -7,16 +7,15 @@ import pluginMock from "@koishijs/plugin-mock";
 import { Context } from "koishi";
 import { expect, it } from "vitest";
 
-import { captureContextSnapshot, getContextSnapshots } from "../src/services/model/context-snapshot";
-import { getUsageLedger } from "../src/services/model/usage";
-import { HistoryCommandManager } from "../src/services/worldstate/commands";
-import { parseInspectionOptions, registerHistoryInspection } from "../src/services/worldstate/history-inspection";
-import { Services } from "../src/shared/constants";
+import { captureContextSnapshot, getContextSnapshots } from "../src/model/context-snapshot";
+import { getUsageLedger } from "../src/model/usage";
+import { HistoryCommandManager } from "../src/world/commands";
+import { parseInspectionOptions, registerHistoryInspection } from "../src/world/history-inspection";
+import { loggingStub } from "./helpers/yesimbot";
 
 it("provides a recall example whose options survive Koishi's greedy text argument", () => {
     const app = new Context();
-    app.set(Services.Logger, { getLogger: () => ({}) } as any);
-    new HistoryCommandManager(app, {} as any, {} as any).register();
+    new HistoryCommandManager(app, {} as any, {} as any, loggingStub()).register();
     const command = app.$commander.get("history.recall")!;
     const example = command._examples[0].replace(/^history\.recall\s+/, "");
     const parsed = command.parse(example);

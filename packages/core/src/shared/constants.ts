@@ -19,18 +19,3 @@ export enum TableName {
     Assets = "yesimbot.assets",
     Stickers = "yesimbot.stickers",
 }
-
-/**
- * 提供的服务
- */
-export enum Services {
-    Agent = "yesimbot.agent",
-    Asset = "yesimbot.asset",
-    Config = "yesimbot.config",
-    Logger = "yesimbot.logger",
-    Memory = "yesimbot.memory",
-    Model = "yesimbot.model",
-    Prompt = "yesimbot.prompt",
-    Tool = "yesimbot.tool",
-    WorldState = "yesimbot.world-state",
-}

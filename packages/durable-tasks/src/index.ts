@@ -1,5 +1,5 @@
 import { Context, Schema, h, type Session } from "koishi";
-import * as shared from "koishi-plugin-yesimbot/shared";
+import * as shared from "koishi-plugin-yesimbot";
 
 import { dispatchReminder, type ReminderEmit, type ReminderWorld } from "./dispatch";
 import { currentTargetAllowed, prepareDelivery, type DeliveryRuntime } from "./policy";
@@ -7,7 +7,7 @@ import { registerModels, TaskAcceptedAfterInvalidation, TaskStore, taskOwner, ty
 import { TaskWorker } from "./worker";
 
 export const name = "yesimbot-durable-tasks";
-export const inject = ["database", "yesimbot.tool", "yesimbot.world-state"];
+export const inject = ["database", "yesimbot"];
 export interface Config {
     enabled: boolean;
     pollIntervalSeconds: number;
@@ -21,8 +21,10 @@ interface ToolRegistry {
     registerTool(tool: unknown): void | (() => void);
 }
 interface Services {
-    "yesimbot.tool": ToolRegistry;
-    "yesimbot.world-state": ReminderWorld & DeliveryRuntime["world"];
+    yesimbot: {
+        tool: ToolRegistry;
+        world: ReminderWorld & DeliveryRuntime["world"];
+    };
 }
 const success = (result: unknown) => ({ status: "success" as const, result });
 const failure = (error: unknown) => ({ status: "error" as const, error: { name: "ReminderError", message: String(error) } });
@@ -48,8 +50,8 @@ function sameTarget(task: TaskTarget, session: Session): boolean {
 export function apply(ctx: Context, config: Config) {
     if (!config.enabled) return;
     const services = ctx as unknown as Services;
-    const tools = services["yesimbot.tool"];
-    const world = services["yesimbot.world-state"];
+    const tools = services.yesimbot.tool;
+    const world = services.yesimbot.world;
     const logger = ctx.logger(name);
     const getScope = (shared as unknown as { getInstanceScope?: (ctx: Context, warn?: (message: string) => void, options?: { owner: Context }) => string })
         .getInstanceScope;

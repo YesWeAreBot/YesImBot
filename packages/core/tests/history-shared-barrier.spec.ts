@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 
-import { SemanticMemoryManager } from "../src/services/worldstate/l2-semantic-memory";
-import { Services } from "../src/shared/constants";
+import { SemanticMemoryManager } from "../src/world/l2-semantic-memory";
+import { stubCtx } from "./helpers/yesimbot";
 
 function deferred() {
     let resolve!: () => void;
@@ -20,13 +20,15 @@ function fixture() {
     };
     const config: any = { l2_memory: { enabled: true, messagesPerChunk: 2 } };
     const log = { info() {}, warn() {}, error() {}, debug() {} };
-    const ctx: any = {
-        database,
-        [Services.Logger]: { getLogger: () => log },
-        [Services.Model]: { useEmbeddingGroup: () => ({ getModels: () => [{ embed: async () => ({ embedding: [1] }) }] }) },
-    };
-    const a = new SemanticMemoryManager(ctx, config),
-        b = new SemanticMemoryManager(ctx, config);
+    const ctx = stubCtx(
+        {
+            logging: { getLogger: () => log },
+            model: { useEmbeddingGroup: () => ({ getModels: () => [{ embed: async () => ({ embedding: [1] }) }] }) },
+        },
+        { database },
+    );
+    const a = new SemanticMemoryManager(ctx, config, ctx.yesimbot.logging, ctx.yesimbot.model),
+        b = new SemanticMemoryManager(ctx, config, ctx.yesimbot.logging, ctx.yesimbot.model);
     a.start();
     b.start();
     return { a, b, rows };
@@ -87,11 +89,11 @@ it("coordinates database service proxies belonging to different caller contexts"
     const app = new Context();
     const database = new DatabaseOwner(app);
     app.set("database", database as any);
-    app.set(Services.Logger, { getLogger: () => ({}) } as any);
+    const facade = stubCtx({ logging: { getLogger: () => ({}) } }).yesimbot;
     const left = app.extend(),
         right = app.extend();
-    const a = new SemanticMemoryManager(left, {} as any),
-        b = new SemanticMemoryManager(right, {} as any);
+    const a = new SemanticMemoryManager(left, {} as any, facade.logging, facade.model),
+        b = new SemanticMemoryManager(right, {} as any, facade.logging, facade.model);
     const generation = b.getHistoryGeneration(target);
     await a.clearHistory(target, async () => {});
     expect(b.getHistoryGeneration(target)).toBe(generation + 1);

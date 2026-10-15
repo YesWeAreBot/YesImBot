@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 
 import { test } from "vitest";
 
-import { WorldStateService } from "../../core/src/services/worldstate/service";
+import { WorldStateService } from "../../core/src/world/service";
 import { PersonStore, registerModels } from "../src/store";
 import { fixture } from "./helpers";
 function wrap(db, intercept) {

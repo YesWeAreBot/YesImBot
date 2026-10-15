@@ -7,27 +7,30 @@ import { afterEach, expect, it } from "vitest";
 
 import { AgentCore } from "../src/agent/agent-core";
 import { Config } from "../src/config";
-import { InteractionManager } from "../src/services/worldstate/interaction-manager";
-import { Services } from "../src/shared/constants";
 import { getInstanceDirectory, getInstanceScope } from "../src/shared/instance-scope";
+import { InteractionManager } from "../src/world/interaction-manager";
+import { stubCtx } from "./helpers/yesimbot";
 
 const roots: string[] = [];
 afterEach(async () => {
     await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
 });
 
-const manager = (ctx: any) => new InteractionManager(ctx, { logLengthLimit: 1 } as any);
+const manager = (ctx: any) => new InteractionManager(ctx, { logLengthLimit: 1 } as any, ctx.yesimbot.logging);
 const turns = async (m: InteractionManager) => (await m.getL1History("qq", "group", 10)).map((r) => (r as any).turnId);
 
 async function fixture() {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "yib-instance-journal-"));
     roots.push(root);
-    const context = (key?: string): any => ({
-        baseDir: root,
-        scope: key ? { key, parent: {} } : {},
-        [Services.Logger]: { getLogger: () => ({ info() {}, error() {}, debug() {}, warn() {} }) },
-        database: { get: async () => [] },
-    });
+    const context = (key?: string): any =>
+        stubCtx(
+            { logging: { getLogger: () => ({ info() {}, error() {}, debug() {}, warn() {} }) } },
+            {
+                baseDir: root,
+                scope: key ? { key, parent: {} } : {},
+                database: { get: async () => [] },
+            },
+        );
     return { root, context, manager, turns };
 }
 
@@ -106,12 +109,12 @@ it("AgentCore journals isolate shared configured roots, preserve locks, and rest
         Object.defineProperty(ctx, "baseDir", { value: f.root });
         // A stable loader entry is carried by the owning YesImBot context.
         ctx.set("yesimbot", { ctx: f.context(key) });
-        ctx[Services.Logger] = f.context()[Services.Logger];
-        ctx[Services.WorldState] = { l1_manager: {} } as any;
-        ctx[Services.Model] = { useChatGroup: () => ({}) } as any;
-        ctx[Services.Prompt] = {} as any;
+        ctx.yesimbot.logging = f.context().yesimbot.logging;
+        ctx.yesimbot.world = { l1_manager: {} } as any;
+        ctx.yesimbot.model = { useChatGroup: () => ({}) } as any;
+        ctx.yesimbot.prompt = {} as any;
         ctx.database = { get: async () => [], upsert: async () => {}, remove: async () => {} } as any;
-        const core: any = new AgentCore(ctx, Config({ decisionRecording: { enabled: true, directory: "custom-decisions" } }));
+        const core: any = new AgentCore(ctx, Config({ decisionRecording: { enabled: true, directory: "custom-decisions" } }), ctx.yesimbot as any);
         cores.push(core);
         return core;
     };

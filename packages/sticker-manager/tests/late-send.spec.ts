@@ -5,6 +5,7 @@ import path from "node:path";
 import { h } from "koishi";
 import { it, expect } from "vitest";
 
+import { stubYesImBot } from "../../core/tests/helpers/yesimbot";
 import StickerTools from "../src/index";
 import { StickerService } from "../src/service";
 it("send_sticker must not send late read after plugin disposal", async () => {
@@ -31,6 +32,7 @@ it("send_sticker must not send late read after plugin disposal", async () => {
             return command;
         },
         model: { extend() {} },
+        yesimbot: stubYesImBot({ tool: { register() {}, unregister() {} } }),
     };
     const plugin: any = new StickerTools(ctx, { storagePath } as any);
     try {
@@ -61,6 +63,7 @@ it("directory import must not emit progress after disposal during directory scan
         },
         logger: { info() {}, error() {}, debug() {} },
         model: { extend() {} },
+        yesimbot: stubYesImBot({ tool: { register() {}, unregister() {} } }),
     };
     const service: any = new StickerService(ctx, { storagePath } as any);
     try {

@@ -1,34 +1,29 @@
 # @yesimbot/koishi-plugin-mcp
 
-## 1.1.2
+All notable changes to this package will be documented in this file.
 
-### Patch Changes
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-- 018350c: refactor(logger): 更新日志记录方式，移除对 Logger 服务的直接依赖
-- Updated dependencies [018350c]
-- Updated dependencies [018350c]
-    - koishi-plugin-yesimbot@3.0.2
+## [Unreleased]
 
-## 1.1.1
+### Changed
 
-### Patch Changes
+- injects the consolidated `yesimbot` core service and reads `ctx.yesimbot`; the old per-service registrations are gone, so this version pairs with the matching `koishi-plugin-yesimbot` release.
 
-- e6fd019: 删除冗余字段
-- Updated dependencies [e6fd019]
-    - koishi-plugin-yesimbot@3.0.1
+### Fixed
 
-## 1.1.0
+- MCP tool calls enforce deadlines and release their resources when the plugin unloads. (#230)
+- the MCP command conversion switch is inherited correctly. (#213)
 
-### Minor Changes
+## [1.1.2] - 2025-09-15
 
-- 0c77684: prerelease
+### Changed
 
-### Patch Changes
+- logging no longer depends on a standalone Logger service.
 
-- 7b7acd5: rename packages
-- 2ed195c: 修改依赖版本
-- Updated dependencies [b74e863]
-- Updated dependencies [106be97]
-- Updated dependencies [1cc0267]
-- Updated dependencies [b852677]
-    - koishi-plugin-yesimbot@3.0.0
+## [1.1.1] - 2025-09-08
+
+### Removed
+
+- redundant config fields.

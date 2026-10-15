@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 
-import { WorldStateService } from "../src/services/worldstate/service";
-import { Services, TableName } from "../src/shared/constants";
+import { TableName } from "../src/shared/constants";
+import { WorldStateService } from "../src/world/service";
 
 const logger = { debug() {}, info() {}, warn() {}, error() {} };
 function fixture(events: any[] = [], states: any[] = []) {
@@ -15,7 +15,7 @@ function fixture(events: any[] = [], states: any[] = []) {
             { platform: "onebot", selfId: "b" },
         ],
         emit() {},
-        [Services.Logger]: { getLogger: () => logger },
+        yesimbot: { logging: { getLogger: () => logger } },
         database: {
             get: async (table: string) => tables.get(table) || [],
             upsert: async (table: string, values: any[], keys: string[]) => {

@@ -3,7 +3,8 @@ import { expect, it } from "vitest";
 
 import { HeartbeatProcessor } from "../src/agent/heartbeat-processor";
 import { withReplyTurn } from "../src/agent/reply-turn";
-import { Services } from "../src/shared/constants";
+import type { WorldStateService } from "../src/world";
+import { loggingStub, stubCtx } from "./helpers/yesimbot";
 for (const mode of ["normal", "streaming", "native"])
     it(`cancels an in-flight ${mode} model request and stops all actions`, async () => {
         const controller = new AbortController();
@@ -22,18 +23,23 @@ for (const mode of ["normal", "streaming", "native"])
                 }),
         };
         const processor = new HeartbeatProcessor(
-            { [Services.Logger]: { getLogger: () => logger } } as any,
+            stubCtx({ logging: { getLogger: () => logger } }),
             { heartbeat: 2, streamAction: mode === "streaming", nativeToolCalling: mode === "native" } as any,
-            model as any,
-            {} as any,
             {
-                getAvailableTools: () => [{ name: "send_message", description: "test", parameters: Schema.object({}) }],
-                invoke: async () => {
-                    calls.push("tool");
-                },
-            } as any,
-            { recordThought: async () => {}, recordHeartbeat: async () => {} } as any,
-            {} as any,
+                model: model as any,
+                prompt: {} as any,
+                tool: {
+                    getAvailableTools: () => [{ name: "send_message", description: "test", parameters: Schema.object({}) }],
+                    invoke: async () => {
+                        calls.push("tool");
+                    },
+                } as any,
+                l1: { recordThought: async () => {}, recordHeartbeat: async () => {} } as any,
+                contextBuilder: {} as any,
+                logging: loggingStub(logger),
+                // 该用例在模型请求被中止后就结束，不会读取 world，仅需一个占位依赖。
+                world: {} as unknown as WorldStateService,
+            },
         );
         (processor as any)._prepareLlmRequest = async () => ({ messages: [] });
         const result = withReplyTurn(
@@ -54,35 +60,39 @@ for (const mode of ["normal", "streaming", "native"])
         const errors: any[] = [];
         const logger = { debug() {}, info() {}, warn() {}, success() {}, error: (...args: any[]) => errors.push(args) };
         const processor = new HeartbeatProcessor(
-            { [Services.Logger]: { getLogger: () => logger } } as any,
+            stubCtx({ logging: loggingStub(logger) }),
             { heartbeat: 2, streamAction: mode === "streaming", nativeToolCalling: mode === "native" } as any,
             {
-                chat: async () => {
-                    controller.abort();
-                    return { text: JSON.stringify({ thoughts: {}, actions: [{ function: "probe", params: {} }], request_heartbeat: true }) };
-                },
-            } as any,
-            {} as any,
-            {
-                getAvailableTools: () => [{ name: "probe", description: "test", parameters: Schema.object({}) }],
-                invoke: async () => {
-                    writes.push("tool");
-                    return { status: "success" };
-                },
-            } as any,
-            {
-                recordThought: async () => {
-                    writes.push("thought");
-                },
-                recordAction: async () => {
-                    writes.push("action");
-                    return "id";
-                },
-                recordHeartbeat: async () => {
-                    writes.push("heartbeat");
-                },
-            } as any,
-            {} as any,
+                model: {
+                    chat: async () => {
+                        controller.abort();
+                        return { text: JSON.stringify({ thoughts: {}, actions: [{ function: "probe", params: {} }], request_heartbeat: true }) };
+                    },
+                } as any,
+                prompt: {} as any,
+                tool: {
+                    getAvailableTools: () => [{ name: "probe", description: "test", parameters: Schema.object({}) }],
+                    invoke: async () => {
+                        writes.push("tool");
+                        return { status: "success" };
+                    },
+                } as any,
+                l1: {
+                    recordThought: async () => {
+                        writes.push("thought");
+                    },
+                    recordAction: async () => {
+                        writes.push("action");
+                        return "id";
+                    },
+                    recordHeartbeat: async () => {
+                        writes.push("heartbeat");
+                    },
+                } as any,
+                contextBuilder: {} as any,
+                logging: loggingStub(logger),
+                world: {} as any,
+            },
         );
         (processor as any)._prepareLlmRequest = async () => ({ messages: [], manualRecallIds: [] });
         expect(
@@ -104,47 +114,51 @@ for (const mode of ["normal", "streaming", "native"])
         const logger = { debug() {}, info() {}, warn() {}, success() {}, error() {} };
         const definition = { name: "probe", description: "test", parameters: Schema.object({}) };
         const processor = new HeartbeatProcessor(
-            { [Services.Logger]: { getLogger: () => logger } } as any,
+            stubCtx({ logging: loggingStub(logger) }),
             { heartbeat: 2, streamAction: mode === "streaming", nativeToolCalling: mode === "native" } as any,
             {
-                chat: async () => ({
-                    text: JSON.stringify({
-                        thoughts: {},
-                        actions: [
-                            { function: "probe", params: {} },
-                            { function: "send_message", params: {} },
-                        ],
-                        request_heartbeat: true,
+                model: {
+                    chat: async () => ({
+                        text: JSON.stringify({
+                            thoughts: {},
+                            actions: [
+                                { function: "probe", params: {} },
+                                { function: "send_message", params: {} },
+                            ],
+                            request_heartbeat: true,
+                        }),
+                        ...(mode === "native"
+                            ? {
+                                  toolCalls: [
+                                      { toolCallId: "one", toolName: "probe", args: "{}" },
+                                      { toolCallId: "two", toolName: "send_message", args: "{}" },
+                                  ],
+                              }
+                            : {}),
                     }),
-                    ...(mode === "native"
-                        ? {
-                              toolCalls: [
-                                  { toolCallId: "one", toolName: "probe", args: "{}" },
-                                  { toolCallId: "two", toolName: "send_message", args: "{}" },
-                              ],
-                          }
-                        : {}),
-                }),
-            } as any,
-            {} as any,
-            {
-                getAvailableTools: () => [definition],
-                getTool: () => definition,
-                invoke: async (name: string) => {
-                    calls.push(name);
-                    controller.abort();
-                    return { status: "success" };
-                },
-            } as any,
-            {
-                recordThought: async () => {},
-                recordAction: async () => "id",
-                recordHeartbeat: async () => {},
-                recordObservation: async (...args: any[]) => {
-                    observations.push(args);
-                },
-            } as any,
-            {} as any,
+                } as any,
+                prompt: {} as any,
+                tool: {
+                    getAvailableTools: () => [definition],
+                    getTool: () => definition,
+                    invoke: async (name: string) => {
+                        calls.push(name);
+                        controller.abort();
+                        return { status: "success" };
+                    },
+                } as any,
+                l1: {
+                    recordThought: async () => {},
+                    recordAction: async () => "id",
+                    recordHeartbeat: async () => {},
+                    recordObservation: async (...args: any[]) => {
+                        observations.push(args);
+                    },
+                } as any,
+                contextBuilder: {} as any,
+                logging: loggingStub(logger),
+                world: {} as any,
+            },
         );
         (processor as any)._prepareLlmRequest = async () => ({ messages: [], manualRecallIds: [] });
         expect(

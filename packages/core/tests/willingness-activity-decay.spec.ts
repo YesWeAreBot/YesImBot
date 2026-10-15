@@ -1,14 +1,14 @@
 import { afterEach, expect, it, vi } from "vitest";
 
 import { WillingnessManager } from "../src/agent/willing";
-import { Services } from "../src/shared/constants";
+import { loggingStub, stubCtx } from "./helpers/yesimbot";
 
 const START = 1_000_000;
 afterEach(() => vi.useRealTimers());
 function fixture() {
     vi.useFakeTimers();
     vi.setSystemTime(START);
-    const ctx = { on() {}, [Services.Logger]: { getLogger: () => ({ debug() {} }) } };
+    const ctx = stubCtx({}, { on() {} });
     const manager = new WillingnessManager(
         ctx as any,
         {
@@ -17,6 +17,7 @@ function fixture() {
             interest: { keywords: [], keywordMultiplier: 1.2, defaultMultiplier: 1 },
             lifecycle: { maxWillingness: 100, probabilityThreshold: 99, probabilityAmplifier: 1, decayHalfLifeSeconds: 100, replyCost: 35 },
         } as any,
+        loggingStub(),
     );
     const session = {
         cid: "chat",

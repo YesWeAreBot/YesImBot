@@ -3,13 +3,14 @@ import assert from "node:assert/strict";
 import { test } from "vitest";
 
 import { WillingnessManager } from "../src/agent/willing";
-import { Services } from "../src/shared/constants";
+import { loggingStub, stubCtx } from "./helpers/yesimbot";
 
 const START = 1_000_000;
 const CHAT = "onebot:bot:group";
 
 function createManager(participation?: { enabled: boolean; durationSeconds: number; influence: number }) {
-    const ctx = { on() {}, [Services.Logger]: { getLogger: () => ({ debug() {} }) } };
+    const logger = { debug() {} };
+    const ctx = stubCtx({ logging: { getLogger: () => logger } }, { on() {} });
     const config = {
         participation,
         base: { text: 12 },
@@ -17,7 +18,7 @@ function createManager(participation?: { enabled: boolean; durationSeconds: numb
         interest: { keywords: [], keywordMultiplier: 1.2, defaultMultiplier: 1 },
         lifecycle: { maxWillingness: 100, probabilityThreshold: 99, probabilityAmplifier: 1, replyCost: 35 },
     };
-    return new WillingnessManager(ctx as any, config as any);
+    return new WillingnessManager(ctx as any, config as any, loggingStub(logger));
 }
 
 function session(overrides: Record<string, unknown> = {}) {

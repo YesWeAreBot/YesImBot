@@ -4,7 +4,7 @@ import path from "path";
 
 import { base64ToArrayBuffer, Context, h, Logger, Schema } from "koishi";
 import {} from "koishi-plugin-puppeteer";
-import { Extension, Failed, Infer, Success, Tool, withInnerThoughts } from "koishi-plugin-yesimbot/services";
+import { Extension, Failed, Infer, Success, Tool, withInnerThoughts } from "koishi-plugin-yesimbot";
 import type { BuiltinLanguage, BuiltinTheme, HighlighterCore } from "shiki";
 
 // 使用 Logger 创建一个独立的日志记录器，便于区分插件日志

@@ -2,8 +2,7 @@ import { Schema } from "koishi";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { guardReplySession, withReplyTurn } from "../src/agent/reply-turn";
-import { ToolService } from "../src/services/extension/service";
-import { Services } from "../src/shared/constants";
+import { ToolService } from "../src/extension/service";
 
 function fixture(execute: (args: any) => Promise<any>, retry = 0, record?: (event: any) => Promise<any>) {
     const events: any[] = [];
@@ -13,7 +12,7 @@ function fixture(execute: (args: any) => Promise<any>, retry = 0, record?: (even
         _logger: { info() {}, warn() {}, success() {}, debug() {}, error: (...args: any[]) => errors.push(args) },
         config: { advanced: { maxRetry: retry, retryDelay: 60_000 } },
         executeInvocation: ToolService.prototype["executeInvocation"],
-        ctx: { [Services.WorldState]: { recordSystemEvent: record ?? (async (event: any) => events.push(event)) } },
+        deps: { world: { recordSystemEvent: record ?? (async (event: any) => events.push(event)) } },
     } as unknown as ToolService;
     return { invoke: (session?: any) => ToolService.prototype.invoke.call(service, "probe", {}, session), events, errors };
 }

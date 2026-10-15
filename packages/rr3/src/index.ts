@@ -2,8 +2,7 @@ import * as crypto from "crypto";
 import { performance } from "perf_hooks";
 
 import { Context, Schema } from "koishi";
-import { AssetService, Extension, Failed, Infer, Success, Tool } from "koishi-plugin-yesimbot/services";
-import { Services } from "koishi-plugin-yesimbot/shared";
+import { AssetService, Extension, Failed, Infer, Success, Tool } from "koishi-plugin-yesimbot";
 
 /**
  * 简单的计时器，用于统计代码块执行时间
@@ -97,7 +96,7 @@ export const ConfigSchema: Schema<Config> = Schema.object({
     version: "1.2.0",
 })
 export default class RR3 {
-    static readonly inject = [Services.Asset];
+    static readonly inject = ["yesimbot"];
     static readonly Config = ConfigSchema;
     private assetService: AssetService;
     private readonly lifetime = new AbortController();
@@ -113,7 +112,7 @@ export default class RR3 {
         public ctx: Context,
         public config: Config,
     ) {
-        this.assetService = ctx[Services.Asset];
+        this.assetService = ctx.yesimbot.asset;
         this.ctx.on("dispose", () => this.lifetime.abort());
         this.ctx.on("ready", () => {
             this.ctx.logger.info("插件已成功启动");

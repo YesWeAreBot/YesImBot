@@ -1,5 +1,6 @@
 export * from "./constants";
 export * from "./errors";
+export * from "./service";
 export * from "./utils";
 export * from "./instance-scope";
 

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import InteractionsExtension from "../src/services/extension/builtin/interactions";
-import { Services } from "../src/shared/constants";
+import InteractionsExtension from "../src/extension/builtin/interactions";
 import { formatDate } from "../src/shared/utils/toolkit";
+import { stubCtx } from "./helpers/yesimbot";
 
 const sender = { user_id: 123, nickname: "Alice" };
 const time = 1700000000;
@@ -10,10 +10,7 @@ const text = (value: string) => ({ type: "text", data: { text: value } });
 
 async function getForward(payload: unknown, transform?: (elements: any[]) => Promise<string>) {
     const extension = Object.create(InteractionsExtension.prototype);
-    extension.ctx = {
-        logger: { error() {} },
-        [Services.Asset]: { transform: transform || (async (elements: any[]) => elements.join("")) },
-    };
+    extension.ctx = stubCtx({ asset: { transform: transform || (async (elements: any[]) => elements.join("")) } }, { logger: { error() {} } });
     return extension.getForwardMsg({
         session: { selfId: "bot", onebot: { getForwardMsg: async () => payload } },
         id: "forward-id",
@@ -166,11 +163,12 @@ describe("get_forward_msg payload compatibility", () => {
         expect(result.error?.message).toContain("asset unavailable");
     });
 
-    it("rejects excessive nested nodes with a readable error", async () => {
+    it("retains the outer content and marks excessive nested nodes", async () => {
         let content: any[] = [text("deep")];
         for (let i = 0; i < 10; i++) content = [{ type: "node", data: { name: "Bob", uin: "456", content } }];
         const result = await getForward([{ sender, time, message: content }]);
-        expect(result.status).toBe("error");
-        expect(result.error?.message).toMatch(/嵌套|深度/);
+        expect(result.status).toBe("success");
+        expect(result.result).toContain("三层展开上限");
+        expect(result.result).not.toContain("deep");
     });
 });

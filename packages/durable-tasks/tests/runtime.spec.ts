@@ -2,9 +2,11 @@ import memory from "@koishijs/plugin-database-memory";
 import pluginMock from "@koishijs/plugin-mock";
 import { Context } from "koishi";
 import { expect, it, vi, type TestContext } from "vitest";
-vi.mock("koishi-plugin-yesimbot/shared", () => ({
+vi.mock("koishi-plugin-yesimbot", async (importOriginal) => ({
+    ...(await importOriginal<object>()),
     getInstanceScope: (_ctx: Context, _warn: unknown, options?: unknown) => (options ? "plugin-scope" : "core-scope"),
 }));
+import { stubYesImBot } from "../../core/tests/helpers/yesimbot";
 import * as plugin from "../src/index";
 import { TABLE } from "../src/store";
 const session = (channelId = "g", userId = "u", selfId = "bot") =>
@@ -21,14 +23,14 @@ async function fixture(t: TestContext, enabled = true) {
         l2_manager: { getHistoryGeneration: () => 0 },
         recordSystemEvent: async () => true,
     };
-    ctx.set("yesimbot.tool", {
+    const tool = {
         capabilities: { trustedToolSession: 1 },
         registerTool: (tool: any) => {
             tools.set(tool.name, tool);
             return () => tools.delete(tool.name);
         },
-    });
-    ctx.set("yesimbot.world-state", world);
+    };
+    ctx.set("yesimbot", stubYesImBot({ tool, world }));
     const fork = ctx.plugin(plugin, { enabled, pollIntervalSeconds: 60 });
     t.onTestFinished(async () => {
         fork.dispose();
@@ -106,21 +108,22 @@ it("runs a real due reminder through database, restored bot session, event write
         { id: "string", platform: "string", selfId: "string", channelId: "string", blocked: "list", expiresAt: "double" },
         { primary: "id" },
     );
-    ctx.set("yesimbot.tool", {
+    const tool = {
         capabilities: { trustedToolSession: 1 },
         registerTool: (tool: any) => {
             tools.set(tool.name, tool);
             return () => tools.delete(tool.name);
         },
-    });
+    };
     const recordSystemEvent = vi.fn<(...args: any[]) => Promise<boolean>>(async () => true);
-    ctx.set("yesimbot.world-state", {
+    const world = {
         stimulusOwnerId: "world",
         isChannelAllowed: () => true,
         isBotMuted: () => false,
         l2_manager: { getHistoryGeneration: () => 0 },
         recordSystemEvent,
-    });
+    };
+    ctx.set("yesimbot", stubYesImBot({ tool, world }));
     const stimuli: any[] = [];
     ctx.on("agent/stimulus" as any, (...args: any[]) => {
         stimuli.push(args);

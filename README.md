@@ -51,12 +51,12 @@ YesImBot (Athena) 是一个基于 [Koishi](https://koishi.chat/zh-CN/) 的智能
 
 除了文档站（[https://docs.yesimbot.chat/](https://docs.yesimbot.chat/)）的文档外，仓库内还有内置的文档可供参考：
 
-| 文档类型        | 文件路径                                                                                         | 描述                                |
-| --------------- | ------------------------------------------------------------------------------------------------ | ----------------------------------- |
-| 🎯 **核心功能** | [packages/core/README.md](packages/core/README.md)                                               | 核心插件的详细使用说明和配置指南    |
-| 🔧 **扩展开发** | [packages/core/src/services/extension/README.md](packages/core/src/services/extension/README.md) | 扩展系统开发指南和 API 文档         |
-| 🔌 **MCP 扩展** | [packages/mcp/README.md](packages/mcp/README.md)                                                 | Model Context Protocol 扩展使用说明 |
-| 🧭 **功能导航** | [docs/feature-guide.md](docs/feature-guide.md)                                                   | 功能分类、指令入口和操作范围        |
+| 文档类型        | 文件路径                                                                       | 描述                                |
+| --------------- | ------------------------------------------------------------------------------ | ----------------------------------- |
+| 🎯 **核心功能** | [packages/core/README.md](packages/core/README.md)                             | 核心插件的详细使用说明和配置指南    |
+| 🔧 **扩展开发** | [packages/core/src/extension/README.md](packages/core/src/extension/README.md) | 扩展系统开发指南和 API 文档         |
+| 🔌 **MCP 扩展** | [packages/mcp/README.md](packages/mcp/README.md)                               | Model Context Protocol 扩展使用说明 |
+| 🧭 **功能导航** | [docs/feature-guide.md](docs/feature-guide.md)                                 | 功能分类、指令入口和操作范围        |
 
 ## 🤝 贡献
 

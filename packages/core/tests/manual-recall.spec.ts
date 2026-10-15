@@ -6,10 +6,10 @@ import { Context, Bot, Schema } from "koishi";
 import { expect, it } from "vitest";
 
 import { HeartbeatProcessor } from "../src/agent/heartbeat-processor";
-import { ContextBuilder } from "../src/services/worldstate/context-builder";
-import { InteractionManager } from "../src/services/worldstate/interaction-manager";
-import { WorldStateService } from "../src/services/worldstate/service";
-import { Services } from "../src/shared/constants";
+import { ContextBuilder } from "../src/world/context-builder";
+import { InteractionManager } from "../src/world/interaction-manager";
+import { WorldStateService } from "../src/world/service";
+import { loggingStub } from "./helpers/yesimbot";
 
 const logger = { debug() {}, info() {}, warn() {}, error() {} };
 function session(app: Context, channelId = "private:alice") {
@@ -61,10 +61,10 @@ async function fixture() {
     const baseDir = await mkdtemp(path.join(tmpdir(), "manual-recall-"));
     const app = new Context({ baseDir });
     app.baseDir = baseDir;
-    app.set(Services.Logger, { getLogger: () => logger } as any);
+    app.set("yesimbot", { logging: { getLogger: () => logger } });
     app.set("database", { get: async () => [] } as any);
     const config: any = { l1_memory: { maxMessages: 2, keepFullTurnCount: 2 }, l2_memory: { enabled: false }, l3_memory: { enabled: false } };
-    const manager = new InteractionManager(app, config);
+    const manager = new InteractionManager(app, config, loggingStub(logger));
     const world = Object.create(WorldStateService.prototype);
     Object.assign(world, {
         ctx: app,
@@ -78,7 +78,7 @@ async function fixture() {
         },
     });
     const incoming = session(app);
-    const builder = new ContextBuilder(app, config, manager, {} as any, {} as any);
+    const builder = new ContextBuilder(app, config, manager, {} as any, {} as any, loggingStub(logger));
     (builder as any).getSelfInfo = async () => ({ id: "bot", name: "Bot" });
     (builder as any).getChannelInfo = async () => ({ name: "Alice" });
     return {
@@ -99,7 +99,7 @@ it("keeps every unconsumed manual page across the L1 event limit and process rel
     try {
         for (let offset = 0; offset < 3; offset++)
             await f.world.injectRecall(f.incoming, { kind: "l3", historyGeneration: 0, records: [{ content: `page-${offset}` }] });
-        const reopened = new InteractionManager(f.app, (f.builder as any).config);
+        const reopened = new InteractionManager(f.app, (f.builder as any).config, loggingStub(logger));
         const events = await reopened.getL1History(f.incoming.platform, f.incoming.channelId, 2, "bot");
         const retained = (f.builder as any).applyGracefulDegradation(events);
         expect(retained.map((event: any) => event.result.records[0].content)).toEqual(["page-0", "page-1", "page-2"]);
@@ -183,21 +183,25 @@ for (const mode of ["json", "stream", "native", "native-tools"]) {
                 f.app,
                 { heartbeat: 1, nativeToolCalling: mode.startsWith("native"), streamAction: mode === "stream" } as any,
                 {
-                    chat: async () => {
-                        // Arrives while this model request is in flight, after context preparation.
-                        await f.world.injectRecall(f.incoming, { kind: "l3", historyGeneration: 0, records: [{ content: "next-page" }] });
-                        return mode === "native-tools"
-                            ? { toolCalls: [{ toolName: "lookup", toolCallId: "call", args: "{}" }] }
-                            : { text: JSON.stringify({ thoughts: {}, actions: [], request_heartbeat: false }) };
-                    },
-                } as any,
-                { render: async () => "prompt" } as any,
-                { getAvailableTools: () => [definition], getTool: () => definition, invoke: async () => ({ status: "success" }) } as any,
-                f.manager,
-                {
-                    build: async () => ({ toolSchemas: [], memoryBlocks: [], worldState: await f.builder.build(f.incoming) }),
-                    buildMultimodalUserMessage: async () => "prompt",
-                } as any,
+                    model: {
+                        chat: async () => {
+                            // Arrives while this model request is in flight, after context preparation.
+                            await f.world.injectRecall(f.incoming, { kind: "l3", historyGeneration: 0, records: [{ content: "next-page" }] });
+                            return mode === "native-tools"
+                                ? { toolCalls: [{ toolName: "lookup", toolCallId: "call", args: "{}" }] }
+                                : { text: JSON.stringify({ thoughts: {}, actions: [], request_heartbeat: false }) };
+                        },
+                    } as any,
+                    prompt: { render: async () => "prompt" } as any,
+                    tool: { getAvailableTools: () => [definition], getTool: () => definition, invoke: async () => ({ status: "success" }) } as any,
+                    l1: f.manager,
+                    contextBuilder: {
+                        build: async () => ({ toolSchemas: [], memoryBlocks: [], worldState: await f.builder.build(f.incoming) }),
+                        buildMultimodalUserMessage: async () => "prompt",
+                    } as any,
+                    logging: loggingStub(logger),
+                    world: f.world,
+                },
             );
             await processor.runCycle({ session: f.incoming } as any);
             await f.manager.recordThought("next", "onebot", f.incoming.channelId, { observe: "", analyze_infer: "", plan: "" });

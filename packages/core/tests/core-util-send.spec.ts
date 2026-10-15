@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import CoreUtilExtension from "../src/services/extension/builtin/core-util";
-import { Services } from "../src/shared/constants";
+import CoreUtilExtension from "../src/extension/builtin/core-util";
 
 function setup(send: (...args: any[]) => Promise<string[]> = async () => ["sent"]) {
     const events: any[] = [];
@@ -15,8 +14,10 @@ function setup(send: (...args: any[]) => Promise<string[]> = async () => ["sent"
         },
         logger: () => logger,
         emit: (...args: any[]) => events.push(args),
-        [Services.Logger]: { getLogger: () => logger },
-        [Services.Asset]: { encode: async (message: string) => message },
+        yesimbot: {
+            logging: { getLogger: () => logger },
+            asset: { encode: async (message: string) => message },
+        },
     };
     const tool = new CoreUtilExtension(ctx, { typing: { baseDelay: 0, minDelay: 0, maxDelay: 0, charPerSecond: 5 } } as any);
     const session: any = {

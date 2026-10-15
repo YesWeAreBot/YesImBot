@@ -1,8 +1,9 @@
 import { Context, Session } from "koishi";
 
 import { Config } from "../config";
-import { withUsageScope } from "../services";
-import { Services, TableName } from "../shared/constants";
+import type { ModelService } from "../model";
+import { withUsageScope } from "../model/usage";
+import { TableName } from "../shared/constants";
 
 const positive = (n: number) => Math.max(0, n * 2 - 1);
 
@@ -37,6 +38,7 @@ export class TypeSafeEvaluator {
     constructor(
         private readonly ctx: Context,
         private readonly config: Config,
+        private readonly model: ModelService,
     ) {}
 
     public async evaluate(
@@ -47,7 +49,7 @@ export class TypeSafeEvaluator {
         const config = this.config.typesafe!;
         const selected = config.evaluationModel;
         if (!selected?.providerName || !selected.modelId || signal.aborted) return null;
-        const logger = this.ctx[Services.Logger]?.getLogger("[TypeSafe 接话判断]");
+        const logger = this.ctx.yesimbot?.logging?.getLogger("[TypeSafe 接话判断]");
         const started = Date.now();
         const identity = `[${selected.providerName}][${selected.modelId}]`;
         const controller = new AbortController();
@@ -99,9 +101,9 @@ export class TypeSafeEvaluator {
     ): Promise<number | null> {
         const config = this.config.typesafe!;
         const selected = config.evaluationModel;
-        const model = this.ctx[Services.Model].getEvaluationModel(selected.providerName, selected.modelId);
+        const model = this.model.getEvaluationModel(selected.providerName, selected.modelId);
         if (!model) {
-            this.ctx[Services.Logger]?.getLogger("[TypeSafe 接话判断]").warn?.("未找到所选评估模型，请检查 TypeSafe 提供商与评估能力配置。");
+            this.ctx.yesimbot?.logging?.getLogger("[TypeSafe 接话判断]").warn?.("未找到所选评估模型，请检查 TypeSafe 提供商与评估能力配置。");
             return null;
         }
         const state = {
@@ -115,7 +117,7 @@ export class TypeSafeEvaluator {
         };
         let size = JSON.stringify(state).length;
         if (size > 16000) {
-            this.ctx[Services.Logger]?.getLogger("[TypeSafe 接话判断]").warn?.("评估输入超限（16000 字符），沿用普通意愿。");
+            this.ctx.yesimbot?.logging?.getLogger("[TypeSafe 接话判断]").warn?.("评估输入超限（16000 字符），沿用普通意愿。");
             return null;
         }
         if (config.historyLimit > 0) {
@@ -144,7 +146,7 @@ export class TypeSafeEvaluator {
         );
         if (signal.aborted) return null;
         const { addressed, interested, others } = result.answers;
-        this.ctx[Services.Logger]
+        this.ctx.yesimbot?.logging
             ?.getLogger("[TypeSafe 接话判断]")
             .debug?.(`评估结果 | 对我说: ${addressed.noul.toFixed(3)} | 兴趣匹配: ${interested.noul.toFixed(3)} | 对别人说: ${others.noul.toFixed(3)}`);
         onAnswers?.({ addressed: addressed.noul, interested: interested.noul, others: others.noul });

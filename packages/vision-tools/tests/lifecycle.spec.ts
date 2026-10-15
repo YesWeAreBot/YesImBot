@@ -1,8 +1,8 @@
 import { EventEmitter } from "node:events";
 
-import { Services } from "koishi-plugin-yesimbot/shared";
 import { afterEach, expect, it, vi } from "vitest";
 
+import { stubYesImBot } from "../../core/tests/helpers/yesimbot";
 import VisionTools, { type Config } from "../src";
 
 const network = vi.hoisted(() => ({ fetch: vi.fn<(url: unknown, init: any) => Promise<Response>>() }));
@@ -12,17 +12,19 @@ afterEach(() => {
     vi.restoreAllMocks();
 });
 function fixture(config: Partial<Config> = {}) {
-    const hooks: Record<string, () => any> = {};
+    const hooks: Record<string, () => Promise<unknown>> = {};
+    const listeners: Record<string, Array<() => any>> = {};
     const browser = new EventEmitter();
     const asset = { read: async () => "data:image/png;base64,aW1hZ2U=", getInfo: async () => ({ mime: "image/png" }) };
     const logger = Object.assign(() => logger, { info() {}, warn() {}, error() {} });
     const ctx: any = {
         on: (event: string, listener: () => any) => {
-            hooks[event] = listener;
+            (listeners[event] ??= []).push(listener);
+            hooks[event] = async () => Promise.all(listeners[event].map((run) => run()));
         },
         logger,
         puppeteer: { browser },
-        get: (name: string) => (name === Services.Asset ? asset : undefined),
+        yesimbot: stubYesImBot({ asset, tool: { register() {}, unregister() {} } }),
     };
     return { tools: new VisionTools(ctx, { engine: "google_vision", googleVision: { api_key: "test" }, ...config }), hooks, browser, ctx };
 }
@@ -90,11 +92,11 @@ it("closes active scraper pages when unloaded", async () => {
 
 it("returns a tool failure when the image asset cannot be read", async () => {
     const f = fixture();
-    f.ctx.get = () => ({
+    f.ctx.yesimbot.asset = {
         read: async () => {
             throw new Error("asset missing");
         },
-    });
+    };
     const result = await f.tools.searchImageSource({ image_id: "image" } as any);
     expect(result.status).toBe("error");
 });

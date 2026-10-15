@@ -2,7 +2,6 @@ import fs from "fs/promises";
 import path from "path";
 
 import { Context } from "koishi";
-import { Services } from "koishi-plugin-yesimbot/shared";
 
 import { BinaryInstaller } from "./BinaryInstaller";
 import { CommandResolver } from "./CommandResolver";
@@ -16,7 +15,7 @@ import { SystemUtils } from "./SystemUtils";
 export const name = "yesimbot-extension-mcp";
 
 export const inject = {
-    required: ["http", Services.Tool],
+    required: ["http", "yesimbot"],
 };
 
 export { Config } from "./Config";
@@ -38,7 +37,7 @@ export async function apply(ctx: Context, config: Config) {
 
     const commandResolver = new CommandResolver(logger, systemUtils, config, installedUVPath, installedBunPath);
 
-    const toolService = ctx["yesimbot.tool"];
+    const toolService = ctx.yesimbot.tool;
     const mcpManager = new MCPManager(ctx, logger, commandResolver, toolService, config);
     let disposed = false;
     let initialization: Promise<void> | undefined;

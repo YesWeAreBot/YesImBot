@@ -40,8 +40,6 @@ jobs:
       - run: yarn lint
       - run: yarn format:check
       - run: yarn test
-      - name: Prepare pending release versions without publishing
-        run: yarn changeset version
       - run: yarn build
       - run: yarn pack:all
       - run: yarn collect-packages

@@ -1,10 +1,10 @@
 import { expect, it } from "vitest";
 
-import { ChatModel } from "../src/services/model/chat-model";
-import { ModelAbility } from "../src/services/model/config";
-import { ChatModelSwitcher } from "../src/services/model/service";
-import { Services } from "../src/shared/constants";
+import { ChatModel } from "../src/model/chat-model";
+import { ModelAbility } from "../src/model/config";
+import { ChatModelSwitcher } from "../src/model/service";
 import { AppError, ErrorDefinitions } from "../src/shared/errors";
+import { loggingStub, stubCtx } from "./helpers/yesimbot";
 
 const usage = { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 };
 const frame = (delta: any, finish_reason: string | null = null) => `data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason }], usage })}\n\n`;
@@ -12,7 +12,7 @@ const frame = (delta: any, finish_reason: string | null = null) => `data: ${JSON
 function fixture(configStream?: boolean, firstTokenTimeout: number | null = 0.025, totalTimeout = 0.5, responseDelay = 75, streamTailDelay = 0) {
     const logger: any = { extend: () => logger };
     for (const level of ["debug", "info", "warn", "error", "success"]) logger[level] = () => {};
-    const ctx: any = { [Services.Logger]: { getLogger: () => logger } };
+    const ctx: any = stubCtx({ logging: { getLogger: () => logger } });
     const streams: boolean[] = [];
     const fetch = (async (_url, init) => {
         const stream = JSON.parse(init!.body as string).stream;
@@ -68,8 +68,9 @@ function fixture(configStream?: boolean, firstTokenTimeout: number | null = 0.02
             retryPolicy: { maxRetries: 0 },
         },
         fetch,
+        loggingStub(logger),
     );
-    const switcher = new ChatModelSwitcher(ctx, { name: "test", models: [{ providerName: "test", modelId: "test" }] }, () => model);
+    const switcher = new ChatModelSwitcher(ctx, { name: "test", models: [{ providerName: "test", modelId: "test" }] }, () => model, loggingStub(logger));
     return { switcher, streams };
 }
 

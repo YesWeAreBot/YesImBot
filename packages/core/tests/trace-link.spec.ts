@@ -8,16 +8,16 @@ import { expect, it } from "vitest";
 import { DecisionJournal } from "../src/agent/decision-journal";
 import { DecisionRecords } from "../src/agent/decision-record";
 import { HeartbeatProcessor } from "../src/agent/heartbeat-processor";
-import { getContextSnapshots } from "../src/services/model/context-snapshot";
-import { getUsageLedger, observeUsageFetch, withUsageScope } from "../src/services/model/usage";
-import { Services } from "../src/shared/constants";
+import { getContextSnapshots } from "../src/model/context-snapshot";
+import { getUsageLedger, observeUsageFetch, withUsageScope } from "../src/model/usage";
 import { journalOptions, record, temporary } from "./helpers/decision-fixtures";
+import { loggingStub, stubCtx } from "./helpers/yesimbot";
 
 for (const mode of ["normal", "streaming", "native"]) {
     it(`links ${mode} heartbeat iterations, nested model requests and tool logs to the decision id`, async () => {
         const baseDir = await mkdtemp(path.join(tmpdir(), "trace-link-"));
         const logger = { debug() {}, info() {}, warn() {}, error() {}, success() {} };
-        const ctx: any = { baseDir, on() {}, [Services.Logger]: { getLogger: () => logger } };
+        const ctx = stubCtx({ logging: loggingStub(logger) }, { baseDir, on() {} });
         const ledger = getUsageLedger(ctx);
         const turns: string[] = [];
         const observations: any[] = [];
@@ -30,24 +30,22 @@ for (const mode of ["normal", "streaming", "native"]) {
             )("https://test.invalid", { body: '{"messages":[]}' });
             await response.text();
         };
-        const processor = new HeartbeatProcessor(
-            ctx,
-            { heartbeat: 2, streamAction: mode === "streaming", nativeToolCalling: mode === "native" } as any,
-            {
+        const processor = new HeartbeatProcessor(ctx, { heartbeat: 2, streamAction: mode === "streaming", nativeToolCalling: mode === "native" } as any, {
+            model: {
                 chat: async () => {
                     await transport("chat");
                     return { text: JSON.stringify({ thoughts: {}, actions: [{ function: "probe", params: {} }], request_heartbeat: ++requests < 2 }) };
                 },
             } as any,
-            {} as any,
-            {
+            prompt: {} as any,
+            tool: {
                 getAvailableTools: () => [{ name: "probe", description: "test", parameters: Schema.object({}) }],
                 invoke: async () => {
                     await transport("tool");
                     return { status: "success" };
                 },
             } as any,
-            {
+            l1: {
                 recordThought: async (id: string) => {
                     turns.push(id);
                 },
@@ -62,8 +60,10 @@ for (const mode of ["normal", "streaming", "native"]) {
                     observations.push(observation);
                 },
             } as any,
-            {} as any,
-        );
+            contextBuilder: {} as any,
+            logging: loggingStub(logger),
+            world: {} as any,
+        });
         (processor as any)._prepareLlmRequest = async () => ({ messages: [], manualRecallIds: [] });
         try {
             await processor.runCycle({ decisionId: "decision-123", session: { platform: "onebot", selfId: "bot", channelId: "group" } } as any);

@@ -1,9 +1,9 @@
 import { Bot, Context, Session } from "koishi";
 import { expect, it } from "vitest";
 
-import { EventListenerManager } from "../src/services/worldstate/event-listener";
-import { WorldStateService } from "../src/services/worldstate/service";
-import { Services } from "../src/shared/constants";
+import { EventListenerManager } from "../src/world/event-listener";
+import { WorldStateService } from "../src/world/service";
+import { stubYesImBot } from "./helpers/yesimbot";
 
 const beforeStimulus = "yesimbot/before-user-stimulus";
 
@@ -21,23 +21,27 @@ function fixture() {
     const errors: unknown[][] = [];
     const memory = new Map<string, string>();
     const stimuli: Array<{ session: Session; payload: { messageIds: string[] }; memory?: string }> = [];
-    ctx[Services.Logger] = {
-        getLogger: () => ({
-            debug() {},
-            info() {},
-            error(...args: unknown[]) {
-                errors.push(args);
+    Object.assign(ctx, {
+        yesimbot: stubYesImBot({
+            logging: {
+                getLogger: () => ({
+                    debug() {},
+                    info() {},
+                    error(...args: unknown[]) {
+                        errors.push(args);
+                    },
+                }),
             },
+            asset: { transform: async (content: string) => content },
         }),
-    } as any;
-    ctx[Services.Asset] = { transform: async (content: string) => content } as any;
+    });
     const world = Object.create(WorldStateService.prototype);
     world.config = { allowedChannels: [{ platform: "onebot", type: "guild", id: "allowed" }] };
     world.recordMessage = async () => {
         trace.push("message-recorded");
     };
     world.observeChannel = async () => {};
-    const manager = new EventListenerManager(ctx, world, {} as any);
+    const manager = new EventListenerManager(ctx, world, {} as any, ctx.yesimbot.logging, ctx.yesimbot.asset);
     const initialHooks = new Set(ctx.$processor._hooks);
     ctx.on("agent/stimulus", (stimulus) => {
         trace.push("stimulus");

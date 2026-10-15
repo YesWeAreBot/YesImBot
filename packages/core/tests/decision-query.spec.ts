@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 
 import { registerDecisionCommands } from "../src/agent/decision-commands";
 import { ReplyControl } from "../src/agent/reply-control";
-import { WorldStateService } from "../src/services/worldstate/service";
+import { WorldStateService } from "../src/world/service";
 
 it("queries only the current conversation with administrator authority", async () => {
     let action: any;

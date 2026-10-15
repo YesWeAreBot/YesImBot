@@ -1,7 +1,8 @@
 import { expect, it, vi } from "vitest";
 
-import { SemanticMemoryManager } from "../src/services/worldstate/l2-semantic-memory";
-import { Services, TableName } from "../src/shared/constants";
+import { TableName } from "../src/shared/constants";
+import { SemanticMemoryManager } from "../src/world/l2-semantic-memory";
+import { stubCtx } from "./helpers/yesimbot";
 
 const target = { platform: "onebot", channelId: "room" };
 const scoped = { ...target, k: 3, startTimestamp: new Date(100), endTimestamp: new Date(900) };
@@ -14,18 +15,27 @@ function source(id: string, content: string, extra = {}) {
 function fixture(rows: Record<string, any[]>, embed?: (text: string) => Promise<{ embedding: number[] }>) {
     const queries: any[] = [];
     const warn = vi.fn();
-    const ctx: any = {
-        [Services.Logger]: { getLogger: () => ({ warn, info() {}, error() {}, debug() {} }) },
-        [Services.Model]: { useEmbeddingGroup: () => (embed ? { getModels: () => [{ embed }] } : undefined) },
-        database: {
-            get: async (table: string, query: any, modifier: any) => {
-                queries.push({ table, query, modifier });
-                // Deliberately include legacy/out-of-scope rows: recall must verify the boundary itself.
-                return rows[table] || [];
+    const ctx = stubCtx(
+        {
+            logging: { getLogger: () => ({ warn, info() {}, error() {}, debug() {} }) },
+            model: { useEmbeddingGroup: () => (embed ? { getModels: () => [{ embed }] } : undefined) },
+        },
+        {
+            database: {
+                get: async (table: string, query: any, modifier: any) => {
+                    queries.push({ table, query, modifier });
+                    // Deliberately include legacy/out-of-scope rows: recall must verify the boundary itself.
+                    return rows[table] || [];
+                },
             },
         },
-    };
-    const memory = new SemanticMemoryManager(ctx, { l2_memory: { enabled: true, includeNeighborChunks: false, retrievalMinSimilarity: 0.5 } } as any);
+    );
+    const memory = new SemanticMemoryManager(
+        ctx,
+        { l2_memory: { enabled: true, includeNeighborChunks: false, retrievalMinSimilarity: 0.5 } } as any,
+        ctx.yesimbot.logging,
+        ctx.yesimbot.model,
+    );
     memory.start();
     return { memory, queries, warn };
 }

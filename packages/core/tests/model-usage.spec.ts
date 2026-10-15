@@ -4,8 +4,8 @@ import path from "node:path";
 
 import { afterEach, expect, it } from "vitest";
 
-import { getContextSnapshots } from "../src/services/model/context-snapshot";
-import { estimateTokens, getUsageLedger, normalizeUsage, observeUsageFetch, withUsageScope } from "../src/services/model/usage";
+import { getContextSnapshots } from "../src/model/context-snapshot";
+import { estimateTokens, getUsageLedger, normalizeUsage, observeUsageFetch, withUsageScope } from "../src/model/usage";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {

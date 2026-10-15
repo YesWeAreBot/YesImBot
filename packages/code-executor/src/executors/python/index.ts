@@ -1,8 +1,7 @@
 import path from "path";
 
 import { Context, Logger, Schema } from "koishi";
-import { AssetService, ToolDefinition, withInnerThoughts } from "koishi-plugin-yesimbot/services";
-import { Services } from "koishi-plugin-yesimbot/shared";
+import { AssetService, ToolDefinition, withInnerThoughts } from "koishi-plugin-yesimbot";
 import { loadPyodide, PyodideAPI } from "pyodide";
 import type { PyProxy } from "pyodide/ffi";
 
@@ -172,7 +171,7 @@ export class PythonExecutor implements CodeExecutor {
         private sharedConfig: SharedConfig,
     ) {
         this.logger = ctx.logger(`[执行器:Python]`);
-        this.assetService = ctx[Services.Asset];
+        this.assetService = ctx.yesimbot.asset;
         this.pool = new PyodideEnginePool(ctx, config, sharedConfig);
 
         ctx.on("ready", async () => {

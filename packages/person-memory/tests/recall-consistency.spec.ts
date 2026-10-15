@@ -13,22 +13,24 @@ async function runtime(t, config = {}) {
     const tools = new Map();
     const app = await fixture(t, (ctx) => {
         ctx.model.extend("saved_observations", { id: "string", event: "json" }, { primary: "id" });
-        ctx.set("yesimbot.world-state", { isChannelAllowed: () => true });
-        ctx.set("yesimbot.tool", {
-            registerTool: (tool) => {
-                tools.set(tool.name, tool);
-                return () => tools.delete(tool.name);
+        ctx.set("yesimbot", {
+            world: { isChannelAllowed: () => true },
+            tool: {
+                registerTool: (tool) => {
+                    tools.set(tool.name, tool);
+                    return () => tools.delete(tool.name);
+                },
+                unregisterTool: (name) => tools.delete(name),
             },
-            unregisterTool: (name) => tools.delete(name),
-        });
-        ctx.set("yesimbot.prompt", {
-            inject: (_name, _priority, fn) => {
-                injection = fn;
-                return () => {};
+            prompt: {
+                inject: (_name, _priority, fn) => {
+                    injection = fn;
+                    return () => {};
+                },
             },
         });
         ctx.plugin({
-            inject: ["database", "yesimbot.world-state", "yesimbot.tool", "yesimbot.prompt"],
+            inject: ["database", "yesimbot"],
             apply: (ctx) => applySharedMemory(ctx, { ...defaults, ...config }),
         });
     });

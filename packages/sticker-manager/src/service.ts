@@ -4,7 +4,6 @@ import path from "path";
 import { pathToFileURL } from "url";
 
 import { Context, h, Session } from "koishi";
-import { Services } from "koishi-plugin-yesimbot/shared";
 
 import { StickerConfig } from "./config";
 
@@ -106,7 +105,7 @@ export class StickerService {
      */
     public async stealSticker(image_id: string, session: Session): Promise<StickerRecord> {
         await this.whenReady();
-        const assetService = this.ctx[Services.Asset];
+        const assetService = this.ctx.yesimbot.asset;
 
         const imageDataForLLM = (await assetService.read(image_id, {
             format: "data-url",
@@ -158,7 +157,7 @@ export class StickerService {
         // 使用分类列表替换模板中的占位符
         const prompt = this.config.classificationPrompt.replace("{{categories}}", categoryList);
 
-        const model = this.ctx[Services.Model].getChatModel(this.config.classifiModel.providerName, this.config.classifiModel.modelId);
+        const model = this.ctx.yesimbot.model.getChatModel(this.config.classifiModel.providerName, this.config.classifiModel.modelId);
 
         if (!model || !model.isVisionModel()) {
             this.ctx.logger.error(`当前模型组中没有支持多模态的模型。`);

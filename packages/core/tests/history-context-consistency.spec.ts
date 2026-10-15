@@ -1,8 +1,8 @@
 import { expect, it } from "vitest";
 
-import { SemanticMemoryManager } from "../src/services/worldstate/l2-semantic-memory";
-import { WorldStateService } from "../src/services/worldstate/service";
-import { Services } from "../src/shared/constants";
+import { SemanticMemoryManager } from "../src/world/l2-semantic-memory";
+import { WorldStateService } from "../src/world/service";
+import { stubCtx } from "./helpers/yesimbot";
 
 function deferred() {
     let resolve!: () => void;
@@ -12,8 +12,8 @@ function deferred() {
     return { promise, resolve };
 }
 function fixture(build: () => Promise<any>, filter = async () => {}) {
-    const ctx: any = { [Services.Logger]: { getLogger: () => ({}) }, parallel: filter };
-    const memory = new SemanticMemoryManager(ctx, {} as any);
+    const ctx = stubCtx({ logging: { getLogger: () => ({}) } }, { parallel: filter });
+    const memory = new SemanticMemoryManager(ctx, {} as any, ctx.yesimbot.logging, ctx.yesimbot.model);
     const world = Object.create(WorldStateService.prototype);
     Object.assign(world, { ctx, l2_manager: memory, contextBuilder: { build } });
     return { world, memory, session: { platform: "onebot", channelId: "room" } as any };

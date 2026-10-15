@@ -2,7 +2,8 @@ import { Schema } from "koishi";
 import { expect, it } from "vitest";
 
 import { HeartbeatProcessor } from "../src/agent/heartbeat-processor";
-import { Services } from "../src/shared/constants";
+import type { WorldStateService } from "../src/world";
+import { loggingStub, stubCtx } from "./helpers/yesimbot";
 
 const modelResponse = (message: string) =>
     JSON.stringify({ thoughts: {}, actions: [{ function: "send_message", params: { message } }], request_heartbeat: false });
@@ -12,10 +13,8 @@ for (const scenario of ["success", "error", "query", "legacy"]) {
         const logger = { debug() {}, info() {}, warn() {}, error() {}, success() {} };
         const name = scenario === "query" ? "lookup" : "send_message";
         const definition = { name, description: "test", parameters: Schema.object({ message: Schema.string() }) };
-        const processor = new HeartbeatProcessor(
-            { [Services.Logger]: { getLogger: () => logger } } as any,
-            { heartbeat: 1, nativeToolCalling: true } as any,
-            {
+        const processor = new HeartbeatProcessor(stubCtx({ logging: { getLogger: () => logger } }), { heartbeat: 1, nativeToolCalling: true } as any, {
+            model: {
                 chat: async () =>
                     scenario === "legacy"
                         ? {
@@ -27,20 +26,23 @@ for (const scenario of ["success", "error", "query", "legacy"]) {
                           }
                         : { toolCalls: [{ toolCallId: "call", toolName: name, args: '{"message":"hello"}' }] },
             } as any,
-            {} as any,
-            {
+            prompt: {} as any,
+            tool: {
                 getAvailableTools: () => [definition],
                 getTool: () => definition,
                 invoke: async () => ({ status: scenario === "error" ? "error" : "success" }),
             } as any,
-            {
+            l1: {
                 recordThought: async () => {},
                 recordHeartbeat: async () => {},
                 recordAction: async () => "action",
                 recordObservation: async () => {},
             } as any,
-            {} as any,
-        );
+            contextBuilder: {} as any,
+            logging: loggingStub(logger),
+            // 工具结果不含 historyGeneration，用例不会读取 world，仅需占位依赖。
+            world: {} as unknown as WorldStateService,
+        });
         (processor as any)._prepareLlmRequest = async () => ({ messages: [] });
         expect(await processor.runCycle({ session: { platform: "qq", channelId: "group", cid: "qq:group" } } as any)).toBe(
             scenario === "success" || scenario === "legacy",
@@ -72,15 +74,16 @@ function stimulus(): any {
 
 function streamingFixture(chat: any, invoke: any): HeartbeatProcessor {
     const logger = { debug() {}, info() {}, warn() {}, error() {}, success() {} };
-    const processor = new HeartbeatProcessor(
-        { [Services.Logger]: { getLogger: () => logger } } as any,
-        { heartbeat: 1, streamAction: true } as any,
-        { chat } as any,
-        {} as any,
-        { invoke } as any,
-        { recordThought: async () => {}, recordAction: async () => "action", recordObservation: async () => {} } as any,
-        {} as any,
-    );
+    const processor = new HeartbeatProcessor(stubCtx({ logging: { getLogger: () => logger } }), { heartbeat: 1, streamAction: true } as any, {
+        model: { chat } as any,
+        prompt: {} as any,
+        tool: { invoke } as any,
+        l1: { recordThought: async () => {}, recordAction: async () => "action", recordObservation: async () => {} } as any,
+        contextBuilder: {} as any,
+        logging: loggingStub(logger),
+        // 流式用例的观察结果不含 historyGeneration，不会读取 world，仅需占位依赖。
+        world: {} as unknown as WorldStateService,
+    });
     (processor as any)._prepareLlmRequest = async () => ({ messages: [] });
     return processor;
 }
@@ -96,26 +99,27 @@ for (const streamAction of [false, true]) {
                 actions: [{ function: "send_message", params: { message: "hello" } }],
                 request_heartbeat: false,
             });
-            const processor = new HeartbeatProcessor(
-                { [Services.Logger]: { getLogger: () => logger } } as any,
-                { heartbeat: 1, streamAction } as any,
-                {
+            const processor = new HeartbeatProcessor(stubCtx({ logging: { getLogger: () => logger } }), { heartbeat: 1, streamAction } as any, {
+                model: {
                     chat: async (options: any) => {
                         if (options.stream) options.validation.validator(response, true);
                         return { text: response };
                     },
                 } as any,
-                {} as any,
-                {
+                prompt: {} as any,
+                tool: {
                     invoke: async () => ({ status, error: status === "error" ? { name: "ToolError", message: "QQ refused" } : undefined }),
                 } as any,
-                {
+                l1: {
                     recordThought: async () => {},
                     recordAction: async () => "action",
                     recordObservation: async (...args: any[]) => observations.push(args[3]),
                 } as any,
-                {} as any,
-            );
+                contextBuilder: {} as any,
+                logging: loggingStub(logger),
+                // 观察结果不含 historyGeneration，用例不会读取 world，仅需占位依赖。
+                world: {} as unknown as WorldStateService,
+            });
             (processor as any)._prepareLlmRequest = async () => ({ messages: [] });
             const success = await processor.runCycle({ session: { platform: "qq", channelId: "group", cid: "qq:group" } } as any);
             expect(success).toBe(status === "success");
@@ -205,10 +209,8 @@ for (const streamAction of [false, true]) {
             let turn = 0;
             const observations: any[] = [];
             const logger = { debug() {}, info() {}, warn() {}, error() {}, success() {} };
-            const processor = new HeartbeatProcessor(
-                { [Services.Logger]: { getLogger: () => logger } } as any,
-                { heartbeat: turns.length, streamAction } as any,
-                {
+            const processor = new HeartbeatProcessor(stubCtx({ logging: { getLogger: () => logger } }), { heartbeat: turns.length, streamAction } as any, {
+                model: {
                     chat: async (options: any) => {
                         const current = turns[turn++];
                         const text = JSON.stringify({
@@ -220,16 +222,19 @@ for (const streamAction of [false, true]) {
                         return { text };
                     },
                 } as any,
-                {} as any,
-                { invoke: async (_name: string, params: any) => ({ status: params.status }) } as any,
-                {
+                prompt: {} as any,
+                tool: { invoke: async (_name: string, params: any) => ({ status: params.status }) } as any,
+                l1: {
                     recordThought: async () => {},
                     recordHeartbeat: async () => {},
                     recordAction: async () => "action",
                     recordObservation: async (...args: any[]) => observations.push(args[3]),
                 } as any,
-                {} as any,
-            );
+                contextBuilder: {} as any,
+                logging: loggingStub(logger),
+                // 工具返回值不含 historyGeneration，用例不会读取 world，仅需占位依赖。
+                world: {} as unknown as WorldStateService,
+            });
             (processor as any)._prepareLlmRequest = async () => ({ messages: [] });
             expect(await processor.runCycle({ session: { platform: "qq", channelId: "group", cid: "qq:group" } } as any)).toBe(turns[turns.length - 1].want);
             expect(observations.length).toBe(turns.reduce((count, item) => count + item.actions.length, 0));

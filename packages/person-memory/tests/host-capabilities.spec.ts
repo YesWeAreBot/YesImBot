@@ -5,8 +5,8 @@ import { setImmediate as tick } from "node:timers/promises";
 
 import { test } from "vitest";
 
-import { ToolService } from "../../core/src/services/extension/service";
-import { WorldStateService } from "../../core/src/services/worldstate/service";
+import { ToolService } from "../../core/src/extension/service";
+import { WorldStateService } from "../../core/src/world/service";
 import * as plugin from "../src/index";
 import { PersonStore, sceneKey } from "../src/store";
 import { fixture } from "./helpers";
@@ -32,12 +32,14 @@ for (const version of ["legacy", "current"]) {
         }
         const app = await fixture(t, () => {});
         app.on("internal/error", (error) => errors.push(error));
-        app.set("yesimbot.tool", tool);
-        app.set("yesimbot.world-state", world);
-        app.set("yesimbot.prompt", {
-            inject: () => {
-                effects.push("prompt");
-                return () => {};
+        app.set("yesimbot", {
+            tool,
+            world,
+            prompt: {
+                inject: () => {
+                    effects.push("prompt");
+                    return () => {};
+                },
             },
         });
         const fork = app.plugin(plugin, defaults);

@@ -1,6 +1,6 @@
 {
   "name": "koishi-plugin-yesimbot",
-  "version": "3.0.3",
+  "version": "3.0.4",
   "description": "Yes! I'm Bot! 机械壳，人类心",
   "keywords": [
     "ai",
@@ -30,19 +30,15 @@
     "resources",
     "scripts/replay-decisions.cjs"
   ],
-  "main": "lib/index.js",
+  "main": "lib/index.cjs",
   "typings": "lib/index.d.ts",
   "exports": {
-    ".": "./lib/index.js",
-    "./package.json": "./package.json",
-    "./services": {
-      "types": "./lib/services/index.d.ts",
-      "default": "./lib/services/index.js"
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.mjs",
+      "require": "./lib/index.cjs"
     },
-    "./shared": {
-      "types": "./lib/shared/index.d.ts",
-      "default": "./lib/shared/index.js"
-    }
+    "./package.json": "./package.json"
   },
   "dependencies": {
     "@miaowfish/gifwrap": "^0.10.1",

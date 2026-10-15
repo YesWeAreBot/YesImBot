@@ -6,11 +6,11 @@ import type { Message } from "@xsai/shared-chat";
 import { expect, it } from "vitest";
 
 import { budgetContext, ContextBudgetError, estimateContextTokens } from "../src/agent/context-budget";
-import { ChatModel } from "../src/services/model/chat-model";
-import { captureContextSnapshot } from "../src/services/model/context-snapshot";
-import { getUsageLedger } from "../src/services/model/usage";
-import { registerHistoryInspection } from "../src/services/worldstate/history-inspection";
-import { Services } from "../src/shared/constants";
+import { ChatModel } from "../src/model/chat-model";
+import { captureContextSnapshot } from "../src/model/context-snapshot";
+import { getUsageLedger } from "../src/model/usage";
+import { registerHistoryInspection } from "../src/world/history-inspection";
+import { loggingStub, stubCtx } from "./helpers/yesimbot";
 
 const user = (content: string): Message => ({ role: "user", content });
 
@@ -64,7 +64,7 @@ it("recalculates from original messages for each candidate model", async () => {
     const messages = [user("old ".repeat(1000)), user("latest")];
     const requests: any[] = [];
     const logger = Object.fromEntries(["debug", "info", "warn", "error", "success"].map((level) => [level, () => {}]));
-    const ctx = { [Services.Logger]: { getLogger: () => logger } } as any;
+    const ctx = stubCtx({ logging: loggingStub(logger) });
     for (const capacity of [10000, 500]) {
         const model = new ChatModel(
             ctx,
@@ -81,6 +81,7 @@ it("recalculates from original messages for each candidate model", async () => {
                     headers: { "content-type": "application/json" },
                 });
             }) as typeof fetch,
+            loggingStub(logger),
         );
         await model.chat({ messages });
     }

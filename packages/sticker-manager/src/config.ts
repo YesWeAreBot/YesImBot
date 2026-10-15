@@ -1,4 +1,4 @@
-import { ModelDescriptor } from "koishi-plugin-yesimbot/services";
+import { ModelDescriptor } from "koishi-plugin-yesimbot";
 
 export interface StickerConfig {
     storagePath: string;

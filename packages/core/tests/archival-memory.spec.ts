@@ -4,14 +4,15 @@ import path from "node:path";
 
 import { afterEach, expect, it, vi } from "vitest";
 
-import { HISTORY_CHANNELS } from "../src/services/worldstate/channel-metadata";
-import { HistoryCommandManager } from "../src/services/worldstate/commands";
-import { ContextBuilder } from "../src/services/worldstate/context-builder";
-import { InteractionManager } from "../src/services/worldstate/interaction-manager";
-import { SemanticMemoryManager } from "../src/services/worldstate/l2-semantic-memory";
-import { ArchivalMemoryManager } from "../src/services/worldstate/l3-archival-memory";
-import { diaryDayRange } from "../src/services/worldstate/memory-date";
-import { Services, TableName } from "../src/shared/constants";
+import { TableName } from "../src/shared/constants";
+import { HISTORY_CHANNELS } from "../src/world/channel-metadata";
+import { HistoryCommandManager } from "../src/world/commands";
+import { ContextBuilder } from "../src/world/context-builder";
+import { InteractionManager } from "../src/world/interaction-manager";
+import { SemanticMemoryManager } from "../src/world/l2-semantic-memory";
+import { ArchivalMemoryManager } from "../src/world/l3-archival-memory";
+import { diaryDayRange } from "../src/world/memory-date";
+import { stubCtx } from "./helpers/yesimbot";
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -102,14 +103,10 @@ async function fixture() {
             return chat(args);
         },
     };
-    const ctx: any = {
-        baseDir,
-        database,
-        command,
-        logger: log,
-        [Services.Logger]: { getLogger: () => log },
-        [Services.Model]: { useChatGroup: () => ({ getModels: () => [model] }) },
-    };
+    const ctx = stubCtx(
+        { logging: { getLogger: () => log }, model: { useChatGroup: () => ({ getModels: () => [model] }) } },
+        { baseDir, database, command, logger: log },
+    );
     const config: any = {
         l1_memory: { maxMessages: 50, keepFullTurnCount: 2 },
         l2_memory: { enabled: false },
@@ -118,11 +115,11 @@ async function fixture() {
     // Keep real log read/write methods without the constructor's detached mkdir.
     const interaction: any = Object.create(InteractionManager.prototype);
     Object.assign(interaction, { ctx, config, logger: log, basePath: path.join(baseDir, "data", "yesimbot", "interactions") });
-    const semantic = new SemanticMemoryManager(ctx, config);
-    const memory: any = new ArchivalMemoryManager(ctx, config, interaction, semantic);
+    const semantic = new SemanticMemoryManager(ctx, config, ctx.yesimbot.logging, ctx.yesimbot.model);
+    const memory: any = new ArchivalMemoryManager(ctx, config, interaction, ctx.yesimbot.logging, ctx.yesimbot.model, semantic);
     memory.chatModel = model;
     const service: any = { l2_manager: semantic, l3_manager: memory, l1_manager: interaction };
-    new HistoryCommandManager(ctx, service, config).register();
+    new HistoryCommandManager(ctx, service, config, ctx.yesimbot.logging).register();
     const seedMessages = (platform = "onebot", channelId = "same", date = day()) => {
         for (let i = 0; i < 5; i++)
             rows.get(TableName.Messages)!.push({
@@ -165,7 +162,7 @@ for (const hour of [4, 12])
         const f = await fixture();
         for (const platform of ["onebot", "discord"])
             f.diaries().push({ id: platform, platform, channelId: "private:same", date: "2026-09-30", content: platform });
-        const builder = new ContextBuilder(f.ctx, f.config, { getL1History: async () => [] } as any, f.semantic, f.memory);
+        const builder = new ContextBuilder(f.ctx, f.config, { getL1History: async () => [] } as any, f.semantic, f.memory, f.ctx.yesimbot.logging);
         const result = await builder.build({
             platform: "onebot",
             channelId: "private:same",

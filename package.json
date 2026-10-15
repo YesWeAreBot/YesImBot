@@ -15,7 +15,7 @@
   ],
   "type": "module",
   "scripts": {
-    "build": "yakumo build",
+    "build": "yakumo build && node scripts/finalize-core-entry.js",
     "clean": "yakumo clean",
     "collect-packages": "node scripts/collect-packages.js",
     "format": "oxfmt .",
@@ -28,8 +28,6 @@
     "verify-packages": "node scripts/verify-packages.js"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.29.5",
-    "@koishijs/client": "^5.30.11",
     "@types/node": "^26.5.0",
     "esbuild": "^0.28.2",
     "husky": "^9.1.7",
