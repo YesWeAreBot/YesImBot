@@ -631,10 +631,8 @@ export class PersonStore {
                 if (
                     evidence.some(
                         (e) =>
-                            e.provenance &&
-                            (e.provenance.personId !== a.personId ||
-                                e.provenance.accountRevision !== (a.bindingRevision ?? 0) ||
-                                (!!source.memoryChangedAt && e.timestamp <= source.memoryChangedAt)),
+                            (!!source.memoryChangedAt && e.timestamp <= source.memoryChangedAt) ||
+                            (e.provenance && (e.provenance.personId !== a.personId || e.provenance.accountRevision !== (a.bindingRevision ?? 0))),
                     )
                 )
                     throw new Error("来源身份已过期，请使用纠错后新消息");
@@ -701,10 +699,8 @@ export class PersonStore {
                 if (
                     sources.some(
                         (e) =>
-                            e.provenance &&
-                            (e.provenance.personId !== p.id ||
-                                e.provenance.accountRevision !== (a.bindingRevision ?? 0) ||
-                                (!!p.memoryChangedAt && e.timestamp <= p.memoryChangedAt)),
+                            (!!p.memoryChangedAt && e.timestamp <= p.memoryChangedAt) ||
+                            (e.provenance && (e.provenance.personId !== p.id || e.provenance.accountRevision !== (a.bindingRevision ?? 0))),
                     )
                 )
                     throw new Error("来源身份已过期，请使用纠错后新消息");

@@ -123,10 +123,8 @@ export class SummaryWorker {
         const evidence = (await this.store.sources(scope, userId, 20))
             .filter(
                 (e) =>
-                    !e.provenance ||
-                    (e.provenance.personId === p.id &&
-                        e.provenance.accountRevision === (a.bindingRevision ?? 0) &&
-                        (!p.memoryChangedAt || e.timestamp > p.memoryChangedAt)),
+                    (!p.memoryChangedAt || e.timestamp > p.memoryChangedAt) &&
+                    (!e.provenance || (e.provenance.personId === p.id && e.provenance.accountRevision === (a.bindingRevision ?? 0))),
             )
             .slice(0, 10);
         if (!evidence.length) throw new Error("当前账号没有可用的消息来源");

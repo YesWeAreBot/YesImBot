@@ -117,7 +117,7 @@ test("identity correction remains visible after profile review, manual edit and 
     assert.equal((await store.find("s", "b")).person.stale, false);
     await store.revert("s", edit.id, actor);
     assert.equal((await store.find("s", "b")).person.identityChanged, true);
-    await store.capture("s", { id: "b1", userId: "b", name: "乙", text: "我喜欢 Go", timestamp: 1235 });
+    await store.capture("s", { id: "b1", userId: "b", name: "乙", text: "我喜欢 Go", timestamp: Date.now() + 1 });
     const candidate = await store.propose("s", "b", "喜欢 Go", ["b1"], "model");
     await store.review("s", candidate.id, true, actor);
     const current = (await store.find("s", "b")).person;

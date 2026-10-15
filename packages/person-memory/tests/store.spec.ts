@@ -44,7 +44,9 @@ test("evidence is validated; review, locks and concurrent manual edits invalidat
     await store.lock(scene, "u1", true, actor);
     await assert.rejects(store.propose(scene, "u1", "模型改写", ["m1"], "model"), /锁定/);
     await store.lock(scene, "u1", false, actor);
-    const p2 = await store.propose(scene, "u1", "喜欢 Python", ["m1"], "model");
+    const corrected = (await store.find(scene, "u1")).person;
+    await store.capture(scene, { ...source("fresh"), timestamp: corrected.memoryChangedAt + 1 });
+    const p2 = await store.propose(scene, "u1", "喜欢 Python", ["fresh"], "model");
     await store.review(scene, p2.id, true, actor);
     const person = (await store.find(scene, "u1")).person;
     assert.equal(person.profile, "喜欢 Python");
@@ -155,8 +157,8 @@ test("revert then rebind never recycles an association version or revives old pr
 test("new account binding invalidates existing profile and pre-binding proposals", async (t) => {
     const { store } = await setup(t);
     await store.recognize(scene, "u1", "甲");
-    await store.capture(scene, source("m1"));
-    await store.setProfile(scene, "u1", "旧画像", actor);
+    const edited = await store.setProfile(scene, "u1", "旧画像", actor);
+    await store.capture(scene, { ...source("m1"), timestamp: edited.memoryChangedAt + 1 });
     const proposal = await store.propose(scene, "u1", "旧候选", ["m1"], "model");
     await store.bind(scene, "u2", "u1", 0.9, actor);
     assert.equal((await store.find(scene, "u1")).person.stale, true);
