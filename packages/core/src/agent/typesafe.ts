@@ -47,18 +47,43 @@ export class TypeSafeEvaluator {
         const config = this.config.typesafe!;
         const selected = config.evaluationModel;
         if (!selected?.providerName || !selected.modelId || signal.aborted) return null;
+        const logger = this.ctx[Services.Logger]?.getLogger("[TypeSafe 接话判断]");
+        const started = Date.now();
+        const identity = `[${selected.providerName}][${selected.modelId}]`;
         const controller = new AbortController();
+        let timedOut = false;
         const abort = () => controller.abort();
         signal.addEventListener("abort", abort, { once: true });
-        const timer = setTimeout(abort, config.timeoutMs);
+        const timer = setTimeout(() => {
+            timedOut = true;
+            abort();
+        }, config.timeoutMs);
         let cancel: () => void;
         const cancelled = new Promise<null>((resolve) => {
             cancel = () => resolve(null);
             controller.signal.addEventListener("abort", cancel, { once: true });
         });
         try {
-            return await Promise.race([this.request(session, controller.signal, onAnswers), cancelled]);
-        } catch {
+            logger?.debug?.(`${identity} 开始评估 | 模式: ${config.mode} | 超时: ${config.timeoutMs}ms`);
+            const multiplier = await Promise.race([this.request(session, controller.signal, onAnswers), cancelled]);
+            const status = timedOut
+                ? "超时，沿用普通意愿"
+                : signal.aborted
+                  ? "已取消"
+                  : multiplier === null
+                    ? "不可用，沿用普通意愿"
+                    : `完成 | 结果倍率: ${multiplier.toFixed(3)} | ${config.mode === "adjust" ? "用于调整意愿" : "仅观察，不调整意愿"}`;
+            const message = `${identity} ${status} | 耗时: ${Date.now() - started}ms`;
+            if (timedOut) logger?.warn?.(message);
+            else if (signal.aborted) logger?.debug?.(message);
+            else logger?.info?.(message);
+            return multiplier;
+        } catch (error) {
+            const http = error instanceof Error ? /^TypeSafe request failed with status (\d{3})$/.exec(error.message)?.[1] : undefined;
+            const invalid = error instanceof Error && error.message === "Invalid TypeSafe evaluation response";
+            logger?.warn?.(
+                `${identity} ${signal.aborted ? "已取消" : timedOut ? "超时" : "请求失败"} | 错误类型: ${error instanceof Error ? error.name : "unknown"}${http ? ` | HTTP: ${http}` : ""}${invalid ? " | 响应结构无效" : ""} | 耗时: ${Date.now() - started}ms | 沿用普通意愿`,
+            );
             return null;
         } finally {
             clearTimeout(timer);
@@ -75,7 +100,10 @@ export class TypeSafeEvaluator {
         const config = this.config.typesafe!;
         const selected = config.evaluationModel;
         const model = this.ctx[Services.Model].getEvaluationModel(selected.providerName, selected.modelId);
-        if (!model) return null;
+        if (!model) {
+            this.ctx[Services.Logger]?.getLogger("[TypeSafe 接话判断]").warn?.("未找到所选评估模型，请检查 TypeSafe 提供商与评估能力配置。");
+            return null;
+        }
         const state = {
             bot: {
                 id: session.bot.selfId,
@@ -86,7 +114,10 @@ export class TypeSafeEvaluator {
             recentMessages: [] as Array<{ id: string; senderId: string; content: string }>,
         };
         let size = JSON.stringify(state).length;
-        if (size > 16000) return null;
+        if (size > 16000) {
+            this.ctx[Services.Logger]?.getLogger("[TypeSafe 接话判断]").warn?.("评估输入超限（16000 字符），沿用普通意愿。");
+            return null;
+        }
         if (config.historyLimit > 0) {
             const messages = await this.ctx.database.get(
                 TableName.Messages,
@@ -113,6 +144,9 @@ export class TypeSafeEvaluator {
         );
         if (signal.aborted) return null;
         const { addressed, interested, others } = result.answers;
+        this.ctx[Services.Logger]
+            ?.getLogger("[TypeSafe 接话判断]")
+            .debug?.(`评估结果 | 对我说: ${addressed.noul.toFixed(3)} | 兴趣匹配: ${interested.noul.toFixed(3)} | 对别人说: ${others.noul.toFixed(3)}`);
         onAnswers?.({ addressed: addressed.noul, interested: interested.noul, others: others.noul });
         return 1 + config.influence * (Math.max(positive(addressed.noul), positive(interested.noul)) - positive(others.noul));
     }

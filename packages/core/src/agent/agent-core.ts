@@ -124,10 +124,12 @@ export class AgentCore extends Service<Config> {
         const channelCid = replyKey(this.replyTarget(session));
         stimulus = { ...stimulus, channelCid, decisionId: this.decisions?.begin(this.replyTarget(session), type, session.messageId) };
         if (!this.allowedCategories(stimulus).length) {
+            this.logger.debug(`[${channelCid}] 跳过意愿评估 | 原因: 回复类别已抑制 | 消息ID: ${session.messageId ?? "未知"}`);
             this.recordDecision(stimulus, { stage: "blocked", reason: "reply_suppressed", allowed: [] });
             return;
         }
         if (this.worldState.isBotMuted(session.cid, session.selfId)) {
+            this.logger.debug(`[${channelCid}] 跳过意愿评估 | 原因: 机器人被禁言 | 消息ID: ${session.messageId ?? "未知"}`);
             this.recordDecision(stimulus, { stage: "blocked", reason: "muted" });
             return;
         }
@@ -141,6 +143,19 @@ export class AgentCore extends Service<Config> {
         const useTypeSafe = config && config.mode !== "off" && config.evaluationModel?.providerName && config.evaluationModel.modelId;
         const useTopics = this.config.topics?.enabled && this.config.topics.model?.providerName && this.config.topics.model.modelId;
         if (type !== "user_message" || addressed || this.scheduler.isBusy(channelCid) || (!useTypeSafe && !useTopics)) {
+            const reason =
+                type !== "user_message"
+                    ? "系统事件"
+                    : session.isDirect
+                      ? "私聊"
+                      : addressed
+                        ? "明确 @ 机器人"
+                        : this.scheduler.isBusy(channelCid)
+                          ? "回复忙碌"
+                          : "功能关闭或未选有效模型";
+            this.logger.debug(
+                `[${channelCid}] 跳过本次模型评估 | 原因: ${reason} | TypeSafe: ${config?.mode ?? "off"} / ${useTypeSafe ? "已配置" : "未启用或缺模型"} | 话题: ${useTopics ? "已配置" : "未启用或缺模型"} | 消息ID: ${session.messageId ?? "未知"}`,
+            );
             this.recordDecision(stimulus, { assessment: { mode: config?.mode ?? "off", multiplier: null, status: "bypassed" } });
             const cachedTopic = type === "user_message" && !addressed && useTopics ? this.topics?.getCurrent(channelCid) : undefined;
             this.processStimulus(cachedTopic ? { ...stimulus, topic: cachedTopic } : stimulus);
@@ -164,6 +179,9 @@ export class AgentCore extends Service<Config> {
                 this.recordDecision(stimulus, {
                     assessment: { mode: config?.mode ?? "off", multiplier, answers, status: multiplier === null ? "unavailable" : "completed" },
                 });
+                this.logger.info(
+                    `[${channelCid}] 意愿评估完成 | TypeSafe: ${config?.mode ?? "off"} | 结果倍率: ${multiplier?.toFixed(3) ?? "不可用"} | 实际应用: ${(config?.mode === "adjust" ? (multiplier ?? 1) : 1).toFixed(3)} | 话题倍率: ${snapshot?.multiplier.toFixed(3) ?? "无，沿用普通意愿"} | 决策ID: ${stimulus.decisionId ?? "未记录"}`,
+                );
                 this.processStimulus({ ...stimulus, topic: snapshot }, config?.mode === "adjust" ? (multiplier ?? 1) : 1);
             },
             () => {
@@ -178,6 +196,9 @@ export class AgentCore extends Service<Config> {
         super(ctx, Services.Agent, true);
         this.config = config;
         this.logger = ctx[Services.Logger].getLogger("[智能体核心]");
+        this.logger.info(
+            `意愿评估配置 | TypeSafe: ${config.typesafe?.mode ?? "off"} / ${config.typesafe?.evaluationModel?.providerName && config.typesafe.evaluationModel.modelId ? "已选评估模型" : "未选评估模型"} | 话题分析: ${config.topics?.enabled ? "启用" : "关闭"} / ${config.topics?.model?.providerName && config.topics.model.modelId ? "已选对话模型" : "未选对话模型"} | 私聊、明确 @ 和忙碌时跳过新评估`,
+        );
         if (config.decisionRecording?.enabled) {
             this.decisionJournal = new DecisionJournal(
                 getInstanceDirectory(ctx, config.decisionRecording.directory || "data/yesimbot/decisions", (message) => this.logger.warn(message)),
@@ -405,7 +426,7 @@ export class AgentCore extends Service<Config> {
                 const topic = (stimulus as TracedStimulus).topic;
                 const candidates = topic ? (this.topics?.getTopics(channelCid) ?? []) : [];
                 if (topic) this.trackTopicScores(channelCid, candidates);
-                const willingnessBefore = this.willing.getCurrentWillingness(channelCid);
+                const willingnessBefore = this.willing.getCurrentWillingness(topic?.scoreKey ?? channelCid);
                 const replyRule = this.replyControl.get(this.replyTarget(session));
                 const categories = replyRule ? allowed : undefined;
                 const result = topic
@@ -443,11 +464,11 @@ export class AgentCore extends Service<Config> {
                 if (result.calculation) {
                     const c = result.calculation;
                     this.logger.debug(
-                        `[${channelCid}] 意愿增益明细 | 消息ID: ${session.messageId ?? "未知"} | 关键词/兴趣倍率: ${c.interestMultiplier} | 语义评估倍率: ${c.assessmentMultiplier} | 动态倍率: ${c.dynamicMultiplier} | 最终增益: ${c.effectiveGain} | 抽签值: ${result.roll ?? "未抽签"}`,
+                        `[${channelCid}] 意愿增益明细 | 消息ID: ${session.messageId ?? "未知"} | 关键词/兴趣倍率: ${c.interestMultiplier} | 语义评估倍率: ${assessmentMultiplier} | 话题倍率: ${topic?.multiplier ?? 1} | 本次评分合成倍率: ${c.assessmentMultiplier} | 动态倍率: ${c.dynamicMultiplier} | 最终增益: ${c.effectiveGain} | 抽签值: ${result.roll ?? "未抽签"}`,
                     );
                 }
                 /* prettier-ignore */
-                this.logger.debug(`[${channelCid}] 意愿计算: ${willingnessBefore.toFixed(2)} -> ${willingnessAfter.toFixed(2)} | 回复概率: ${(result.probability * 100).toFixed(1)}% | 初步决策: ${decision} | 处理: ${!allowSchedule ? "仅结算，不调度" : decision ? "准备提交调度" : "未达到回复条件"} | 消息ID: ${session.messageId ?? "未知"}`);
+                this.logger.debug(`[${channelCid}] 意愿计算: ${(result.calculation?.before ?? willingnessBefore).toFixed(2)} -> ${willingnessAfter.toFixed(2)} | 回复概率: ${(result.probability * 100).toFixed(1)}% | 初步决策: ${decision} | 处理: ${!allowSchedule ? "仅结算，不调度" : decision ? "准备提交调度" : "未达到回复条件"} | 消息ID: ${session.messageId ?? "未知"}`);
             } catch (error) {
                 this.recordDecision(stimulus, { stage: "failed", reason: "exception" });
                 handleError(

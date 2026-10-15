@@ -7,6 +7,7 @@ import { WillingnessManager } from "../src/agent/willing";
 import { Services } from "../src/shared/constants";
 
 function setup() {
+    const logs: string[] = [];
     const target = { platform: "qq", selfId: "bot", channelId: "g", isDirect: false };
     const session: any = {
         ...target,
@@ -43,9 +44,11 @@ function setup() {
         () => {},
         async () => {},
     );
-    Object.defineProperty(core, "logger", { value: { debug() {}, info() {}, warn() {} } });
+    Object.defineProperty(core, "logger", {
+        value: { debug: (message: string) => logs.push(message), info: (message: string) => logs.push(message), warn: (message: string) => logs.push(message) },
+    });
     Object.defineProperty(core, "ctx", { value: ctx });
-    return { core, ctx, session, target, decisions, scheduled };
+    return { core, ctx, session, target, decisions, scheduled, logs };
 }
 
 it("records the actual roll and accepted scheduling without retaining message text", () => {
@@ -71,11 +74,11 @@ it("records the actual roll and accepted scheduling without retaining message te
     }
 });
 
-it("keeps observe-mode semantic results while applying the original gain", async () => {
+it.each(["observe", "adjust"] as const)("records semantic results and applies the correct gain in %s mode", async (mode) => {
     const t = setup();
     let evaluations = 0;
     t.core.config.typesafe = {
-        mode: "observe",
+        mode,
         evaluationModel: { providerName: "test", modelId: "test" },
         timeoutMs: 1000,
         historyLimit: 0,
@@ -95,14 +98,26 @@ it("keeps observe-mode semantic results while applying the original gain", async
     await new Promise((resolve) => setTimeout(resolve, 0));
     const record = t.decisions.latest(t.target)!;
     expect(record.assessment).toMatchObject({
-        mode: "observe",
+        mode,
         multiplier: 1.5,
         status: "completed",
         answers: { addressed: 1, interested: 0, others: 0 },
     });
-    expect(record.calculation?.assessmentMultiplier).toBe(1);
+    expect(record.calculation?.assessmentMultiplier).toBe(mode === "adjust" ? 1.5 : 1);
+    expect(record.calculation?.after).toBe(mode === "adjust" ? 18 : 12);
     t.core.queryDecision(t.session);
     expect(evaluations).toBe(1);
+    expect(t.logs.join("\n")).toContain(mode === "adjust" ? "实际应用: 1.500" : "实际应用: 1.000");
+    expect(t.logs.join("\n")).toContain(mode);
+});
+
+it("explains direct-message bypass without starting a semantic request", () => {
+    const t = setup();
+    t.session.isDirect = true;
+    t.core.config.typesafe = { mode: "adjust", evaluationModel: { providerName: "p", modelId: "m" } };
+    t.core.receiveStimulus({ type: "user_message", session: t.session });
+    expect(t.logs.join("\n")).toContain("私聊");
+    expect(t.decisions.latest({ ...t.target, isDirect: true })?.assessment?.status).toBe("bypassed");
 });
 
 it("records suppression and muting without scheduling a reply", async () => {

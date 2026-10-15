@@ -47,6 +47,10 @@ export class TopicManager {
     private readonly config: TopicConfig;
     private disposed = false;
 
+    private get logger() {
+        return this.ctx[Services.Logger]?.getLogger("[话题分析]");
+    }
+
     constructor(
         private readonly ctx: Context,
         config: TopicConfig,
@@ -77,6 +81,9 @@ export class TopicManager {
             state.lastAttempt !== undefined &&
             (now - state.lastAttempt < this.config.minIntervalMs || state.messages < this.config.messagesPerAnalysis)
         ) {
+            this.logger?.debug?.(
+                `[${channelKey}] 复用或跳过分析 | 距上次尝试: ${now - state.lastAttempt}ms / ${this.config.minIntervalMs}ms | 新消息: ${state.messages} / ${this.config.messagesPerAnalysis} | 缓存: ${state.lastFailure ? "上次失败，沿用普通意愿" : "使用已有话题"}`,
+            );
             return state.lastFailure
                 ? undefined
                 : this.snapshot(
@@ -85,12 +92,13 @@ export class TopicManager {
                   );
         }
         if (!state.pending) {
+            const started = Date.now();
             state.lastAttempt = now;
             state.messages = 0;
             state.controller = new AbortController();
             const controller = state.controller;
             const timer = setTimeout(() => {
-                this.ctx[Services.Logger]?.getLogger("[话题分析]").debug(`[${channelKey}] 分析超时 | 限制: ${this.config.timeoutMs}ms | 沿用普通意愿`);
+                this.logger?.warn?.(`[${channelKey}] 分析超时 | 限制: ${this.config.timeoutMs}ms | 沿用普通意愿`);
                 controller.abort(new DOMException("话题分析超时，沿用普通意愿", "AbortError"));
             }, this.config.timeoutMs);
             let cancel: () => void;
@@ -109,12 +117,19 @@ export class TopicManager {
                     state.topics = result.topics;
                     state.currentTopicId = result.currentTopicId;
                     state.focusTopicId = result.currentTopicId;
+                    const current = result.topics.find((topic) => topic.id === result.currentTopicId);
+                    this.logger?.info?.(
+                        `[${channelKey}] 分析完成 | 话题数: ${result.topics.length} | 当前话题倍率: ${this.snapshot(channelKey, current)?.multiplier.toFixed(3) ?? "无"} | 耗时: ${Date.now() - started}ms`,
+                    );
                     return this.snapshot(
                         channelKey,
                         state.topics.find((topic) => topic.id === state.currentTopicId),
                     );
                 })
-                .catch(() => {
+                .catch((error) => {
+                    this.logger?.warn?.(
+                        `[${channelKey}] ${controller.signal.aborted ? "分析取消" : "请求失败"} | 错误类型: ${error instanceof Error ? error.name : "unknown"} | 耗时: ${Date.now() - started}ms | 沿用普通意愿`,
+                    );
                     if (this.states.get(channelKey) === state) state.lastFailure = true;
                     return undefined;
                 })
@@ -225,14 +240,22 @@ export class TopicManager {
     private async request(session: Session, state: ChannelState, signal: AbortSignal): Promise<{ topics: TopicFocus[]; currentTopicId: string } | undefined> {
         const selected = this.config.model!;
         const model = this.ctx[Services.Model].getChatModel(selected.providerName, selected.modelId);
-        if (!model || signal.aborted) return undefined;
+        if (!model) {
+            this.logger?.warn?.(`[${selected.providerName}][${selected.modelId}] 所选对话模型不可用 | 沿用普通意愿`);
+            return undefined;
+        }
+        if (signal.aborted) return undefined;
+        this.logger?.debug?.(`[${selected.providerName}][${selected.modelId}] 开始话题分析 | 消息ID: ${session.messageId ?? "未知"}`);
         const data = {
             bot: { id: session.bot.selfId, name: session.bot.user?.name, interests: this.interests(session) },
             existingTopics: state.topics.map(({ id, label }) => ({ id, label })),
             current: { id: session.messageId, senderId: session.userId, content: session.toJSON?.().message?.content ?? session.content },
             recentMessages: [] as Array<{ id: string; senderId: string; content: string }>,
         };
-        if (JSON.stringify(data).length > 16000) return undefined;
+        if (JSON.stringify(data).length > 16000) {
+            this.logger?.warn?.("分析输入超限（16000 字符） | 沿用普通意愿");
+            return undefined;
+        }
         if (this.config.historyLimit > 0) {
             const messages = await this.ctx.database.get(
                 TableName.Messages,
@@ -276,8 +299,14 @@ export class TopicManager {
                 ],
             }),
         );
-        if (signal.aborted || typeof response.text !== "string" || response.text.length > 16000) return undefined;
-        return this.validate(JSON.parse(response.text), state.topics);
+        if (signal.aborted) return undefined;
+        if (typeof response.text !== "string" || response.text.length > 16000) {
+            this.logger?.warn?.("分析输出缺失或超限 | 沿用普通意愿");
+            return undefined;
+        }
+        const result = this.validate(JSON.parse(response.text), state.topics);
+        if (!result) this.logger?.warn?.("分析输出结构无效 | 沿用普通意愿");
+        return result;
     }
 
     private validate(value: unknown, previous: TopicFocus[]): { topics: TopicFocus[]; currentTopicId: string } | undefined {

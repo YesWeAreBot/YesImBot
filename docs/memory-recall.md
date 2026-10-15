@@ -11,11 +11,13 @@
 ```text
 history.diary                         # 手动生成今天的日记，静默注入
 history.diary 2026-10-10 --display     # 生成指定日期的日记并显示结果
-history.recall 旅行 -k l3 --display   # 查找 L3 原文，显示并注入
+history.recall -k l3 --display 旅行   # 查找 L3 原文，显示并注入
 history.recall -k messages -u 123456  # 按发送者召回完整消息，静默注入
 history.recall -k l3 -o 6 -n 6       # 继续读取下一页
 history.recall -k messages --start 2026-10-01 --end 2026-10-02
 ```
+
+`history.recall` 的选项必须放在查询词之前；查询词及其后的文本会整体作为检索内容。
 
 默认不在聊天窗口显示，召回结果会进入当前会话的观察上下文，在下一次正常心跳时交给 Bot。`--display` 只增加窗口显示，不改变注入内容；它不会强制 Bot 立即回复。
 
