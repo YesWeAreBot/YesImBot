@@ -1,4 +1,5 @@
-import { test, expect } from "vitest";
+import { CQCode } from "koishi-plugin-adapter-onebot";
+import { test, expect, vi } from "vitest";
 
 import InteractionsExtension from "../src/services/extension/builtin/interactions";
 import { Services } from "../src/shared/constants";
@@ -80,4 +81,35 @@ test("UTF8 output capacity stops before retaining oversized content", async () =
     expect(result.result).toContain("展开预算");
     expect(result.result).not.toContain("after");
     expect(Buffer.byteLength(result.result, "utf8")).toBeLessThanOrEqual(128 * 1024);
+});
+
+test("keeps ordinary CQ strings mixed with object segments inside the budget", async () => {
+    const { result } = await read({ root: [node("hello[CQ:at,qq=2]", text(" between "), "world")] });
+    expect(result.status).toBe("success");
+    expect(result.result).toContain('hello<at id="2"/> between world');
+    expect(result.result).not.toContain("展开预算");
+});
+
+test.each([
+    { name: "an oversized CQ array string", prefix: "keep", segment: "[CQ:at,qq=1]".repeat(15_000) },
+    { name: "a string exceeding the remaining shared capacity", prefix: "keep".repeat(25_000), segment: "[CQ:at,qq=1]".repeat(4_000) },
+    { name: "UTF8 bytes exceeding capacity despite fewer characters", prefix: "keep", segment: "汉".repeat(50_000) },
+])("rejects $name before CQ parsing or later asset work", async ({ prefix, segment }) => {
+    const parse = vi.spyOn(CQCode, "parse");
+    const transform = vi.fn(async () => "<img/>");
+    try {
+        const { result } = await read(
+            { root: [node(text(prefix), segment, { type: "image", data: { url: "https://example.invalid/image.png" } })] },
+            transform,
+        );
+        expect(result.status).toBe("success");
+        expect(result.result).toContain(prefix);
+        expect(result.result).toContain("展开预算");
+        expect(Buffer.byteLength(result.result, "utf8")).toBeLessThanOrEqual(128 * 1024);
+        expect(parse.mock.calls.map(([input]) => input === segment)).not.toContain(true);
+        expect(parse).toHaveBeenCalledTimes(1);
+        expect(transform).not.toHaveBeenCalled();
+    } finally {
+        parse.mockRestore();
+    }
 });

@@ -224,14 +224,14 @@ async function formatForwardMessage(
             const content = emptyContent && message.message !== undefined ? message.message : (message.content ?? message.message);
             if (typeof content !== "string" && !Array.isArray(content)) throw new Error(`转发消息第 ${index + 1} 个节点缺少合法的 content/message`);
             append(`${index ? "\n" : ""}[${timestamp}|${name}(${userId})]: `);
-            // Bound CQ parsing itself; arrays are decoded one segment at a time.
-            if (typeof content === "string" && Buffer.byteLength(content, "utf8") > MAX_FORWARD_BYTES - bytes - 256) throw new ForwardBudgetExceeded();
             const groups = typeof content === "string" ? [content] : content;
             if (!content.length) append("（空消息）");
             for (const segment of groups) {
                 claim();
                 if (typeof segment !== "string" && (!isRecord(segment) || typeof segment.type !== "string" || !segment.type || !isRecord(segment.data)))
                     throw new Error(`转发消息第 ${index + 1} 个节点的消息段无效`);
+                // Bound CQ parsing itself, including strings inside segment arrays.
+                if (typeof segment === "string" && Buffer.byteLength(segment, "utf8") > MAX_FORWARD_BYTES - bytes - 256) throw new ForwardBudgetExceeded();
                 const parsed = CQCode.parse((typeof segment === "string" ? segment : [segment]) as Parameters<typeof CQCode.parse>[0]);
                 for (const element of parsed) {
                     claim();
