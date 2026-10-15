@@ -485,6 +485,7 @@ export class ToolService extends Service<Config> {
         assertReplyTurn();
         const world = this.ctx[Services.WorldState];
         if (session?.platform && session.channelId && world?.recordSystemEvent) {
+            const channelId = session.channelId;
             try {
                 const admin = session.argv?.command?.name === "tool.call";
                 const historyGeneration = Number.isSafeInteger(result.result?.historyGeneration) ? result.result.historyGeneration : undefined;
@@ -493,7 +494,7 @@ export class ToolService extends Service<Config> {
                         {
                             id: requestId,
                             platform: session.platform,
-                            channelId: session.channelId,
+                            channelId,
                             eventScope: "channel",
                             type: "tool-result",
                             timestamp: new Date(),
@@ -503,8 +504,8 @@ export class ToolService extends Service<Config> {
                                 requester: session.userId,
                                 operation: functionName,
                                 scope: "channel",
-                                origin: { platform: session.platform, selfId: session.selfId, adapter: session.bot?.platform, channelId: session.channelId },
-                                target: { platform: session.platform, selfId: session.selfId, channelId: session.channelId },
+                                origin: { platform: session.platform, selfId: session.selfId, adapter: session.bot?.platform, channelId },
+                                target: { platform: session.platform, selfId: session.selfId, channelId },
                                 startedAt: startedAt.toISOString(),
                                 finishedAt: new Date().toISOString(),
                                 status: result.status,
