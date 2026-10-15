@@ -231,6 +231,7 @@ export class InteractionManager {
         } catch (error) {
             this.logger.error(`记录系统事件到数据库失败 | ID: ${event.id}`);
             this.logger.debug(error);
+            throw error;
         }
     }
 
@@ -243,19 +244,21 @@ export class InteractionManager {
      * @returns 按时间升序排列的事件数组
      */
     public async getL1History(platform: string, channelId: string, limit: number, selfId?: string): Promise<L1HistoryItem[]> {
+        const channelEvents = {
+            platform,
+            channelId,
+            eventScope: { $nin: ["bot", "mind", "global"] },
+            $or: [{ botKey: { $exists: false } }, { botKey: "" }, ...(selfId ? [{ botKey: JSON.stringify([platform, selfId]) }] : [])],
+        };
         const [messages, systemEvents, agentEvents] = await Promise.all([
             this.ctx.database.get(TableName.Messages, { platform, channelId }, { limit, sort: { timestamp: "desc" } }),
             this.ctx.database.get(
                 TableName.SystemEvents,
                 selfId
                     ? {
-                          $or: [
-                              { platform, channelId, eventScope: { $nin: ["bot", "mind", "global"] } },
-                              { eventScope: "bot", botKey: JSON.stringify([platform, selfId]) },
-                              { eventScope: "global" },
-                          ],
+                          $or: [channelEvents, { eventScope: "bot", botKey: JSON.stringify([platform, selfId]) }, { eventScope: "global" }],
                       }
-                    : { platform, channelId, eventScope: { $nin: ["bot", "mind", "global"] } },
+                    : channelEvents,
                 { limit, sort: { timestamp: "desc" } },
             ),
             this.getAgentHistoryFromFile(platform, channelId, limit),
