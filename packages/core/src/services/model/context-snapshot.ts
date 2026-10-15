@@ -14,6 +14,7 @@ export interface ContextSnapshot {
     inputTokens?: number;
     content?: string;
     unavailable?: string;
+    contextBudget?: unknown;
 }
 
 const stores = new WeakMap<object, Map<string, ContextSnapshot>>();
@@ -27,7 +28,7 @@ function owner(ctx: Context): object {
 
 export function captureContextSnapshot(
     ctx: Context,
-    metadata: { platform?: string; botId?: string; target?: string; provider: string; model: string; purpose?: string },
+    metadata: { platform?: string; botId?: string; target?: string; provider: string; model: string; purpose?: string; contextBudget?: unknown },
     payload: unknown,
     period: string,
     unavailable?: string,
@@ -45,6 +46,7 @@ export function captureContextSnapshot(
         provider: metadata.provider,
         model: metadata.model,
         purpose: metadata.purpose,
+        contextBudget: metadata.contextBudget,
     };
     if (unavailable) snapshot.unavailable = unavailable;
     else
@@ -63,7 +65,7 @@ export function captureContextSnapshot(
                 let multimodal = false;
                 const input = contextBody as any;
                 const context = input?.messages
-                    ? { messages: input.messages, tools: input.tools, response_format: input.response_format }
+                    ? { messages: input.messages, system: input.system, tools: input.tools, response_format: input.response_format }
                     : (input?.input ?? { state: input?.state, questions: input?.questions });
                 const text = JSON.stringify(context, (_key, value) => {
                     if (value && typeof value === "object" && ["image_url", "input_audio", "image", "audio", "video"].includes(value.type)) multimodal = true;

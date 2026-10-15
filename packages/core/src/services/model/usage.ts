@@ -20,6 +20,8 @@ export interface UsageScope {
     platform?: string;
     botId?: string;
     target?: string;
+    /** Snapshot-only diagnostics; excluded from persistent aggregates. */
+    contextBudget?: unknown;
 }
 export interface UsageMetadata extends UsageScope {
     provider: string;
@@ -46,7 +48,7 @@ export interface UsageTicket extends UsageMetadata {
 }
 const scopes = new AsyncLocalStorage<UsageScope>();
 export function withUsageScope<T>(scope: UsageScope, fn: () => T, inherit = true): T {
-    return scopes.run({ ...(inherit ? scopes.getStore() : {}), ...Object.fromEntries(Object.entries(scope).filter(([, value]) => value !== undefined)) }, fn);
+    return scopes.run({ ...(inherit ? scopes.getStore() : {}), ...scope }, fn);
 }
 const number = (...values: unknown[]): number | null =>
     (values.find((value) => typeof value === "number" && Number.isFinite(value) && value >= 0) as number) ?? null;
@@ -74,7 +76,11 @@ export function normalizeUsage(value: any): TokenUsage {
         value.prompt_tokens_details?.cache_write_tokens,
         value.input_tokens_details?.cache_write_tokens,
     );
-    if (value.prompt_tokens === undefined && input !== null && (value.cache_read_input_tokens !== undefined || value.cache_creation_input_tokens !== undefined))
+    if (
+        value.prompt_tokens === undefined &&
+        input !== null &&
+        (value.cache_read_input_tokens !== undefined || value.cache_creation_input_tokens !== undefined || value.cache_creation !== undefined)
+    )
         input += (cr ?? 0) + (cw ?? 0);
     return {
         in: input,
@@ -209,8 +215,9 @@ export class UsageLedger {
             purpose = ticket.purpose ?? "未分类";
         let record = this.records.find((record) => usageRecordKey(record) === usageRecordKey({ ...ticket, purpose, status }));
         if (!record) {
+            const { contextBudget: _contextBudget, ...recordTicket } = ticket;
             record = {
-                ...ticket,
+                ...recordTicket,
                 purpose,
                 status,
                 count: 0,
@@ -384,11 +391,14 @@ export function observeUsageFetch(ctx: Context, metadata: UsageMetadata, fetch: 
         const input = payload?.messages
             ? {
                   messages: payload.messages,
+                  system: payload.system,
                   tools: payload.tools,
                   response_format: payload.response_format,
                   tool_choice: payload.tool_choice,
               }
             : (payload?.input ?? (payload?.state !== undefined ? { state: payload.state, questions: payload.questions } : undefined));
+        const signal = init?.signal ?? (url instanceof Request ? url.signal : undefined);
+        const failureStatus = (fallback: string) => (signal?.aborted ? (signal.reason?.name === "TimeoutError" ? "timeout" : "cancelled") : fallback);
         let api: any, output: any;
         let finalized = false;
         const complete = (status: string) => {
@@ -403,16 +413,8 @@ export function observeUsageFetch(ctx: Context, metadata: UsageMetadata, fetch: 
         };
         try {
             const response = await fetch(url, init);
-            if (!response.ok) {
-                try {
-                    const data = await response.clone().json();
-                    api = data.usage;
-                } catch {
-                    /* failure without usage */
-                }
-                complete(`http-${response.status}`);
-                return response;
-            }
+            // Observe only the caller's consumption. A telemetry clone must never
+            // buffer an unbounded error body or delay headers and model failover.
             if (!response.body) {
                 complete(response.ok ? "success" : `http-${response.status}`);
                 return response;
@@ -435,7 +437,13 @@ export function observeUsageFetch(ctx: Context, metadata: UsageMetadata, fetch: 
                             for (const call of overflow ? [] : (delta?.tool_calls ?? []))
                                 text += (call.function?.name ?? "") + (call.function?.arguments ?? "");
                         }
+                        if (!overflow && typeof data.content_block?.text === "string") text += data.content_block.text;
+                        if (!overflow && data.content_block?.type === "tool_use") {
+                            text += data.content_block.name ?? "";
+                            if (data.content_block.input && Object.keys(data.content_block.input).length) text += JSON.stringify(data.content_block.input);
+                        }
                         if (!overflow && typeof data.delta?.text === "string") text += data.delta.text;
+                        if (!overflow && typeof data.delta?.partial_json === "string") text += data.delta.partial_json;
                         if (text.length > 2_000_000) {
                             overflow = true;
                             text = "";
@@ -460,6 +468,18 @@ export function observeUsageFetch(ctx: Context, metadata: UsageMetadata, fetch: 
                                     const data = JSON.parse(buffer);
                                     api = data.usage;
                                     output = data.choices?.map((choice: any) => choice.message ?? choice.text) ?? data.answers ?? data.content;
+                                    if (Array.isArray(data.content)) {
+                                        output = data.content
+                                            .map((block: any) => {
+                                                if (block.type === "text") return block.text ?? "";
+                                                if (block.type === "tool_use")
+                                                    return (
+                                                        (block.name ?? "") + (block.input && Object.keys(block.input).length ? JSON.stringify(block.input) : "")
+                                                    );
+                                                return "";
+                                            })
+                                            .join("");
+                                    }
                                     if (Array.isArray(data.data) && data.data.some((item: any) => Array.isArray(item.embedding))) output = "";
                                 } catch {
                                     /* malformed response still gets a record */
@@ -469,7 +489,14 @@ export function observeUsageFetch(ctx: Context, metadata: UsageMetadata, fetch: 
                             controller.close();
                             return;
                         }
-                        buffer += decoder.decode(value, { stream: true });
+                        // Bound each append before decoding/splitting or parsing, including
+                        // a single oversized chunk and streams with no frame separator.
+                        if (value.byteLength > MAX_CONTEXT_SNAPSHOT_BYTES || buffer.length + value.byteLength > MAX_CONTEXT_SNAPSHOT_BYTES) {
+                            overflow = true;
+                            buffer = "";
+                        } else if (!overflow || streaming) {
+                            buffer += decoder.decode(value, { stream: true });
+                        }
                         if (streaming) {
                             const frames = buffer.split(/\r?\n\r?\n/);
                             buffer = frames.pop()!;
@@ -482,19 +509,19 @@ export function observeUsageFetch(ctx: Context, metadata: UsageMetadata, fetch: 
                         controller.enqueue(value);
                     } catch (error) {
                         output = streaming && !overflow ? text : undefined;
-                        complete("stream-error");
+                        complete(failureStatus("stream-error"));
                         controller.error(error);
                     }
                 },
                 async cancel(reason) {
                     output = streaming && !overflow ? text : undefined;
-                    complete("cancelled");
+                    complete(failureStatus("cancelled"));
                     await reader.cancel(reason);
                 },
             });
             return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
         } catch (error) {
-            complete("request-error");
+            complete(failureStatus("request-error"));
             throw error;
         }
     }) as typeof globalThis.fetch;
