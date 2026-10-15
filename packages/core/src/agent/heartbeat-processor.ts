@@ -4,7 +4,7 @@ import { Message } from "@xsai/shared-chat";
 import { Context, h, Logger, Session } from "koishi";
 import { v4 as uuidv4 } from "uuid";
 
-import { assertReplyTurn, replyTurnSignal } from "../agent/reply-turn";
+import { assertReplyTurn, isReplyTurnCancelled, replyTurnSignal } from "../agent/reply-turn";
 import { Properties, ToolSchema, ToolService } from "../services/extension";
 import { toolJSONSchema } from "../services/extension/json-schema";
 import { ChatModelSwitcher } from "../services/model";
@@ -49,9 +49,9 @@ export class HeartbeatProcessor {
         let success = false;
 
         while (shouldContinueHeartbeat && heartbeatCount < this.config.heartbeat) {
-            assertReplyTurn();
             heartbeatCount++;
             try {
+                assertReplyTurn();
                 this.logger.info(`Heartbeat | 第 ${heartbeatCount}/${this.config.heartbeat} 轮`);
                 const onReplySent = () => {
                     success = true;
@@ -62,6 +62,7 @@ export class HeartbeatProcessor {
                       ? await this.performSingleHeartbeatWithStreaming(turnId, stimulus, onReplySent)
                       : await this.performSingleHeartbeat(turnId, stimulus, onReplySent);
 
+                assertReplyTurn();
                 if (result) {
                     shouldContinueHeartbeat = result.continue;
                     success = success || result.replySent;
@@ -78,6 +79,7 @@ export class HeartbeatProcessor {
                     );
                 }
             } catch (error) {
+                if (isReplyTurnCancelled()) break;
                 handleError(this.logger, error, `Heartbeat #${heartbeatCount}`);
                 shouldContinueHeartbeat = false;
             }
@@ -201,6 +203,7 @@ export class HeartbeatProcessor {
             validation: this.createJsonValidation(),
         });
 
+        assertReplyTurn();
         const prompt_tokens = llmRawResponse.usage?.prompt_tokens || `~${estimateTokensByRegex(messages.map((m) => m.content).join())}`;
         const completion_tokens = llmRawResponse.usage?.completion_tokens || `~${estimateTokensByRegex(llmRawResponse.text ?? "")}`;
         this.logger.info(`💰 Token 消耗 | 输入: ${prompt_tokens} | 输出: ${completion_tokens}`);
@@ -482,6 +485,7 @@ export class HeartbeatProcessor {
             const actionId = await this.interactionManager.recordAction(turnId, session.platform, session.channelId!, action, manualRecallIds);
             assertReplyTurn();
             const result = await this.toolService.invoke(action.function, action.params, session);
+            assertReplyTurn();
             if (action.function === "send_message" && result.status === "success") {
                 replySent = true;
                 onReplySent();
@@ -532,6 +536,7 @@ export class HeartbeatProcessor {
             const actionId = await this.interactionManager.recordAction(turnId, platform, channelId, action);
             assertReplyTurn();
             const result = await this.toolService.invoke(action.function, action.params, session);
+            assertReplyTurn();
             if (action.function === "send_message" && result.status === "success") {
                 replySent = true;
                 onReplySent();

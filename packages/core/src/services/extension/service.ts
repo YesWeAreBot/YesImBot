@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { Context, ForkScope, h, Logger, resolveConfig, Schema, Service, Session } from "koishi";
 
-import { assertReplyTurn } from "../../agent/reply-turn";
+import { assertReplyTurn, awaitReplyTurn } from "../../agent/reply-turn";
 import { Config } from "../../config";
 import { PromptService } from "../../services/prompt";
 import { Services } from "../../shared/constants";
@@ -549,13 +549,23 @@ export class ToolService extends Service<Config> {
             try {
                 if (attempt > 1) {
                     this._logger.info(`  - 重试 (${attempt - 1}/${this.config.advanced?.maxRetry ?? 0})`);
-                    await new Promise((resolve) => setTimeout(resolve, this.config.advanced?.retryDelay ?? 1000));
+                    let timer: ReturnType<typeof setTimeout>;
+                    try {
+                        await awaitReplyTurn(
+                            () =>
+                                new Promise<void>((resolve) => {
+                                    timer = setTimeout(resolve, this.config.advanced?.retryDelay ?? 1000);
+                                }),
+                        );
+                    } finally {
+                        clearTimeout(timer!);
+                    }
                 }
 
                 assertReplyTurn();
                 // 3. 使用验证和处理过后的参数执行工具
                 /* prettier-ignore */
-                lastResult = (await tool.execute({ ...validatedParams, session })) || Failed("Tool call did not execute.");
+                lastResult = (await awaitReplyTurn(() => tool.execute({ ...validatedParams, session }))) || Failed("Tool call did not execute.");
                 const resultString = truncate(stringify(lastResult), 120);
 
                 if (lastResult.status === "success") {
@@ -574,6 +584,7 @@ export class ToolService extends Service<Config> {
                     return lastResult;
                 }
             } catch (error) {
+                assertReplyTurn();
                 this._logger.error(`💥 异常 | 调用 ${functionName} 时出错`, error.message);
                 this._logger.debug(error.stack);
                 lastResult = Failed(`Exception: ${error.message}`);

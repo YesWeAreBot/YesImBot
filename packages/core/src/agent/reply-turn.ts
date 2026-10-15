@@ -142,8 +142,29 @@ async function withGuardedEncoder<T>(
         }
     }
 }
+export function isReplyTurnCancelled(): boolean {
+    const turn = turns.getStore();
+    return turn?.signal?.aborted === true || turn?.valid() === false;
+}
 export function assertReplyTurn(): void {
-    if (turns.getStore()?.valid() === false) throw new Error("聊天任务已取消");
+    if (isReplyTurnCancelled()) throw new DOMException("聊天任务已取消", "AbortError");
+}
+/** 取消后释放调用方；扩展的迟到结果仍被消费，不恢复旧任务。 */
+export async function awaitReplyTurn<T>(task: () => Promise<T>): Promise<T> {
+    assertReplyTurn();
+    const signal = replyTurnSignal();
+    let abort: () => void;
+    const cancelled = new Promise<never>((_, reject) => {
+        abort = () => reject(new DOMException("聊天任务已取消", "AbortError"));
+        signal?.addEventListener("abort", abort, { once: true });
+    });
+    try {
+        const result = await Promise.race([task(), cancelled]);
+        assertReplyTurn();
+        return result;
+    } finally {
+        signal?.removeEventListener("abort", abort!);
+    }
 }
 export function assertReplyDestination(target: ReplyTarget): void {
     assertReplyTurn();
@@ -160,7 +181,7 @@ export function guardReplyBot(bot: Bot): Bot {
     if (!turn) return bot;
     const valid = turn?.valid;
     const check = () => {
-        if (valid?.() === false) throw new Error("聊天任务已取消");
+        if (turn.signal?.aborted || valid?.() === false) throw new DOMException("聊天任务已取消", "AbortError");
     };
     const destination = (channelId: string, isDirect?: boolean) => {
         check();
@@ -229,7 +250,7 @@ export function guardReplyBot(bot: Bot): Bot {
 export function guardReplySession(session: Session): Session {
     const turn = turns.getStore();
     const check = () => {
-        if (turn?.valid() === false) throw new Error("聊天任务已取消");
+        if (turn?.signal?.aborted || turn?.valid() === false) throw new DOMException("聊天任务已取消", "AbortError");
     };
     const bot = guardReplyBot(session.bot);
     return new Proxy(session, {
