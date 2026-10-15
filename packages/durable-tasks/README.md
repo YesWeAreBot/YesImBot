@@ -21,11 +21,11 @@ reminder.cancel <id>
 reminder.retry <id>
 ```
 
-`list` 返回最近 100 条状态、截止时间和错误码；管理员可管理当前频道其他用户的提醒。命令不提供跨机器人或跨频道目标参数。`retry` 只接受 `failed`，立即重新排队，必须显式调用。
+`list` 返回最近 100 条状态、截止时间和错误码；管理员可管理当前频道其他用户的提醒。目标同时匹配会话类型与 guildId；未知 guildId 只匹配未知目标，不扩大到其他群。命令不提供跨机器人或跨频道目标参数。`retry` 只接受 `failed`，立即重新排队，必须显式调用。
 
 ## 持久化与隔离
 
-表 `yesimbot.durable_tasks` 保存 `queued / running / completed / failed / cancelled`。owner 组合 core 与独立插件的持久实例 scope；幂等 ID 再组合 platform、selfId、channelId、requester 与请求键，数据库主键处理并发重复提交，数据库条件更新决定唯一 claim。
+表 `yesimbot.durable_tasks` 保存 `queued / running / completed / failed / cancelled`。owner 组合 core 与独立插件的持久实例 scope；幂等 ID 再组合 platform、selfId、channelId、会话类型、明确已知的 guildId（未知为空串）、requester 与请求键，数据库主键处理并发重复提交，数据库条件更新决定唯一 claim。
 
 插件需要 Koishi Loader 提供稳定配置项标识。找不到稳定 scope 时 core 会告警并提供独立临时标识；此时重启不会接管旧任务，不能把这种部署视为可靠恢复。
 

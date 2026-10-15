@@ -37,7 +37,13 @@ function target(session: Session): TaskTarget {
     };
 }
 function sameTarget(task: DurableTask, session: Session): boolean {
-    return task.platform === session.platform && task.selfId === session.selfId && task.channelId === session.channelId && task.isDirect === !!session.isDirect;
+    return (
+        task.platform === session.platform &&
+        task.selfId === session.selfId &&
+        task.channelId === session.channelId &&
+        task.isDirect === !!session.isDirect &&
+        task.guildId === (session.guildId || "")
+    );
 }
 export function apply(ctx: Context, config: Config) {
     if (!config.enabled) return;

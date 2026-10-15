@@ -84,7 +84,7 @@ it("enforces administrator authority and current-session bounds for list/cancel/
     const admin = mock.client("admin", "g");
     const member = mock.client("member", "g");
     const other = mock.client("admin", "other");
-    const session = { ...f.session(), platform: "mock", selfId: f.ctx.bots[0].selfId };
+    const session = { ...f.session(), platform: "mock", selfId: f.ctx.bots[0].selfId, guildId: "g" };
     const created = await f.tools.get("schedule_reminder").execute({ session, deadline: Date.now() + 3600000, content: "x", idempotency_key: "admin-check" });
     const id = created.result.id;
     expect((await member.receive(`reminder.cancel ${id}`)).join("")).not.toContain("已取消");
@@ -147,4 +147,17 @@ it("runs a real due reminder through database, restored bot session, event write
     expect(recordSystemEvent.mock.calls[0][0]).toMatchObject({ message: "提醒正文", eventScope: "channel", botKey: JSON.stringify(["mock", bot.selfId]) });
     expect(stimuli).toHaveLength(1);
     expect(stimuli[0]).toEqual([expect.objectContaining({ type: "scheduled_task", channelCid: "mock:g" }), "world"]);
+});
+
+it("does not let a session sharing a raw channel id cancel reminders from another guild or chat type", async (t) => {
+    const f = await fixture(t);
+    const created = await f.tools
+        .get("schedule_reminder")
+        .execute({ session: f.session(), deadline: Date.now() + 3600000, content: "x", idempotency_key: "guild-check" });
+    const cancel = f.tools.get("cancel_reminder");
+    for (const scene of [{ guildId: "other-guild" }, { guildId: "" }, { isDirect: true, guildId: "" }]) {
+        const result = await cancel.execute({ session: { ...f.session(), ...scene }, id: created.result.id });
+        expect(result.status).toBe("error");
+    }
+    expect((await f.ctx.database.get(TABLE, { id: created.result.id }))[0].status).toBe("queued");
 });

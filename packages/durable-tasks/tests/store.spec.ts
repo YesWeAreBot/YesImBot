@@ -75,7 +75,21 @@ it("isolates identical request keys by platform, bot, channel and requester", as
     for (const field of ["platform", "selfId", "channelId", "requester"] as const) {
         const other = await store.enqueue({ ...reminder, [field]: "different" }, 0);
         expect(other.id).not.toBe(original.id);
-        expect(await store.list({ platform: other.platform, selfId: other.selfId, channelId: other.channelId })).toContainEqual(other);
+        expect(await store.list(other)).toContainEqual(other);
     }
     expect(await store.list()).toHaveLength(5);
+});
+
+it("keeps chat type and known guild identity in reminder IDs and list queries", async (t) => {
+    const { store } = await fixture(t);
+    const variants = [
+        { isDirect: false, guildId: "guild" },
+        { isDirect: true, guildId: "" },
+        { isDirect: false, guildId: "other-guild" },
+        { isDirect: false, guildId: "" },
+    ];
+    const tasks = [];
+    for (const scene of variants) tasks.push(await store.enqueue({ ...reminder, ...scene }, 0));
+    expect(new Set(tasks.map((task) => task.id)).size).toBe(4);
+    for (const task of tasks) expect(await store.list(task)).toEqual([task]);
 });

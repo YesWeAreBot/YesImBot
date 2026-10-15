@@ -73,7 +73,18 @@ export class TaskStore {
         if (typeof input.idempotencyKey !== "string" || !input.idempotencyKey.trim() || input.idempotencyKey.length > 128)
             throw new Error("Invalid idempotency key");
         const id = createHash("sha256")
-            .update(JSON.stringify([this.owner, input.platform, input.selfId, input.channelId, input.requester, input.idempotencyKey]))
+            .update(
+                JSON.stringify([
+                    this.owner,
+                    input.platform,
+                    input.selfId,
+                    input.channelId,
+                    input.isDirect,
+                    input.guildId,
+                    input.requester,
+                    input.idempotencyKey,
+                ]),
+            )
             .digest("hex");
         const existing = await this.get(id);
         if (existing) return existing;
@@ -90,10 +101,15 @@ export class TaskStore {
     public async get(id: string): Promise<DurableTask | undefined> {
         return (await this.db.get(TABLE, { id, owner: this.owner }))[0];
     }
-    public list(target?: Pick<TaskTarget, "platform" | "selfId" | "channelId">): Promise<DurableTask[]> {
+    public list(target?: Pick<TaskTarget, "platform" | "selfId" | "channelId" | "isDirect" | "guildId">): Promise<DurableTask[]> {
         return this.db.get(
             TABLE,
-            { owner: this.owner, ...(target ? { platform: target.platform, selfId: target.selfId, channelId: target.channelId } : {}) },
+            {
+                owner: this.owner,
+                ...(target
+                    ? { platform: target.platform, selfId: target.selfId, channelId: target.channelId, isDirect: target.isDirect, guildId: target.guildId }
+                    : {}),
+            },
             { sort: { createdAt: "desc" }, limit: 100 },
         );
     }
