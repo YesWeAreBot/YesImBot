@@ -25,7 +25,7 @@ async function fixture() {
         {} as any,
     );
     const seed = async (relativePath: string, rows: Array<string | Record<string, unknown>>) => {
-        const file = path.join(root, "data/yesimbot/interactions", relativePath);
+        const file = path.join((manager as any).basePath, relativePath);
         await fs.mkdir(path.dirname(file), { recursive: true });
         await fs.writeFile(file, rows.map((row) => (typeof row === "string" ? row : JSON.stringify(row))).join("\n") + "\n");
     };

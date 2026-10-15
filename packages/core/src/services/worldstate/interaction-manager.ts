@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from "uuid";
 
 import { Services, TableName } from "../../shared/constants";
 import { sanitizeDiagnostic } from "../../shared/diagnostic-sanitizer";
+import { getInstanceDirectory } from "../../shared/instance-scope";
 import { HISTORY_CHANNELS } from "./channel-metadata";
 import { HistoryConfig } from "./config";
 import { retainPendingRecalls } from "./manual-recall";
@@ -43,7 +44,7 @@ export class InteractionManager {
         private config: HistoryConfig,
     ) {
         this.logger = ctx[Services.Logger].getLogger("[L1 记忆]");
-        this.basePath = path.join(ctx.baseDir, "data", "yesimbot", "interactions");
+        this.basePath = getInstanceDirectory(ctx, "data/yesimbot/interactions", (message) => this.logger.warn(message));
         this.ensureDirExists(this.basePath);
     }
 

@@ -38,7 +38,7 @@ async function fixture() {
         } as any,
         {} as any,
     );
-    const logFile = path.join(root, "data/yesimbot/interactions/qq/private_u.agent.jsonl");
+    const logFile = path.join((manager as any).basePath, "qq/private_u.agent.jsonl");
     await fs.mkdir(path.dirname(logFile), { recursive: true });
     const seed = () => fs.writeFile(logFile, [row("private:u"), row("private_u"), '{"type":"agent_heartbeat","id":"unowned"}', "broken row"].join("\n") + "\n");
     return { root, manager, logFile, row, seed, content: () => fs.readFile(logFile, "utf8") };
@@ -69,7 +69,7 @@ for (const type of ["private", "guild"] as const) {
 
 it("platform cleanup retains another platform sharing a sanitized directory", async () => {
     const f = await fixture();
-    const file = path.join(f.root, "data/yesimbot/interactions/a_b/group.agent.jsonl");
+    const file = path.join((f.manager as any).basePath, "a_b/group.agent.jsonl");
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, ["a:b", "a_b"].map((platform) => JSON.stringify({ platform, channelId: "group" })).join("\n") + "\n");
     await f.manager.clearAgentHistory("a:b");

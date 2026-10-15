@@ -1,5 +1,3 @@
-import path from "node:path";
-
 import { Context, Service, Session, Random } from "koishi";
 
 import { Config } from "../config";
@@ -10,6 +8,7 @@ import { WorldStateService } from "../services/worldstate/index";
 import { Services } from "../shared/constants";
 import { AppError, handleError } from "../shared/errors";
 import { ErrorDefinitions } from "../shared/errors/definitions";
+import { getInstanceDirectory } from "../shared/instance-scope";
 import { PromptContextBuilder } from "./context-builder";
 import { registerDecisionCommands } from "./decision-commands";
 import { DecisionJournal } from "./decision-journal";
@@ -180,7 +179,7 @@ export class AgentCore extends Service<Config> {
         this.logger = ctx[Services.Logger].getLogger("[智能体核心]");
         if (config.decisionRecording?.enabled) {
             this.decisionJournal = new DecisionJournal(
-                path.resolve(ctx.baseDir, config.decisionRecording.directory || "data/yesimbot/decisions"),
+                getInstanceDirectory(ctx, config.decisionRecording.directory || "data/yesimbot/decisions", (message) => this.logger.warn(message)),
                 config.decisionRecording,
                 (message) => this.logger.warn(message),
             );

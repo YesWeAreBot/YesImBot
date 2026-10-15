@@ -18,15 +18,7 @@ afterEach(async () => {
 async function fixture() {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "yib-history-clear-"));
     roots.push(root);
-    const logRoot = path.join(root, "data/yesimbot/interactions");
     const files = ["qq/private_alice.agent.jsonl", "qq/group.agent.jsonl", "onebot/private_bob.agent.jsonl", "onebot/group.agent.jsonl"];
-    for (const file of files) {
-        await fs.mkdir(path.dirname(path.join(logRoot, file)), { recursive: true });
-        const [platform, name] = file.split("/");
-        const channelId = name.replace(".agent.jsonl", "").replace(/^private_/, "private:");
-        await fs.writeFile(path.join(logRoot, file), JSON.stringify({ type: "agent_thought", platform, channelId }) + "\n");
-    }
-    await fs.writeFile(path.join(logRoot, "qq/keep.txt"), "unrelated");
     const removals: any[] = [];
     const actions = new Map<string, Function>();
     const logger = { info() {}, error() {}, warn() {} };
@@ -65,6 +57,14 @@ async function fixture() {
         },
     };
     const manager = new InteractionManager(ctx, {} as any);
+    const logRoot = (manager as any).basePath as string;
+    for (const file of files) {
+        await fs.mkdir(path.dirname(path.join(logRoot, file)), { recursive: true });
+        const [platform, name] = file.split("/");
+        const channelId = name.replace(".agent.jsonl", "").replace(/^private_/, "private:");
+        await fs.writeFile(path.join(logRoot, file), JSON.stringify({ type: "agent_thought", platform, channelId }) + "\n");
+    }
+    await fs.writeFile(path.join(logRoot, "qq/keep.txt"), "unrelated");
     const memory = new SemanticMemoryManager(ctx, { l2_memory: { enabled: false } } as any);
     new HistoryCommandManager(ctx, { l1_manager: manager, l2_manager: memory } as any, {} as any).register();
     const invoke = (options: any = {}) => actions.get("history.clear")!({ session: { platform: "qq", channelId: "group" }, options });

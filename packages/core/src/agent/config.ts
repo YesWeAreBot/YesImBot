@@ -247,7 +247,9 @@ export const AgentBehaviorConfigSchema: Schema<AgentBehaviorConfig> = Schema.int
         }).description("回复暂停"),
         decisionRecording: Schema.object({
             enabled: Schema.boolean().default(false).description("保存本地决策记录以供离线回放，默认关闭"),
-            directory: Schema.string().default("data/yesimbot/decisions").description("记录目录，相对 Koishi 工作目录，也可使用绝对路径"),
+            directory: Schema.string()
+                .default("data/yesimbot/decisions")
+                .description("记录根目录，相对 Koishi 工作目录，也可使用绝对路径；按插件实例保存，旧共享记录不自动加载"),
             maxEntries: Schema.natural().min(1).max(100000).default(10000).description("最多保留的决策快照条数"),
             maxBytes: Schema.natural().min(1024).max(104857600).default(10485760).description("记录容量上限（字节），默认 10 MiB"),
             retentionHours: Schema.number().min(1).max(720).default(72).description("记录保留时长（小时）"),
