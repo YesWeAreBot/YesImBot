@@ -6530,6 +6530,19 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"koishi-plugin-yesimbot-extension-durable-tasks@workspace:packages/durable-tasks":
+  version: 0.0.0-use.local
+  resolution: "koishi-plugin-yesimbot-extension-durable-tasks@workspace:packages/durable-tasks"
+  dependencies:
+    "@koishijs/plugin-database-memory": "npm:^3.7.0"
+    koishi: "npm:^4.18.7"
+    koishi-plugin-yesimbot: "npm:^3.0.3"
+  peerDependencies:
+    koishi: ^4.18.7
+    koishi-plugin-yesimbot: ^3.0.3
+  languageName: unknown
+  linkType: soft
+
 "koishi-plugin-yesimbot-extension-onebot-directory@workspace:packages/onebot-directory":
   version: 0.0.0-use.local
   resolution: "koishi-plugin-yesimbot-extension-onebot-directory@workspace:packages/onebot-directory"
