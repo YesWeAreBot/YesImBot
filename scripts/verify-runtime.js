@@ -126,7 +126,7 @@ class Server extends Service {
         await fs.rm(directory, { recursive: true, force: true });
     }
     console.log("Built core unloaded");
-})().catch((e) => {
-    console.error(e);
+})().catch((error) => {
+    console.error(error);
     process.exitCode = 1;
 });
