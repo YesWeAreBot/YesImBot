@@ -5,6 +5,7 @@ import { Context, h, Logger, Query, Session } from "koishi";
 import { Services, TableName } from "../../shared/constants";
 import { HISTORY_CHANNELS } from "./channel-metadata";
 import { HistoryConfig } from "./config";
+import { registerHistoryBackup } from "./history-backup-commands";
 import { registerHistoryInspection } from "./history-inspection";
 import { WorldStateService } from "./index";
 import { MessageData } from "./types";
@@ -37,6 +38,7 @@ export class HistoryCommandManager {
     public register(): void {
         const historyCmd = this.ctx.command("history", "历史记录管理指令集", { authority: 3 });
         registerHistoryInspection(this.ctx, historyCmd);
+        registerHistoryBackup(this.ctx, historyCmd, this.service);
 
         historyCmd
             .subcommand(".recall [query:text]", "召回完整原文并注入当前上下文", { authority: 3 })

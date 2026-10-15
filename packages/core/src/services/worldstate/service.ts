@@ -9,6 +9,7 @@ import { HISTORY_CHANNELS, MESSAGE_KEY_MIGRATION, registerChannelModel, sessionC
 import { HistoryCommandManager } from "./commands";
 import { ContextBuilder } from "./context-builder";
 import { EventListenerManager } from "./event-listener";
+import { historyCoordinator, withHistoryBarrier } from "./history-coordinator";
 import { InteractionManager } from "./interaction-manager";
 import { SemanticMemoryManager } from "./l2-semantic-memory";
 import { ArchivalMemoryManager } from "./l3-archival-memory";
@@ -487,14 +488,17 @@ export class WorldStateService extends Service<Config> {
         try {
             const expiresAt = Date.now() - this.config.dataRetentionDays * 24 * 60 * 60 * 1000;
 
-            // Each retention deletion is idempotent and retried next run on
-            // failure. A shared SQLite transaction could roll back unrelated
-            // ordinary writes accepted while cleanup awaits its next deletion.
-            await this.ctx.database.remove(TableName.Messages, { timestamp: { $lt: new Date(expiresAt) } });
-            await this.ctx.database.remove(TableName.SystemEvents, { timestamp: { $lt: new Date(expiresAt) } });
-            await this.ctx.database.remove(TableName.L2Chunks, { endTimestamp: { $lt: new Date(expiresAt) } });
+            // Retention shares the physical-database barrier with export, restore and clear.
+            await withHistoryBarrier(historyCoordinator(this.ctx.database), { type: "all" }, async () => {
+                // Each retention deletion is idempotent and retried next run on
+                // failure. A shared SQLite transaction could roll back unrelated
+                // ordinary writes accepted while cleanup awaits its next deletion.
+                await this.ctx.database.remove(TableName.Messages, { timestamp: { $lt: new Date(expiresAt) } });
+                await this.ctx.database.remove(TableName.SystemEvents, { timestamp: { $lt: new Date(expiresAt) } });
+                await this.ctx.database.remove(TableName.L2Chunks, { endTimestamp: { $lt: new Date(expiresAt) } });
 
-            await this.l1_manager.pruneOldData();
+                await this.l1_manager.pruneOldData();
+            });
             this.logger.info("历史数据清理完成");
         } catch (error) {
             this.logger.error("历史数据清理失败", error);

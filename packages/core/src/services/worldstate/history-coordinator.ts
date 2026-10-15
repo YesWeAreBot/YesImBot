@@ -28,3 +28,33 @@ export function historyCoordinator(database: object): HistoryCoordination {
     }
     return state;
 }
+
+/** Exclusive operations share the same physical database as accepted history writes. */
+export async function withHistoryBarrier<T>(state: HistoryCoordination, scope: SemanticMemoryScope, operation: () => Promise<T>): Promise<T> {
+    const matches = (target: MemoryTarget, selected: SemanticMemoryScope) => {
+        if (!("type" in selected)) return target.platform === selected.platform && target.channelId === selected.channelId;
+        const type = target.channelType || state.channelTypes.get(JSON.stringify([target.platform, target.channelId]));
+        return selected.type === "all" || type === selected.type;
+    };
+    const previous = [...state.activeClears].filter(({ scope: other }) => {
+        if (!("type" in scope)) return matches(scope, other);
+        if (!("type" in other)) return matches(other, scope);
+        return scope.type === "all" || other.type === "all" || scope.type === other.type;
+    });
+    let release!: () => void;
+    const barrier = {
+        scope,
+        done: new Promise<void>((resolve) => {
+            release = resolve;
+        }),
+    };
+    state.activeClears.add(barrier);
+    try {
+        await Promise.all(previous.map((entry) => entry.done));
+        await Promise.allSettled([...state.pendingWrites].filter((entry) => matches(entry.target, scope)).map((entry) => entry.done));
+        return await operation();
+    } finally {
+        state.activeClears.delete(barrier);
+        release();
+    }
+}

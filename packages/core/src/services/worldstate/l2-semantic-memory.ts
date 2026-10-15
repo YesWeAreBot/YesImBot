@@ -6,7 +6,7 @@ import { Services, TableName } from "../../shared/constants";
 import { cosineSimilarity } from "../../shared/utils";
 import { withUsageScope } from "../model/usage";
 import { HistoryConfig } from "./config";
-import { historyCoordinator } from "./history-coordinator";
+import { historyCoordinator, withHistoryBarrier } from "./history-coordinator";
 import { keywordRelevance, recallKeywordCandidates, recallTokens, withinRecallScope } from "./hybrid-recall";
 import { ContextualMessage, HistoryChannelType, MemoryChunkData, MessageData } from "./types";
 
@@ -121,28 +121,12 @@ export class SemanticMemoryManager {
             }
         }
 
-        // 重叠范围按顺序清理；无关频道可独立执行。
-        const previousClears = [...this.activeClears].filter(({ scope: other }) => {
-            if (!("type" in scope)) return this.matchesScope(scope, other);
-            if (!("type" in other)) return this.matchesScope(other, scope);
-            return scope.type === "all" || other.type === "all" || scope.type === other.type;
-        });
-        let release!: () => void;
-        const barrier = {
-            scope,
-            done: new Promise<void>((resolve) => {
-                release = resolve;
-            }),
-        };
-        this.activeClears.add(barrier);
-        try {
-            await Promise.all(previousClears.map((entry) => entry.done));
-            await Promise.allSettled([...this.pendingWrites].filter((entry) => this.matchesScope(entry.target, scope)).map((entry) => entry.done));
-            return await clear();
-        } finally {
-            this.activeClears.delete(barrier);
-            release();
-        }
+        return this.withHistoryBarrier(scope, clear);
+    }
+
+    /** Exclusive snapshot/maintenance without discarding buffers or changing generations. */
+    public async withHistoryBarrier<T>(scope: SemanticMemoryScope, operation: () => Promise<T>): Promise<T> {
+        return withHistoryBarrier(this.coordination, scope, operation);
     }
 
     public async writeMemory(target: MemoryTarget, generation: number, write: () => Promise<unknown>): Promise<boolean> {

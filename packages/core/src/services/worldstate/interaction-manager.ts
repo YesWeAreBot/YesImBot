@@ -379,6 +379,58 @@ export class InteractionManager {
         });
     }
 
+    /** Strict backup snapshot: never infer legacy ownership from lossy filenames. */
+    public async withAgentHistorySnapshot<T>(
+        target: { platform: string; channelId: string },
+        maxBytes: number,
+        operation: (snapshot: { records: Array<Record<string, any>>; unknown: number; malformed: number }) => Promise<T>,
+    ): Promise<T> {
+        return this.mutateLogs(async () => {
+            const snapshot = { records: [] as Array<Record<string, any>>, unknown: 0, malformed: 0 };
+            const filePath = this.getLogFilePath(target.platform, target.channelId);
+            let content = "";
+            try {
+                const stat = await fs.stat(filePath);
+                if (!stat.isFile() || stat.size > maxBytes) throw new Error("Agent日志大小超过备份上限");
+                content = await fs.readFile(filePath, "utf8");
+                if (Buffer.byteLength(content) > maxBytes) throw new Error("Agent日志大小超过备份上限");
+            } catch (error) {
+                if (error.code !== "ENOENT") throw error;
+            }
+            for (const line of content.split("\n")) {
+                if (!line.trim()) continue;
+                let entry: any;
+                try {
+                    entry = JSON.parse(line);
+                } catch {
+                    snapshot.malformed++;
+                    continue;
+                }
+                if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+                    snapshot.malformed++;
+                    continue;
+                }
+                if (typeof entry.platform !== "string" || typeof entry.channelId !== "string") {
+                    snapshot.unknown++;
+                    continue;
+                }
+                if (entry.platform !== target.platform || entry.channelId !== target.channelId) continue;
+                if (
+                    !["agent_thought", "agent_action", "agent_observation", "agent_heartbeat"].includes(entry.type) ||
+                    typeof entry.id !== "string" ||
+                    !entry.id ||
+                    !Number.isFinite(new Date(entry.timestamp).getTime())
+                ) {
+                    snapshot.malformed++;
+                    continue;
+                }
+                if (snapshot.records.length >= 5000) throw new Error("Agent日志条数超过备份上限");
+                snapshot.records.push(entry);
+            }
+            return operation(snapshot);
+        });
+    }
+
     public async clearAgentHistory(platform?: string, channelId?: string, channelType?: "private" | "guild" | "all"): Promise<number> {
         if (channelType !== undefined && !["private", "guild", "all"].includes(channelType)) {
             throw new Error("频道类型必须是 private、guild 或 all");
