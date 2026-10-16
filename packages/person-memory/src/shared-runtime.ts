@@ -29,6 +29,8 @@ const refOf = (session: Session, ref: string) => {
     }
     return accountRef(session.platform, ref);
 };
+const sessionTargetKey = (session: Session) =>
+    JSON.stringify([session.platform, session.selfId, session.channelId, !!session.isDirect, session.guildId || "", session.userId]);
 const actor = (s: Session) => `admin:${s.platform}:${s.userId}`;
 // Revalidate recalled summaries in L1 snapshots without rewriting the
 // original observation or its database record. Pagination describes the
@@ -170,6 +172,20 @@ export function applySharedMemory(ctx: Context, config: Config) {
         if (!active || state.settings.mode === "off") throw new Error("共同记忆已关闭");
         return { scope, state };
     };
+    const targetAllowed = (target: RecallTarget, session: Session): boolean => {
+        const bot = ctx.bots.find((b) => b.platform === target.platform && b.selfId === target.selfId);
+        if (!bot) return false;
+        const probe = bot.session({
+            type: "message",
+            platform: target.platform,
+            selfId: target.selfId,
+            channelId: target.channelId,
+            guild: !target.isDirect && target.guildId ? { id: target.guildId } : undefined,
+            userId: target.userId || session.userId,
+            channel: { id: target.channelId, type: target.isDirect ? 1 : 0 },
+        } as any);
+        return ctx.filter(probe) && world.isChannelAllowed(probe);
+    };
     const targetsFor = async (session: Session, scope: string): Promise<RecallTarget[]> => {
         const current = {
             platform: session.platform,
@@ -183,18 +199,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
         const candidates = [...(await memories.scenes(scope)), current];
         const result = new Map<string, RecallTarget>();
         for (const target of candidates) {
-            const bot = ctx.bots.find((b) => b.platform === target.platform && b.selfId === target.selfId);
-            if (!bot) continue;
-            const probe = bot.session({
-                type: "message",
-                platform: target.platform,
-                selfId: target.selfId,
-                channelId: target.channelId,
-                guild: !target.isDirect && target.guildId ? { id: target.guildId } : undefined,
-                userId: target.userId || session.userId,
-                channel: { id: target.channelId, type: target.isDirect ? 1 : 0 },
-            } as any);
-            if (!ctx.filter(probe) || !world.isChannelAllowed(probe)) continue;
+            if (!targetAllowed(target, session)) continue;
             result.set(JSON.stringify([target.platform, target.selfId, target.isDirect ? "private" : "channel", target.channelId]), target);
         }
         return [...result.values()];
@@ -337,10 +342,18 @@ export function applySharedMemory(ctx: Context, config: Config) {
                     return;
                 try {
                     const scope = scopeOf(session),
-                        state = await modeOf(scope);
-                    if (state.settings.mode === "off") return;
-                    const generation = generations.get(scope) ?? 0;
-                    const current = () => active && generation === (generations.get(scope) ?? 0) && modes.get(scope) !== "off";
+                        target = sessionTargetKey(session),
+                        generation = generations.get(scope) ?? 0;
+                    // The source is this ingress session. Recheck its identity and
+                    // permission after each async phase and at every store commit.
+                    const current = () =>
+                        baseAllowed(session) &&
+                        scopeOf(session) === scope &&
+                        sessionTargetKey(session) === target &&
+                        generation === (generations.get(scope) ?? 0) &&
+                        modes.get(scope) !== "off";
+                    const state = await modeOf(scope);
+                    if (state.settings.mode === "off" || !current()) return;
                     const userId = accountRef(session.platform, session.userId),
                         source = {
                             id: sourceRef(session as any, session.messageId),
@@ -489,7 +502,13 @@ export function applySharedMemory(ctx: Context, config: Config) {
         }),
         execute: async (args: any) => {
             try {
-                const { scope, state } = await assertEnabled(args.session);
+                const session = args.session as Session;
+                const targetKey = () => sessionTargetKey(session);
+                const boundTarget = targetKey(),
+                    boundScope = scopeOf(session);
+                const requestCurrent = () => baseAllowed(session) && scopeOf(session) === boundScope && targetKey() === boundTarget;
+                const { scope, state } = await assertEnabled(session);
+                if (!requestCurrent()) throw new Error("共同记忆请求已失效");
                 if (args.action === "search") {
                     if (typeof args.query !== "string" || !args.query.trim() || args.query.length > 80) throw new Error("请提供 1–80 字关键词");
                     return success(
@@ -545,14 +564,22 @@ export function applySharedMemory(ctx: Context, config: Config) {
                 const ids = args.message_ids.map((id: string) => (id.startsWith("source:") ? id : sourceRef(args.session, id)));
                 const targets = await targetsFor(args.session, scope);
                 const sourceRows = await store.sources(scope, ref, 200);
+                const sourceTargets: RecallTarget[] = [];
                 for (const id of ids) {
                     const provenance = sourceRows.find((e) => e.id === id)?.provenance;
-                    if (!provenance || !targets.some((t) => provenance.scene === sceneKey({ ...t, userId: t.userId || args.session.userId } as SceneInput)))
-                        throw new Error("候选来源不在当前允许的回忆范围");
+                    const target = provenance && targets.find((t) => provenance.scene === sceneKey({ ...t, userId: t.userId || session.userId } as SceneInput));
+                    if (!target) throw new Error("候选来源不在当前允许的回忆范围");
+                    sourceTargets.push(structuredClone(target));
                 }
+                // PersonStore invokes this synchronously immediately before its
+                // commit INSERT, after any queued writes and snapshot queries.
+                const isCurrent = () =>
+                    requestCurrent() &&
+                    sourceTargets.every((target) => (config.recallScope === "current" ? baseAllowed(session) : targetAllowed(target, session)));
+                if (!isCurrent()) throw new Error("共同记忆请求或来源权限已失效");
                 const writing = writingStore(args.session),
                     expected = { personId: args.person_id, personRevision: args.person_revision, accountRevision: args.account_revision };
-                if (args.action === "propose") return success(await writing.propose(scope, ref, args.profile, ids, "main-model", expected, () => active));
+                if (args.action === "propose") return success(await writing.propose(scope, ref, args.profile, ids, "main-model", expected, isCurrent));
                 if (!Number.isSafeInteger(args.target_revision) || args.target_revision < 0) throw new Error("请提供目标人物版本");
                 return success(
                     await writing.proposeLink(
@@ -564,7 +591,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
                         ids,
                         "main-model",
                         { ...expected, targetRevision: args.target_revision },
-                        () => active,
+                        isCurrent,
                     ),
                 );
             } catch (error) {
