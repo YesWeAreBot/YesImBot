@@ -241,19 +241,24 @@ export function handleError(logger: Logger, error: unknown, contextDescription: 
 
     // 步骤 2: 分层记录日志
     // 第一层：面向用户/管理员的清晰错误报告 (ERROR 级别)
-    logger.error(`🛑 [错误报告]`);
-    logger.error(`   - 环节: ${contextDescription}`);
-    logger.error(`   - 详情: ${message}`);
-    logger.error(`   - 建议: ${suggestion}`);
+    const diagnostics = Object.fromEntries(Object.entries(summarizeContext(sanitizeDiagnostic(context))).filter(([, value]) => typeof value === "number"));
+    const report = [
+        `🛑 [错误报告] ID: ${diagnosticId(errorId)} | 错误码: ${diagnosticCode(appError.code)}`,
+        `   - 环节: ${truncate(contextDescription, 120)}`,
+        `   - 详情: ${truncate(message, 500)}`,
+        `   - 建议: ${truncate(suggestion, 500)}`,
+    ];
+    if (Object.keys(diagnostics).length > 0) report.push(`   - 诊断摘要: ${truncate(JSON.stringify(diagnostics), 1000)}`);
+    logger.error(report.join("\n"));
 
-    // 第二层：面向开发者的详细调试信息 (WARN / DEBUG 级别，避免日志泛滥)
+    // 第二层：面向开发者的详细调试信息 (DEBUG 级别，避免日志泛滥)
     const devContext = { ...context };
     // 对可能很长的原始响应进行截断，防止刷屏
     if (devContext.rawResponse) {
         devContext.rawResponse = truncate(devContext.rawResponse as string, 200) + "... (完整响应见已启用的本地日志)";
     }
     if (Object.keys(devContext).length > 0) {
-        logger.warn(`   - 调试上下文: ${JSON.stringify(sanitizeDiagnostic(devContext))}`);
+        logger.debug(`   - 调试上下文: ${JSON.stringify(sanitizeDiagnostic(devContext))}`);
     }
     // 堆栈信息使用 DEBUG 级别，仅在需要时通过调整日志等级查看
     // logger.debug(`   - 堆栈追踪:\n${stack}`);
@@ -271,7 +276,7 @@ export function handleError(logger: Logger, error: unknown, contextDescription: 
             error: appError,
         });
     } else {
-        logger.warn(`   - 追踪: 此错误未上报，如需查看更多信息，请打开 DEBUG 日志查看堆栈信息`);
+        logger.debug(`   - 追踪: 此错误未上报，如需查看更多信息，请打开 DEBUG 日志查看堆栈信息`);
     }
 
     return errorId;

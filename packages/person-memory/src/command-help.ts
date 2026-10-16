@@ -37,7 +37,9 @@ export function describePeopleCommand(command: Command, declaration: string, sha
             "修改前请用 people.show 查看档案并核对账号归属；清空画像、解除关联、归档和删除聊天历史是不同操作。revert 受后续版本冲突限制，并非任意回滚。",
         );
     if (name === "people.mode")
-        notes.push("模式：off 停止记忆功能并保留数据；review 提交候选后人工审核；auto 自动维护，仍可暂停或人工纠正。既有候选不会因切换模式而自动批准。");
+        notes.push(
+            "不填参数查看当前模式；设置用法：people.mode review。模式：off 停止记忆功能并保留数据；review 提交候选后人工审核；auto 自动维护，仍可暂停或人工纠正。既有候选不会因切换模式而自动批准。",
+        );
     if (name === "people.summarize") notes.push("后台总结需要选择有效的核心模型组，并已积累可用来源；总结完成不一定立即改变画像，review 模式需审核候选。");
     if (["people.pending", "people.approve", "people.reject"].includes(name)) notes.push("候选编号来自 people.pending，不能用人物 UUID 或账号 ID 代替。");
     if (["people.history", "people.revert"].includes(name))
@@ -47,6 +49,7 @@ export function describePeopleCommand(command: Command, declaration: string, sha
     command.usage(notes.join("\n"));
     command.example(name === "people" ? "people.list" : example);
     if (name === "people") command.example("people.show 123456");
+    if (name === "people.mode") command.example("people.mode review");
     if (name === "people.list") command.example("people.list 20");
     if (name === "people.history") command.example("people.history --page 2 --account 123456");
     return command;

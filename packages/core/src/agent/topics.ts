@@ -65,7 +65,7 @@ export class TopicManager {
             model: config.model,
             minIntervalMs: bounded(config.minIntervalMs, 30000, 0, Number.MAX_SAFE_INTEGER),
             messagesPerAnalysis: Math.floor(bounded(config.messagesPerAnalysis, 6, 1, 1000)),
-            historyLimit: Math.floor(bounded(config.historyLimit, 20, 0, 30)),
+            historyLimit: Math.floor(bounded(config.historyLimit, 20, 0, Number.MAX_SAFE_INTEGER)),
             timeoutMs: bounded(config.timeoutMs, 5000, 1, 30000),
             maxTopics: Math.floor(bounded(config.maxTopics, 4, 1, 8)),
             idleTimeoutSeconds: bounded(config.idleTimeoutSeconds, 600, 1, Number.MAX_SAFE_INTEGER / 1000),

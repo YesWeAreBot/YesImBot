@@ -50,7 +50,10 @@ export const ErrorDefinitions = {
 
         TIMEOUT: {
             code: "LLM.TIMEOUT",
-            message: (duration: number) => `对 LLM 的请求在 ${duration} 秒后超时`,
+            message: (duration?: number) =>
+                typeof duration === "number" && Number.isFinite(duration) && duration > 0
+                    ? `对 LLM 的请求在 ${duration} 秒后超时`
+                    : "对 LLM 的请求超时（上游未提供具体时限）",
             suggestion: "模型响应时间过长。这可能是模型服务提供商的临时问题。如果此问题频繁发生，您可以尝试在模型设置中调高‘总超时’时间",
         },
     },

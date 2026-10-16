@@ -662,7 +662,11 @@ export function applySharedMemory(ctx: Context, config: Config) {
         command(`people.${locked ? "lock" : "unlock"} <ref:string>`, locked ? "锁定画像和自动关联" : "解除锁定", async (s, w, scope, [ref]) =>
             w.lock(scope, refOf(s, ref), locked, actor(s)),
         );
-    command("people.mode <mode:string>", "off 完全关闭、review 管理员维护、auto 自动维护", async (s, w, scope, [mode]) => {
+    command("people.mode [mode:string]", "查看或设置模式：off 完全关闭、review 管理员维护、auto 自动维护", async (s, w, scope, [mode]) => {
+        if (mode === undefined || !["off", "review", "auto"].includes(mode)) {
+            const current = (await store.read(scope)).settings.mode;
+            return `${mode === undefined ? "" : "无效模式。"}当前共同记忆模式：${current}\n可用模式：off、review、auto；用法：people.mode review（不填参数查看当前模式）`;
+        }
         await w.settings(scope, { mode }, actor(s));
         generations.set(scope, (generations.get(scope) ?? 0) + 1);
         worker.cancel(scope);

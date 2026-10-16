@@ -391,7 +391,7 @@ class RequestExecutor {
                 // 如果失败，记录错误并继续尝试下一个模型（故障转移）
                 breaker?.recordFailure(generation!);
                 this.accumulatedErrors.push({ providerName: model.config.providerName, modelId: model.id, error: (result as any).error });
-                this.logger.debug(`[故障转移] 模型 ${formatModelIdentity({ ...model.config, modelId: model.id })} 已放弃，检查下一个候选模型`);
+                this.logger.info(`[故障转移] 模型 ${formatModelIdentity({ ...model.config, modelId: model.id })} 已放弃，检查下一个候选模型`);
             }
         }
 
@@ -478,7 +478,7 @@ class RequestExecutor {
                 const result = await model.chat(options_copy);
                 clearTimeout(timeoutId);
                 clearTimeout(firstTokenTimeoutId);
-                attemptLogger.debug(
+                attemptLogger.info(
                     `请求成功 | 耗时: ${Date.now() - startedAt}ms | Tokens: ${result.usage?.total_tokens ?? "未知"} (输入: ${result.usage?.prompt_tokens ?? "未知"}, 输出: ${result.usage?.completion_tokens ?? "未知"}) | 结束原因: ${result.finishReason ?? "未知"}`,
                 );
                 return { success: true, data: result };
@@ -531,7 +531,7 @@ class RequestExecutor {
                                 `;
                                 // 使用LLM修正JSON
                                 // 直接修改原始消息，下一次循环时会发送到模型
-                                attemptLogger.debug("下一步: 修复内容并重试 | 等待: 0ms");
+                                attemptLogger.info("下一步: 修复内容并重试 | 等待: 0ms");
                                 options.messages = [
                                     { role: "system", content: systemPrompt },
                                     { role: "user", content: rawResponse },
@@ -540,29 +540,33 @@ class RequestExecutor {
                             }
                         }
                     } else {
-                        attemptLogger.error(`内容无效，放弃重试 | 错误: ${error.message}`);
-                        attemptLogger.debug("下一步: 放弃当前模型 | 内容校验失败或重试已耗尽");
+                        attemptLogger.error(
+                            `内容无效，放弃重试 | 错误码: ${appError?.code ?? "未知"} | HTTP: ${appError?.context?.httpStatus ?? "未知"} | 耗时: ${Date.now() - startedAt}ms | 错误: ${error.message}`,
+                        );
+                        attemptLogger.info("下一步: 放弃当前模型 | 内容校验失败或重试已耗尽");
                         return { success: false, error }; // 放弃当前模型
                     }
                 }
 
                 // 其他错误（网络，API限流等）
-                attemptLogger.error(`请求失败 | 错误: ${error.message}`);
+                attemptLogger.error(
+                    `请求失败 | 错误码: ${appError?.code ?? "未知"} | HTTP: ${appError?.context?.httpStatus ?? "未知"} | 耗时: ${Date.now() - startedAt}ms | 错误: ${error.message}`,
+                );
                 if (attempt >= retryPolicy.maxRetries) {
-                    attemptLogger.debug("下一步: 放弃当前模型 | 重试次数已耗尽");
+                    attemptLogger.info("下一步: 放弃当前模型 | 重试次数已耗尽");
                     return { success: false, error };
                 }
 
                 const retryAfterMs = appError?.context?.httpStatus === 429 ? appError.context.retryAfterMs : undefined;
                 if (typeof retryAfterMs === "number" && retryAfterMs > 300_000) {
-                    attemptLogger.debug("下一步: 放弃当前模型 | Retry-After 超过最大等待时间 300000ms");
+                    attemptLogger.info("下一步: 放弃当前模型 | Retry-After 超过最大等待时间 300000ms");
                     return { success: false, error };
                 }
                 const delayMs = Math.max(
                     500 * (attempt + 1),
                     typeof retryAfterMs === "number" && Number.isFinite(retryAfterMs) && retryAfterMs >= 0 ? retryAfterMs : 0,
                 );
-                attemptLogger.debug(`下一步: 重试当前模型 | 等待: ${delayMs}ms`);
+                attemptLogger.info(`下一步: 重试当前模型 | 等待: ${delayMs}ms`);
                 await this.waitForRetry(delayMs, options.abortSignal);
             } finally {
                 clearTimeout(firstTokenTimeoutId);

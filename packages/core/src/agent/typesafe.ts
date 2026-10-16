@@ -146,9 +146,12 @@ export class TypeSafeEvaluator {
         );
         if (signal.aborted) return null;
         const { addressed, interested, others } = result.answers;
+        const returnedModel = typeof result.model === "string" ? result.model.slice(0, 128) + (result.model.length > 128 ? "…" : "") : "未提供";
         this.ctx.yesimbot?.logging
             ?.getLogger("[TypeSafe 接话判断]")
-            .debug?.(`评估结果 | 对我说: ${addressed.noul.toFixed(3)} | 兴趣匹配: ${interested.noul.toFixed(3)} | 对别人说: ${others.noul.toFixed(3)}`);
+            .info?.(
+                `[${selected.providerName}][${selected.modelId}] 评估结果 | 返回模型: ${JSON.stringify(returnedModel)} | 对我说: ${addressed.noul.toFixed(3)} | 兴趣匹配: ${interested.noul.toFixed(3)} | 对别人说: ${others.noul.toFixed(3)}`,
+            );
         onAnswers?.({ addressed: addressed.noul, interested: interested.noul, others: others.noul });
         return 1 + config.influence * (Math.max(positive(addressed.noul), positive(interested.noul)) - positive(others.noul));
     }

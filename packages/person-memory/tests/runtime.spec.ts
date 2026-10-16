@@ -238,3 +238,90 @@ for (const sharedMemory of [false, true])
         assert.equal(auditAfter[0].action, "unbind");
         assert.deepEqual(await store.sources(scope, ref), evidence, "identity correction never rewrites original evidence");
     });
+
+for (const sharedMemory of [false, true])
+    test(`people.mode queries and rejects invalid modes without writes or cancelling a running summary (${sharedMemory ? "shared" : "scene"})`, async (t) => {
+        let currentSession, summarySignal, finishSummary, mockFork;
+        let modelStarted;
+        const started = new Promise<void>((resolve) => {
+            modelStarted = resolve;
+        });
+        const app = await fixture(t, (ctx) => {
+            mockFork = ctx.plugin(mock);
+            ctx.set("yesimbot", {
+                tool: {
+                    capabilities: { trustedToolSession: 1 },
+                    registerTool: () => () => {},
+                    unregisterTool() {},
+                },
+                prompt: { inject: () => () => {} },
+                world: {
+                    capabilities: { beforeUserStimulus: 1, memoryCorrectionFilter: 1 },
+                    isChannelAllowed: () => true,
+                },
+                model: {
+                    useChatGroup: () => ({
+                        chat: ({ abortSignal }) => {
+                            summarySignal = abortSignal;
+                            modelStarted();
+                            return new Promise((resolve) => {
+                                finishSummary = resolve;
+                            });
+                        },
+                    }),
+                },
+            });
+            ctx.on("command/before-execute", (argv) => {
+                currentSession = argv.session;
+                argv.session.__commandHandled = true;
+            });
+            ctx.plugin(plugin, { ...defaults, sharedMemory, modelGroup: "summary" });
+        });
+        try {
+            await app.mock.initUser("admin", 3);
+            await app.mock.initChannel("g");
+            const admin = app.mock.client("admin", "g");
+            await admin.receive("people.status");
+            const scope = sharedMemory ? mindScope(currentSession) : sceneKey(currentSession);
+            const ref = sharedMemory ? accountRef(currentSession.platform, "member") : "member";
+            const store = new PersonStore(app.database, "review");
+            await store.recognize(scope, ref, "Member");
+            await store.capture(scope, { id: "mode-source", userId: ref, name: "Member", text: "喜欢 Python", timestamp: Date.now() });
+            await store.settings(scope, { mode: "auto" }, "setup");
+            const state = await store.read(scope);
+            const history = await store.history(scope, 100);
+            const summary = app.mock.client("admin", "g").receive("people.summarize member");
+            t.onTestFinished(() => finishSummary?.({ text: '{"profile":"","messageIds":[]}' }));
+            await Promise.race([
+                started,
+                summary.then((output) => {
+                    throw new Error(`Summary never reached model: ${output.join("")}`);
+                }),
+            ]);
+            for (const input of ["people.mode", "people.mode invalid", 'people.mode ""']) {
+                const output = (await admin.receive(input)).join("");
+                assert.match(output, /当前.*模式[：:]auto/, output);
+                assert.match(output, /off.*review.*auto/, output);
+                assert.match(output, /people\.mode review/, output);
+                assert.doesNotMatch(output, /undefined/);
+                if (input.includes("invalid")) assert.match(output, /无效|必须|仅支持/);
+                assert.deepEqual(await store.read(scope), state, "query/invalid mode must not mutate persisted state");
+                assert.deepEqual(await store.history(scope, 100), history, "query/invalid mode must not add settings audit");
+                assert.equal(summarySignal.aborted, false, "query/invalid mode must not cancel an in-flight summary");
+            }
+            finishSummary({ text: '{"profile":"喜欢 Python","messageIds":["mode-source"]}' });
+            const result = (await summary).join("");
+            assert.doesNotMatch(result, /取消|失败|版本.*变化/);
+            assert.equal((await store.find(scope, ref)).person.profile, "喜欢 Python");
+            for (const mode of ["off", "review", "auto"]) {
+                assert.match((await admin.receive(`people.mode ${mode}`)).join(""), new RegExp(`模式[：:]${mode}`));
+                assert.equal((await store.read(scope)).settings.mode, mode);
+            }
+            const help = app.$commander.get("people.mode")!;
+            assert.match(String(help._usage), /不填.*当前模式/);
+            assert.ok(help._examples.includes("people.mode review"));
+        } finally {
+            finishSummary?.({ text: '{"profile":"","messageIds":[]}' });
+            mockFork.dispose();
+        }
+    });

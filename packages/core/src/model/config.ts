@@ -126,16 +126,18 @@ export const ModelConfigSchema: Schema<ModelConfig> = Schema.object({
             Schema.object({ mode: Schema.const("unset").default("unset") }),
             Schema.object({
                 mode: Schema.const("custom").required(),
-                value: Schema.transform(Schema.string().required(), (value) => {
-                    parseContextLimit(value);
-                    return value;
-                })
-                    .required()
-                    .description("最大上下文 token 数，支持正数或 K/M，如 131072.5、128K、1M"),
+                value: Schema.string().required().description("最大上下文 token 数，支持正数或 K/M，如 131072.5、128K、1M"),
             }),
             Schema.object({ mode: Schema.const("auto").required() }),
         ]),
-    ]).description("上下文容量（未填写时保持原行为；auto 获取失败时显示未知）"),
+        // Keep validation separate from the primitive input: the console cannot render transform fields.
+        Schema.transform(Schema.any<ContextLimitConfig>(), (config) => {
+            if (config.mode === "custom") parseContextLimit(config.value!);
+            return config;
+        }).hidden(),
+    ])
+        .collapse()
+        .description("上下文容量（未填写时保持原行为；auto 获取失败时显示未知）"),
     disableNativeToolCalling: Schema.boolean().default(false).description("不支持原生工具调用（全局启用时改用 JSON 动作）"),
 
     parameters: Schema.object({

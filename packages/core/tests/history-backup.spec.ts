@@ -11,6 +11,7 @@ import { getInstanceDirectory } from "../src/shared/instance-scope";
 import { HISTORY_CHANNELS } from "../src/world/channel-metadata";
 import { HistoryCommandManager } from "../src/world/commands";
 import { HistoryBackupManager, BACKUP_MAX_BYTES, BACKUP_MAX_ROWS, backupDigest } from "../src/world/history-backup";
+import { registerHistoryBackup } from "../src/world/history-backup-commands";
 import { InteractionManager } from "../src/world/interaction-manager";
 import { SemanticMemoryManager } from "../src/world/l2-semantic-memory";
 import { WorldStateService } from "../src/world/service";
@@ -280,6 +281,56 @@ it("saves restricted files and reloads only local backup IDs", async () => {
     expect((await f.manager.preflight(target, input)).identical.messages).toBe(1);
     expect(process.platform === "win32" ? 0o600 : (await fs.stat(saved.filePath)).mode & 0o777).toBe(0o600);
     await expect(f.manager.load("../config")).rejects.toThrow("编号");
+});
+
+it("restores the newest current-target backup when the command omits its ID", async () => {
+    const f = await fixture();
+    const directory = getInstanceDirectory(f.ctx, "data/yesimbot/backups");
+    await fs.mkdir(directory, { recursive: true });
+    const backup = await f.manager.export(target);
+    const write = async (id: string, createdAt: string, scope = backup.scope, content = id) => {
+        const value = structuredClone(backup);
+        value.createdAt = createdAt;
+        value.scope = scope;
+        value.records.messages = [{ ...message(id, content), timestamp: new Date().toISOString() }];
+        await fs.writeFile(path.join(directory, `${id}.json`), JSON.stringify(resign(value)));
+    };
+    const older = "00000000-0000-4000-8000-000000000001";
+    const newest = "00000000-0000-4000-8000-000000000002";
+    // Deliberately write the oldest last: selection must use manifest time, not file mtime.
+    await write(newest, "2026-10-02T00:00:00.000Z");
+    for (const [index, key] of ["platform", "channelId", "selfId", "instance"].entries())
+        await write(`00000000-0000-4000-8000-00000000001${index}`, "2026-10-03T00:00:00.000Z", { ...backup.scope, [key]: "other" });
+    await write(older, "2026-10-01T00:00:00.000Z");
+    await fs.writeFile(path.join(directory, "00000000-0000-4000-8000-000000000099.json"), "{broken");
+    const actions = new Map<string, Function>();
+    const command: any = {
+        subcommand(name: string) {
+            const cmd: any = { usage: () => cmd, action: (action: Function) => actions.set(name, action) };
+            return cmd;
+        },
+    };
+    f.ctx.filter = () => true;
+    f.world.isChannelAllowed = () => true;
+    registerHistoryBackup(f.ctx, command, f.world);
+    const result = await actions.get(".backup.restore [id:string]")!({ session: target });
+    expect(String(result)).toContain("四表增量恢复完成");
+    expect(String(result)).toContain(`备份 ${newest}`);
+    expect((await f.app.database.get(TableName.Messages, {})).map((row) => row.id)).toEqual([newest]);
+    await f.app.database.remove(TableName.Messages, {});
+    const explicit = await actions.get(".backup.restore [id:string]")!({ session: target }, older);
+    expect(String(explicit)).toContain("四表增量恢复完成");
+    expect(String(explicit)).toContain(`备份 ${older}`);
+    expect((await f.app.database.get(TableName.Messages, {})).map((row) => row.id)).toEqual([older]);
+    const foreign = await actions.get(".backup.restore [id:string]")!({ session: target }, "00000000-0000-4000-8000-000000000010");
+    expect(String(foreign)).toContain("归属");
+    expect((await f.app.database.get(TableName.Messages, {})).map((row) => row.id)).toEqual([older]);
+});
+
+it("finds no latest backup when only another channel has backups", async () => {
+    const f = await fixture();
+    await f.manager.save({ ...target, channelId: "other" });
+    expect(await f.manager.loadLatest(target)).toBeUndefined();
 });
 
 it("removes temporary files after a save write failure", async () => {

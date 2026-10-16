@@ -50,17 +50,20 @@ export function registerHistoryBackup(ctx: Context, command: Command, world: Wor
         });
     for (const restore of [false, true])
         command
-            .subcommand(restore ? ".backup.restore <id:string>" : ".backup.check <id:string>", restore ? "增量补回当前频道的缺失历史" : "预检当前频道备份", {
+            .subcommand(restore ? ".backup.restore [id:string]" : ".backup.check <id:string>", restore ? "增量补回当前频道的缺失历史" : "预检当前频道备份", {
                 authority: 3,
             })
-            .usage(`${limitation} 恢复只补缺失行；相同ID内容不同则整批拒绝。写入失败不保证回滚，回执会报告部分效果。`)
+            .usage(
+                `${restore ? "备份 ID 可选；history.backup.restore 默认恢复当前频道最新备份（仅选择当前实例、平台及机器人的有效备份）；history.backup.restore <备份ID> 恢复指定备份。无备份时请先执行 history.backup。 " : ""}${limitation} 恢复只补缺失行；相同ID内容不同则整批拒绝。写入失败不保证回滚，回执会报告部分效果。`,
+            )
             .action(async ({ session }, id) => {
                 try {
                     const target = targetFor(session);
-                    const manager = new HistoryBackupManager(ctx, world),
-                        input = await manager.load(id);
-                    const report = restore ? await manager.restore(target, input) : await manager.preflight(target, input);
-                    return h.text(receipt(report));
+                    const manager = new HistoryBackupManager(ctx, world);
+                    const selected = restore && id === undefined ? await manager.loadLatest(target) : { id, input: await manager.load(id) };
+                    if (selected === undefined) return h.text("当前频道暂无备份（未找到有效备份），请先执行 history.backup。");
+                    const report = restore ? await manager.restore(target, selected.input) : await manager.preflight(target, selected.input);
+                    return h.text(`备份 ${selected.id}\n${receipt(report)}`);
                 } catch (error) {
                     return h.text(`${restore ? "恢复" : "预检"}失败：${String(error)}`);
                 }

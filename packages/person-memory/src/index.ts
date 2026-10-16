@@ -644,7 +644,11 @@ export function apply(ctx: Context, config: Config) {
             if (paused) worker.cancel(scope);
             return `当前场景已${paused ? "暂停" : "恢复"}维护`;
         });
-    command("people.mode <mode:string>", "设置当前场景 off/review/auto，不自动接受既有候选", async (scope, actor, [mode]) => {
+    command("people.mode [mode:string]", "查看或设置当前场景 off/review/auto，不自动接受既有候选", async (scope, actor, [mode]) => {
+        if (mode === undefined || !["off", "review", "auto"].includes(mode)) {
+            const current = (await store.read(scope)).settings.mode;
+            return `${mode === undefined ? "" : "无效模式。"}当前场景维护模式：${current}\n可用模式：off、review、auto；用法：people.mode review（不填参数查看当前模式）`;
+        }
         await store.settings(scope, { mode }, actor);
         modes.set(scope, mode);
         generations.set(scope, (generations.get(scope) ?? 0) + 1);
