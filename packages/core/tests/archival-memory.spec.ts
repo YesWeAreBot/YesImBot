@@ -114,7 +114,8 @@ async function fixture() {
     };
     // Keep real log read/write methods without the constructor's detached mkdir.
     const interaction: any = Object.create(InteractionManager.prototype);
-    Object.assign(interaction, { ctx, config, logger: log, basePath: path.join(baseDir, "data", "yesimbot", "interactions") });
+    Object.assign(interaction, { ctx, config, logger: log });
+    Object.defineProperty(interaction, "basePath", { value: path.join(baseDir, "data", "yesimbot", "interactions") });
     const semantic = new SemanticMemoryManager(ctx, config, ctx.yesimbot.logging, ctx.yesimbot.model);
     const memory: any = new ArchivalMemoryManager(ctx, config, interaction, ctx.yesimbot.logging, ctx.yesimbot.model, semantic);
     memory.chatModel = model;

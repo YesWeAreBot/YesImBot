@@ -10,7 +10,11 @@ export interface InstanceScopeOptions {
     owner?: Context;
 }
 
-/** Resolve the owning plugin, rather than an internal service or command context. */
+/**
+ * Resolve the owning plugin, rather than an internal service or command context.
+ * Persistent consumers must defer this until Loader has assigned the fork key
+ * (startup/first use), rather than resolving paths inside plugin constructors.
+ */
 export function getInstanceScope(ctx: Context, warn?: (message: string) => void, options: InstanceScopeOptions = {}): string {
     const plugin = ctx.get?.("yesimbot");
     // Service.ctx is rebound to the caller by Cordis proxies. Its own descriptor

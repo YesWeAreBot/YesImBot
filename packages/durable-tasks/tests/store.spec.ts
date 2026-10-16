@@ -93,3 +93,28 @@ it("keeps chat type and known guild identity in reminder IDs and list queries", 
     expect(new Set(tasks.map((task) => task.id)).size).toBe(4);
     for (const task of tasks) expect(await store.list(task)).toEqual([task]);
 });
+
+it("returns the accepted row for an identical retry after its deadline", async (t) => {
+    const { store } = await fixture(t);
+    const accepted = await store.enqueue(reminder, 0);
+    await expect(store.enqueue(reminder, 2000)).resolves.toEqual(accepted);
+    await expect(store.enqueue({ ...reminder, idempotencyKey: "new-expired" }, 2000)).rejects.toThrow("deadline");
+    await expect(store.enqueue({ ...reminder, content: "" }, 2000)).rejects.toThrow("content");
+    await expect(store.enqueue({ ...reminder, deadline: NaN }, 2000)).rejects.toThrow("deadline");
+    await expect(store.enqueue(reminder, 2000, () => false)).rejects.toThrow("reminder_request_invalidated");
+    expect(await store.list()).toEqual([accepted]);
+});
+
+it("rejects an expired duplicate if its request is invalidated during lookup", async (t) => {
+    const { ctx, store } = await fixture(t);
+    const accepted = await store.enqueue(reminder, 0);
+    let current = true;
+    const get = ctx.database.get.bind(ctx.database);
+    ctx.database.get = (async (...args: any[]) => {
+        const rows = await (get as any)(...args);
+        current = false;
+        return rows;
+    }) as any;
+    await expect(store.enqueue(reminder, 2000, () => current)).rejects.toThrow("reminder_request_invalidated");
+    expect(await store.get(accepted.id)).toEqual(accepted);
+});

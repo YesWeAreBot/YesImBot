@@ -58,8 +58,18 @@ export class AgentCore extends YesImBotService<Config> {
     private stopped = false;
     private decisionJournal?: DecisionJournal;
     private readonly decisions = new DecisionRecords(1000, Date.now, (record) => {
+        this.initializeDecisionJournal();
         void this.decisionJournal?.append(record);
     });
+
+    private initializeDecisionJournal(): void {
+        if (this.decisionJournal || this.stopped || !this.config.decisionRecording?.enabled) return;
+        this.decisionJournal = new DecisionJournal(
+            getInstanceDirectory(this.ctx, this.config.decisionRecording.directory || "data/yesimbot/decisions", (message) => this.logger.warn(message)),
+            this.config.decisionRecording,
+            (message) => this.logger.warn(message),
+        );
+    }
     private readonly activeDecisionIds = new Map<string, string>();
 
     private recordDecision(stimulus: AgentStimulus<any>, update: Partial<DecisionRecord>): void {
@@ -93,6 +103,7 @@ export class AgentCore extends YesImBotService<Config> {
     }
 
     public async queryDecisionRecords(session: Session, filter: { limit: number; from?: number; to?: number; traceId?: string }): Promise<string> {
+        this.initializeDecisionJournal();
         if (!this.decisionJournal) return "尚未启用本地决策记录，请先开启配置中的“决策记录与回放”。";
         const records = await this.decisionJournal.list({ ...filter, key: replyKey(this.replyTarget(session)) });
         const lines = records.map(
@@ -210,14 +221,6 @@ export class AgentCore extends YesImBotService<Config> {
         this.logger.info(
             `意愿评估配置 | TypeSafe: ${config.typesafe?.mode ?? "off"} / ${config.typesafe?.evaluationModel?.providerName && config.typesafe.evaluationModel.modelId ? "已选评估模型" : "未选评估模型"} | 话题分析: ${config.topics?.enabled ? "启用" : "关闭"} / ${config.topics?.model?.providerName && config.topics.model.modelId ? "已选对话模型" : "未选对话模型"} | 私聊、明确 @ 和忙碌时跳过新评估`,
         );
-        if (config.decisionRecording?.enabled) {
-            this.decisionJournal = new DecisionJournal(
-                getInstanceDirectory(ctx, config.decisionRecording.directory || "data/yesimbot/decisions", (message) => this.logger.warn(message)),
-                config.decisionRecording,
-                (message) => this.logger.warn(message),
-            );
-        }
-
         this.worldState = deps.world;
         this.modelService = deps.model;
         this.promptService = deps.prompt;
@@ -390,6 +393,8 @@ export class AgentCore extends YesImBotService<Config> {
     }
 
     public async start(): Promise<void> {
+        // Constructor-time scope resolution runs before Loader assigns the entry key.
+        this.initializeDecisionJournal();
         this.ctx.model.extend(
             "yesimbot.reply_rules",
             {

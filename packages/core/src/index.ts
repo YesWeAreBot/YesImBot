@@ -50,11 +50,17 @@ export default class YesImBot extends Service<Config> {
 
     /** 子服务实例，按依赖顺序排列：即构造顺序与启动顺序，卸载时反向停止。 */
     private readonly services: YesImBotService[];
+    private initialized = false;
     private stopping = false;
     private stopPromise?: Promise<void>;
 
     /** 全部子服务启动流程结束后兑现（失败时已记录日志并通知，不向外抛出）。 */
     public readonly ready: Promise<void>;
+
+    /** 仅全部子服务成功启动且尚未卸载时为 true；ready 本身也会在启动失败时兑现。 */
+    public get isReady(): boolean {
+        return !!this.initialized && !this.stopping;
+    }
 
     constructor(ctx: Context, config: Config) {
         super(ctx, "yesimbot", true);
@@ -140,6 +146,7 @@ export default class YesImBot extends Service<Config> {
                 await service.start();
                 if (this.stopping) return;
             }
+            this.initialized = true;
             this.ctx.logger.info("所有服务已就绪");
             this.ctx.logger.info(`Version: ${require("../package.json").version}`);
         } catch (error) {

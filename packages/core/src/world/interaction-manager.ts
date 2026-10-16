@@ -38,7 +38,11 @@ function clear(str: string) {
 
 export class InteractionManager {
     private logger: Logger;
-    private basePath: string;
+    private resolvedBasePath?: string;
+
+    private get basePath(): string {
+        return (this.resolvedBasePath ??= getInstanceDirectory(this.ctx, "data/yesimbot/interactions", (message) => this.logger.warn(message)));
+    }
 
     constructor(
         private ctx: Context,
@@ -46,8 +50,8 @@ export class InteractionManager {
         logging: LoggerService,
     ) {
         this.logger = logging.getLogger("[L1 记忆]");
-        this.basePath = getInstanceDirectory(ctx, "data/yesimbot/interactions", (message) => this.logger.warn(message));
-        this.ensureDirExists(this.basePath);
+        // Loader attaches the instance key after plugin construction. Resolve
+        // the directory on first use; appendToLog creates it before writing.
     }
 
     // --- 文件日志系统 ---

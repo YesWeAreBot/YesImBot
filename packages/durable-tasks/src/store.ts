@@ -77,8 +77,7 @@ export class TaskStore {
         for (const field of ["platform", "selfId", "channelId", "requester"] as const) {
             if (typeof input[field] !== "string" || !input[field] || input[field].length > 256) throw new Error(`Invalid target ${field}`);
         }
-        if (!Number.isSafeInteger(input.deadline) || input.deadline < now || input.deadline - now > 366 * 86400_000)
-            throw new Error("Invalid deadline (must be within the next 366 days)");
+        if (!Number.isSafeInteger(input.deadline) || input.deadline < 0) throw new Error("Invalid deadline");
         if (typeof input.content !== "string" || !input.content.trim() || input.content.length > 2000) throw new Error("Invalid content (1–2000 characters)");
         if (typeof input.idempotencyKey !== "string" || !input.idempotencyKey.trim() || input.idempotencyKey.length > 128)
             throw new Error("Invalid idempotency key");
@@ -99,6 +98,7 @@ export class TaskStore {
         const existing = await this.get(id);
         checkCurrent();
         if (existing) return existing;
+        if (input.deadline < now || input.deadline - now > 366 * 86400_000) throw new Error("Invalid deadline (must be within the next 366 days)");
         const row: DurableTask = { ...input, id, owner: this.owner, status: "queued", error: "", createdAt: now, updatedAt: now };
         let created: DurableTask;
         try {

@@ -42,6 +42,7 @@ it("unload waits for the in-flight start and prevents later services from starti
         },
     ]);
     root.ready = root.startServices();
+    expect(root.isReady).toBe(false);
     const stopping = root.stopServices();
     await Promise.resolve();
     expect(events).toEqual(["starting"]);
@@ -69,6 +70,8 @@ it("overlapping unloads reuse one reverse-order cleanup", async () => {
     ]);
     root.ready = root.startServices();
     await root.ready;
+    expect(root.isReady).toBe(true);
     await Promise.all([root.stopServices(), root.stopServices()]);
+    expect(root.isReady).toBe(false);
     expect(events).toEqual(["second", "first"]);
 });

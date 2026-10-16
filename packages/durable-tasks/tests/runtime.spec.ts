@@ -4,11 +4,11 @@ import { Context } from "koishi";
 import { expect, it, vi, type TestContext } from "vitest";
 vi.mock("koishi-plugin-yesimbot", async (importOriginal) => ({
     ...(await importOriginal<object>()),
-    getInstanceScope: (_ctx: Context, _warn: unknown, options?: unknown) => (options ? "plugin-scope" : "core-scope"),
+    getInstanceScope: (ctx: Context, _warn: unknown, options?: unknown) => `${(ctx.root as any).scopePrefix ?? ""}${options ? "plugin-scope" : "core-scope"}`,
 }));
 import { stubYesImBot } from "../../core/tests/helpers/yesimbot";
 import * as plugin from "../src/index";
-import { TABLE } from "../src/store";
+import { TABLE, TaskStore, registerModels, taskOwner } from "../src/store";
 const session = (channelId = "g", userId = "u", selfId = "bot") =>
     ({ platform: "onebot", selfId, channelId, userId, guildId: "guild", isDirect: false }) as any;
 async function fixture(t: TestContext, enabled = true) {
@@ -296,4 +296,126 @@ it("reports an already dispatched cancellation accurately after disposal", async
     expect(result.status).toBe("error");
     expect(result.applied).toEqual({ id: created.result.id, cancelled: true });
     expect((await f.ctx.database.get(TABLE, { id: created.result.id }))[0].status).toBe("cancelled");
+});
+
+async function pendingCoreFixture(t: TestContext, scopePrefix = "", holdDatabase = false) {
+    const ctx = new Context();
+    ctx.plugin(memory);
+    registerModels(ctx);
+    await ctx.start();
+    await ctx.database.prepared();
+    let resolve!: () => void, reject!: (error: Error) => void;
+    const ready = new Promise<void>((yes, no) => {
+        resolve = yes;
+        reject = no;
+    });
+    // Rejections are also observed by the plugin's lifecycle initialization.
+    void ready.catch(() => {});
+    const tools = new Map<string, any>();
+    const world = {
+        stimulusOwnerId: "world",
+        isChannelAllowed: () => true,
+        isBotMuted: () => false,
+        l2_manager: { getHistoryGeneration: () => 0 },
+        recordSystemEvent: async () => true,
+    };
+    ctx.set("yesimbot", {
+        ...stubYesImBot({
+            world,
+            tool: {
+                capabilities: { trustedToolSession: 1 },
+                registerTool: (tool: any) => {
+                    tools.set(tool.name, tool);
+                    return () => tools.delete(tool.name);
+                },
+            },
+        }),
+        ready,
+    } as any);
+    const store = new TaskStore(ctx.database, taskOwner(`${scopePrefix}core-scope`, `${scopePrefix}plugin-scope`));
+    const input = {
+        platform: "onebot",
+        selfId: "bot",
+        channelId: "g",
+        requester: "u",
+        guildId: "guild",
+        isDirect: false,
+        deadline: 1000,
+        content: "queued before startup",
+        idempotencyKey: "queued",
+    };
+    const queued = await store.enqueue(input, 0);
+    const running = await store.enqueue({ ...input, idempotencyKey: "running" }, 0);
+    await store.claim(running.id);
+    let resolveDatabase!: () => void;
+    const databaseReady = new Promise<void>((done) => {
+        resolveDatabase = done;
+    });
+    if (holdDatabase) {
+        const prepared = ctx.database.prepared.bind(ctx.database);
+        ctx.database.prepared = async () => {
+            await prepared();
+            await databaseReady;
+        };
+    }
+    const fork = ctx.plugin(plugin, { enabled: true, pollIntervalSeconds: 60 });
+    t.onTestFinished(async () => {
+        resolveDatabase();
+        resolve();
+        fork.dispose();
+        await ctx.stop();
+    });
+    await vi.waitFor(() => expect(tools.size).toBe(2));
+    await new Promise<void>((done) => setImmediate(done));
+    return { ctx, store, queued, running, fork, tools, resolve, reject, resolveDatabase };
+}
+
+it("leaves queued and running reminders untouched until core readiness", async (t) => {
+    const f = await pendingCoreFixture(t);
+    expect((await f.store.get(f.queued.id))?.status).toBe("queued");
+    expect((await f.store.get(f.running.id))?.status).toBe("running");
+    expect(f.tools.get("schedule_reminder").isSupported(session())).toBe(false);
+    f.resolve();
+    await f.ctx.lifecycle.flush();
+    await vi.waitFor(async () => expect((await f.store.get(f.running.id))?.status).toBe("failed"));
+});
+
+for (const interruption of ["dispose", "reject"] as const)
+    it(`does not consume reminders after ${interruption} while waiting for core readiness`, async (t) => {
+        const f = await pendingCoreFixture(t);
+        if (interruption === "dispose") {
+            f.fork.dispose();
+            f.resolve();
+        } else f.reject(new Error("core initialization failed"));
+        await f.ctx.lifecycle.flush();
+        expect((await f.store.get(f.queued.id))?.status).toBe("queued");
+        expect((await f.store.get(f.running.id))?.status).toBe("running");
+    });
+
+it("derives reminder ownership after core readiness supplies the stable scope", async (t) => {
+    const f = await pendingCoreFixture(t, "stable-");
+    (f.ctx.root as any).scopePrefix = "stable-";
+    f.resolve();
+    await f.ctx.lifecycle.flush();
+    await vi.waitFor(async () => expect((await f.store.get(f.running.id))?.status).toBe("failed"));
+    const result = await f.tools.get("schedule_reminder").execute({
+        session: session(),
+        deadline: Date.now() + 3600000,
+        content: "stable",
+        idempotency_key: "stable-new",
+    });
+    expect(result.status).toBe("success");
+    expect(await f.store.get(result.result.id)).toMatchObject({ content: "stable" });
+});
+
+it("waits for database preparation after core readiness before recovery and polling", async (t) => {
+    const f = await pendingCoreFixture(t, "", true);
+    f.resolve();
+    await new Promise<void>((done) => setImmediate(done));
+    expect((await f.store.get(f.queued.id))?.status).toBe("queued");
+    expect((await f.store.get(f.running.id))?.status).toBe("running");
+    expect(f.tools.get("schedule_reminder").isSupported(session())).toBe(false);
+    f.resolveDatabase();
+    await f.ctx.lifecycle.flush();
+    await vi.waitFor(async () => expect((await f.store.get(f.running.id))?.status).toBe("failed"));
 });

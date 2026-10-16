@@ -22,6 +22,8 @@ interface ToolRegistry {
 }
 interface Services {
     yesimbot: {
+        ready: Promise<void>;
+        isReady?: boolean;
         tool: ToolRegistry;
         world: ReminderWorld & DeliveryRuntime["world"];
     };
@@ -59,13 +61,8 @@ export function apply(ctx: Context, config: Config) {
         throw new Error("持久提醒需要支持实例 scope、定向 stimulus、历史 generation 与可信工具会话的 YesImBot core");
     }
     registerModels(ctx);
-    const store = new TaskStore(
-        ctx.database,
-        taskOwner(
-            getScope(ctx, (message) => logger.warn(message)),
-            getScope(ctx, (message) => logger.warn(message), { owner: ctx }),
-        ),
-    );
+    let store: TaskStore;
+    let worker: TaskWorker | undefined;
     const ownerId = world.stimulusOwnerId;
     let active = true;
     let initialized = false;
@@ -81,37 +78,38 @@ export function apply(ctx: Context, config: Config) {
                 { platform: task.platform, selfId: task.selfId, channelId: task.channelId },
             ),
     };
-    const worker = new TaskWorker(store, {
-        prepare: (task) => prepareDelivery(runtime, task, ownerId),
-        dispatch: (session, task, id) =>
-            dispatchReminder(
-                world,
-                ctx.emit.bind(ctx) as ReminderEmit,
-                async () => {
-                    if (!active || !currentTargetAllowed(runtime, session, id)) return false;
-                    const rules = await runtime.rules(task);
-                    // Read cancellation after every asynchronous policy lookup.
-                    if ((await store.get(task.id))?.status !== "running") return false;
-                    return (
-                        active &&
-                        currentTargetAllowed(runtime, session, id) &&
-                        !rules.some(
-                            (rule) =>
-                                (rule.expiresAt === null || rule.expiresAt > Date.now()) &&
-                                rule.blocked.some((category) => category === "all" || category === "scheduled"),
-                        )
-                    );
-                },
-                session,
-                task,
-                id,
-            ),
-    });
+    const createWorker = () =>
+        new TaskWorker(store, {
+            prepare: (task) => prepareDelivery(runtime, task, ownerId),
+            dispatch: (session, task, id) =>
+                dispatchReminder(
+                    world,
+                    ctx.emit.bind(ctx) as ReminderEmit,
+                    async () => {
+                        if (!active || !currentTargetAllowed(runtime, session, id)) return false;
+                        const rules = await runtime.rules(task);
+                        // Read cancellation after every asynchronous policy lookup.
+                        if ((await store.get(task.id))?.status !== "running") return false;
+                        return (
+                            active &&
+                            currentTargetAllowed(runtime, session, id) &&
+                            !rules.some(
+                                (rule) =>
+                                    (rule.expiresAt === null || rule.expiresAt > Date.now()) &&
+                                    rule.blocked.some((category) => category === "all" || category === "scheduled"),
+                            )
+                        );
+                    },
+                    session,
+                    task,
+                    id,
+                ),
+        });
     const removers: Array<() => void> = [];
     ctx.on("dispose", () => {
         active = false;
         initialized = false;
-        worker.stop();
+        worker?.stop();
         for (const remove of removers) remove();
     });
     const register = (tool: { name: string } & Record<string, unknown>) => {
@@ -194,13 +192,24 @@ export function apply(ctx: Context, config: Config) {
         });
     }
     ctx.on("ready", async () => {
+        const coreReady = () => services.yesimbot.isReady !== false;
+        await services.yesimbot.ready;
+        if (!active || !coreReady()) return;
         await ctx.database.prepared();
-        if (!active) return;
-        await worker.start();
+        if (!active || !coreReady()) return;
+        store = new TaskStore(
+            ctx.database,
+            taskOwner(
+                getScope(ctx, (message) => logger.warn(message)),
+                getScope(ctx, (message) => logger.warn(message), { owner: ctx }),
+            ),
+        );
+        const readyWorker = (worker = createWorker());
+        await readyWorker.start();
         if (!active) return;
         initialized = true;
         const tick = () => {
-            void worker.tick().catch((error) => logger.warn(`持久提醒检查失败：${String(error)}`));
+            void readyWorker.tick().catch((error) => logger.warn(`持久提醒检查失败：${String(error)}`));
         };
         ctx.setInterval(tick, config.pollIntervalSeconds * 1000);
         tick();

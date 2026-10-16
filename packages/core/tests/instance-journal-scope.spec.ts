@@ -134,11 +134,13 @@ it("AgentCore journals isolate shared configured roots, preserve locks, and rest
         expect(aRows[0].id).not.toBe(bRows[0].id);
         expect(a.decisionJournal.filePath).not.toBe(b.decisionJournal.filePath);
         const blocked = create("yesimbot:a");
+        await blocked.queryDecisionRecords(target, { limit: 10 });
         expect(await blocked.decisionJournal.list()).toEqual([]);
         expect(JSON.parse(await fs.readFile(path.join(path.dirname(a.decisionJournal.filePath), ".decisions.lock"), "utf8")).pid).toBe(process.pid);
         await blocked.stop();
         await a.stop();
         const restarted = create("yesimbot:a");
+        await restarted.queryDecisionRecords(target, { limit: 10 });
         expect((await restarted.decisionJournal.list()).map((row: any) => row.id)).toEqual(aRows.map((row: any) => row.id));
         expect(await fs.readFile(legacy, "utf8")).toBe("unowned legacy decision\n");
     } finally {
