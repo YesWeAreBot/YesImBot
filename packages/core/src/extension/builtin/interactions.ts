@@ -4,7 +4,7 @@ import { CQCode } from "koishi-plugin-adapter-onebot";
 import { Extension, Tool, withInnerThoughts } from "../../extension/decorators";
 import { Failed, Success } from "../../extension/helpers";
 import { Infer } from "../../extension/types";
-import { formatDate, isEmpty } from "../../shared";
+import { assertReplyTurn, formatDate, isEmpty } from "../../shared";
 
 interface InteractionsConfig {}
 
@@ -127,7 +127,7 @@ export default class InteractionsExtension {
 
     @Tool({
         name: "get_forward_msg",
-        description: `获取合并转发消息的内容，自动展开最多三层（含最外层）。无法展开的子转发保留标记及原因，平台未返回的内容无法恢复。`,
+        description: `获取合并转发消息的内容，按根转发第0层、子转发第1层、普通内容第2层展开；第2层的转发不再展开。同层并列内容不设数量上限。无法展开的子转发保留标记及原因，平台未返回的内容无法恢复。`,
         parameters: withInnerThoughts({
             id: Schema.string().required().description("合并转发 ID，如在 `<forward id='12345'>` 中的 12345 即是其 ID"),
         }),
@@ -139,19 +139,20 @@ export default class InteractionsExtension {
         try {
             const cache = new Map<string, Promise<unknown>>();
             const load = (forwardId: string): Promise<unknown> => {
+                assertReplyTurn();
                 let request = cache.get(forwardId);
                 if (!request) {
-                    if (cache.size >= 32) throw new Error("单次转发查询达到 32 个不同转发的上限");
                     request = Promise.resolve().then(() => session.onebot!.getForwardMsg(forwardId));
                     cache.set(forwardId, request);
                 }
                 return request;
             };
             const forwardMessages = await load(id);
-            const formattedResult = await formatForwardMessage(this.ctx, forwardMessages, 1, load, new Set([id]));
+            const formattedResult = await formatForwardMessage(this.ctx, forwardMessages, load, new Set([id]));
 
             return Success(formattedResult);
         } catch (error) {
+            assertReplyTurn();
             const message = error instanceof Error ? error.message : String(error);
             this.ctx.logger.error(`Bot[${session.selfId}]获取转发消息失败: ${id} - `, message);
             return Failed(`获取转发消息失败： ${message}`);
@@ -177,41 +178,21 @@ function forwardTime(value: unknown): string {
     return formatDate(date, "YYYY-MM-DD HH:mm:ss");
 }
 
-// Shared by the whole invocation, including every repeated cached reference.
-const MAX_FORWARD_ITEMS = 512;
-const MAX_FORWARD_BYTES = 128 * 1024;
-class ForwardBudgetExceeded extends Error {}
+// The outer forward is level 0; ordinary messages may occupy level 2.
+const MAX_FORWARD_LEVEL = 2;
 
-async function formatForwardMessage(
-    ctx: Context,
-    messages: unknown,
-    depth: number,
-    load: (id: string) => Promise<unknown>,
-    ancestors: Set<string>,
-): Promise<string> {
+async function formatForwardMessage(ctx: Context, messages: unknown, load: (id: string) => Promise<unknown>, ancestors: Set<string>): Promise<string> {
     const chunks: string[] = [];
-    let items = 0,
-        bytes = 0;
-    // Reserve room for the truncation notice and closing the three-level wrappers.
-    const append = (text: string, closing = false) => {
-        const size = Buffer.byteLength(text, "utf8");
-        if (!closing && bytes + size > MAX_FORWARD_BYTES - 256) throw new ForwardBudgetExceeded();
-        chunks.push(text);
-        bytes += size;
-    };
-    const claim = () => {
-        if (++items > MAX_FORWARD_ITEMS) throw new ForwardBudgetExceeded();
-    };
+    const append = (text: string) => chunks.push(text);
     const render = async (list: unknown, level: number, path: Set<string>): Promise<void> => {
         if (!Array.isArray(list)) throw new Error("转发消息列表缺失或无效");
         if (!list.length) {
             append("无有效消息内容");
             return;
         }
-        // Sequential traversal prevents already-scheduled siblings from running
-        // asset conversions after the shared budget has been exhausted.
+        // Depth is local to each branch; siblings never consume each other's capacity.
         for (const [index, input] of list.entries()) {
-            claim();
+            assertReplyTurn();
             if (!isRecord(input)) throw new Error(`转发消息第 ${index + 1} 个节点无效`);
             const message = input.type === "node" ? input.data : input;
             if (!isRecord(message)) throw new Error(`转发消息第 ${index + 1} 个节点数据无效`);
@@ -226,14 +207,12 @@ async function formatForwardMessage(
             const groups = typeof content === "string" ? [content] : content;
             if (!content.length) append("（空消息）");
             for (const segment of groups) {
-                claim();
+                assertReplyTurn();
                 if (typeof segment !== "string" && (!isRecord(segment) || typeof segment.type !== "string" || !segment.type || !isRecord(segment.data)))
                     throw new Error(`转发消息第 ${index + 1} 个节点的消息段无效`);
-                // Bound CQ parsing itself, including strings inside segment arrays.
-                if (typeof segment === "string" && Buffer.byteLength(segment, "utf8") > MAX_FORWARD_BYTES - bytes - 256) throw new ForwardBudgetExceeded();
                 const parsed = CQCode.parse((typeof segment === "string" ? segment : [segment]) as Parameters<typeof CQCode.parse>[0]);
                 for (const element of parsed) {
-                    claim();
+                    assertReplyTurn();
                     switch (element.type) {
                         case "text":
                             if (typeof element.attrs.content !== "string") throw new Error("转发文本消息段缺少 text");
@@ -242,7 +221,6 @@ async function formatForwardMessage(
                         case "image": {
                             const src = element.attrs.url || element.attrs.file;
                             if (typeof src !== "string" || !src.trim()) throw new Error("转发消息的 image.url/file 缺失或无效");
-                            if (Buffer.byteLength(src, "utf8") > MAX_FORWARD_BYTES - bytes - 256) throw new ForwardBudgetExceeded();
                             append(await ctx.yesimbot.asset.transform([h("img", { src })]));
                             break;
                         }
@@ -261,8 +239,8 @@ async function formatForwardMessage(
                                 append(`${marker}（循环引用，未继续展开）`);
                                 break;
                             }
-                            if (level >= 3) {
-                                append(`${marker}（已达三层展开上限，含最外层）`);
+                            if (level + 1 >= MAX_FORWARD_LEVEL) {
+                                append(`${marker}（已达三层展开上限：第0层根转发、第1层子转发、第2层普通内容）`);
                                 break;
                             }
                             let opened = false;
@@ -279,27 +257,27 @@ async function formatForwardMessage(
                                 );
                                 opened = true;
                                 await render(nested, level + 1, new Set(path).add(id));
-                            } catch (error) {
-                                if (error instanceof ForwardBudgetExceeded) throw error;
+                            } catch {
+                                assertReplyTurn();
                                 append(`${marker}（子转发获取失败或数据无效）`);
                             } finally {
-                                if (opened) append("\n</forward>", true);
+                                if (opened) append("\n</forward>");
                             }
                             break;
                         }
                         case "node": {
-                            if (level >= 3) {
-                                append("<forward/>（已达三层展开上限，含最外层）");
+                            if (level + 1 >= MAX_FORWARD_LEVEL) {
+                                append("<forward/>（已达三层展开上限：第0层根转发、第1层子转发、第2层普通内容）");
                                 break;
                             }
                             append(`<forward depth="${level + 1}">\n`);
                             try {
                                 await render([{ type: "node", data: element.attrs }], level + 1, path);
-                            } catch (error) {
-                                if (error instanceof ForwardBudgetExceeded) throw error;
+                            } catch {
+                                assertReplyTurn();
                                 append("（内嵌转发数据无效）");
                             } finally {
-                                append("\n</forward>", true);
+                                append("\n</forward>");
                             }
                             break;
                         }
@@ -310,11 +288,6 @@ async function formatForwardMessage(
             }
         }
     };
-    try {
-        await render(messages, depth, ancestors);
-    } catch (error) {
-        if (!(error instanceof ForwardBudgetExceeded)) throw error;
-        append("\n（已达本次展开预算：最多处理 512 个节点或消息段，输出最多 128 KiB；剩余内容未展开）", true);
-    }
+    await render(messages, 0, ancestors);
     return chunks.join("");
 }
