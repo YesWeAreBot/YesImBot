@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { Context, ForkScope, h, Logger, resolveConfig, Schema, Session } from "koishi";
+import { Context, ForkScope, h, Logger, Schema, Session } from "koishi";
 
 import { assertReplyTurn, awaitReplyTurn } from "../agent/reply-turn";
 import { Config } from "../config";
@@ -18,6 +18,73 @@ import QManagerExtension from "./builtin/qmanager";
 import SearchExtension from "./builtin/search";
 import { extractMetaFromSchema, Failed } from "./helpers";
 import { IExtension, Properties, ToolCallResult, ToolDefinition, ToolSchema } from "./types";
+
+/** Keep JSON containers and quoted values intact before Koishi's tool-schema validation. */
+function parseCommandParams(source: string): Record<string, string> {
+    const result: Record<string, string> = Object.create(null);
+    let position = 0;
+    while (position < source.length) {
+        while (/\s/.test(source[position] || "") && position < source.length) position++;
+        if (position === source.length) break;
+        const match = /^(\w+)=/.exec(source.slice(position));
+        if (!match) throw new Error("参数应使用 key=value 格式");
+        position += match[0].length;
+        const start = position;
+        const stack: string[] = [];
+        let quote = "";
+        for (; position < source.length; position++) {
+            const char = source[position];
+            if (quote) {
+                if (char === "\\") position++;
+                else if (char === quote) quote = "";
+            } else if (char === '"' || char === "'") quote = char;
+            else if (char === "{" || char === "[") stack.push(char === "{" ? "}" : "]");
+            else if (char === "}" || char === "]") {
+                if (stack.pop() !== char) throw new Error("JSON 括号不匹配");
+            } else if (/\s/.test(char) && !stack.length) break;
+        }
+        if (quote || stack.length) throw new Error("参数中的引号或 JSON 括号未闭合");
+        let value = source.slice(start, position);
+        if (!value) throw new Error(`参数 ${match[1]} 缺少值`);
+        if (value.startsWith('"') && value.endsWith('"')) value = JSON.parse(value);
+        else if (value.startsWith("'") && value.endsWith("'")) value = value.slice(1, -1).replace(/\\(['\\])/g, "$1");
+        result[match[1]] = value;
+    }
+    return result;
+}
+
+function parameterSchemas(schema: Schema, name: string): Schema[] {
+    if (schema.type === "object") return schema.dict?.[name] ? [schema.dict[name]] : [];
+    if (schema.type === "union" || schema.type === "intersect") return (schema.list || []).flatMap((branch) => parameterSchemas(branch, name));
+    if (schema.type === "transform" && schema.inner) return parameterSchemas(schema.inner, name);
+    return [];
+}
+
+/** Prefer valid strings (notably long IDs); parse JSON only when the declared input rejects a string. */
+function convertCommandParams(schema: Schema | undefined, params: Record<string, string>): Record<string, unknown> {
+    return Object.fromEntries(
+        Object.entries(params).map(([name, value]) => {
+            const candidates = schema ? parameterSchemas(schema, name) : [];
+            const accepts = (input: unknown) =>
+                candidates.some((candidate) => {
+                    try {
+                        candidate(input);
+                        return true;
+                    } catch {
+                        return false;
+                    }
+                });
+            if (accepts(value)) return [name, value];
+            try {
+                const parsed: unknown = JSON.parse(value);
+                if (accepts(parsed)) return [name, parsed];
+            } catch {
+                /* Full tool-schema validation reports invalid input below. */
+            }
+            return [name, value];
+        }),
+    );
+}
 
 function processParams(params: Properties, indent = ""): any[] {
     return Object.entries(params).map(([key, param]) => {
@@ -53,6 +120,8 @@ export class ToolService extends YesImBotService<Config> {
 
     private tools: Map<string, ToolDefinition> = new Map();
     private extensions: Map<string, IExtension> = new Map();
+    // Disabled instances are also retained so their own plugin scope can be re-enabled.
+    private knownExtensions: Map<string, IExtension> = new Map();
 
     private _logger: Logger;
     private promptService: PromptService;
@@ -163,43 +232,26 @@ export class ToolService extends YesImBotService<Config> {
             });
 
         this.ctx
-            .command("tool.invoke <name:string> [...params:string]", "调用工具", { authority: 3 })
+            .command("tool.invoke <name:string> [params:text]", "调用工具", { authority: 3 })
             .usage(
                 [
                     "调用指定的工具并传递参数",
                     '参数格式为 "key=value"，多个参数用空格分隔。',
-                    '如果 value 包含空格，请使用引号将其包裹，例如：key="some value',
+                    '字符串可写为 key="some value"；数字、布尔和 JSON 按工具参数类型校验。',
+                    '例如 payload={"items": [1, 2], "label": "hello world"}；字符串 ID 不会转为数字。',
                 ].join("\n"),
             )
             .example(["tool.invoke search_web keyword=koishi"].join("\n"))
-            .action(async ({ session }, name, ...params) => {
+            .action(async ({ session }, name, params = "") => {
                 if (!name) return "错误：未指定要调用的工具名称";
-
-                const parsedParams: Record<string, any> = {};
+                const tool = this.getTool(name, session);
+                if (!tool) return `未找到工具 "${name}"，或该工具在当前会话不可用。`;
+                let parsedParams: Record<string, unknown>;
                 try {
-                    // 更健壮的参数解析，支持 "key=value" 和 key="value with spaces"
-                    const paramString = params?.join(" ") || "";
-                    const regex = /(\w+)=("([^"]*)"|'([^']*)'|(\S+))/g;
-                    let match;
-                    while ((match = regex.exec(paramString)) !== null) {
-                        const key = match[1];
-                        const value = match[3] ?? match[4] ?? match[5]; // 优先取引号内的内容
-                        parsedParams[key] = value;
-                    }
-
-                    // 对于无法用正则匹配的简单场景做兼容
-                    if (Object.keys(parsedParams).length === 0 && params?.length > 0) {
-                        for (const param of params) {
-                            const parts = param.split("=", 2);
-                            if (parts.length === 2) {
-                                parsedParams[parts[0]] = parts[1];
-                            }
-                        }
-                    }
+                    parsedParams = convertCommandParams(tool.parameters, parseCommandParams(params));
                 } catch (error) {
                     return `参数解析失败：${error.message}\n请检查您的参数格式是否正确（key=value）。`;
                 }
-
                 const result = await this.invoke(name, parsedParams, session);
 
                 if (result.status === "success") {
@@ -237,51 +289,34 @@ export class ToolService extends YesImBotService<Config> {
                 return `发现 ${extensions.size} 个已加载的扩展：\n${extList}`;
             });
 
-        this.ctx.command("extension.enable <name:string>", "启用扩展", { authority: 3 }).action(async ({ session }, name) => {
-            if (!session) return "会话不可用";
-            try {
-                const ext = (await import(name)) as IExtension;
-                if (!ext) {
-                    return `扩展未找到`;
-                }
-                if (this.extensions.has(name)) {
-                    return `扩展已启用`;
-                }
-                if (!ext.metadata) {
-                    return `扩展元数据未定义`;
-                }
-                if (!ext.metadata.name) {
-                    return `扩展元数据中缺少名称`;
-                }
-                if (!ext.metadata.description) {
-                    return `扩展元数据中缺少描述`;
-                }
-                if (!ext.metadata.version) {
-                    return `扩展元数据中缺少版本`;
-                }
-                if (!ext.metadata.author) {
-                    return `扩展元数据中缺少作者`;
-                }
-                if (!ext.metadata.display) {
-                    return `扩展元数据中缺少显示名称`;
-                }
-                const config = resolveConfig(ext, this.config.extra?.[name] || {});
-                this.register(ext, true, config);
-                this.ctx.scope.update({ [name]: { enabled: true } }, false);
-                await this.recordFrameworkChange(session, "extension.enable", name, "success");
-                return `启用成功`;
-            } catch (error) {
-                return `启用失败: ${error.message}`;
-            }
-        });
-
-        this.ctx.command("extension.disable <name:string>", "禁用扩展", { authority: 3 }).action(async ({ session }, name) => {
-            if (!session) return "会话不可用";
-            const result = this.unregister(name);
-            this.ctx.scope.update({ [name]: { enabled: false } }, false);
-            await this.recordFrameworkChange(session, "extension.disable", name, result ? "success" : "failed");
-            return result ? `禁用成功` : `禁用失败`;
-        });
+        for (const enabled of [true, false]) {
+            const operation = enabled ? "enable" : "disable";
+            const label = enabled ? "启用" : "禁用";
+            this.ctx
+                .command(`extension.${operation} <name:string>`, `${label}扩展`, { authority: 3 })
+                .usage("内置扩展更新当前实例的 extra 配置；外部扩展更新其自身插件配置。保存后重载对应插件并保留其他设置。")
+                .action(async ({ session }, name) => {
+                    if (!session) return "会话不可用";
+                    if (!name) return "未指定扩展名称";
+                    try {
+                        // Prefer registered instances, including disabled builtins. Retain the
+                        // module lookup for external extensions that export an instance.
+                        const ext = this.knownExtensions.get(name) || (enabled ? ((await import(name)) as IExtension) : undefined);
+                        if (!ext?.metadata?.name || !ext.ctx?.scope) return "扩展未找到或无法定位其插件配置";
+                        const scope = ext.metadata.builtin ? this.ctx.scope : ext.ctx.scope;
+                        const current = scope.config;
+                        const data = ext.metadata.builtin
+                            ? { ...current, extra: { ...current.extra, [ext.metadata.name]: { ...current.extra?.[ext.metadata.name], enabled } } }
+                            : { ...current, enabled };
+                        // Do not pass false: it saves but suppresses both update callbacks and reload.
+                        scope.update(data);
+                        await this.recordFrameworkChange(session, `extension.${operation}`, ext.metadata.name, "success");
+                        return `${label}成功`;
+                    } catch (error) {
+                        return `${label}失败: ${error.message}`;
+                    }
+                });
+        }
     }
 
     private _registerPromptTemplates() {
@@ -392,6 +427,10 @@ export class ToolService extends YesImBotService<Config> {
                 );
             }
 
+            const previous = this.knownExtensions.get(metadata.name);
+            if (previous && previous !== extensionInstance) this.unregister(metadata.name, previous);
+            this.knownExtensions.set(metadata.name, extensionInstance);
+
             if (!enabled) {
                 // this._logger.info(`扩展 "${metadata.name}" 已禁用`);
                 return;
@@ -416,21 +455,17 @@ export class ToolService extends YesImBotService<Config> {
         }
     }
 
-    public unregister(name: string): boolean {
-        const ext = this.extensions.get(name);
-        if (!ext) {
-            this._logger.warn(`尝试卸载不存在的扩展: "${name}"`);
-            return false;
+    public unregister(name: string, expected?: IExtension): boolean {
+        const ext = this.knownExtensions.get(name);
+        // A disposed old plugin must not unregister a newer instance with the same name.
+        if (!ext || (expected && ext !== expected)) return false;
+        this.knownExtensions.delete(name);
+        if (this.extensions.get(name) === ext) this.extensions.delete(name);
+        for (const definition of ext.tools?.values() || []) {
+            // Another extension (or registerTool) may have replaced a colliding name.
+            if (this.tools.get(definition.name) === definition) this.tools.delete(definition.name);
         }
-        this.extensions.delete(name);
-        try {
-            for (const tool of ext.tools.values()) {
-                this.tools.delete(tool.name);
-            }
-            this._logger.info(`已卸载扩展: "${name}"`);
-        } catch (error) {
-            this._logger.warn(`卸载扩展 ${name} 时出错：${error.message}`);
-        }
+        this._logger.info(`已卸载扩展: "${name}"`);
         return true;
     }
 

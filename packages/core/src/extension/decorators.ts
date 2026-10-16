@@ -1,6 +1,6 @@
 import { Context, Schema } from "koishi";
 
-import { ExtensionMetadata, Infer, ToolDefinition, ToolMetadata } from "./types";
+import { ExtensionMetadata, IExtension, Infer, ToolDefinition, ToolMetadata } from "./types";
 
 // 定义一个更精确的类型，表示任何可以被 new 的类
 type Constructor<T = {}> = new (...args: any[]) => T;
@@ -53,7 +53,7 @@ export function Extension(metadata: ExtensionMetadata): ClassDecorator {
 
                     ctx.on("dispose", () => {
                         if (toolService) {
-                            toolService.unregister(metadata.name);
+                            toolService.unregister(metadata.name, this as unknown as IExtension);
                             logger.info(`扩展 "${metadata.name}" 已卸载。`);
                         }
                     });
