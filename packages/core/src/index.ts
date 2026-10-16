@@ -13,7 +13,7 @@ import { LoggerService } from "./logger";
 import { MemoryService } from "./memory";
 import { ModelService } from "./model";
 import { PromptService } from "./prompt";
-import { handleError, initializeErrorReporter } from "./shared/errors";
+import { handleError } from "./shared/errors";
 import { YesImBotService } from "./shared/service";
 import { WorldStateService } from "./world";
 
@@ -121,13 +121,6 @@ export default class YesImBot extends Service<Config> {
 
         this.services = [this.logging, this.asset, this.prompt, this.memory, this.model, this.world, this.tool, this.agent];
 
-        initializeErrorReporter(
-            config.errorReporting,
-            this.ctx.logger("[错误报告]"),
-            (id, error) => this.logging.recordError(id, error),
-            config.providers?.map((provider) => provider.apiKey).filter(Boolean),
-        );
-
         this.ctx.on("dispose", () => this.stopServices());
 
         this.ready = this.startServices();
@@ -146,7 +139,7 @@ export default class YesImBot extends Service<Config> {
             if (this.stopping) return;
             this.ctx.logger.error(error.message);
             this.ctx.notifier.create("初始化时发生错误");
-            handleError(this.ctx.logger("yesimbot"), error, "服务初始化时发生错误");
+            handleError(this.logging.getLogger("yesimbot"), error, "服务初始化时发生错误");
         }
     }
 

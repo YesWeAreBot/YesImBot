@@ -38,6 +38,7 @@ export interface ReportContext {
 export class ErrorReporter {
     private readonly config: ErrorReporterConfig;
     private readonly logger: Logger;
+    private disposed = false;
 
     constructor(
         config: ErrorReporterConfig,
@@ -59,11 +60,16 @@ export class ErrorReporter {
         }
     }
 
+    public dispose(): void {
+        this.disposed = true;
+    }
+
     /**
      * 格式化并上报错误
      * @param context 包含错误和附加上下文的对象
      */
     public async report(context: ReportContext): Promise<string | null> {
+        if (this.disposed) return null;
         // 本地保存不依赖远程上报开关，也不等待远程服务。
         if (this.saveLocal) {
             try {
@@ -72,7 +78,7 @@ export class ErrorReporter {
                 this.logger.warn("本地错误报告保存失败");
             }
         }
-        if (!this.config.enabled || !this.config.pasteServiceUrl) {
+        if (this.disposed || !this.config.enabled || !this.config.pasteServiceUrl) {
             return null;
         }
 
@@ -150,8 +156,16 @@ export class ErrorReporter {
 
 // --- 统一错误处理器 ---
 
+// Ownership is attached to proxy identities, never names (Koishi can reuse names).
+const loggerReporters = new WeakMap<Logger, ErrorReporter>();
 let globalErrorReporter: ErrorReporter | null = null;
 
+export function bindErrorReporter(logger: Logger, reporter: ErrorReporter): Logger {
+    loggerReporters.set(logger, reporter);
+    return logger;
+}
+
+/** Legacy explicit singleton API. Core instances use logger ownership instead. */
 export function initializeErrorReporter(
     config: ErrorReporterConfig,
     logger: Logger,
@@ -269,9 +283,10 @@ export function handleError(logger: Logger, error: unknown, contextDescription: 
         logger.debug(`   - 堆栈追踪:\n${stack}`);
     }
 
-    // 步骤 3: 触发全局错误上报 (例如上报到 Sentry 等监控服务)
-    if (globalErrorReporter) {
-        globalErrorReporter.report({
+    // An owned logger always keeps its reporter, even after that owner stops.
+    const reporter = loggerReporters.get(logger) ?? globalErrorReporter;
+    if (reporter) {
+        void reporter.report({
             errorId,
             error: appError,
         });

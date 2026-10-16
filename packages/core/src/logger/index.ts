@@ -3,6 +3,7 @@ import { format } from "util";
 import { Context, Logger, Schema } from "koishi";
 
 import { Config } from "../config";
+import { bindErrorReporter, ErrorReporter } from "../shared/errors";
 import { YesImBotService } from "../shared/service";
 import { LocalLogWriter, LocalLoggingConfig, sanitizeLog } from "./local-writer";
 
@@ -52,6 +53,7 @@ export const LoggingConfigSchema: Schema<LoggingConfig> = Schema.object({
 function createLevelAwareLoggerProxy(
     logger: Logger,
     configuredLevel: LogLevel,
+    reporter: ErrorReporter,
     write?: (name: string, level: number, method: string, args: any[]) => void,
 ): Logger {
     logger.level = configuredLevel;
@@ -65,7 +67,7 @@ function createLevelAwareLoggerProxy(
         debug: 3,
     };
 
-    return new Proxy(logger, {
+    const proxy = new Proxy(logger, {
         get(target, prop, receiver) {
             const propName = prop.toString();
 
@@ -74,7 +76,7 @@ function createLevelAwareLoggerProxy(
                 const originalExtend = Reflect.get(target, prop, receiver);
                 return (...args: any[]) => {
                     const newLogger = originalExtend.apply(target, args);
-                    return createLevelAwareLoggerProxy(newLogger, configuredLevel, write);
+                    return createLevelAwareLoggerProxy(newLogger, configuredLevel, reporter, write);
                 };
             }
 
@@ -95,11 +97,13 @@ function createLevelAwareLoggerProxy(
             return Reflect.get(target, prop, receiver);
         },
     });
+    return bindErrorReporter(proxy, reporter);
 }
 
 export class LoggerService extends YesImBotService<Config> {
     _logger: Logger;
     private localWriter?: LocalLogWriter;
+    private readonly errorReporter: ErrorReporter;
 
     constructor(ctx: Context, config: Config) {
         super(ctx, config);
@@ -111,7 +115,13 @@ export class LoggerService extends YesImBotService<Config> {
                 config.providers?.map((provider) => provider.apiKey).filter(Boolean),
             );
         }
-        this._logger = createLevelAwareLoggerProxy(ctx.logger("[日志服务]"), config.logging.level, this.writeLocal.bind(this));
+        this.errorReporter = new ErrorReporter(
+            config.errorReporting,
+            ctx.logger("[错误报告]"),
+            (id, error) => this.recordError(id, error),
+            config.providers?.map((provider) => provider.apiKey).filter(Boolean),
+        );
+        this._logger = createLevelAwareLoggerProxy(ctx.logger("[日志服务]"), config.logging.level, this.errorReporter, this.writeLocal.bind(this));
     }
 
     public start(): void {
@@ -119,6 +129,7 @@ export class LoggerService extends YesImBotService<Config> {
     }
 
     public async stop(): Promise<void> {
+        this.errorReporter.dispose();
         await this.localWriter?.close();
     }
 
@@ -142,6 +153,6 @@ export class LoggerService extends YesImBotService<Config> {
     /** @deprecated */
     public getLogger(name?: string): Logger {
         const originalLogger = this.ctx?.logger(name as string) || new Logger(name ?? "", {});
-        return createLevelAwareLoggerProxy(originalLogger, this.config.logging.level, this.writeLocal.bind(this));
+        return createLevelAwareLoggerProxy(originalLogger, this.config.logging.level, this.errorReporter, this.writeLocal.bind(this));
     }
 }
