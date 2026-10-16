@@ -10,7 +10,9 @@ function executorFixture(options: { limit: number; stdout?: string[]; stderr?: s
     const engine = {
         globals: { set() {}, delete() {} },
         FS: { mkdirTree() {} },
-        runPython() {},
+        runPython(code: string) {
+            if (code === "dict()") return { set() {}, destroy() {} };
+        },
         setStdout({ batched }: { batched: (message: string) => void }) {
             writeStdout = batched;
         },
@@ -31,7 +33,7 @@ function executorFixture(options: { limit: number; stdout?: string[]; stderr?: s
         isReady: true,
         ctx: { logger },
         logger,
-        pendingTimers: new Set(),
+        shutdown: new AbortController(),
         config: { allowedModules: [], timeout: 50 },
         sharedConfig: { maxOutputSize: options.limit },
         pool: {

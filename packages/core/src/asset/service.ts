@@ -49,6 +49,10 @@ declare module "koishi" {
  * 负责资源的持久化存储、去重、读取、处理和生命周期管理
  */
 export class AssetService extends YesImBotService<Config> {
+    public get capabilities() {
+        return Object.freeze({ cancellableCreate: 1 as const });
+    }
+
     // 缓存和常量
     private static readonly PROCESSED_IMAGE_CACHE_SUFFIX = ".p.jpeg";
     private static readonly MAX_COMPRESSION_ATTEMPTS = 5; // 压缩图片时的最大尝试次数
@@ -141,15 +145,23 @@ export class AssetService extends YesImBotService<Config> {
      * @param options - 内部选项，如预设的ID
      * @returns 资源的唯一 ID
      */
-    async create(source: string | Buffer, metadata: AssetMetadata = {}, options: { id?: string } = {}): Promise<string> {
+    async create(source: string | Buffer, metadata: AssetMetadata = {}, options: { id?: string; signal?: AbortSignal } = {}): Promise<string> {
+        const { signal } = options;
+        signal?.throwIfAborted();
+        // Cancellation rollback only owns a freshly generated ID. It must never
+        // delete a caller's existing resource after a replacement was cancelled.
+        if (signal && options.id !== undefined) throw new Error("Asset create options.signal cannot be combined with options.id");
         const { data, type } = await this._getSourceBuffer(source);
+        signal?.throwIfAborted();
         if (!data || data.length === 0) throw new Error("资源内容为空");
 
         const hash = createHash("sha256").update(data).digest("hex");
         const [existing] = await this.ctx.database.get(TableName.Assets, { hash });
+        signal?.throwIfAborted();
 
         if (existing) {
             await this._updateLastUsed(existing.id);
+            signal?.throwIfAborted();
             return existing.id;
         }
 
@@ -165,8 +177,6 @@ export class AssetService extends YesImBotService<Config> {
         }
 
         const id = options.id || uuidv4();
-        await this.storage.write(id, data);
-
         const assetData: AssetData = {
             id,
             mime: type,
@@ -177,7 +187,25 @@ export class AssetService extends YesImBotService<Config> {
             metadata,
         };
 
-        await this.ctx.database.upsert(TableName.Assets, [assetData]);
+        signal?.throwIfAborted();
+        try {
+            await this.storage.write(id, data);
+            signal?.throwIfAborted();
+            await this.ctx.database.upsert(TableName.Assets, [assetData]);
+            signal?.throwIfAborted();
+        } catch (error) {
+            if (signal) {
+                // An adapter may commit before reporting an error, so remove the
+                // owned row even when upsert rejected. Always try both cleanups.
+                const cleanup = await Promise.allSettled([
+                    Promise.resolve().then(() => this.ctx.database.remove(TableName.Assets, { id })),
+                    Promise.resolve().then(() => this.storage.delete(id)),
+                ]);
+                const failures = cleanup.filter((result): result is PromiseRejectedResult => result.status === "rejected").map((result) => result.reason);
+                if (failures.length) throw new AggregateError([error, ...failures], "Asset creation failed and rollback was incomplete", { cause: error });
+            }
+            throw error;
+        }
         this.logger.info(`新资源已存储 | ID: ${id} | 类型: ${type} | 大小: ${formatSize(data.length)}`);
         return id;
     }
