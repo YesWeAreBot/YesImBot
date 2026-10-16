@@ -1,6 +1,7 @@
 import { GenerateTextResult } from "@xsai/generate-text";
 import { Awaitable, Context, Logger, Schema } from "koishi";
 
+import { ContextBudgetError } from "../agent/context-budget";
 import { Config } from "../config";
 import type { LoggerService } from "../logger";
 import { AppError, ErrorDefinitions } from "../shared/errors";
@@ -389,7 +390,8 @@ class RequestExecutor {
                 return result.data;
             } else {
                 // 如果失败，记录错误并继续尝试下一个模型（故障转移）
-                breaker?.recordFailure(generation!);
+                if ("providerFailure" in result && result.providerFailure === false) breaker?.release(generation!);
+                else breaker?.recordFailure(generation!);
                 this.accumulatedErrors.push({ providerName: model.config.providerName, modelId: model.id, error: (result as any).error });
                 this.logger.info(`[故障转移] 模型 ${formatModelIdentity({ ...model.config, modelId: model.id })} 已放弃，检查下一个候选模型`);
             }
@@ -429,7 +431,7 @@ class RequestExecutor {
         model: IChatModel,
         options: ChatRequestOptions,
         originalMessages: ChatRequestOptions["messages"],
-    ): Promise<{ success: true; data: GenerateTextResult } | { success: false; error: Error }> {
+    ): Promise<{ success: true; data: GenerateTextResult } | { success: false; error: Error; providerFailure?: boolean }> {
         const retryPolicy = model.config.retryPolicy ?? {
             maxRetries: 0,
             onContentFailure: ContentFailureAction.FailoverToNext,
@@ -486,6 +488,11 @@ class RequestExecutor {
                 clearTimeout(timeoutId);
                 clearTimeout(firstTokenTimeoutId);
                 options.abortSignal?.throwIfAborted();
+                // Local capacity rejection is candidate-specific, not a provider outage.
+                if (error instanceof ContextBudgetError) {
+                    attemptLogger.info("上下文超过当前模型容量，直接尝试下一个候选模型");
+                    return { success: false, error, providerFailure: false };
+                }
 
                 const appError = error instanceof AppError ? error : undefined;
                 attemptLogger.debug(

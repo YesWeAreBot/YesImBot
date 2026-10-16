@@ -231,6 +231,11 @@ export class ChatModel extends BaseModel implements IChatModel {
             if (!(error instanceof SingleStepComplete)) throw error;
             result = { ...error.step, steps: [error.step], messages: [], text: error.step.text ?? "" } as GenerateTextResult;
         }
+        if (isEmpty(result.text) && !result.toolCalls?.length) {
+            throw new AppError(ErrorDefinitions.LLM.OUTPUT_EMPTY_CONTENT, {
+                context: { rawResponse: result.text, details: "模型未输出有效内容" },
+            });
+        }
         const validator = this._getValidator(validation);
         if (validator && !result.toolCalls?.length) {
             const finalValidation = validator(result.text ?? "", true);

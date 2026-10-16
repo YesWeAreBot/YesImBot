@@ -104,7 +104,7 @@ async function fixture() {
         },
     };
     const ctx = stubCtx(
-        { logging: { getLogger: () => log }, model: { useChatGroup: () => ({ getModels: () => [model] }) } },
+        { logging: { getLogger: () => log }, model: { useChatGroup: () => ({ chat: model.chat, getModels: () => [model] }) } },
         { baseDir, database, command, logger: log },
     );
     const config: any = {

@@ -3,9 +3,11 @@ import { createHash, randomUUID } from "node:crypto";
 import { $, Context, Logger } from "koishi";
 
 import type { LoggerService } from "../logger";
-import { IChatModel, ModelService, TaskType } from "../model";
+import { ChatModelSwitcher, ModelService, TaskType } from "../model";
 import { withUsageScope } from "../model/usage";
 import { TableName } from "../shared/constants";
+import { AppError, ErrorDefinitions } from "../shared/errors";
+import { isEmpty } from "../shared/utils";
 import { HistoryConfig } from "./config";
 import { InteractionManager } from "./interaction-manager";
 import { MemoryTarget, SemanticMemoryManager } from "./l2-semantic-memory";
@@ -14,7 +16,7 @@ import { AgentLogEntry, DiaryEntryData, MessageData } from "./types";
 
 export class ArchivalMemoryManager {
     private logger: Logger;
-    private chatModel: IChatModel | null = null;
+    private chatModel: ChatModelSwitcher | null = null;
     private dailyTaskTimer?: NodeJS.Timeout;
     private stopped = false;
     private lifecycle = 0;
@@ -41,7 +43,7 @@ export class ArchivalMemoryManager {
         if (!this.config.l3_memory.enabled) return;
 
         try {
-            this.chatModel = this.model.useChatGroup(TaskType.Chat)?.getModels()[0] ?? null;
+            this.chatModel = this.model.useChatGroup(TaskType.Chat) ?? null;
         } catch {
             this.chatModel = null;
         }
@@ -254,6 +256,9 @@ export class ArchivalMemoryManager {
                 }),
             );
             if (!active()) return;
+            if (isEmpty(diaryContent.text)) {
+                throw new AppError(ErrorDefinitions.LLM.OUTPUT_EMPTY_CONTENT);
+            }
             const diaryEntry: DiaryEntryData = {
                 id: `diary_${createHash("sha256")
                     .update(JSON.stringify([platform, channelId, dateKey]))
