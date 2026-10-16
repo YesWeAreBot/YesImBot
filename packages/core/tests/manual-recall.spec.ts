@@ -71,6 +71,8 @@ async function fixture() {
         config: { allowedChannels: [{ platform: "onebot", type: "private", id: "*" }] },
         l1_manager: manager,
         l2_manager: {
+            getHistoryGeneration: () => 0,
+            watchHistory: () => () => {},
             writeMemory: async (_target: any, _generation: any, write: () => Promise<void>) => {
                 await write();
                 return true;

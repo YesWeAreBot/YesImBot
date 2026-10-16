@@ -7,6 +7,8 @@ interface HistoryCoordination {
     activeClears: Set<{ scope: SemanticMemoryScope; done: Promise<void> }>;
     pendingWrites: Set<{ target: MemoryTarget; done: Promise<unknown> }>;
     buffers: Set<WeakRef<Map<string, MessageData[]>>>;
+    invalidations: Set<{ target: MemoryTarget; invalidate: () => void }>;
+    retentionCutoff: number;
 }
 
 const coordinators = new WeakMap<object, HistoryCoordination>();
@@ -23,7 +25,15 @@ export function historyCoordinator(database: object): HistoryCoordination {
     }
     let state = coordinators.get(database);
     if (!state) {
-        state = { channelTypes: new Map(), generations: new Map(), activeClears: new Set(), pendingWrites: new Set(), buffers: new Set() };
+        state = {
+            channelTypes: new Map(),
+            generations: new Map(),
+            activeClears: new Set(),
+            pendingWrites: new Set(),
+            buffers: new Set(),
+            invalidations: new Set(),
+            retentionCutoff: -Infinity,
+        };
         coordinators.set(database, state);
     }
     return state;

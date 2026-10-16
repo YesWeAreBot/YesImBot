@@ -112,10 +112,39 @@ export class SemanticMemoryManager {
         }
     }
 
+    /** Shared by every manager using this physical database, including other instances. */
+    public watchHistory(target: MemoryTarget, invalidate: () => void): () => void {
+        const entry = { target, invalidate };
+        this.coordination.invalidations.add(entry);
+        return () => this.coordination.invalidations.delete(entry);
+    }
+
+    /** Retention removes only expired buffered messages; valid indexing work survives. */
+    public pruneExpiredBuffers(cutoff: number): void {
+        this.coordination.retentionCutoff = Math.max(this.coordination.retentionCutoff, cutoff);
+        for (const reference of this.coordination.buffers) {
+            const buffers = reference.deref();
+            if (!buffers) {
+                this.coordination.buffers.delete(reference);
+                continue;
+            }
+            for (const [key, messages] of buffers) {
+                const retained = this.unexpiredMessages(messages);
+                if (retained.length) buffers.set(key, retained);
+                else buffers.delete(key);
+            }
+        }
+    }
+
+    private unexpiredMessages(messages: MessageData[]): MessageData[] {
+        return messages.filter((message) => new Date(message.timestamp).getTime() >= this.coordination.retentionCutoff);
+    }
+
     /** 使旧任务失效，等待已发出的写入完成，并阻止新写入直到删除结束。 */
     public async clearHistory<T>(scope: SemanticMemoryScope, clear: () => Promise<T>): Promise<T> {
         const key = "type" in scope ? scope.type : this.targetKey(scope);
         this.generations.set(key, (this.generations.get(key) || 0) + 1);
+        for (const entry of this.coordination.invalidations) if (this.matchesScope(entry.target, scope)) entry.invalidate();
         for (const reference of this.coordination.buffers) {
             const buffers = reference.deref();
             if (!buffers) {
@@ -155,7 +184,7 @@ export class SemanticMemoryManager {
     }
 
     public async addMessageToBuffer(message: MessageData): Promise<void> {
-        if (this.stopped || !this.config.l2_memory.enabled) return;
+        if (this.stopped || !this.config.l2_memory.enabled || !this.unexpiredMessages([message]).length) return;
         const key = this.targetKey(message);
         if (!this.messageBuffer.has(key)) this.messageBuffer.set(key, []);
         const buffer = this.messageBuffer.get(key)!;
@@ -197,29 +226,49 @@ export class SemanticMemoryManager {
         if (!this.embedModel || messages.length === 0) return;
         const embedModel = this.embedModel;
 
-        const firstEvent = messages[0];
-        const lastEvent = messages[messages.length - 1];
-        const { platform, channelId } = firstEvent;
-        const generation = this.generation(firstEvent);
-
-        const participantIds = [...new Set(messages.map((m) => m.sender.id))];
-
-        const conversationText = this.compileEventsToText(messages);
-
+        const target = messages[0];
+        const generation = this.generation(target);
+        let retained = this.unexpiredMessages(messages);
         try {
-            const embedding = await withUsageScope({ platform, target: channelId, purpose: "L2记忆索引" }, () => embedModel.embed(conversationText));
-            const memoryChunk: MemoryChunkData = {
-                id: uuidv4(),
-                platform,
-                channelId,
-                content: conversationText,
-                embedding: embedding.embedding,
-                participantIds,
-                startTimestamp: firstEvent.timestamp,
-                endTimestamp: lastEvent.timestamp,
-            };
-            if (await this.writeMemory(firstEvent, generation, () => this.ctx.database.create(TableName.L2Chunks, memoryChunk))) {
-                this.logger.debug(`已为 ${messages.length} 条消息建立索引`);
+            // A retention pass can run while the provider embeds. Recompute both
+            // the text and vector when it trimmed a mixed old/new batch.
+            while (retained.length) {
+                const firstEvent = retained[0];
+                const lastEvent = retained[retained.length - 1];
+                const { platform, channelId } = firstEvent;
+                const conversationText = this.compileEventsToText(retained);
+                const embedding = await withUsageScope({ platform, target: channelId, purpose: "L2记忆索引" }, () => embedModel.embed(conversationText));
+                if (this.generation(target) !== generation) return;
+                const current = this.unexpiredMessages(retained);
+                if (current.length !== retained.length) {
+                    retained = current;
+                    continue;
+                }
+                const memoryChunk: MemoryChunkData = {
+                    id: uuidv4(),
+                    platform,
+                    channelId,
+                    content: conversationText,
+                    embedding: embedding.embedding,
+                    participantIds: [...new Set(retained.map((message) => message.sender.id))],
+                    startTimestamp: firstEvent.timestamp,
+                    endTimestamp: lastEvent.timestamp,
+                };
+                let retry = false;
+                const saved = await this.writeMemory(firstEvent, generation, async () => {
+                    // writeMemory may have waited for a retention barrier after
+                    // the embed completed. Check its cutoff before issuing I/O.
+                    const current = this.unexpiredMessages(retained);
+                    if (current.length !== retained.length) {
+                        retained = current;
+                        retry = true;
+                        return;
+                    }
+                    await this.ctx.database.create(TableName.L2Chunks, memoryChunk);
+                });
+                if (retry) continue;
+                if (saved) this.logger.debug(`已为 ${retained.length} 条消息建立索引`);
+                return;
             }
         } catch (error) {
             this.logger.error(`消息索引创建失败 | ${error.message}`);

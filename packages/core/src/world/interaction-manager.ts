@@ -4,6 +4,7 @@ import path from "path";
 import { Context, h, Logger } from "koishi";
 import { v4 as uuidv4 } from "uuid";
 
+import { assertReplyTurn } from "../agent/reply-turn";
 import type { LoggerService } from "../logger";
 import { getInstanceDirectory } from "../shared";
 import { TableName } from "../shared/constants";
@@ -87,9 +88,11 @@ export class InteractionManager {
 
     private async appendToLog(platform: string, channelId: string, entry: AgentLogEntry): Promise<void> {
         await this.mutateLogs(async () => {
+            assertReplyTurn();
             const filePath = this.getLogFilePath(platform, channelId);
             await this.ensureDirExists(path.dirname(filePath));
             const [channel] = await this.ctx.database.get(HISTORY_CHANNELS, { platform, channelId });
+            assertReplyTurn();
             const line = JSON.stringify({ ...entry, platform, channelId, channelType: channel?.channelType || undefined }) + "\n";
             try {
                 await fs.appendFile(filePath, line);

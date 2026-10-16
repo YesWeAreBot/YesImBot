@@ -375,8 +375,8 @@ export class HistoryBackupManager {
         if (initial.status === "conflict") return { ...initial, inserted: counts(), partialEffects: false };
         if (!initial.metadata.missing && Object.values(initial.missing).every((count) => count === 0))
             return { ...initial, status: "restored" as const, inserted: counts(), partialEffects: false };
-        // This only invalidates in-flight generations and buffers; no history is deleted.
-        return this.world.l2_manager.clearHistory(target, async () => {
+        // Additive restoration preserves current buffers and in-flight indexing.
+        return this.world.l2_manager.withHistoryBarrier(target, async () => {
             const { pending, ...report } = await this.inspect(backup);
             const inserted = counts();
             if (report.status === "conflict") return { ...report, inserted, partialEffects: false };

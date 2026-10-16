@@ -4,7 +4,7 @@ import { Message } from "@xsai/shared-chat";
 import { Context, h, Logger, Session } from "koishi";
 import { v4 as uuidv4 } from "uuid";
 
-import { assertReplyTurn, isReplyTurnCancelled, replyTurnSignal } from "../agent/reply-turn";
+import { assertReplyTurn, guardReplySession, isReplyTurnCancelled, replyTurnSignal, withReplyTurnGuard } from "../agent/reply-turn";
 import { Properties, ToolSchema, ToolService } from "../extension";
 import { toolJSONSchema } from "../extension/json-schema";
 import type { LoggerService } from "../logger";
@@ -63,10 +63,25 @@ export class HeartbeatProcessor {
         const decisionId = (stimulus as AgentStimulus<any> & { decisionId?: string }).decisionId;
         const turnId =
             typeof decisionId === "string" && decisionId.length > 0 && decisionId.length <= 512 && !/\p{Cc}/u.test(decisionId) ? decisionId : uuidv4();
-        return withUsageScope(
-            { traceId: turnId, platform: stimulus.session.platform, botId: stimulus.session.selfId, target: stimulus.session.channelId },
-            () => this.runTracedCycle(turnId, stimulus),
-        );
+        const run = (current: AgentStimulus<any>) =>
+            withUsageScope({ traceId: turnId, platform: current.session.platform, botId: current.session.selfId, target: current.session.channelId }, () =>
+                this.runTracedCycle(turnId, current),
+            );
+        const memory = this.world?.l2_manager;
+        if (!memory) return run(stimulus);
+        const target = { platform: stimulus.session.platform, channelId: stimulus.session.channelId! };
+        const generation = memory.getHistoryGeneration(target);
+        const controller = new AbortController();
+        const unwatch = memory.watchHistory(target, () => controller.abort());
+        try {
+            return await withReplyTurnGuard(
+                () => memory.getHistoryGeneration(target) === generation,
+                () => run({ ...stimulus, session: guardReplySession(stimulus.session) }),
+                controller.signal,
+            );
+        } finally {
+            unwatch();
+        }
     }
 
     private async runTracedCycle(turnId: string, stimulus: AgentStimulus<any>): Promise<boolean> {
