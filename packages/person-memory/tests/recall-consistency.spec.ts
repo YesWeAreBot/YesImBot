@@ -12,6 +12,15 @@ async function runtime(t, config = {}) {
     let injection;
     const tools = new Map();
     const app = await fixture(t, (ctx) => {
+        Object.defineProperty(ctx, "bots", {
+            value: [
+                {
+                    platform: "onebot",
+                    selfId: "bot",
+                    session: (event) => ({ ...event, channelId: event.channel.id, isDirect: event.channel.type === 1, userId: event.userId }),
+                },
+            ],
+        });
         ctx.model.extend("saved_observations", { id: "string", event: "json" }, { primary: "id" });
         ctx.set("yesimbot", {
             world: { isChannelAllowed: () => true },

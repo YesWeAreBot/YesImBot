@@ -1,7 +1,11 @@
 import { Context, Schema, h, type Session } from "koishi";
 
+import { PeopleCatalog } from "./catalog";
 import { describePeopleCommand } from "./command-help";
 import { identityWarning, renderPeople } from "./context";
+import type { ProfileDocument } from "./profile";
+import { DEFAULT_PROFILE_SYSTEM_PROMPT, mainProfilePolicy } from "./profile-prompt";
+import { catalogParameters, catalogProfile, catalogRequest, profileInputSchema, visibleProfile } from "./profile-tools";
 import { applySharedMemory } from "./shared-runtime";
 import { PersonStore, registerModels, sceneKey, type Audit, type LinkProposal, type Mode, type Person, type Proposal, type SceneInput } from "./store";
 import { SummaryWorker, summaryResponseText, type SummaryModel } from "./worker";
@@ -24,6 +28,7 @@ export interface Config {
     timeoutSeconds: number;
     maxQueue: number;
     summaryMaxTokens?: number;
+    profileSystemPrompt?: string;
     sharedMemory?: boolean;
     memoryDomain?: string;
     recallScope?: "current" | "mind";
@@ -71,6 +76,11 @@ export const Config: Schema<Config> = Schema.intersect([
             .description(
                 "从核心已配置的模型组中选择后台总结模型组；核心启动或重载后更新列表。留空不调用后台模型，仍可人工编辑和审核候选。不会自动选择对话组或新增模型调用",
             ),
+        profileSystemPrompt: Schema.string()
+            .role("textarea")
+            .max(8000)
+            .default(DEFAULT_PROFILE_SYSTEM_PROMPT)
+            .description("人物画像写作规则；已有画像与消息证据按数据动态提供，字段格式和来源校验始终生效"),
         summaryThreshold: Schema.number().min(2).max(100).step(1).default(6).description("同一账号累计多少条新消息后尝试总结"),
         cooldownSeconds: Schema.number().min(30).max(86400).default(600).description("同一场景账号两次自动总结至少间隔的秒数"),
         summaryMaxTokens: Schema.natural()
@@ -128,7 +138,7 @@ function profileView(p: Person) {
         id: p.id,
         name: p.name,
         provisional: p.provisional,
-        profile: p.stale ? "" : p.profile,
+        ...visibleProfile(p),
         stale: p.stale,
         locked: p.locked,
         revision: p.revision,
@@ -253,15 +263,32 @@ export function apply(ctx: Context, config: Config) {
     const worker = new SummaryWorker(
         store,
         model,
-        { threshold: config.summaryThreshold, cooldownMs: config.cooldownSeconds * 1000, timeoutMs: config.timeoutSeconds * 1000, maxQueue: config.maxQueue },
+        {
+            threshold: config.summaryThreshold,
+            cooldownMs: config.cooldownSeconds * 1000,
+            timeoutMs: config.timeoutSeconds * 1000,
+            maxQueue: config.maxQueue,
+            systemPrompt: config.profileSystemPrompt,
+        },
         (error) => logger.warn(`后台人物总结未接受：${String(error)}`),
     );
     const removeInjection = deps.yesimbot.prompt.inject("person_memory", 35, async (view) => {
         if (!view.session || !allowed(view.session)) return "";
-        const scope = key(view.session),
-            state = await store.read(scope);
+        const session = view.session;
+        const scope = key(session);
+        const binding = JSON.stringify([session.platform, session.selfId || session.bot.selfId, session.channelId, session.userId, !!session.isDirect]);
+        const state = await store.read(scope);
         modes.set(scope, state.settings.mode);
-        return state.settings.mode === "off" ? "" : renderPeople(store, view);
+        if (state.settings.mode === "off") return "";
+        const text = `${await renderPeople(store, view)}\n${mainProfilePolicy(config.profileSystemPrompt)}`;
+        const latest = await store.read(scope);
+        return allowed(session) &&
+            key(session) === scope &&
+            binding === JSON.stringify([session.platform, session.selfId || session.bot.selfId, session.channelId, session.userId, !!session.isDirect]) &&
+            latest.settings.mode !== "off" &&
+            JSON.stringify([latest.people, latest.accounts]) === JSON.stringify([state.people, state.accounts])
+            ? text
+            : "";
     });
 
     ctx.on("yesimbot/before-user-stimulus", async (session: Session) => {
@@ -282,7 +309,7 @@ export function apply(ctx: Context, config: Config) {
             if (mode === "off") return;
             const generation = generations.get(scope) ?? 0,
                 current = () => active && generation === (generations.get(scope) ?? 0) && modes.get(scope) !== "off";
-            await store.recognize(scope, session.userId, session.author?.nick || session.author?.name || session.userId, current);
+            const identity = await store.recognize(scope, session.userId, session.author?.nick || session.author?.name || session.userId, current);
             if (!active) return;
             await store.capture(
                 scope,
@@ -292,6 +319,15 @@ export function apply(ctx: Context, config: Config) {
                     name: session.author?.nick || session.author?.name || session.userId,
                     text: session.content,
                     timestamp: Number(session.timestamp) || Date.now(),
+                    provenance: {
+                        platform: session.platform,
+                        selfId: session.selfId || session.bot.selfId,
+                        channelId: session.channelId!,
+                        messageId: session.messageId,
+                        personId: identity.person.id,
+                        accountRevision: identity.account.bindingRevision ?? 0,
+                        scene: scope,
+                    },
                 },
                 current,
             );
@@ -301,13 +337,16 @@ export function apply(ctx: Context, config: Config) {
         }
     });
 
+    const catalog = new PeopleCatalog();
     const tool = {
         name: "person_memory",
         description:
-            "仅操作当前场景。read(account_id) 读取账号 ID 或人物 UUID 的画像与版本；search(query) 最多返回 5 个摘要；history(account_id) 读取该账号或人物最近 10 次修改的元数据和有限变更摘要，详细证据由管理员核对。propose 提交完整画像，需 account_id、profile、message_ids、person_id、person_revision、account_revision；auto 模式可接受画像。propose_link 提交账号关联建议，另需 target_person_id、target_revision、confidence、reason；即使 auto 模式也始终待管理员审核。两种候选都需 1–10 个当前账号的实际消息 ID 和最新版本。资料是可修正信念，确信度不代表身份认证。不能跨群、直接关联、合并、审批或覆盖人工锁定。",
+            "仅操作当前场景。list 列出可查询人物；read_many 用 account_ids 多选或 all=true 全选，fields 选 overview/structured/full，cursor 继续分页。read(account_id) 读取账号 ID 或人物 UUID 的画像与版本；search(query) 最多返回 5 个摘要；history(account_id) 读取该账号或人物最近 10 次修改的元数据和有限变更摘要，详细证据由管理员核对。propose 提交完整画像，需 account_id、profile、message_ids、person_id、person_revision、account_revision；auto 模式可接受画像。propose_link 提交账号关联建议，另需 target_person_id、target_revision、confidence、reason；即使 auto 模式也始终待管理员审核。两种候选都需 1–10 个当前账号的实际消息 ID 和最新版本。资料是可修正信念，确信度不代表身份认证。不能跨群、直接关联、合并、审批或覆盖人工锁定。",
         parameters: Schema.object({
             action: Schema.union([
                 Schema.const("read"),
+                Schema.const("list"),
+                Schema.const("read_many"),
                 Schema.const("search"),
                 Schema.const("history"),
                 Schema.const("propose"),
@@ -315,7 +354,8 @@ export function apply(ctx: Context, config: Config) {
             ]).required(),
             account_id: Schema.string().description("read/history 必填；当前场景的平台账号 ID 或人物 UUID；候选须平台账号 ID"),
             query: Schema.string().description("search 必填；1–80 字的关键词"),
-            profile: Schema.string().description("propose 必填；不超过 2000 字的完整画像候选"),
+            profile: profileInputSchema(),
+            ...catalogParameters(),
             message_ids: Schema.array(Schema.string()).description("两种候选必填；实际来源消息 ID，1 到 10 个"),
             person_id: Schema.string().description("两种候选必填；来源人物 UUID"),
             person_revision: Schema.number().min(0).step(1).description("两种候选必填；读到的来源画像 revision"),
@@ -331,7 +371,12 @@ export function apply(ctx: Context, config: Config) {
             action: string;
             account_id?: string;
             query?: string;
-            profile?: string;
+            profile?: string | ProfileDocument;
+            account_ids?: string[];
+            all?: boolean;
+            fields?: "overview" | "structured" | "full";
+            cursor?: string;
+            limit?: number;
             message_ids?: string[];
             person_id?: string;
             person_revision?: number;
@@ -344,17 +389,57 @@ export function apply(ctx: Context, config: Config) {
             try {
                 if (!args.session || !allowed(args.session)) throw new Error("当前场景未启用人物记忆");
                 const scope = key(args.session);
-                if ((await store.read(scope)).settings.mode === "off") throw new Error("人物记忆已关闭");
+                const binding = JSON.stringify([
+                    args.session.platform,
+                    args.session.selfId || args.session.bot.selfId,
+                    args.session.channelId,
+                    args.session.userId,
+                    !!args.session.isDirect,
+                ]);
+                const current = () =>
+                    allowed(args.session) &&
+                    key(args.session) === scope &&
+                    binding ===
+                        JSON.stringify([
+                            args.session.platform,
+                            args.session.selfId || args.session.bot.selfId,
+                            args.session.channelId,
+                            args.session.userId,
+                            !!args.session.isDirect,
+                        ]);
+                const initial = await store.read(scope);
+                if (initial.settings.mode === "off") throw new Error("人物记忆已关闭");
+                const ensureCurrent = async (expected = initial) => {
+                    const latest = await store.read(scope);
+                    if (
+                        !current() ||
+                        latest.settings.mode === "off" ||
+                        JSON.stringify([latest.people, latest.accounts]) !== JSON.stringify([expected.people, expected.accounts])
+                    )
+                        throw new Error("人物资料或查询权限已改变，请重新查询");
+                };
+                if (args.action === "list" || args.action === "read_many") {
+                    const result = await catalog.query(
+                        `${scope}:${binding}`,
+                        catalogRequest({ ...args, action: args.action }),
+                        () => store.read(scope),
+                        () => current(),
+                        catalogProfile,
+                    );
+                    if (!current()) throw new Error("人物查询会话已失效");
+                    return Success(result);
+                }
                 if (args.action === "read" || args.action === "history") {
                     if (typeof args.account_id !== "string" || !args.account_id.trim()) throw new Error("请提供 account_id");
                     const found = await store.find(scope, args.account_id);
                     if (!found) throw new Error("当前场景没有此账号或人物档案");
                     if (args.action === "history") {
                         const userId = found.accounts.some((a) => a.userId === args.account_id) ? args.account_id : undefined;
-                        return Success(
-                            historyView(await store.history(scope, 10, userId ? { userId } : { personId: found.person.id }), found.person.id, userId),
-                        );
+                        const history = await store.history(scope, 10, userId ? { userId } : { personId: found.person.id });
+                        await ensureCurrent();
+                        return Success(historyView(history, found.person.id, userId));
                     }
+                    await ensureCurrent();
                     return Success({
                         ...profileView(found.person),
                         accounts: found.accounts.map((a) => ({ userId: a.userId, displayName: a.name, confidence: a.confidence, revision: a.revision })),
@@ -364,6 +449,7 @@ export function apply(ctx: Context, config: Config) {
                     if (typeof args.query !== "string" || !args.query.trim() || args.query.length > 80) throw new Error("请提供 1 到 80 字的关键词");
                     const q = args.query.toLocaleLowerCase();
                     const state = await store.read(scope);
+                    await ensureCurrent(state);
                     return Success(
                         Object.values(state.people)
                             .filter((p) => p.name.toLocaleLowerCase().includes(q) || (!p.stale && p.profile.toLocaleLowerCase().includes(q)))
@@ -440,7 +526,7 @@ export function apply(ctx: Context, config: Config) {
                             state: proposal.state,
                         });
                     }
-                    if (typeof args.profile !== "string" || !args.profile.trim()) throw new Error("请提供 profile");
+                    if (args.profile === undefined) throw new Error("请提供 profile");
                     const proposal = await store.propose(
                         scope,
                         args.account_id,
@@ -535,6 +621,12 @@ export function apply(ctx: Context, config: Config) {
         "修改心中称呼（不改平台昵称）",
         async (scope, actor, [ref, name]) => `已改称呼：${(await store.rename(scope, ref, name, actor)).name}`,
     );
+    command("people.edit_json <ref:string> <profile:text>", "人工纠正完整结构画像（JSON）", async (scope, actor, [ref, profile]) => {
+        const document = JSON.parse(profile);
+        if (!document || typeof document !== "object" || Array.isArray(document)) throw new Error("请提供完整结构画像 JSON 对象");
+        const person = await store.setProfile(scope, ref, document, actor);
+        return show(person);
+    });
     command(
         "people.edit <ref:string> <profile:text>",
         "人工替换完整画像，可直接纠错并清除需复核标记",
