@@ -156,7 +156,8 @@ export class ChatModel extends BaseModel implements IChatModel {
                 this.logger.debug(`[${requestId}] 调用方已取消请求 | 用途: ${options.requestPurpose ?? "未标注"} | 不作为服务商故障重试`);
                 throw options.abortSignal.reason ?? error;
             }
-            return await this._wrapAndThrow(error, chatOptions);
+            const timeoutReason = options.abortSignal?.reason;
+            return await this._wrapAndThrow(timeoutReason?.name === "TimeoutError" ? timeoutReason : error, chatOptions);
         }
     }
 
@@ -229,6 +230,11 @@ export class ChatModel extends BaseModel implements IChatModel {
         } catch (error) {
             if (!(error instanceof SingleStepComplete)) throw error;
             result = { ...error.step, steps: [error.step], messages: [], text: error.step.text ?? "" } as GenerateTextResult;
+        }
+        if (isEmpty(result.text) && !result.toolCalls?.length) {
+            throw new AppError(ErrorDefinitions.LLM.OUTPUT_EMPTY_CONTENT, {
+                context: { rawResponse: result.text, details: "模型未输出有效内容" },
+            });
         }
         const validator = this._getValidator(validation);
         if (validator && !result.toolCalls?.length) {
@@ -505,9 +511,11 @@ export class ChatModel extends BaseModel implements IChatModel {
 
         // 2. 处理 AbortError，通常由超时引起
         if (error.name === "AbortError" || error.name === "TimeoutError" || error.message === "timeout") {
-            const duration = error.duration ? ` (${error.duration}s)` : "";
+            const seconds = typeof error.duration === "number" && Number.isFinite(error.duration) && error.duration > 0 ? error.duration : undefined;
+            const duration = seconds === undefined ? "（上游未提供时限）" : ` (${seconds}s)`;
+            if (seconds !== undefined) context.timeoutSeconds = seconds;
             this.logger.error(`🛑 [错误] 请求超时${duration} | 模型: ${this.id}`);
-            throw new AppError(ErrorDefinitions.LLM.TIMEOUT, { cause: error, context });
+            throw new AppError(ErrorDefinitions.LLM.TIMEOUT, { args: [seconds], cause: error, context });
         }
 
         if (error.name === "XSAIError" && error.response) {

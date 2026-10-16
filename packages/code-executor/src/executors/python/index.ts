@@ -1,7 +1,7 @@
 import path from "path";
 
 import { Context, Logger, Schema } from "koishi";
-import { AssetService, ToolDefinition, withInnerThoughts } from "koishi-plugin-yesimbot";
+import { AssetService, replyTurnSignal, ToolDefinition, withInnerThoughts } from "koishi-plugin-yesimbot";
 import { loadPyodide, PyodideAPI } from "pyodide";
 import type { PyProxy } from "pyodide/ffi";
 
@@ -64,9 +64,10 @@ export const PythonConfigSchema: Schema<PythonConfig> = Schema.intersect([
 class PyodideEnginePool {
     private readonly logger: Logger;
     private pool: PyodideAPI[] = [];
-    private waiting: Array<(engine: PyodideAPI) => void> = [];
+    private waiting: Array<{ resolve: (engine: PyodideAPI) => void; reject: (error: unknown) => void; removeAbort: () => void }> = [];
     private readonly maxSize: number;
     private isInitialized = false;
+    private disposed = false;
 
     constructor(
         private ctx: Context,
@@ -104,7 +105,7 @@ class PyodideEnginePool {
     }
 
     public async initialize(): Promise<void> {
-        if (this.isInitialized) return;
+        if (this.isInitialized || this.disposed) return;
         this.logger.info(`[初始化] 开始初始化引擎池，目标大小: ${this.maxSize}`);
         try {
             // 并行创建所有引擎实例，以加快启动速度
@@ -113,6 +114,7 @@ class PyodideEnginePool {
             const engines = [];
             for (let i = 0; i < this.maxSize; i++) {
                 engines.push(await this.createEngine());
+                if (this.disposed) return;
             }
 
             this.pool.push(...engines);
@@ -126,7 +128,9 @@ class PyodideEnginePool {
         }
     }
 
-    public async acquire(): Promise<PyodideAPI> {
+    public async acquire(signal?: AbortSignal): Promise<PyodideAPI> {
+        signal?.throwIfAborted();
+        if (this.disposed) throw new Error("Python executor stopped");
         if (!this.isInitialized) {
             this.logger.error("[获取引擎] 尝试在未初始化的引擎池中获取引擎");
             throw new Error("Pyodide 引擎池未初始化或初始化失败");
@@ -139,19 +143,37 @@ class PyodideEnginePool {
         }
 
         this.logger.debug("[获取引擎] 池中无可用实例，进入等待队列...");
-        return new Promise<PyodideAPI>((resolve) => {
-            this.waiting.push(resolve);
+        return new Promise<PyodideAPI>((resolve, reject) => {
+            const abort = () => {
+                this.waiting = this.waiting.filter((item) => item !== waiter);
+                reject(signal!.reason);
+            };
+            const waiter = { resolve, reject, removeAbort: () => signal?.removeEventListener("abort", abort) };
+            signal?.addEventListener("abort", abort, { once: true });
+            this.waiting.push(waiter);
         });
     }
 
     public release(engine: PyodideAPI): void {
+        if (this.disposed) return;
         if (this.waiting.length > 0) {
             const nextConsumer = this.waiting.shift()!;
             this.logger.debug("[释放引擎] 引擎被直接传递给等待中的任务");
-            nextConsumer(engine);
+            nextConsumer.removeAbort();
+            nextConsumer.resolve(engine);
         } else {
             this.pool.push(engine);
             this.logger.debug(`[释放引擎] 引擎已返回池中。池中可用: ${this.pool.length}`);
+        }
+    }
+
+    public dispose(): void {
+        this.disposed = true;
+        this.isInitialized = false;
+        this.pool = [];
+        for (const waiter of this.waiting.splice(0)) {
+            waiter.removeAbort();
+            waiter.reject(new Error("Python executor stopped"));
         }
     }
 }
@@ -163,7 +185,7 @@ export class PythonExecutor implements CodeExecutor {
     private readonly assetService: AssetService;
     private isReady = false;
     private disposed = false;
-    private readonly pendingTimers = new Set<NodeJS.Timeout>();
+    private readonly shutdown = new AbortController();
 
     constructor(
         private ctx: Context,
@@ -190,8 +212,8 @@ export class PythonExecutor implements CodeExecutor {
         ctx.on("dispose", () => {
             this.disposed = true;
             this.isReady = false;
-            for (const timer of this.pendingTimers) clearTimeout(timer);
-            this.pendingTimers.clear();
+            this.shutdown.abort(new Error("Python executor stopped"));
+            this.pool.dispose();
         });
     }
 
@@ -222,15 +244,11 @@ export class PythonExecutor implements CodeExecutor {
 
     private async _resetEngineState(engine: PyodideAPI): Promise<void> {
         this.logger.debug("[状态重置] 重置引擎状态，清理变量和文件...");
-        engine.runPython(`
+        const globals = engine.runPython("dict()") as PyProxy;
+        try {
+            engine.runPython(
+                `
 import sys, os
-# 存储初始全局变量，如果不存在
-if 'initial_globals' not in globals():
-    initial_globals = set(globals().keys())
-# 清理非初始全局变量
-for name in list(globals().keys()):
-    if name not in initial_globals:
-        del globals()[name]
 # 重置 matplotlib 状态
 try:
     import matplotlib.pyplot as plt
@@ -244,11 +262,16 @@ if os.path.exists(workspace):
         item_path = os.path.join(workspace, item)
         if os.path.isfile(item_path):
             os.remove(item_path)
-`);
+`,
+                { globals },
+            );
+        } finally {
+            globals.destroy();
+        }
     }
 
     private _parsePyodideError(error: any): ExecutionError {
-        const err = error as Error;
+        const err = error instanceof Error ? error : new Error(String(error));
         let suggestion = "There might be a logical error in the code. Please review the logic and try again.";
 
         if (err.message.includes("TimeoutError")) {
@@ -334,32 +357,72 @@ if os.path.exists(workspace):
         }
 
         this.logger.info("[执行] 收到新的代码执行请求");
-        let engine: PyodideAPI | null = null;
-        let timer: NodeJS.Timeout | undefined;
+        const deadline = new AbortController();
+        const turnSignal = replyTurnSignal();
+        const signal = AbortSignal.any([this.shutdown.signal, deadline.signal, ...(turnSignal ? [turnSignal] : [])]);
+        const timer = setTimeout(() => deadline.abort(new Error("TimeoutError")), this.config.timeout);
+        const operation = this.executeInEngine(code, signal);
+        let abort: (() => void) | undefined;
         try {
+            return await Promise.race([
+                operation,
+                new Promise<never>((_, reject) => {
+                    abort = () => reject(signal.reason);
+                    signal.addEventListener("abort", abort, { once: true });
+                    if (signal.aborted) abort();
+                }),
+            ]);
+        } catch (error) {
+            return { status: "error", error: this._parsePyodideError(error) };
+        } finally {
+            clearTimeout(timer);
+            if (abort) signal.removeEventListener("abort", abort);
+        }
+    }
+
+    private async executeInEngine(code: string, signal: AbortSignal): Promise<CodeExecutionResult> {
+        let engine: PyodideAPI | null = null;
+        let globals: PyProxy | undefined;
+        let result: any;
+        let acceptingArtifacts = true;
+        try {
+            signal.throwIfAborted();
             this._checkCodeSecurity(code);
 
-            engine = await this.pool.acquire();
+            engine = await this.pool.acquire(signal);
+            signal.throwIfAborted();
             await this._resetEngineState(engine);
+            signal.throwIfAborted();
+            globals = engine.runPython("dict()") as PyProxy;
+            globals.set("__name__", "__main__");
 
             const artifacts: ExecutionArtifact[] = [];
-            const createArtifact = async (fileName: PyProxy | string, content: PyProxy | ArrayBuffer | string) => {
-                const jsFileName = typeof fileName === "string" ? fileName : fileName.toJs();
+            const staged: Array<{ fileName: string; content: Buffer | string }> = [];
+            const pendingArtifacts: Array<Promise<void>> = [];
+            const createArtifact = (fileName: PyProxy | string, content: PyProxy | ArrayBuffer | string) => {
+                const pending = (async () => {
+                    signal.throwIfAborted();
+                    if (!acceptingArtifacts) throw new Error("Python execution already finished");
+                    const jsFileName = typeof fileName === "string" ? fileName : fileName.toJs();
 
-                let bufferContent: Buffer | string;
-                if (typeof content === "string" || content instanceof ArrayBuffer) {
-                    bufferContent = content instanceof ArrayBuffer ? Buffer.from(content) : content;
-                } else {
-                    const pyBuffer = content.toJs(); // PyProxy -> Uint8Array
-                    bufferContent = Buffer.from(pyBuffer);
-                }
+                    let bufferContent: Buffer | string;
+                    if (typeof content === "string" || content instanceof ArrayBuffer) {
+                        bufferContent = content instanceof ArrayBuffer ? Buffer.from(content) : content;
+                    } else {
+                        const pyBuffer = content.toJs(); // PyProxy -> Uint8Array
+                        bufferContent = Buffer.from(pyBuffer);
+                    }
 
-                const assetId = await this.assetService.create(bufferContent, { filename: jsFileName });
-                artifacts.push({ assetId, fileName: jsFileName });
-                this.logger.info(`[产物创建] 成功创建产物: ${jsFileName} (AssetID: ${assetId})`);
+                    // Snapshot Python buffers before their proxy or request globals are released.
+                    staged.push({ fileName: jsFileName, content: typeof bufferContent === "string" ? bufferContent : Buffer.from(bufferContent) });
+                })();
+                pendingArtifacts.push(pending);
+                // Python may discard this promise; still observe failures immediately.
+                void pending.catch(() => {});
+                return pending;
             };
 
-            engine.globals.set("__create_artifact__", createArtifact);
+            globals.set("__create_artifact__", createArtifact);
             engine.FS.mkdirTree("/workspace");
 
             const maxOutputSize = Number.isFinite(this.sharedConfig.maxOutputSize) ? Math.max(0, Math.floor(this.sharedConfig.maxOutputSize)) : 10240;
@@ -422,18 +485,21 @@ if plt.get_fignums():
 `;
             }
 
-            const executionPromise = engine.runPythonAsync(finalCode);
-            const result = await Promise.race([
-                executionPromise,
-                new Promise((_, reject) => {
-                    timer = setTimeout(() => reject(new Error("TimeoutError")), this.config.timeout);
-                    this.pendingTimers.add(timer);
-                    if (this.disposed) {
-                        clearTimeout(timer);
-                        this.pendingTimers.delete(timer);
-                    }
-                }),
-            ]);
+            // The engine remains leased until this operation settles, even when
+            // the caller's timeout or cancellation wins the outer race.
+            result = await engine.runPythonAsync(finalCode, { globals });
+            acceptingArtifacts = false;
+            await Promise.all(pendingArtifacts);
+            signal.throwIfAborted();
+            if (staged.length && this.assetService.capabilities?.cancellableCreate !== 1) {
+                throw new Error("Please update YesImBot core together with the code-executor plugin: cancellable asset creation is unavailable.");
+            }
+            for (const artifact of staged) {
+                signal.throwIfAborted();
+                const assetId = await this.assetService.create(artifact.content, { filename: artifact.fileName }, { signal });
+                signal.throwIfAborted();
+                artifacts.push({ assetId, fileName: artifact.fileName });
+            }
 
             let resultString = "";
             if (result !== undefined && result !== null) {
@@ -451,19 +517,18 @@ if plt.get_fignums():
                 },
             };
         } catch (error) {
-            this.logger.error("[执行] 代码执行时发生错误", error);
+            if (!signal.aborted) this.logger.error("[执行] 代码执行时发生错误", error);
             return {
                 status: "error",
                 error: this._parsePyodideError(error),
             };
         } finally {
-            if (timer) {
-                clearTimeout(timer);
-                this.pendingTimers.delete(timer);
-            }
-            if (engine) {
-                engine.globals.delete("__create_artifact__");
-                this.pool.release(engine);
+            acceptingArtifacts = false;
+            try {
+                if (result && typeof result.destroy === "function") result.destroy();
+                globals?.destroy();
+            } finally {
+                if (engine) this.pool.release(engine);
             }
         }
     }

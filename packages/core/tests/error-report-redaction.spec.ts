@@ -256,3 +256,44 @@ it("keeps local saving active when remote reporting is disabled, with existing l
         await fs.rm(directory, { recursive: true, force: true });
     }
 });
+
+it("keeps one bounded error report with a correlation ID and safe diagnostics visible", () => {
+    const entries: Record<string, string[]> = { error: [], warn: [], info: [], debug: [] };
+    const localLogger = Object.fromEntries(Object.keys(entries).map((level) => [level, (message: string) => entries[level].push(message)])) as any;
+    const context: any = {
+        httpStatus: 429,
+        durationMs: 123,
+        rawResponse: "private-output",
+        messages: [{ content: "private-dialogue" }],
+        apiKey: "private-key",
+        requestId: "private-request-id",
+    };
+    context.self = context;
+    const error = new AppError(ErrorDefinitions.LLM.RATE_LIMIT_EXCEEDED, { context });
+    const id = handleError(localLogger, error, "处理模型请求");
+    expect(entries.error).toHaveLength(1);
+    expect(entries.error[0]).toContain(id);
+    expect(entries.error[0]).toContain("LLM.RATE_LIMIT_EXCEEDED");
+    expect(entries.error[0]).toContain("环节: 处理模型请求");
+    expect(entries.error[0]).toContain("详情:");
+    expect(entries.error[0]).toContain("建议:");
+    expect(entries.error[0]).toContain("429");
+    expect(entries.error[0]).toContain("123");
+    const visible = [...entries.error, ...entries.warn, ...entries.info].join("\n");
+    for (const marker of ["private-output", "private-dialogue", "private-key", "private-request-id", "调试上下文", "此错误未上报"])
+        expect(visible).not.toContain(marker);
+    expect(entries.debug.some((line) => line.includes("调试上下文"))).toBe(true);
+});
+
+it("bounds long report fields without changing the captured error", () => {
+    const entries: string[] = [];
+    const localLogger = { ...logger, error: (message: string) => entries.push(message) };
+    const error = new AppError(ErrorDefinitions.SYSTEM.UNKNOWN);
+    error.message = "x".repeat(2000);
+    const original = error.message;
+    handleError(localLogger, error, "c".repeat(1000));
+    expect(entries).toHaveLength(1);
+    expect(entries[0].length).toBeLessThan(2500);
+    expect(entries[0]).toContain("建议:");
+    expect(error.message).toBe(original);
+});

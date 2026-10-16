@@ -4,7 +4,9 @@ import type { Bot, Session } from "koishi";
 
 import type { ReplyTarget } from "./reply-control";
 
-const turns = new AsyncLocalStorage<{ valid: () => boolean; signal?: AbortSignal; canSend?: (target: ReplyTarget) => boolean }>();
+type ReplyTurn = { valid: () => boolean; signal?: AbortSignal; canSend?: (target: ReplyTarget) => boolean };
+const turns = new AsyncLocalStorage<ReplyTurn>();
+const guardedBots = new WeakMap<Bot, { bot: Bot; turns: ReplyTurn[] }>();
 // 只在受保护的发送期间替换此 bot 实例的 constructor 读取。适配器方法仍以
 // 原 bot 为 this（包括 JS 私有字段），共享类和普通发送不受影响。
 const encoderScopes = new AsyncLocalStorage<Map<Bot, Function>>();
@@ -176,16 +178,26 @@ export function replyTurnSignal(): AbortSignal | undefined {
 export function withReplyTurn<T>(valid: () => boolean, task: () => T, signal?: AbortSignal, canSend?: (target: ReplyTarget) => boolean): T {
     return turns.run({ valid, signal, canSend }, task);
 }
+/** Add a history guard without dropping the enclosing pause/mute restrictions. */
+export function withReplyTurnGuard<T>(valid: () => boolean, task: () => T, signal: AbortSignal): T {
+    const parent = turns.getStore();
+    return withReplyTurn(() => valid() && parent?.valid() !== false, task, parent?.signal ? AbortSignal.any([parent.signal, signal]) : signal, parent?.canSend);
+}
 export function guardReplyBot(bot: Bot): Bot {
     const turn = turns.getStore();
     if (!turn) return bot;
-    const valid = turn?.valid;
+    // Flatten existing wrappers so a single encoder carries every restriction.
+    // Keeping the captured turns also prevents an old session reviving in a new turn.
+    const previous = guardedBots.get(bot);
+    const restrictions = [...new Set([...(previous?.turns ?? []), turn])];
+    bot = previous?.bot ?? bot;
     const check = () => {
-        if (turn.signal?.aborted || valid?.() === false) throw new DOMException("聊天任务已取消", "AbortError");
+        if (restrictions.some((restriction) => restriction.signal?.aborted || !restriction.valid())) throw new DOMException("聊天任务已取消", "AbortError");
     };
+    const canSend = (target: ReplyTarget) => restrictions.every((restriction) => restriction.canSend?.(target) !== false);
     const destination = (channelId: string, isDirect?: boolean) => {
         check();
-        if (turn.canSend?.({ platform: bot.platform!, selfId: bot.selfId, channelId, isDirect }) === false) throw new Error("目标会话的回复已被抑制");
+        if (!canSend({ platform: bot.platform!, selfId: bot.selfId, channelId, isDirect })) throw new Error("目标会话的回复已被抑制");
     };
     // OneBot 在内容转换、before-send 和分段发送之后才调用这些出站方法。
     // 只代理本次回复，普通指令仍使用原机器人和 internal。
@@ -210,7 +222,7 @@ export function guardReplyBot(bot: Bot): Bot {
                   },
               })
             : bot.internal;
-    return new Proxy(bot, {
+    const guarded = new Proxy(bot, {
         get(target, key, receiver) {
             if (key === "constructor") return target.constructor;
             if (key === "internal") return internal;
@@ -227,13 +239,13 @@ export function guardReplyBot(bot: Bot): Bot {
                     if (key === "sendPrivateMessage") {
                         const channel = await target.createDirectChannel(args[0], args[2] ?? args[3]?.session?.guildId);
                         check();
-                        if (turn?.canSend?.({ platform: target.platform!, selfId: target.selfId, channelId: channel.id, isDirect: true }) === false)
+                        if (!canSend({ platform: target.platform!, selfId: target.selfId, channelId: channel.id, isDirect: true }))
                             throw new Error("目标会话的回复已被抑制");
                         const send = (options = args[3]) => target.sendMessage.apply(onebot ? receiver : target, [channel.id, args[1], null, options]);
                         return onebot ? send() : withGuardedEncoder(target, channel.id, args[3], (id) => destination(id, true), send);
                     }
                     const targetDestination = { platform: target.platform!, selfId: target.selfId, channelId: args[0] as string };
-                    if (turn?.canSend?.(targetDestination) === false) throw new Error("目标会话的回复已被抑制");
+                    if (!canSend(targetDestination)) throw new Error("目标会话的回复已被抑制");
                     if (onebot || key === "sendUpload") return value.apply(onebot ? receiver : target, args);
                     const send = (options: any) => {
                         const sendArgs = [...args];
@@ -246,6 +258,8 @@ export function guardReplyBot(bot: Bot): Bot {
             return typeof value === "function" ? value.bind(target) : value;
         },
     });
+    guardedBots.set(guarded, { bot, turns: restrictions });
+    return guarded;
 }
 export function guardReplySession(session: Session): Session {
     const turn = turns.getStore();

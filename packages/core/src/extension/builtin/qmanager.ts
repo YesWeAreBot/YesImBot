@@ -48,15 +48,16 @@ export default class QManagerExtension {
         parameters: withInnerThoughts({
             user_id: Schema.string().required().description("要禁言的用户 ID"),
             duration: Schema.union([String, Number]).required().description("禁言时长，单位为分钟。你不应该禁言他人超过 10 分钟。时长设为 0 表示解除禁言。"),
-            channel_id: Schema.string().description("要在哪个频道运行，不填默认为当前频道"),
+            channel_id: Schema.string().description("目标群组 ID，不填默认为当前群组"),
         }),
     })
     async ban({ session, user_id, duration, channel_id }: Infer<{ user_id: string; duration: number; channel_id: string }>) {
         if (!session) return Failed("session 不可用");
         if (isEmpty(user_id)) return Failed("user_id is required");
-        const targetChannel = isEmpty(channel_id) ? session.channelId! : channel_id;
+        const targetGuild = isEmpty(channel_id) ? session.guildId : channel_id;
+        if (!targetGuild) return Failed("当前会话没有群组，请明确指定目标群组 ID");
         try {
-            await session.bot.muteGuildMember(targetChannel, user_id, Number(duration) * 60 * 1000);
+            await session.bot.muteGuildMember(targetGuild, user_id, Number(duration) * 60 * 1000);
             this.ctx.logger.info(`Bot[${session.selfId}]在频道 ${channel_id} 禁言用户: ${user_id}`);
             return Success();
         } catch (error) {
@@ -70,15 +71,16 @@ export default class QManagerExtension {
         description: `踢出用户。`,
         parameters: withInnerThoughts({
             user_id: Schema.string().required().description("要踢出的用户 ID"),
-            channel_id: Schema.string().description("要在哪个频道运行，不填默认为当前频道"),
+            channel_id: Schema.string().description("目标群组 ID，不填默认为当前群组"),
         }),
     })
     async kick({ session, user_id, channel_id }: Infer<{ user_id: string; channel_id: string }>) {
         if (!session) return Failed("session 不可用");
         if (isEmpty(user_id)) return Failed("user_id is required");
-        const targetChannel = isEmpty(channel_id) ? session.channelId! : channel_id;
+        const targetGuild = isEmpty(channel_id) ? session.guildId : channel_id;
+        if (!targetGuild) return Failed("当前会话没有群组，请明确指定目标群组 ID");
         try {
-            await session.bot.kickGuildMember(targetChannel, user_id);
+            await session.bot.kickGuildMember(targetGuild, user_id);
             this.ctx.logger.info(`Bot[${session.selfId}]在频道 ${channel_id} 踢出了用户: ${user_id}`);
             return Success();
         } catch (error) {

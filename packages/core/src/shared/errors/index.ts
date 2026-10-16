@@ -38,6 +38,7 @@ export interface ReportContext {
 export class ErrorReporter {
     private readonly config: ErrorReporterConfig;
     private readonly logger: Logger;
+    private disposed = false;
 
     constructor(
         config: ErrorReporterConfig,
@@ -59,11 +60,16 @@ export class ErrorReporter {
         }
     }
 
+    public dispose(): void {
+        this.disposed = true;
+    }
+
     /**
      * 格式化并上报错误
      * @param context 包含错误和附加上下文的对象
      */
     public async report(context: ReportContext): Promise<string | null> {
+        if (this.disposed) return null;
         // 本地保存不依赖远程上报开关，也不等待远程服务。
         if (this.saveLocal) {
             try {
@@ -72,7 +78,7 @@ export class ErrorReporter {
                 this.logger.warn("本地错误报告保存失败");
             }
         }
-        if (!this.config.enabled || !this.config.pasteServiceUrl) {
+        if (this.disposed || !this.config.enabled || !this.config.pasteServiceUrl) {
             return null;
         }
 
@@ -150,8 +156,16 @@ export class ErrorReporter {
 
 // --- 统一错误处理器 ---
 
+// Ownership is attached to proxy identities, never names (Koishi can reuse names).
+const loggerReporters = new WeakMap<Logger, ErrorReporter>();
 let globalErrorReporter: ErrorReporter | null = null;
 
+export function bindErrorReporter(logger: Logger, reporter: ErrorReporter): Logger {
+    loggerReporters.set(logger, reporter);
+    return logger;
+}
+
+/** Legacy explicit singleton API. Core instances use logger ownership instead. */
 export function initializeErrorReporter(
     config: ErrorReporterConfig,
     logger: Logger,
@@ -241,19 +255,24 @@ export function handleError(logger: Logger, error: unknown, contextDescription: 
 
     // 步骤 2: 分层记录日志
     // 第一层：面向用户/管理员的清晰错误报告 (ERROR 级别)
-    logger.error(`🛑 [错误报告]`);
-    logger.error(`   - 环节: ${contextDescription}`);
-    logger.error(`   - 详情: ${message}`);
-    logger.error(`   - 建议: ${suggestion}`);
+    const diagnostics = Object.fromEntries(Object.entries(summarizeContext(sanitizeDiagnostic(context))).filter(([, value]) => typeof value === "number"));
+    const report = [
+        `🛑 [错误报告] ID: ${diagnosticId(errorId)} | 错误码: ${diagnosticCode(appError.code)}`,
+        `   - 环节: ${truncate(contextDescription, 120)}`,
+        `   - 详情: ${truncate(message, 500)}`,
+        `   - 建议: ${truncate(suggestion, 500)}`,
+    ];
+    if (Object.keys(diagnostics).length > 0) report.push(`   - 诊断摘要: ${truncate(JSON.stringify(diagnostics), 1000)}`);
+    logger.error(report.join("\n"));
 
-    // 第二层：面向开发者的详细调试信息 (WARN / DEBUG 级别，避免日志泛滥)
+    // 第二层：面向开发者的详细调试信息 (DEBUG 级别，避免日志泛滥)
     const devContext = { ...context };
     // 对可能很长的原始响应进行截断，防止刷屏
     if (devContext.rawResponse) {
         devContext.rawResponse = truncate(devContext.rawResponse as string, 200) + "... (完整响应见已启用的本地日志)";
     }
     if (Object.keys(devContext).length > 0) {
-        logger.warn(`   - 调试上下文: ${JSON.stringify(sanitizeDiagnostic(devContext))}`);
+        logger.debug(`   - 调试上下文: ${JSON.stringify(sanitizeDiagnostic(devContext))}`);
     }
     // 堆栈信息使用 DEBUG 级别，仅在需要时通过调整日志等级查看
     // logger.debug(`   - 堆栈追踪:\n${stack}`);
@@ -264,14 +283,15 @@ export function handleError(logger: Logger, error: unknown, contextDescription: 
         logger.debug(`   - 堆栈追踪:\n${stack}`);
     }
 
-    // 步骤 3: 触发全局错误上报 (例如上报到 Sentry 等监控服务)
-    if (globalErrorReporter) {
-        globalErrorReporter.report({
+    // An owned logger always keeps its reporter, even after that owner stops.
+    const reporter = loggerReporters.get(logger) ?? globalErrorReporter;
+    if (reporter) {
+        void reporter.report({
             errorId,
             error: appError,
         });
     } else {
-        logger.warn(`   - 追踪: 此错误未上报，如需查看更多信息，请打开 DEBUG 日志查看堆栈信息`);
+        logger.debug(`   - 追踪: 此错误未上报，如需查看更多信息，请打开 DEBUG 日志查看堆栈信息`);
     }
 
     return errorId;

@@ -489,6 +489,7 @@ export class WorldStateService extends YesImBotService<Config> {
 
             // Retention shares the physical-database barrier with export, restore and clear.
             await withHistoryBarrier(historyCoordinator(this.ctx.database), { type: "all" }, async () => {
+                this.l2_manager.pruneExpiredBuffers(expiresAt);
                 // Each retention deletion is idempotent and retried next run on
                 // failure. A shared SQLite transaction could roll back unrelated
                 // ordinary writes accepted while cleanup awaits its next deletion.

@@ -1,7 +1,7 @@
 import { Bot, Context, MessageEncoder } from "koishi";
 import { expect, it } from "vitest";
 
-import { withReplyTurn, assertReplyTurn, guardReplySession } from "../src/agent/reply-turn";
+import { withReplyTurn, withReplyTurnGuard, assertReplyTurn, guardReplySession } from "../src/agent/reply-turn";
 it("stops delayed sends from cancelled turns but leaves normal commands working", async () => {
     let valid = true,
         sends = 0;
@@ -523,4 +523,65 @@ it("does not apply an old guard to ordinary or fresh-turn sends on the same bot 
     expect(Reflect.ownKeys(options)).toEqual([]);
     expect(Object.hasOwn(f.bot, "constructor")).toBe(false);
     await f.ctx.stop();
+});
+
+for (const revoke of ["history", "parent", "destination"] as const)
+    it(`preserves ${revoke} restrictions when heartbeat rewraps an AgentCore session`, async () => {
+        let entered!: () => void, release!: () => void;
+        const started = new Promise<void>((resolve) => (entered = resolve));
+        const gate = new Promise<void>((resolve) => (release = resolve));
+        const f = await encoderFixture("discord", "nested-bot", true, async () => {
+            entered();
+            await gate;
+        });
+        const parent = new AbortController(),
+            history = new AbortController();
+        let allowed = true;
+        try {
+            const sending = withReplyTurn(
+                () => true,
+                () => {
+                    const session = guardReplySession(f.session);
+                    return withReplyTurnGuard(
+                        () => true,
+                        () => guardReplySession(session).bot.sendMessage("group", "old"),
+                        history.signal,
+                    );
+                },
+                parent.signal,
+                () => allowed,
+            );
+            void sending.catch(() => {});
+            await started;
+            if (revoke === "history") history.abort();
+            else if (revoke === "parent") parent.abort();
+            else allowed = false;
+            release();
+            await expect(sending).rejects.toThrow(revoke === "destination" ? "抑制" : "取消");
+            expect(f.deliveries).toEqual([]);
+        } finally {
+            await f.bot.dispose();
+            await f.ctx.stop();
+        }
+    });
+it("cannot revive an old guarded session by wrapping it in a fresh turn", async () => {
+    const f = await encoderFixture("discord");
+    const old = new AbortController();
+    const session = withReplyTurn(
+        () => true,
+        () => guardReplySession(f.session),
+        old.signal,
+    );
+    old.abort();
+    try {
+        await withReplyTurn(
+            () => true,
+            async () => {
+                await expect(guardReplySession(session).bot.sendMessage("group", "old")).rejects.toThrow("取消");
+            },
+        );
+        expect(f.deliveries).toEqual([]);
+    } finally {
+        await f.ctx.stop();
+    }
 });

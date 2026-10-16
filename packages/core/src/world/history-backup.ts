@@ -375,8 +375,8 @@ export class HistoryBackupManager {
         if (initial.status === "conflict") return { ...initial, inserted: counts(), partialEffects: false };
         if (!initial.metadata.missing && Object.values(initial.missing).every((count) => count === 0))
             return { ...initial, status: "restored" as const, inserted: counts(), partialEffects: false };
-        // This only invalidates in-flight generations and buffers; no history is deleted.
-        return this.world.l2_manager.clearHistory(target, async () => {
+        // Additive restoration preserves current buffers and in-flight indexing.
+        return this.world.l2_manager.withHistoryBarrier(target, async () => {
             const { pending, ...report } = await this.inspect(backup);
             const inserted = counts();
             if (report.status === "conflict") return { ...report, inserted, partialEffects: false };
@@ -448,6 +448,31 @@ export class HistoryBackupManager {
             counts: Object.fromEntries(Object.entries(backup.records).map(([kind, rows]) => [kind, rows.length])),
             agentLogs: backup.agentLogs.records.length,
         };
+    }
+    /** Select only fully validated packages owned by the current session target. */
+    public async loadLatest(target: BackupTarget): Promise<{ id: string; input: string } | undefined> {
+        validTarget(target);
+        let files;
+        try {
+            files = await fs.readdir(this.directory, { withFileTypes: true });
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+            throw error;
+        }
+        let latest: { createdAt: string; id: string; input: string } | undefined;
+        for (const file of files) {
+            if (!file.isFile() || !file.name.endsWith(".json")) continue;
+            const id = file.name.slice(0, -5);
+            try {
+                const input = await this.load(id);
+                const backup = this.parse(target, input);
+                if (!latest || backup.createdAt > latest.createdAt || (backup.createdAt === latest.createdAt && id > latest.id))
+                    latest = { createdAt: backup.createdAt, id, input };
+            } catch {
+                // Foreign, incomplete or damaged packages are never eligible for automatic restoration.
+            }
+        }
+        return latest && { id: latest.id, input: latest.input };
     }
     public async load(id: string): Promise<string> {
         if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id)) throw new Error("备份编号无效");

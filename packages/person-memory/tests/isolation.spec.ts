@@ -270,6 +270,7 @@ function retentionService(db) {
     Object.assign(service, {
         ctx: { database: db },
         config: { dataRetentionDays: 1 },
+        l2_manager: { pruneExpiredBuffers() {} },
         l1_manager: {
             pruneOldData: async () => {
                 pruned++;

@@ -45,7 +45,7 @@ export function apply(ctx: Context, config: Config) {
 
                 // 调用更新后的 set 函数
                 const data = Config(set(mutableConfig, parsedKeyChain, value));
-                ctx.scope.parent.scope.update(data, Boolean(options?.force));
+                ctx.scope.parent.scope.update(data, options?.force ? true : undefined);
                 config = data; // 更新全局 config 变量
                 return "设置成功";
             } catch (error) {
@@ -57,6 +57,7 @@ export function apply(ctx: Context, config: Config) {
 
 function get(data: any, keys: Array<string | number>) {
     if (keys.length === 0) return data;
+    if (data == null) return undefined;
 
     // 递归情况：处理键链
     const currentKey = keys[0]; // 当前处理的键或索引

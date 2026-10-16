@@ -112,7 +112,7 @@ const WillingnessConfigSchema: Schema<WillingnessConfig> = Schema.object({
         model: Schema.dynamic("modelService.selectableModels").description("话题总结模型（需具备对话能力；启用后会发送近期聊天内容）"),
         minIntervalMs: Schema.number().min(1000).max(3600000).default(30000).description("两次话题分析的最短间隔（毫秒）"),
         messagesPerAnalysis: Schema.natural().min(1).max(100).default(6).description("再次分析前至少收到的新消息数"),
-        historyLimit: Schema.natural().min(1).max(30).default(20).description("分析时参考的近期消息数"),
+        historyLimit: Schema.natural().min(1).default(20).description("分析时参考的近期消息数"),
         timeoutMs: Schema.number().min(100).max(30000).default(5000).description("话题分析超时（毫秒），失败后沿用普通意愿"),
         maxTopics: Schema.natural().min(1).max(8).default(4).description("每个会话最多保留的话题数"),
         idleTimeoutSeconds: Schema.number().min(10).max(86400).default(600).description("无新消息多久后清除话题状态（秒）"),
@@ -139,7 +139,7 @@ const WillingnessConfigSchema: Schema<WillingnessConfig> = Schema.object({
         mode: Schema.union(["off", "observe", "adjust"]).default("off").description("TypeSafe 接话判断：关闭 / 仅记录 / 调整意愿"),
         evaluationModel: Schema.dynamic("modelService.evaluationModels").description("判断模型，请在模型服务中配置 TypeSafe 提供商和评估能力"),
         timeoutMs: Schema.number().min(100).max(30000).default(3000).description("判断超时（毫秒），失败后沿用原意愿"),
-        historyLimit: Schema.natural().max(30).default(8).description("判断时参考的近期消息数"),
+        historyLimit: Schema.natural().default(8).description("判断时参考的近期消息数"),
         interests: Schema.string().role("textarea").default("").description("角色兴趣，留空使用高兴趣关键词"),
         influence: Schema.number().min(0).max(1).default(0.5).description("本条消息意愿增益的调整强度"),
     })
