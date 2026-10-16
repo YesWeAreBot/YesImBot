@@ -2,6 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 
 import type { Context } from "koishi";
 
+import { validateProfileDocument, renderProfileDocument, type ProfileDocument } from "./profile";
+
 export type Mode = "off" | "review" | "auto";
 export interface SceneInput {
     platform: string;
@@ -51,6 +53,7 @@ export interface Person {
     name: string;
     provisional: boolean;
     profile: string;
+    structuredProfile?: ProfileDocument;
     evidence: Evidence[];
     locked: boolean;
     stale: boolean;
@@ -74,6 +77,7 @@ export interface Proposal {
     personRevision: number;
     accountRevision: number;
     profile: string;
+    structuredProfile?: ProfileDocument;
     evidence: Evidence[];
     createdAt: number;
 }
@@ -445,7 +449,8 @@ export class PersonStore {
             // failed cleanup may temporarily retain extra sources, never undo one.
             try {
                 const old = await this.db.get(SOURCE, { scope }, { sort: { timestamp: "desc", key: "desc" }, offset: 200, limit: 2000 });
-                if (old.length) await this.db.remove(SOURCE, { key: { $in: old.map((r) => r.key) } });
+                const expired = old.filter((row) => row.timestamp < Date.now() - 7 * 86400000);
+                if (expired.length) await this.db.remove(SOURCE, { key: { $in: expired.map((r) => r.key) } });
             } catch {
                 /* Retry cleanup on the next captured source. */
             }
@@ -455,6 +460,79 @@ export class PersonStore {
     async sources(scope: string, userId: string, limit = 20): Promise<Evidence[]> {
         const rows = await this.db.get(SOURCE, { scope, userId }, { sort: { timestamp: "desc", key: "desc" }, limit: Math.min(20, Math.max(1, limit)) });
         return rows.reverse().map((r) => r.source);
+    }
+    /** All retained, current-identity sources for this person, across linked accounts. */
+    async profileSources(scope: string, userId: string, since: number): Promise<Evidence[]> {
+        if (!Number.isFinite(since) || since < 0) throw new Error("来源时间无效");
+        const state = await this.read(scope);
+        return this.currentProfileSources(scope, state, userId, since);
+    }
+    private async currentProfileSources(scope: string, state: State, userId: string, since: number): Promise<Evidence[]> {
+        const p = person(state, userId);
+        const accounts = Object.values(state.accounts).filter((a) => a.personId === p.id);
+        const byId = new Map(accounts.map((a) => [a.userId, a]));
+        const rows = await this.db.get(
+            SOURCE,
+            { scope, userId: { $in: [...byId.keys()] }, timestamp: { $gte: since } },
+            { sort: { timestamp: "asc", key: "asc" } },
+        );
+        return rows
+            .map((row) => row.source)
+            .filter((source) => {
+                const a = byId.get(source.userId);
+                return (
+                    a &&
+                    source.timestamp <= Date.now() &&
+                    (!p.memoryChangedAt || source.timestamp > p.memoryChangedAt) &&
+                    (source.provenance
+                        ? source.provenance.personId === p.id && source.provenance.accountRevision === (a.bindingRevision ?? 0)
+                        : !p.identityChangedAt || source.timestamp > p.identityChangedAt)
+                );
+            });
+    }
+    private async groundedProfile(
+        scope: string,
+        state: State,
+        userId: string,
+        input: ProfileDocument,
+        approvedSnapshot?: ProfileDocument,
+    ): Promise<ProfileDocument> {
+        const now = Date.now(),
+            since = now - 7 * 86400000;
+        const sources = await this.currentProfileSources(scope, state, userId, 0);
+        const p = person(state, userId);
+        const known = approvedSnapshot || (!p.stale ? p.structuredProfile : undefined);
+        const doc = validateProfileDocument(input);
+        doc.scenes = doc.scenes.map((scene) => {
+            const history = sources.filter(
+                (e) =>
+                    e.provenance && (e.provenance.scene || JSON.stringify([e.provenance.platform, e.provenance.selfId, e.provenance.channelId])) === scene.key,
+            );
+            const previous = known?.scenes.find((item) => item.key === scene.key);
+            if (!history.length && !previous) throw new Error("画像场景缺少当前身份的记录来源");
+            const recorded = history.filter((item) => item.timestamp >= since);
+            const latest = history[history.length - 1];
+            const origin = latest?.provenance || previous!;
+            return {
+                ...scene,
+                platform: origin.platform,
+                selfId: origin.selfId,
+                channelId: origin.channelId,
+                nickname: latest?.name ?? previous!.nickname,
+                recent: {
+                    ...scene.recent,
+                    ...(!recorded.length || (approvedSnapshot && scene.recent.to < since)
+                        ? { topics: [], emotions: [], events: [], interactions: [], disagreements: [] }
+                        : {}),
+                    from: since,
+                    to: now,
+                    coverage: "recorded_only",
+                    messageCount: recorded.length,
+                    activeDays: new Set(recorded.map((e) => new Date(e.timestamp).toISOString().slice(0, 10))).size,
+                },
+            };
+        });
+        return validateProfileDocument(doc);
     }
     async rename(scope: string, ref: string, name: string, actor: string) {
         return this.edit(scope, actor, "rename", (state) => {
@@ -491,6 +569,10 @@ export class PersonStore {
                 p.provisional = false;
                 p.locked = oldPerson.locked;
                 p.profile = oldPerson.stale ? "" : oldPerson.profile;
+                if (!oldPerson.stale && oldPerson.structuredProfile) {
+                    const typed = validateProfileDocument(oldPerson.structuredProfile);
+                    if (renderProfileDocument(typed) === oldPerson.profile) p.structuredProfile = typed;
+                }
                 p.memoryChangedAt = Date.now();
                 state.people[p.id] = p;
                 for (const a of fresh) {
@@ -502,10 +584,16 @@ export class PersonStore {
             return { imported, conflicts };
         });
     }
-    async setProfile(scope: string, ref: string, profile: string, actor: string) {
-        return this.edit(scope, actor, "profile", (state) => {
+    async setProfile(scope: string, ref: string, profile: string | ProfileDocument, actor: string) {
+        return this.edit(scope, actor, "profile", async (state) => {
             const p = person(state, ref);
-            p.profile = profile ? text(profile, 2000, "画像") : "";
+            if (typeof profile === "string") {
+                p.profile = profile ? text(profile, 2000, "画像") : "";
+                delete p.structuredProfile;
+            } else {
+                p.structuredProfile = await this.groundedProfile(scope, state, ref, profile);
+                p.profile = renderProfileDocument(p.structuredProfile);
+            }
             p.evidence = [];
             p.stale = false;
             p.memoryChangedAt = Date.now();
@@ -571,7 +659,8 @@ export class PersonStore {
                 b = person(state, into);
             if (a.id === b.id) throw new Error("不能合并同一个人物");
             if (a.locked || b.locked) throw new Error("请先解锁再合并人物");
-            b.profile = [b.profile, a.profile].filter(Boolean).join("\n").slice(0, 2000);
+            b.profile = [b.profile, a.profile].filter(Boolean).join("\n");
+            delete b.structuredProfile;
             b.evidence = [...b.evidence, ...a.evidence].slice(0, 20);
             invalidate(state, a);
             invalidate(state, b);
@@ -599,10 +688,14 @@ export class PersonStore {
             return p;
         });
     }
-    private async evidence(scope: string, userId: string, messageIds: string[]) {
+    private async evidence(scope: string, userId: string, messageIds: string[], linkedUserIds?: string[]) {
         if (!Array.isArray(messageIds) || messageIds.length < 1 || messageIds.length > 10 || messageIds.some((id) => typeof id !== "string"))
             throw new Error("需提供 1 到 10 个消息来源 ID");
-        const rows = await this.db.get(SOURCE, { scope, userId, key: { $in: [...new Set(messageIds)].map((id) => digest(JSON.stringify([scope, id]))) } });
+        const rows = await this.db.get(SOURCE, {
+            scope,
+            userId: linkedUserIds ? { $in: linkedUserIds } : userId,
+            key: { $in: [...new Set(messageIds)].map((id) => digest(JSON.stringify([scope, id]))) },
+        });
         if (rows.length !== new Set(messageIds).size) throw new Error("消息来源不属于当前场景和账号，或已超出保留范围");
         return rows.map((row) => row.source);
     }
@@ -678,71 +771,95 @@ export class PersonStore {
     async propose(
         scope: string,
         userId: string,
-        profile: string,
+        profile: string | ProfileDocument,
         messageIds: string[],
         actor: string,
         expected?: { personId: string; personRevision: number; accountRevision: number },
         active = () => true,
     ) {
-        profile = text(profile, 2000, "画像");
-        const sources = await this.evidence(scope, userId, messageIds);
+        const input = typeof profile === "string" ? text(profile, 2000, "画像") : validateProfileDocument(profile);
+        if (!Array.isArray(messageIds) || messageIds.length < 1 || messageIds.length > 10 || messageIds.some((id) => typeof id !== "string"))
+            throw new Error("需提供 1 到 10 个消息来源 ID");
         return this.edit(
             scope,
             actor,
             "proposal",
-            (state) => {
+            async (state) => {
                 if (!active() || this.options.active?.() === false) throw new Error("任务已取消");
                 if (state.settings.paused || state.settings.mode === "off") throw new Error("维护已暂停或关闭");
                 const a = account(state, userId),
                     p = state.people[a.personId];
                 if (p.locked) throw new Error("画像已被管理员锁定");
+                if (expected && (p.id !== expected.personId || p.revision !== expected.personRevision || a.revision !== expected.accountRevision))
+                    throw new Error("总结期间发生人工修改或身份变更，候选已过期");
+                const ids = new Set(messageIds);
+                const sources =
+                    typeof input === "string"
+                        ? await this.evidence(
+                              scope,
+                              userId,
+                              messageIds,
+                              Object.values(state.accounts)
+                                  .filter((item) => item.personId === p.id)
+                                  .map((item) => item.userId),
+                          )
+                        : (await this.currentProfileSources(scope, state, userId, 0)).filter((source) => ids.has(source.id));
+                if (sources.length !== ids.size || new Set(sources.map((source) => source.id)).size !== sources.length)
+                    throw new Error("消息来源不属于当前人物身份、存在歧义或已超出保留范围");
                 if (
                     sources.some(
                         (e) =>
                             (!!p.memoryChangedAt && e.timestamp <= p.memoryChangedAt) ||
-                            (e.provenance && (e.provenance.personId !== p.id || e.provenance.accountRevision !== (a.bindingRevision ?? 0))),
+                            (e.provenance &&
+                                (e.provenance.personId !== p.id || e.provenance.accountRevision !== (account(state, e.userId).bindingRevision ?? 0))),
                     )
                 )
                     throw new Error("来源身份已过期，请使用纠错后新消息");
-                if (expected && (p.id !== expected.personId || p.revision !== expected.personRevision || a.revision !== expected.accountRevision))
-                    throw new Error("总结期间发生人工修改或身份变更，候选已过期");
                 if (state.settings.mode !== "auto" && Object.keys(state.proposals).length + Object.keys(state.linkProposals).length >= 50)
                     throw new Error("待审核候选已达 50 个，请先处理");
                 const combined = [...sources, ...(p.stale ? [] : p.evidence)];
                 const evidence = [...new Map(combined.map((e) => [JSON.stringify([e.userId, e.id]), e])).values()].slice(0, 20);
+                const structuredProfile = typeof input === "string" ? undefined : await this.groundedProfile(scope, state, userId, input);
                 const proposal: Proposal = {
                     id: randomUUID(),
                     userId,
                     personId: p.id,
                     personRevision: p.revision,
                     accountRevision: a.revision,
-                    profile,
+                    profile: structuredProfile ? renderProfileDocument(structuredProfile) : (input as string),
+                    ...(structuredProfile ? { structuredProfile } : {}),
                     evidence,
                     createdAt: Date.now(),
                 };
-                if (state.settings.mode === "auto") this.accept(state, proposal);
+                if (state.settings.mode === "auto") await this.accept(scope, state, proposal);
                 else state.proposals[proposal.id] = proposal;
                 return { ...proposal, state: state.settings.mode === "auto" ? "accepted" : "pending" };
             },
             active,
         );
     }
-    private accept(state: State, proposal: Proposal) {
+    private async accept(scope: string, state: State, proposal: Proposal) {
         const a = account(state, proposal.userId),
             p = state.people[a.personId];
         if (p.locked) throw new Error("画像已被管理员锁定");
         if (p.id !== proposal.personId || p.revision !== proposal.personRevision || a.revision !== proposal.accountRevision)
             throw new Error("候选已过期，请重新总结");
+        if (proposal.structuredProfile) {
+            proposal.structuredProfile = await this.groundedProfile(scope, state, proposal.userId, proposal.structuredProfile, proposal.structuredProfile);
+            proposal.profile = renderProfileDocument(proposal.structuredProfile);
+        }
         p.profile = proposal.profile;
+        if (proposal.structuredProfile) p.structuredProfile = structuredClone(proposal.structuredProfile);
+        else delete p.structuredProfile;
         p.evidence = proposal.evidence;
         p.stale = false;
         p.revision++;
     }
     async review(scope: string, id: string, approve: boolean, actor: string) {
-        return this.edit(scope, actor, approve ? "approve" : "reject", (state) => {
+        return this.edit(scope, actor, approve ? "approve" : "reject", async (state) => {
             const proposal = Object.hasOwn(state.proposals, id) ? state.proposals[id] : undefined;
             if (proposal) {
-                if (approve) this.accept(state, proposal);
+                if (approve) await this.accept(scope, state, proposal);
                 delete state.proposals[id];
                 return proposal;
             }
