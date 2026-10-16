@@ -3,7 +3,7 @@ import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Context, Schema } from "koishi";
-import { Failed, Infer, type ToolCallResult, type ToolService } from "koishi-plugin-yesimbot";
+import { Failed, Infer, replyTurnSignal, type ToolCallResult, type ToolService } from "koishi-plugin-yesimbot";
 
 import { CommandResolver } from "./CommandResolver";
 import { Config } from "./Config";
@@ -205,7 +205,7 @@ export class MCPManager {
 
                     parameters: convertJsonSchemaToSchemastery(tool.inputSchema),
                     execute: async (args: Infer<any>) => {
-                        const { session, ...cleanArgs } = args;
+                        const { session: _session, ...cleanArgs } = args;
                         return await this.executeTool(client, tool.name, cleanArgs);
                     },
                 };
@@ -230,29 +230,38 @@ export class MCPManager {
      * 执行工具
      */
     private async executeTool(client: Client, toolName: string, params: any): Promise<ToolCallResult> {
-        let timer: NodeJS.Timeout | null = null;
+        let timer: NodeJS.Timeout | undefined;
         const controller = new AbortController();
-        const abort = () => controller.abort();
-        this.shutdown.signal.addEventListener("abort", abort, { once: true });
-
+        const listeners: Array<[AbortSignal, () => void]> = [];
+        let cancelRequest: (() => void) | undefined;
         try {
+            for (const signal of [this.shutdown.signal, replyTurnSignal()]) {
+                if (!signal) continue;
+                const abort = () => controller.abort(signal.reason instanceof Error ? signal.reason : new Error("MCP request cancelled"));
+                if (signal.aborted) abort();
+                else {
+                    signal.addEventListener("abort", abort, { once: true });
+                    listeners.push([signal, abort]);
+                }
+            }
             if (this.disposed) throw new Error("MCP manager disposed");
+            controller.signal.throwIfAborted();
             this.logger.debug(`执行工具: ${toolName}`);
-            const deadline = new Promise<never>((_, reject) => {
-                timer = setTimeout(() => {
-                    controller.abort();
-                    reject(new Error(`工具 ${toolName} 执行超时 (${this.config.timeout}ms)`));
-                }, this.config.timeout);
+            const cancelled = new Promise<never>((_, reject) => {
+                cancelRequest = () => reject(controller.signal.reason);
+                controller.signal.addEventListener("abort", cancelRequest, { once: true });
             });
-            const result = await this.untilShutdown(
-                Promise.race([
-                    client.callTool({ name: toolName, arguments: params }, undefined, {
-                        timeout: this.config.timeout,
-                        signal: controller.signal,
-                    }),
-                    deadline,
-                ]),
-            );
+            timer = setTimeout(() => controller.abort(new Error(`工具 ${toolName} 执行超时 (${this.config.timeout}ms)`)), this.config.timeout);
+            const result = await Promise.race([
+                client.callTool({ name: toolName, arguments: params }, undefined, {
+                    timeout: this.config.timeout,
+                    signal: controller.signal,
+                }),
+                cancelled,
+            ]);
+            // Cancellation stops the pending SDK request; an already committed
+            // remote side effect cannot be recalled by this local cancellation.
+            controller.signal.throwIfAborted();
 
             // 处理返回内容
             let content = "";
@@ -281,7 +290,8 @@ export class MCPManager {
             return Failed(error.message);
         } finally {
             if (timer) clearTimeout(timer);
-            this.shutdown.signal.removeEventListener("abort", abort);
+            for (const [signal, abort] of listeners) signal.removeEventListener("abort", abort);
+            if (cancelRequest) controller.signal.removeEventListener("abort", cancelRequest);
         }
     }
 
