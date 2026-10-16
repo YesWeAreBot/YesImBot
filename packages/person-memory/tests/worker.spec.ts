@@ -132,3 +132,124 @@ test("truncated summary is rejected before JSON parsing with the output limit id
     assert.throws(() => summaryResponseText({ text: "", finishReason: "length" }, 4096), /4096.*截断/);
     assert.equal(summaryResponseText({ text: '{"profile":""}', finishReason: "stop" }, 4096), '{"profile":""}');
 });
+
+test("summary uses a bounded latest sample with complete recorded seven-day scene counts", async (t) => {
+    let input;
+    const { store, worker } = await setup(
+        t,
+        async (messages) => {
+            input = { messages, data: JSON.parse(messages[1].content) };
+            return JSON.stringify({ profile: "最近学习 Python", messageIds: ["recent-44"] });
+        },
+        { systemPrompt: "自定义写作策略" },
+    );
+    await store.recognize("s", "u", "群友");
+    const now = Date.now();
+    await store.capture("s", { id: "old", userId: "u", name: "旧昵称", text: "过期消息", timestamp: now - 8 * 86400000 });
+    for (let i = 0; i < 45; i++) {
+        await store.capture("s", { id: `recent-${i}`, userId: "u", name: "群友", text: `Python ${i}`, timestamp: now - 86400000 + i });
+    }
+    await worker.summarize("s", "u");
+    assert.equal(input.data.evidence.length, 40);
+    assert.equal(input.data.evidence[0].id, "recent-5");
+    assert.equal(input.data.evidence.at(-1).id, "recent-44");
+    assert.equal(input.data.window.to - input.data.window.from, 7 * 86400000);
+    assert.equal(input.data.window.coverage, "recorded_only");
+    assert.equal(input.data.window.dayBoundary, "UTC");
+    assert.equal(input.data.scenes[0].key, JSON.stringify(["", "", ""]));
+    assert.equal(input.data.scenes[0].recent.messageCount, 45);
+    assert.equal(input.data.scenes[0].sampleCount, 40);
+    assert.equal(input.data.scenes[0].recent.activeDays, 1);
+    assert.equal(input.data.scenes[0].nickname, "群友");
+    assert.equal(JSON.stringify(input).includes("过期消息"), false);
+    assert.ok(input.messages[0].content.includes("自定义写作策略"));
+});
+
+test("summary cannot cite captured evidence excluded from its bounded input", async (t) => {
+    const { store, worker } = await setup(t, async () => JSON.stringify({ profile: "喜欢 Python", messageIds: ["old"] }));
+    await capture(store, "s", "u", "old");
+    for (let i = 0; i < 41; i++) await capture(store, "s", "u", `new-${i}`);
+    await assert.rejects(worker.summarize("s", "u"), /证据/);
+    assert.equal(Object.keys((await store.read("s")).proposals).length, 0);
+});
+
+test("full structured candidate is preserved and injected into the next maintenance call as data", async (t) => {
+    const document = {
+        version: 1,
+        background: ["软件工程学生"],
+        goals: ["学习 Python"],
+        contexts: [],
+        needs: [],
+        preferences: [],
+        values: [],
+        scenes: [],
+        overview: "学习 Python",
+    };
+    const inputs = [];
+    const { store, worker } = await setup(t, async (messages) => {
+        inputs.push(JSON.parse(messages[1].content));
+        return JSON.stringify({ profile: document, messageIds: [inputs.at(-1).evidence.at(-1).id] });
+    });
+    await capture(store);
+    const id = await worker.summarize("s", "u");
+    const proposal = (await store.read("s")).proposals[id];
+    assert.deepEqual(proposal.structuredProfile.background, ["软件工程学生"]);
+    await store.setProfile("s", "u", proposal.structuredProfile, "admin");
+    await capture(store, "s", "u", "new");
+    await worker.summarize("s", "u");
+    assert.deepEqual(inputs[1].existingStructuredProfile, proposal.structuredProfile);
+    assert.ok(inputs[1].existingProfile.includes("学习 Python"));
+});
+
+test("malformed structured candidate is rejected before any proposal is written", async (t) => {
+    const { store, worker } = await setup(t, async () => JSON.stringify({ profile: { version: 1, overview: "幻觉" }, messageIds: ["m"] }));
+    await capture(store);
+    await assert.rejects(worker.summarize("s", "u"), /画像/);
+    assert.equal(Object.keys((await store.read("s")).proposals).length, 0);
+});
+
+test("stale plain and structured profiles are excluded after account identity changes", async (t) => {
+    let input;
+    const { store, worker } = await setup(t, async (messages) => {
+        input = JSON.parse(messages[1].content);
+        return JSON.stringify({ profile: "", messageIds: [] });
+    });
+    await capture(store);
+    await store.setProfile(
+        "s",
+        "u",
+        { version: 1, background: ["过时背景"], goals: [], contexts: [], needs: [], preferences: [], values: [], scenes: [], overview: "过时画像" },
+        "admin",
+    );
+    await store.recognize("s", "linked", "另一个账号");
+    await store.bind("s", "linked", "u", 1, "admin");
+    await capture(store, "s", "u", "new");
+    await worker.summarize("s", "u");
+    assert.equal(input.existingProfile, "");
+    assert.equal(input.existingStructuredProfile, undefined);
+    assert.equal(JSON.stringify(input).includes("过时背景"), false);
+});
+
+test("worker retains identity-valid linked-account evidence returned by the store", async (t) => {
+    let input;
+    const { store, worker } = await setup(t, async (messages) => {
+        input = JSON.parse(messages[1].content);
+        return JSON.stringify({ profile: "", messageIds: [] });
+    });
+    await capture(store);
+    const found = await store.find("s", "u");
+    // The store resolves each originating account's revision; it need not match
+    // the requesting account's revision. Isolate that dependency contract here.
+    store.profileSources = async () => [
+        {
+            id: "linked-message",
+            userId: "linked",
+            name: "群友",
+            text: "正在学习 Python",
+            timestamp: Date.now(),
+            provenance: { platform: "test", selfId: "bot", channelId: "group", messageId: "linked-message", personId: found.person.id, accountRevision: 7 },
+        },
+    ];
+    await worker.summarize("s", "u");
+    assert.equal(input.evidence[0].id, "linked-message");
+});

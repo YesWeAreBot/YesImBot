@@ -11,7 +11,7 @@ async function setup(t) {
     const app = await fixture(t, registerModels);
     const store = new PersonStore(app.database, "auto");
     await store.recognize("s", "u", "User");
-    await store.capture("s", source("old", 1));
+    await store.capture("s", source("old", Date.now() - 1000));
     return store;
 }
 
