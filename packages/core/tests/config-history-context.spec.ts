@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 
+import { Schema } from "koishi";
 import { test, vi } from "vitest";
 
 import { AgentBehaviorConfigSchema } from "../src/agent/config";
@@ -17,11 +18,12 @@ test("custom context settings expose a primitive input", () => {
     const branch = context.list![1].list!.find((item) => item.dict?.mode.value === "custom")!;
     assert.equal(branch.dict!.value.type, "string");
     assert.equal(branch.dict!.value.meta.required, true);
+    assert.equal(branch.dict!.value.meta.role, "yib-context-capacity");
 });
 
 test("context schema preserves custom values and validates the declared capacity", () => {
     assert.equal(ModelConfigSchema({ modelId: "m" }).contextLimit?.mode, "unset");
-    for (const value of ["131072.5", "128K", "1m", " .5 k "]) {
+    for (const value of ["131072.5", "128K", "1M", "1m", " .5 k "]) {
         assert.equal(ModelConfigSchema({ modelId: "m", contextLimit: { mode: "custom", value } }).contextLimit?.value, value);
     }
     for (const value of ["0", "-1", "NaN", "Infinity", "1G", "9007199254740992", "1".repeat(4097)]) {
@@ -30,6 +32,14 @@ test("context schema preserves custom values and validates the declared capacity
     assert.throws(() => ModelConfigSchema({ modelId: "m", contextLimit: { mode: "custom" } }));
     for (const mode of ["unset", "auto"]) {
         assert.equal(ModelConfigSchema({ modelId: "m", contextLimit: { mode } }).contextLimit?.mode, mode);
+    }
+});
+
+test("custom capacities validate after console schema serialization", () => {
+    const consoleSchema = new Schema(JSON.parse(JSON.stringify(ModelConfigSchema)));
+    assert.equal(consoleSchema({ modelId: "m", contextLimit: { mode: "custom", value: "1M" } }).contextLimit?.value, "1M");
+    for (const value of ["0", "1G", "9007199254740992"]) {
+        assert.throws(() => consoleSchema({ modelId: "m", contextLimit: { mode: "custom", value } }));
     }
 });
 

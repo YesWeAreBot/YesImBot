@@ -65,7 +65,7 @@ it("recalculates from original messages for each candidate model", async () => {
     const requests: any[] = [];
     const logger = Object.fromEntries(["debug", "info", "warn", "error", "success"].map((level) => [level, () => {}]));
     const ctx = stubCtx({ logging: loggingStub(logger) });
-    for (const capacity of [10000, 500]) {
+    for (const capacity of ["10K", "0.5K", "1M"]) {
         const model = new ChatModel(
             ctx,
             () => ({ baseURL: "https://budget.invalid/", apiKey: "test", model: "test" }),
@@ -85,7 +85,7 @@ it("recalculates from original messages for each candidate model", async () => {
         );
         await model.chat({ messages });
     }
-    expect(requests.map((row) => row.messages.length)).toEqual([2, 1]);
+    expect(requests.map((row) => row.messages.length)).toEqual([2, 1, 2]);
     expect(messages).toHaveLength(2);
     expect(requests[1]).not.toHaveProperty("contextBudget");
 });

@@ -13,8 +13,16 @@ export interface ContextLimitResult {
     reason?: string;
 }
 
-/** Decimal K/M units; accept finite positive capacities without rounding to integers. */
-export function parseContextLimit(value: string): number {
+/**
+ * Decimal K/M units; accept finite positive capacities without rounding to integers.
+ * Also validate declarations as a self-contained schema callback: Koishi serializes
+ * callbacks for the console, so this function must not reference module helpers.
+ */
+export function parseContextLimit(value: string): number;
+export function parseContextLimit(value: ContextLimitConfig): ContextLimitConfig;
+export function parseContextLimit(input: string | ContextLimitConfig): number | ContextLimitConfig {
+    if (typeof input !== "string" && input.mode !== "custom") return input;
+    const value = typeof input === "string" ? input : (input.value ?? "");
     const match = /^\s*(\d+(?:\.\d+)?|\.\d+)\s*([km]?)\s*$/i.exec(value);
     if (!match) throw new Error("最大上下文必须是正数或带 K/M 的容量，例如 131072.5、128K、1M");
     if (match[1].length > 4096) throw new Error("最大上下文数值过长");
@@ -26,7 +34,7 @@ export function parseContextLimit(value: string): number {
     if (!Number.isFinite(tokens) || tokens <= 0 || numerator > BigInt(Number.MAX_SAFE_INTEGER) * denominator) {
         throw new Error("最大上下文必须换算为安全范围内的有限正数 token 数");
     }
-    return tokens;
+    return typeof input === "string" ? tokens : input;
 }
 
 /** Only explicit total context fields are accepted, never output limits or names. */

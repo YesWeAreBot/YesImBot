@@ -1,3 +1,39 @@
+.yib-context-capacity-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 5rem;
+    width: 18rem;
+    max-width: 100%;
+}
+.yib-context-capacity-row > input,
+.yib-context-capacity-row > select {
+    min-width: 0;
+    box-sizing: border-box;
+    border: 1px solid var(--k-color-divider);
+    padding: 8px;
+    color: var(--k-text-normal);
+    background: var(--k-card-bg);
+    font: inherit;
+}
+.yib-context-capacity-row > input {
+    border-radius: 4px 0 0 4px;
+}
+.yib-context-capacity-row > select {
+    border-left: 0;
+    border-radius: 0 4px 4px 0;
+}
+.yib-context-capacity-row > :focus-visible {
+    outline: 2px solid var(--k-color-primary);
+    outline-offset: -2px;
+}
+.yib-context-capacity-hint,
+.yib-context-capacity-error {
+    display: block;
+    margin-top: 6px;
+    font-size: 0.8rem;
+}
+.yib-context-capacity-error {
+    color: var(--k-color-danger);
+}
 .yib-config-section {
     border: 1px solid var(--k-color-divider);
     border-radius: 8px;
