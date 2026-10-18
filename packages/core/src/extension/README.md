@@ -235,7 +235,7 @@ async platformSpecificFeature({ session }: Infer<{}>) {
 
 本系统提供了一些开箱即用的内置扩展，以满足常见的需求。
 
-- **`command`**：提供`send_platform_command`工具，允许AI智能体执行Koishi的纯文本指令。
+- **`command`**：提供`send_platform_command`工具，以 Bot 自己的账号和权限执行 Koishi 纯文本指令，结果发送到当前群聊或私聊。签到、绑定及其他用户数据归属 Bot，不继承触发者的权限或资料。
 - **`core-util`**：提供一些核心的工具，例如获取当前时间等。
 - **`creator`**：提供与工具创建和管理相关的工具。
 - **`interactions`**：提供与用户交互相关的工具，例如发送消息。

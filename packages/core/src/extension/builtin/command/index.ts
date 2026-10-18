@@ -1,5 +1,8 @@
+import { randomUUID } from "node:crypto";
+
 import { Context, h, Schema } from "koishi";
 
+import { guardReplySession } from "../../../agent/reply-turn";
 import { Extension, Tool, withInnerThoughts } from "../../../extension/decorators";
 import { Failed, Success } from "../../../extension/helpers";
 import { Infer } from "../../../extension/types";
@@ -22,7 +25,7 @@ export default class CommandExtension {
     @Tool({
         name: "send_platform_command",
         description:
-            "用于向IM聊天平台发送一个【纯文本指令】，以触发平台或机器人插件的特定功能，例如签到、查询游戏角色信息等。这个工具【不能】执行任何代码、数学计算或调用其他工具。如果你需要编码、计算或查询天气，请直接调用对应的工具，而不是用这个工具包装它。",
+            "以机器人自己的账号和权限，在当前会话执行一个【纯文本指令】，例如签到、查询游戏角色信息等；不会代替触发对话的用户操作其账号。这个工具【不能】执行任何代码、数学计算或调用其他工具。如果你需要编码、计算或查询天气，请直接调用对应的工具，而不是用这个工具包装它。",
         parameters: withInnerThoughts({
             command: Schema.string()
                 .required()
@@ -32,11 +35,20 @@ export default class CommandExtension {
     async executeKoishiCommand({ session, command }: Infer<{ command: string }>) {
         if (!session) return Failed("session 不可用");
         try {
-            const result = await session.sendQueued(h("execute", {}, command));
-
-            // if (result.length === 0) return Failed("指令执行失败，可能是因为指令不存在或格式错误。");
-
-            // if (result.length === 0) this.ctx.logger.warn(`Bot[${session.selfId}]执行了指令: ${command}，但是没有返回任何结果。`);
+            // A fresh session prevents the trigger's observed user/permissions/member
+            // from leaking into command execution. Keep the destination independently
+            // from the actor, especially for a private conversation with another user.
+            const commandSession = guardReplySession(
+                session.bot.session({
+                    type: "message",
+                    channel: session.event.channel ? { ...session.event.channel } : undefined,
+                    guild: session.event.guild ? { ...session.event.guild } : undefined,
+                    referrer: session.event.referrer,
+                    user: { ...session.bot.user, id: session.selfId },
+                    message: { id: `bot-command-${randomUUID()}`, content: command },
+                }),
+            );
+            await commandSession.sendQueued(h("execute", {}, command));
 
             this.ctx.logger.info(`Bot[${session.selfId}]执行了指令: ${command}`);
             return Success();
