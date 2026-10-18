@@ -240,16 +240,450 @@ test("worker retains identity-valid linked-account evidence returned by the stor
     const found = await store.find("s", "u");
     // The store resolves each originating account's revision; it need not match
     // the requesting account's revision. Isolate that dependency contract here.
+    const capturedAt = Date.now();
     store.profileSources = async () => [
         {
             id: "linked-message",
             userId: "linked",
             name: "群友",
             text: "正在学习 Python",
-            timestamp: Date.now(),
+            timestamp: capturedAt,
             provenance: { platform: "test", selfId: "bot", channelId: "group", messageId: "linked-message", personId: found.person.id, accountRevision: 7 },
         },
     ];
     await worker.summarize("s", "u");
     assert.equal(input.evidence[0].id, "linked-message");
+});
+
+test("durable work resumes interrupted inference and does not reuse consumed source evidence", async (t) => {
+    const { registerSummaryQueueModels, SummaryQueue } = await import("../src/summary-queue");
+    const ctx = await fixture(t, (ctx) => {
+        registerModels(ctx);
+        registerSummaryQueueModels(ctx);
+    });
+    const store = new PersonStore(ctx.database, "review");
+    await capture(store);
+    let started;
+    const beginning = new Promise<void>((resolve) => (started = resolve));
+    const config = { threshold: 2, cooldownMs: 1, timeoutMs: 1000, maxQueue: 2, durableQueue: new SummaryQueue(ctx.database, "restart") };
+    const first = new SummaryWorker(
+        store,
+        async () => {
+            started();
+            return new Promise(() => {});
+        },
+        config,
+        () => {},
+    );
+    const pending = first.summarize("s", "u");
+    await beginning;
+    const rejected = assert.rejects(pending, /取消/);
+    await first.stop();
+    await rejected;
+    assert.equal((await config.durableQueue.pending())[0].input.evidenceIds[0], "m");
+    let calls = 0;
+    const second = new SummaryWorker(
+        store,
+        async () => {
+            calls++;
+            return JSON.stringify({ profile: "喜欢 Python", messageIds: ["m"] });
+        },
+        { ...config, durableQueue: new SummaryQueue(ctx.database, "restart") },
+        () => {},
+    );
+    t.onTestFinished(() => second.stop());
+    await second.init();
+    await second.idle();
+    assert.equal(calls, 1);
+    assert.equal(Object.keys((await store.read("s")).proposals).length, 1);
+    await second.summarize("s", "u");
+    assert.equal(calls, 1);
+    assert.equal(Object.keys((await store.read("s")).proposals).length, 1);
+});
+
+test("durable failures stop at three attempts and paused jobs do not resume automatically", async (t) => {
+    const { registerSummaryQueueModels, SummaryQueue } = await import("../src/summary-queue");
+    const ctx = await fixture(t, (ctx) => {
+        registerModels(ctx);
+        registerSummaryQueueModels(ctx);
+    });
+    const store = new PersonStore(ctx.database, "review");
+    await capture(store);
+    const queue = new SummaryQueue(ctx.database, "retry");
+    let calls = 0;
+    const config = { threshold: 2, cooldownMs: 1, timeoutMs: 1000, maxQueue: 2, retryDelayMs: 1, durableQueue: queue };
+    const worker = new SummaryWorker(
+        store,
+        async () => {
+            calls++;
+            throw new Error("provider unavailable");
+        },
+        config,
+        () => {},
+    );
+    t.onTestFinished(() => worker.stop());
+    await assert.rejects(worker.summarize("s", "u"), /provider/);
+    for (let i = 0; i < 100 && (await queue.list())[0]?.status !== "failed"; i++) await new Promise((resolve) => setTimeout(resolve, 5));
+    await worker.idle();
+    assert.equal(calls, 3);
+    const [failed] = await queue.list();
+    assert.equal(failed.status, "failed");
+    assert.equal(failed.attempts, 3);
+    assert.match(failed.reason, /provider/);
+    await store.settings("s", { paused: true }, "admin");
+    await assert.rejects(worker.summarize("s", "u"), /暂停/);
+    assert.equal((await queue.list())[0].status, "blocked");
+    await store.settings("s", { paused: false }, "admin");
+    await worker.init();
+    await worker.idle();
+    assert.equal(calls, 3);
+});
+
+test("queued work is durable before inference and cancellation cannot be restarted by retry timers", async (t) => {
+    const { registerSummaryQueueModels, SummaryQueue } = await import("../src/summary-queue");
+    const ctx = await fixture(t, (ctx) => {
+        registerModels(ctx);
+        registerSummaryQueueModels(ctx);
+    });
+    const store = new PersonStore(ctx.database, "review");
+    await capture(store);
+    await capture(store, "other");
+    const queue = new SummaryQueue(ctx.database, "queued");
+    let started;
+    const beginning = new Promise<void>((resolve) => (started = resolve));
+    const config = { threshold: 2, cooldownMs: 1, timeoutMs: 1000, maxQueue: 2, retryDelayMs: 10, durableQueue: queue };
+    const first = new SummaryWorker(
+        store,
+        async () => {
+            started();
+            return new Promise(() => {});
+        },
+        config,
+        () => {},
+    );
+    const a = first.summarize("s", "u");
+    await beginning;
+    const b = first.summarize("other", "u");
+    const rejects = [assert.rejects(a, /取消/), assert.rejects(b, /取消/)];
+    await first.stop();
+    await Promise.all(rejects);
+    assert.equal((await queue.pending()).length, 2);
+    await queue.cancel("s");
+    let calls = 0;
+    const second = new SummaryWorker(
+        store,
+        async () => {
+            calls++;
+            throw new Error("failure");
+        },
+        config,
+        () => {},
+    );
+    t.onTestFinished(() => second.stop());
+    await second.init();
+    await second.idle();
+    await second.cancel("other");
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    await second.idle();
+    assert.equal(calls, 1);
+    assert.equal((await queue.pending()).length, 0);
+});
+
+test("commit before ack resumes the receipt without another model call or automatic acceptance", async (t) => {
+    const { registerSummaryQueueModels, SummaryQueue } = await import("../src/summary-queue");
+    const ctx = await fixture(t, (ctx) => {
+        registerModels(ctx);
+        registerSummaryQueueModels(ctx);
+    });
+    const store = new PersonStore(ctx.database, "auto");
+    await capture(store);
+    const queue = new SummaryQueue(ctx.database, "ack");
+    queue.accept = async () => {
+        throw new Error("crash before ack");
+    };
+    const config = { threshold: 2, cooldownMs: 1, timeoutMs: 1000, maxQueue: 2, retryDelayMs: 1000, durableQueue: queue };
+    let calls = 0;
+    const model = async () => {
+        calls++;
+        return JSON.stringify({ profile: "喜欢 Python", messageIds: ["m"] });
+    };
+    const first = new SummaryWorker(store, model, config, () => {});
+    await assert.rejects(first.summarize("s", "u"), /ack/);
+    await first.stop();
+    const revision = (await store.find("s", "u")).person.revision;
+    const recovery = new SummaryQueue(ctx.database, "ack");
+    const [pending] = await recovery.pending();
+    await recovery.patch(pending, { nextAttempt: 0 });
+    const second = new SummaryWorker(store, model, { ...config, durableQueue: recovery }, () => {});
+    t.onTestFinished(() => second.stop());
+    await second.init();
+    await second.idle();
+    assert.equal(calls, 1);
+    assert.equal((await store.find("s", "u")).person.revision, revision);
+    assert.equal((await recovery.pending()).length, 0);
+    assert.equal((await recovery.list())[0].status, "accepted");
+});
+
+test("workers sharing a physical database have one inference owner", async (t) => {
+    const { registerSummaryQueueModels, SummaryQueue } = await import("../src/summary-queue");
+    const ctx = await fixture(t, (ctx) => {
+        registerModels(ctx);
+        registerSummaryQueueModels(ctx);
+    });
+    const store = new PersonStore(ctx.database, "review");
+    await capture(store);
+    let calls = 0,
+        started,
+        resolve;
+    const beginning = new Promise<void>((r) => (started = r));
+    const model = async () => {
+        calls++;
+        started();
+        return new Promise<string>((r) => (resolve = r));
+    };
+    const config = { threshold: 2, cooldownMs: 1, timeoutMs: 1000, maxQueue: 2 };
+    const first = new SummaryWorker(store, model, { ...config, durableQueue: new SummaryQueue(ctx.database, "shared") }, () => {});
+    const second = new SummaryWorker(store, model, { ...config, durableQueue: new SummaryQueue(ctx.database, "shared") }, () => {});
+    t.onTestFinished(async () => {
+        await first.stop();
+        await second.stop();
+    });
+    const job = first.summarize("s", "u");
+    await beginning;
+    await assert.rejects(second.summarize("s", "u"), /其他工作器/);
+    resolve(JSON.stringify({ profile: "喜欢 Python", messageIds: ["m"] }));
+    await job;
+    assert.equal(calls, 1);
+    assert.equal(Object.keys((await store.read("s")).proposals).length, 1);
+});
+
+test("restart after output persistence retries the proposal without another inference", async (t) => {
+    const { registerSummaryQueueModels, SummaryQueue } = await import("../src/summary-queue");
+    const ctx = await fixture(t, (ctx) => {
+        registerModels(ctx);
+        registerSummaryQueueModels(ctx);
+    });
+    const store = new PersonStore(ctx.database, "review");
+    await capture(store);
+    const queue = new SummaryQueue(ctx.database, "output");
+    let calls = 0;
+    const config = { threshold: 2, cooldownMs: 1, timeoutMs: 1000, maxQueue: 2, retryDelayMs: 1000, durableQueue: queue };
+    const model = async () => {
+        calls++;
+        return JSON.stringify({ profile: "喜欢 Python", messageIds: ["m"] });
+    };
+    const propose = store.propose.bind(store);
+    store.propose = async () => {
+        throw new Error("storage unavailable");
+    };
+    const first = new SummaryWorker(store, model, config, () => {});
+    await assert.rejects(first.summarize("s", "u"), /storage/);
+    await first.stop();
+    const [saved] = await queue.pending();
+    assert.equal(saved.output.profile, "喜欢 Python");
+    await queue.patch(saved, { nextAttempt: 0 });
+    store.propose = propose;
+    const second = new SummaryWorker(store, model, config, () => {});
+    t.onTestFinished(() => second.stop());
+    await second.init();
+    await second.idle();
+    assert.equal(calls, 1);
+    assert.equal(Object.keys((await store.read("s")).proposals).length, 1);
+});
+
+test("pause while persisting input prevents inference and becomes a blocked durable receipt", async (t) => {
+    const { registerSummaryQueueModels, SummaryQueue } = await import("../src/summary-queue");
+    const ctx = await fixture(t, (ctx) => {
+        registerModels(ctx);
+        registerSummaryQueueModels(ctx);
+    });
+    const store = new PersonStore(ctx.database, "review");
+    await capture(store);
+    const queue = new SummaryQueue(ctx.database, "policy-race");
+    const patch = queue.patch.bind(queue);
+    queue.patch = async (job, values) => {
+        await patch(job, values);
+        if (values.input) await store.settings("s", { paused: true }, "admin");
+    };
+    let calls = 0;
+    const worker = new SummaryWorker(
+        store,
+        async () => {
+            calls++;
+            return "unused";
+        },
+        { threshold: 1, cooldownMs: 1, timeoutMs: 1000, maxQueue: 2, durableQueue: queue },
+        () => {},
+    );
+    t.onTestFinished(() => worker.stop());
+    await assert.rejects(worker.summarize("s", "u"), /暂停/);
+    assert.equal(calls, 0);
+    assert.equal((await queue.list())[0].status, "blocked");
+});
+
+async function claimFixture(t, domain) {
+    const { registerSummaryQueueModels, SummaryQueue } = await import("../src/summary-queue");
+    const ctx = await fixture(t, (ctx) => {
+        registerModels(ctx);
+        registerSummaryQueueModels(ctx);
+    });
+    const store = new PersonStore(ctx.database, "auto");
+    await capture(store);
+    const before = await store.find("s", "u");
+    await store.proposeClaims("s", "u", [{ action: "support", category: "preferences", statement: "喜欢 Python", messageIds: ["m"] }], "admin", {
+        personId: before.person.id,
+        personRevision: before.person.revision,
+        accountRevision: before.accounts[0].revision,
+    });
+    await capture(store, "s", "u", "new");
+    const claim = (await store.find("s", "u")).person.claims[0];
+    const queue = new SummaryQueue(ctx.database, domain);
+    const config = { threshold: 2, cooldownMs: 1, timeoutMs: 1000, maxQueue: 2, retryDelayMs: 1000, durableQueue: queue };
+    return { ctx, store, claim, queue, config, SummaryQueue };
+}
+
+test("background maintenance uses explicit claim revisions for an existing ledger", async (t) => {
+    const { store, claim, config } = await claimFixture(t, "claim-mode");
+    let input, prompt;
+    const worker = new SummaryWorker(
+        store,
+        async (messages) => {
+            prompt = messages[0].content;
+            input = JSON.parse(messages[1].content);
+            return JSON.stringify({ changes: [{ action: "counter", claimId: claim.id, expectedRevision: claim.revision, messageIds: ["new"] }] });
+        },
+        config,
+        () => {},
+    );
+    t.onTestFinished(() => worker.stop());
+    await worker.summarize("s", "u");
+    assert.equal(input.claims[0].id, claim.id);
+    assert.equal(input.claims[0].revision, 1);
+    assert.equal(input.claims[0].evidence[0].id, "m");
+    assert.ok(input.existingStructuredProfile);
+    assert.ok(prompt.includes('"changes"'));
+    const updated = (await store.find("s", "u")).person.claims[0];
+    assert.equal(updated.status, "contested");
+    assert.equal(updated.history.length, 2);
+    assert.equal(updated.history[1].action, "counter");
+});
+
+test("claim maintenance rejects unshown evidence and unshown claim IDs", async (t) => {
+    const { store, claim, config } = await claimFixture(t, "claim-validation");
+    const original = store.profileSources.bind(store);
+    store.profileSources = async (...args) => (await original(...args)).filter((item) => item.id === "new");
+    let changes = [{ action: "counter", claimId: claim.id, expectedRevision: claim.revision, messageIds: ["m"] }];
+    const worker = new SummaryWorker(
+        store,
+        async () => JSON.stringify({ changes }),
+        config,
+        () => {},
+    );
+    t.onTestFinished(() => worker.stop());
+    await assert.rejects(worker.summarize("s", "u"), /证据/);
+    await worker.cancel("s");
+    changes = [{ action: "counter", claimId: "unshown", expectedRevision: 1, messageIds: ["new"] }];
+    await assert.rejects(worker.summarize("s", "u"), /未展示/);
+    assert.equal((await store.find("s", "u")).person.claims[0].history.length, 1);
+});
+
+test("empty claim changes checkpoint the input without proposing or reinferencing it", async (t) => {
+    const { store, config, queue } = await claimFixture(t, "claim-empty");
+    let calls = 0;
+    const worker = new SummaryWorker(
+        store,
+        async () => {
+            calls++;
+            return JSON.stringify({ changes: [] });
+        },
+        config,
+        () => {},
+    );
+    t.onTestFinished(() => worker.stop());
+    assert.equal(await worker.summarize("s", "u"), "没有新增可靠信息");
+    await worker.summarize("s", "u");
+    assert.equal(calls, 1);
+    assert.equal((await store.find("s", "u")).person.claims[0].history.length, 1);
+    assert.equal((await queue.pending()).length, 0);
+});
+
+test("claim commit before queue ack replays its atomic receipt after restart", async (t) => {
+    const { ctx, store, claim, config, queue, SummaryQueue } = await claimFixture(t, "claim-ack");
+    queue.accept = async () => {
+        throw new Error("crash before ack");
+    };
+    let calls = 0;
+    const model = async () => {
+        calls++;
+        return JSON.stringify({ changes: [{ action: "revise", claimId: claim.id, expectedRevision: 1, statement: "学习 Rust", messageIds: ["new"] }] });
+    };
+    const first = new SummaryWorker(store, model, config, () => {});
+    await assert.rejects(first.summarize("s", "u"), /ack/);
+    await first.stop();
+    const recovery = new SummaryQueue(ctx.database, "claim-ack");
+    const [saved] = await recovery.pending();
+    assert.equal(saved.input.protocol, "claims");
+    await recovery.patch(saved, { nextAttempt: 0 });
+    const second = new SummaryWorker(store, model, { ...config, durableQueue: recovery }, () => {});
+    t.onTestFinished(() => second.stop());
+    await second.init();
+    await second.idle();
+    assert.equal(calls, 1);
+    const updated = (await store.find("s", "u")).person.claims[0];
+    assert.equal(updated.revision, 2);
+    assert.equal(updated.statement, "学习 Rust");
+    assert.equal(updated.history.length, 2);
+    assert.equal((await recovery.pending()).length, 0);
+});
+
+for (const noChange of [false, true])
+    test(`source revocation during inference rejects ${noChange ? "no-change checkpoint" : "profile commit"}`, async (t) => {
+        let permitted = true;
+        const { store, worker } = await setup(
+            t,
+            async () => {
+                permitted = false;
+                return JSON.stringify({ profile: noChange ? "" : "喜欢 Python", messageIds: ["m"] });
+            },
+            { sourceAllowed: () => permitted },
+        );
+        await capture(store);
+        await assert.rejects(worker.summarize("s", "u"), /权限已失效/);
+        assert.equal((await store.find("s", "u")).person.profile, "");
+        assert.equal(Object.keys((await store.read("s")).proposals).length, 0);
+        permitted = true;
+        // The revoked attempt must not have consumed the source checkpoint.
+        await assert.rejects(worker.summarize("s", "u"), /权限已失效/);
+    });
+
+test("existing profile evidence from a revoked scene is never supplied to another summary", async (t) => {
+    let allowed = true;
+    let calls = 0;
+    const { store, worker } = await setup(
+        t,
+        async () => {
+            calls++;
+            return JSON.stringify({ profile: "喜欢 Python", messageIds: ["m"] });
+        },
+        { sourceAllowed: (_scope, _userId, evidence) => evidence.id !== "m" || allowed },
+    );
+    await capture(store);
+    const proposal = await worker.summarize("s", "u");
+    await store.review("s", proposal, true, "admin");
+    allowed = false;
+    await store.capture("s", { id: "new", userId: "u", name: "群友", text: "我也喜欢 Rust", timestamp: Date.now() });
+    await assert.rejects(worker.summarize("s", "u"), /权限已失效/);
+    assert.equal(calls, 1);
+});
+
+test("no-change response cannot consume evidence after a concurrent profile correction", async (t) => {
+    let store;
+    const setupResult = await setup(t, async () => {
+        await store.setProfile("s", "u", "管理员修正后的认识", "admin");
+        return JSON.stringify({ profile: "", messageIds: [] });
+    });
+    store = setupResult.store;
+    await capture(store);
+    await assert.rejects(setupResult.worker.summarize("s", "u"), /过期/);
+    assert.equal((await store.find("s", "u")).person.profile, "管理员修正后的认识");
 });

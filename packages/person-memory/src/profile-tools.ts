@@ -87,5 +87,5 @@ export function catalogProfile(person: Person, accounts: Account[], fields: Cata
     if (fields === "overview") return { ...metadata, overview: visible.overview };
     if (fields === "structured")
         return { ...metadata, structuredProfile: visible.structuredProfile, legacyProfile: visible.format === "legacy" ? visible.profile : undefined };
-    return { ...metadata, ...visible };
+    return { ...metadata, ...visible, legacyProfile: person.stale ? undefined : person.legacyProfile };
 }

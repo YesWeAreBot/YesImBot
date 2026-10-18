@@ -46,3 +46,17 @@ test("main model maintenance policy shares configured writing rules without work
     assert.equal(policy.includes("messageIds"), false);
     assert.ok(prompts.mainProfilePolicy().includes(prompts.DEFAULT_PROFILE_SYSTEM_PROMPT));
 });
+
+test("claim-ledger maintenance uses revision operations without contradicting the profile protocol", () => {
+    const claims = [{ id: "c", revision: 2, status: "contested", statement: "喜欢咖啡", category: "preferences", evidence: [] }];
+    const messages = prompts.buildProfileMessages({ target: {}, claims, evidence: [] }, "不要把玩笑记成事实");
+    assert.ok(messages[0].content.includes('"changes"'));
+    assert.ok(messages[0].content.includes("expectedRevision"));
+    for (const action of ["support", "counter", "revise", "retire"]) assert.ok(messages[0].content.includes(action));
+    assert.ok(messages[0].content.includes("不要把玩笑记成事实"));
+    assert.equal(messages[0].content.includes('格式为 {"profile"'), false);
+    assert.equal(messages[0].content.includes("喜欢咖啡"), false);
+    assert.deepEqual(JSON.parse(messages[1].content).claims, claims);
+    assert.ok(prompts.mainProfilePolicy().includes("主张"));
+    assert.ok(prompts.buildProfileMessages({ claims: [] })[0].content.includes('格式为 {"profile"'));
+});

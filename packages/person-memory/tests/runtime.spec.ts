@@ -275,7 +275,8 @@ for (const sharedMemory of [false, true])
                 currentSession = argv.session;
                 argv.session.__commandHandled = true;
             });
-            ctx.plugin(plugin, { ...defaults, sharedMemory, modelGroup: "summary" });
+            ctx.scope.key = "stable-mode-test-core";
+            ctx.plugin(plugin, { ...defaults, sharedMemory, modelGroup: "summary" }).key = "stable-mode-test-person-memory";
         });
         try {
             await app.mock.initUser("admin", 3);
@@ -286,7 +287,23 @@ for (const sharedMemory of [false, true])
             const ref = sharedMemory ? accountRef(currentSession.platform, "member") : "member";
             const store = new PersonStore(app.database, "review");
             await store.recognize(scope, ref, "Member");
-            await store.capture(scope, { id: "mode-source", userId: ref, name: "Member", text: "喜欢 Python", timestamp: Date.now() });
+            const identity = await store.find(scope, ref);
+            await store.capture(scope, {
+                id: "mode-source",
+                userId: ref,
+                name: "Member",
+                text: "喜欢 Python",
+                timestamp: Date.now(),
+                provenance: {
+                    platform: currentSession.platform,
+                    selfId: currentSession.selfId,
+                    channelId: currentSession.channelId,
+                    scene: sceneKey(currentSession),
+                    messageId: "mode-source",
+                    personId: identity.person.id,
+                    accountRevision: identity.accounts.find((a) => a.userId === ref).bindingRevision ?? 0,
+                },
+            });
             await store.settings(scope, { mode: "auto" }, "setup");
             const state = await store.read(scope);
             const history = await store.history(scope, 100);

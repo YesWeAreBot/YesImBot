@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 
 import type { Context } from "koishi";
 
+import { applyClaimChanges, projectClaims, retireClaims, claimEvidence as allClaimEvidence, type Claim, type ClaimChange } from "./claims";
 import { validateProfileDocument, renderProfileDocument, type ProfileDocument } from "./profile";
 
 export type Mode = "off" | "review" | "auto";
@@ -32,6 +33,7 @@ export function accountRef(platform: string, id: string): string {
     return JSON.stringify([platform, id]);
 }
 export interface Provenance {
+    guildId?: string;
     platform: string;
     selfId: string;
     channelId: string;
@@ -54,6 +56,8 @@ export interface Person {
     provisional: boolean;
     profile: string;
     structuredProfile?: ProfileDocument;
+    claims?: Claim[];
+    legacyProfile?: string;
     evidence: Evidence[];
     locked: boolean;
     stale: boolean;
@@ -78,6 +82,8 @@ export interface Proposal {
     accountRevision: number;
     profile: string;
     structuredProfile?: ProfileDocument;
+    claims?: Claim[];
+    claimChanges?: ClaimChange[];
     evidence: Evidence[];
     createdAt: number;
 }
@@ -128,6 +134,8 @@ export interface Change {
 export interface Audit {
     baseline?: { revision: number; state: State };
     format?: number;
+    requestId?: string;
+    result?: Record<string, unknown>;
     id: string;
     scope: string;
     timestamp: number;
@@ -154,6 +162,8 @@ export function registerModels(ctx: Context) {
         {
             baseline: "json",
             format: "unsigned",
+            requestId: "string",
+            result: "json",
             id: "string",
             scope: "string",
             timestamp: "double",
@@ -215,6 +225,12 @@ function createPerson(name: string): Person {
     return { id: randomUUID(), name: text(name, 80, "称呼"), provisional: true, profile: "", evidence: [], locked: false, stale: false, revision: 0 };
 }
 function invalidate(state: State, p: Person) {
+    if (p.claims?.length) {
+        const claims = retireClaims(p.claims);
+        p.structuredProfile = projectClaims(p, claims);
+        p.profile = renderProfileDocument(p.structuredProfile);
+        p.claims = claims;
+    }
     if (p.profile) p.stale = true;
     p.identityChanged = true;
     p.identityChangedAt = Date.now();
@@ -308,9 +324,14 @@ export class PersonStore {
         action: string,
         fn: (state: State, db: Context["database"]) => T | Promise<T>,
         active = () => true,
+        requestId?: string,
     ): Promise<T> {
-        return serial(this.db, scope, async () => {
+        return serial(this.db.tables, scope, async () => {
             for (let attempt = 0; attempt < 16; attempt++) {
+                if (requestId) {
+                    const prior = (await this.db.get(AUDIT, { scope, requestId, actor, action }))[0];
+                    if (prior) return structuredClone(prior.result) as T;
+                }
                 const row = await this.snapshot(scope);
                 if (!active() || this.options.active?.() === false) throw new Error("任务已取消");
                 const state = normalize(structuredClone(row.state));
@@ -358,6 +379,7 @@ export class PersonStore {
                         actor,
                         action,
                         changes: delta,
+                        ...(requestId ? { requestId, result: structuredClone(result) as Record<string, unknown> } : {}),
                         // Capture legacy state in the same atomic INSERT. It is not
                         // an audit change and must not affect conditional revert.
                         ...(row.firstCommit && row.revision ? { baseline: { revision: row.revision, state: row.state } } : {}),
@@ -436,7 +458,7 @@ export class PersonStore {
             ...(input.provenance ? { provenance: structuredClone(input.provenance) } : {}),
         };
         if (!Number.isFinite(source.timestamp) || !source.text.trim()) return;
-        await serial(this.db, scope, async () => {
+        await serial(this.db.tables, scope, async () => {
             const key = digest(JSON.stringify([scope, source.id]));
             if ((await this.db.get(SOURCE, { key })).length) return; // Never rewrite original evidence.
             if (!active() || this.options.active?.() === false) throw new Error("任务已取消");
@@ -568,8 +590,8 @@ export class PersonStore {
                 const p = createPerson(oldPerson.name);
                 p.provisional = false;
                 p.locked = oldPerson.locked;
-                p.profile = oldPerson.stale ? "" : oldPerson.profile;
-                if (!oldPerson.stale && oldPerson.structuredProfile) {
+                p.profile = oldPerson.stale || oldPerson.claims?.length ? "" : oldPerson.profile;
+                if (!oldPerson.stale && !oldPerson.claims?.length && oldPerson.structuredProfile) {
                     const typed = validateProfileDocument(oldPerson.structuredProfile);
                     if (renderProfileDocument(typed) === oldPerson.profile) p.structuredProfile = typed;
                 }
@@ -587,7 +609,10 @@ export class PersonStore {
     async setProfile(scope: string, ref: string, profile: string | ProfileDocument, actor: string) {
         return this.edit(scope, actor, "profile", async (state) => {
             const p = person(state, ref);
+            if (p.claims?.length && typeof profile !== "string") throw new Error("已有主张记录，请使用主张修订而非整篇覆写");
             if (typeof profile === "string") {
+                if (p.claims?.length) p.claims = retireClaims(p.claims);
+                delete p.legacyProfile;
                 p.profile = profile ? text(profile, 2000, "画像") : "";
                 delete p.structuredProfile;
             } else {
@@ -659,11 +684,16 @@ export class PersonStore {
                 b = person(state, into);
             if (a.id === b.id) throw new Error("不能合并同一个人物");
             if (a.locked || b.locked) throw new Error("请先解锁再合并人物");
-            b.profile = [b.profile, a.profile].filter(Boolean).join("\n");
-            delete b.structuredProfile;
-            b.evidence = [...b.evidence, ...a.evidence].slice(0, 20);
             invalidate(state, a);
             invalidate(state, b);
+            b.profile = [b.profile, a.profile].filter(Boolean).join("\n");
+            if (!b.claims?.length) delete b.structuredProfile;
+            if (b.claims?.length) {
+                b.structuredProfile = projectClaims(b, b.claims);
+                b.profile = renderProfileDocument(b.structuredProfile);
+            }
+            b.evidence = [...b.evidence, ...a.evidence].slice(0, 20);
+            if (b.profile) b.stale = true;
             b.provisional = false;
             for (const link of Object.values(state.accounts))
                 if (link.personId === a.id) {
@@ -776,6 +806,7 @@ export class PersonStore {
         actor: string,
         expected?: { personId: string; personRevision: number; accountRevision: number },
         active = () => true,
+        requestId?: string,
     ) {
         const input = typeof profile === "string" ? text(profile, 2000, "画像") : validateProfileDocument(profile);
         if (!Array.isArray(messageIds) || messageIds.length < 1 || messageIds.length > 10 || messageIds.some((id) => typeof id !== "string"))
@@ -790,6 +821,7 @@ export class PersonStore {
                 const a = account(state, userId),
                     p = state.people[a.personId];
                 if (p.locked) throw new Error("画像已被管理员锁定");
+                if (p.claims?.length) throw new Error("已有主张记录，请使用主张修订而非整篇覆写");
                 if (expected && (p.id !== expected.personId || p.revision !== expected.personRevision || a.revision !== expected.accountRevision))
                     throw new Error("总结期间发生人工修改或身份变更，候选已过期");
                 const ids = new Set(messageIds);
@@ -836,6 +868,79 @@ export class PersonStore {
                 return { ...proposal, state: state.settings.mode === "auto" ? "accepted" : "pending" };
             },
             active,
+            requestId,
+        );
+    }
+    async readClaims(scope: string, ref: string): Promise<Claim[]> {
+        return structuredClone(person(await this.read(scope), ref).claims || []);
+    }
+    async findClaim(scope: string, ref: string, claimId: string) {
+        return (await this.readClaims(scope, ref)).find((c) => c.id === claimId);
+    }
+    async claimEvidence(scope: string, ref: string, claimId: string): Promise<Evidence[]> {
+        const claim = await this.findClaim(scope, ref, claimId);
+        if (!claim) throw new Error("当前人物没有此主张");
+        return allClaimEvidence(claim);
+    }
+    async proposeClaims(
+        scope: string,
+        userId: string,
+        claimChanges: ClaimChange[],
+        actor: string,
+        expected: { personId: string; personRevision: number; accountRevision: number },
+        active = () => true,
+        requestId?: string,
+    ) {
+        if (!Array.isArray(claimChanges) || !claimChanges.length || claimChanges.length > 20) throw new Error("主张变更数量无效");
+        return this.edit(
+            scope,
+            actor,
+            "claim-proposal",
+            async (state) => {
+                if (state.settings.paused || state.settings.mode === "off") throw new Error("维护已暂停或关闭");
+                const a = account(state, userId),
+                    p = state.people[a.personId];
+                if (p.locked) throw new Error("画像已被管理员锁定");
+                if (!expected || p.id !== expected.personId || p.revision !== expected.personRevision || a.revision !== expected.accountRevision)
+                    throw new Error("身份或画像版本已变化");
+                const sources = await this.currentProfileSources(scope, state, userId, 0);
+                const evidence = claimChanges.map((change) => {
+                    if (!Array.isArray(change.messageIds) || change.messageIds.length > 10 || (change.action !== "retire" && !change.messageIds.length))
+                        throw new Error("需提供 1 到 10 个消息来源 ID");
+                    return [...new Set(change.messageIds)].map((id) => {
+                        const matches = sources.filter((e) => e.id === id);
+                        if (matches.length !== 1) throw new Error("消息来源不属于当前人物身份或存在歧义");
+                        const scene = change.scene || p.claims?.find((c) => c.id === change.claimId)?.scene;
+                        const origin = matches[0].provenance;
+                        if (scene && (!origin || (origin.scene || JSON.stringify([origin.platform, origin.selfId, origin.channelId])) !== scene))
+                            throw new Error("消息来源不属于主张场景");
+                        return matches[0];
+                    });
+                });
+                const claims = applyClaimChanges(p, claimChanges, evidence);
+                const structuredProfile = await this.groundedProfile(scope, state, userId, projectClaims(p, claims));
+                const proposal: Proposal = {
+                    id: randomUUID(),
+                    userId,
+                    personId: p.id,
+                    personRevision: p.revision,
+                    accountRevision: a.revision,
+                    profile: renderProfileDocument(structuredProfile),
+                    structuredProfile,
+                    claims,
+                    claimChanges: structuredClone(claimChanges),
+                    evidence: [...new Map(claims.flatMap(allClaimEvidence).map((e) => [JSON.stringify([e.userId, e.id]), e])).values()],
+                    createdAt: Date.now(),
+                };
+                if (state.settings.mode === "auto") await this.accept(scope, state, proposal);
+                else {
+                    if (Object.keys(state.proposals).length + Object.keys(state.linkProposals).length >= 50) throw new Error("待审核候选已达 50 个");
+                    state.proposals[proposal.id] = proposal;
+                }
+                return { ...proposal, state: state.settings.mode === "auto" ? "accepted" : "pending" };
+            },
+            active,
+            requestId,
         );
     }
     private async accept(scope: string, state: State, proposal: Proposal) {
@@ -844,6 +949,19 @@ export class PersonStore {
         if (p.locked) throw new Error("画像已被管理员锁定");
         if (p.id !== proposal.personId || p.revision !== proposal.personRevision || a.revision !== proposal.accountRevision)
             throw new Error("候选已过期，请重新总结");
+        if (proposal.claims) {
+            if (state.settings.paused || state.settings.mode === "off") throw new Error("维护已暂停或关闭");
+            if (!p.structuredProfile && p.profile) p.legacyProfile = p.profile;
+            p.structuredProfile = projectClaims({ ...p, structuredProfile: proposal.structuredProfile }, proposal.claims);
+            p.profile = renderProfileDocument(p.structuredProfile);
+            p.claims = structuredClone(proposal.claims);
+            p.evidence = structuredClone(proposal.evidence);
+            // Incremental support cannot validate identity-contaminated unmanaged legacy fields.
+            p.stale = p.stale && !!p.identityChanged;
+            p.revision++;
+            return;
+        }
+        if (p.claims?.length) throw new Error("已有主张记录，请使用主张修订");
         if (proposal.structuredProfile) {
             proposal.structuredProfile = await this.groundedProfile(scope, state, proposal.userId, proposal.structuredProfile, proposal.structuredProfile);
             proposal.profile = renderProfileDocument(proposal.structuredProfile);

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import type { Account, Person, State } from "./store";
 
@@ -20,14 +20,17 @@ export interface CatalogResult {
     nextCursor?: string;
     snapshotAt: number;
 }
-type Entry = { person: Person; accounts: Account[]; item: unknown; fingerprint: string };
+type Entry = { personId: string; item: unknown; fingerprint: string };
 type Snapshot = { scope: string; binding: string; args: CatalogArgs; snapshotAt: number; entries: Entry[] };
 const restart = () => new Error("Catalog changed or expired; restart the query（请重新查询）");
 const accountsFor = (state: State, id: string) =>
     Object.values(state.accounts)
         .filter((a) => a.personId === id)
         .sort((a, b) => a.userId.localeCompare(b.userId));
-const fingerprint = (person: Person, accounts: Account[]) => JSON.stringify([person, accounts]);
+const fingerprint = (person: Person, accounts: Account[]) =>
+    createHash("sha256")
+        .update(JSON.stringify([person, accounts]))
+        .digest("hex");
 const freeze = <T>(value: T): T => {
     if (value && typeof value === "object") {
         for (const child of Object.values(value)) freeze(child);
@@ -120,7 +123,9 @@ export class PeopleCatalog {
                 const item = structuredClone(await project(structuredClone(person), structuredClone(accounts), fields));
                 // Validate that project returns a serializable result and never retain its mutable references.
                 if (JSON.stringify(item) === undefined) throw new Error("Invalid catalog projection");
-                entries.push(freeze({ person, accounts, item, fingerprint: fingerprint(person, accounts) }));
+                // Keep only the requested projection, identity and digest. A cursor must
+                // not retain a second copy of the whole evidence/claim ledger.
+                entries.push(freeze({ personId: person.id, item, fingerprint: fingerprint(person, accounts) }));
             }
             snapshot = freeze({ scope, binding, args: structuredClone({ ...args, fields }), snapshotAt: now, entries });
         }
@@ -130,8 +135,8 @@ export class PeopleCatalog {
             const current = structuredClone(await read());
             if (current.settings.mode === "off") throw new Error("人物读取已关闭 (off)");
             for (const entry of snapshot.entries) {
-                const person = Object.hasOwn(current.people, entry.person.id) ? current.people[entry.person.id] : undefined;
-                const accounts = accountsFor(current, entry.person.id);
+                const person = Object.hasOwn(current.people, entry.personId) ? current.people[entry.personId] : undefined;
+                const accounts = accountsFor(current, entry.personId);
                 if (!person || fingerprint(person, accounts) !== entry.fingerprint || !(await canRead(structuredClone(person), structuredClone(accounts)))) {
                     this.snapshots.delete(id);
                     throw restart();
@@ -142,8 +147,8 @@ export class PeopleCatalog {
             const latest = structuredClone(await read());
             if (latest.settings.mode === "off") throw new Error("人物读取已关闭 (off)");
             for (const entry of snapshot.entries) {
-                const person = Object.hasOwn(latest.people, entry.person.id) ? latest.people[entry.person.id] : undefined;
-                if (!person || fingerprint(person, accountsFor(latest, entry.person.id)) !== entry.fingerprint) {
+                const person = Object.hasOwn(latest.people, entry.personId) ? latest.people[entry.personId] : undefined;
+                if (!person || fingerprint(person, accountsFor(latest, entry.personId)) !== entry.fingerprint) {
                     this.snapshots.delete(id);
                     throw restart();
                 }

@@ -1,16 +1,20 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import { Context, Schema, h, type Session } from "koishi";
+import * as core from "koishi-plugin-yesimbot";
 
 import { PeopleCatalog } from "./catalog";
+import { claimParameters, executeClaimTool, visibleClaims } from "./claim-tools";
 import { describePeopleCommand } from "./command-help";
 import { escapeContext } from "./context";
 import { ContinuityStore, registerContinuityModels, sourceRef, summaryUnsafeIn, type RecallTarget } from "./continuity";
 import type { Config, Dependencies } from "./index";
 import { mainProfilePolicy } from "./profile-prompt";
 import { catalogParameters, catalogProfile, catalogRequest, profileInputSchema, visibleProfile } from "./profile-tools";
+import { summarySourceAllowed } from "./source-policy";
 import { PersonStore, accountRef, mindScope, registerModels, sceneKey, type Audit, type Mode, type SceneInput } from "./store";
-import { SummaryWorker, summaryResponseText, type SummaryModel } from "./worker";
+import { registerSummaryQueueModels, SummaryQueue } from "./summary-queue";
+import { SummaryWorker, summaryResponseText, type SummaryModel, type WorkerConfig } from "./worker";
 
 const success = (result: unknown) => ({ status: "success", result });
 const failed = (error: unknown) => ({
@@ -64,6 +68,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
         toolService = deps.yesimbot.tool,
         logger = ctx.logger("shared-memory");
     registerModels(ctx);
+    if (config.modelGroup) registerSummaryQueueModels(ctx);
     registerContinuityModels(ctx);
     let active = true;
     const modes = new Map<string, Mode>();
@@ -327,17 +332,28 @@ export function applySharedMemory(ctx: Context, config: Config) {
             const result = await (models?.withUsageScope ? models.withUsageScope(attribution || { purpose: "人物记忆摘要" }, request) : request());
             return summaryResponseText(result, config.summaryMaxTokens ?? 4096);
         };
-    const worker = new SummaryWorker(
-        store,
-        model,
-        {
-            threshold: config.summaryThreshold,
-            cooldownMs: config.cooldownSeconds * 1000,
-            timeoutMs: config.timeoutSeconds * 1000,
-            maxQueue: config.maxQueue,
-        },
-        (error) => logger.warn(String(error)),
-    );
+    const workerConfig: WorkerConfig = {
+        threshold: config.summaryThreshold,
+        cooldownMs: config.cooldownSeconds * 1000,
+        timeoutMs: config.timeoutSeconds * 1000,
+        maxQueue: config.maxQueue,
+        systemPrompt: config.profileSystemPrompt,
+        sourceAllowed: (scope, _userId, evidence) => summarySourceAllowed(ctx, evidence, scope, true, baseAllowed, scopeOf),
+    };
+    const worker = new SummaryWorker(store, model, workerConfig, (error) => logger.warn(String(error)));
+    if (model) {
+        const getScope = (core as unknown as { getPersistentInstanceScope?: (ctx: Context, options?: { owner?: Context }) => string })
+            .getPersistentInstanceScope;
+        if (!getScope) throw new Error("持久人物总结需要支持稳定实例 scope 的 YesImBot core，请升级核心");
+        ctx.on("ready", async () => {
+            if (!active) return;
+            await ctx.database.prepared();
+            if (!active) return;
+            const domain = JSON.stringify([getScope(ctx), getScope(ctx, { owner: ctx })]);
+            workerConfig.durableQueue = new SummaryQueue(ctx.database, domain);
+            await worker.init();
+        });
+    }
     ctx.on("yesimbot/before-user-stimulus", async (session: Session) =>
         track(
             (async () => {
@@ -380,6 +396,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
                         {
                             ...source,
                             provenance: {
+                                guildId: session.guildId,
                                 scene: sceneKey(session as any),
                                 platform: session.platform,
                                 selfId: session.selfId,
@@ -510,14 +527,27 @@ export function applySharedMemory(ctx: Context, config: Config) {
     const personTool = {
         name: "person_memory",
         description:
-            "共同域人物记忆。list 列出可查询人物；read_many 用 account_ids 多选或 all=true 全选，fields 选 overview/structured/full，cursor 继续分页。read/search/history 查资料；propose 提交画像；propose_link 提交账号关联。review 等管理员确认，auto 可自动接受；锁定、暂停与版本校验始终生效。account_id 可为当前平台 ID、人物 UUID 或 JSON [平台,ID]；消息证据使用当前场景消息 ID，跨场景证据使用 people.sources 或 read 返回的来源编号。",
+            "共同域人物记忆。claims 列出逐条认识，claim_evidence 读取原始证据，propose_claim 补证/反证/修订/停用；有逐条认识后不能整段覆盖。list 列出可查询人物；read_many 用 account_ids 多选或 all=true 全选，fields 选 overview/structured/full，cursor 继续分页。read/search/history 查资料；propose 提交画像；propose_link 提交账号关联。review 等管理员确认，auto 可自动接受；锁定、暂停与版本校验始终生效。account_id 可为当前平台 ID、人物 UUID 或 JSON [平台,ID]；消息证据使用当前场景消息 ID，跨场景证据使用 people.sources 或 read 返回的来源编号。",
         isSupported: readable,
         parameters: Schema.object({
-            action: Schema.union(["list", "read_many", "read", "search", "history", "propose", "propose_link"]).required(),
+            action: Schema.union([
+                "list",
+                "read_many",
+                "read",
+                "search",
+                "history",
+                "propose",
+                "propose_link",
+                "claims",
+                "claim_evidence",
+                "propose_claim",
+            ]).required(),
             account_id: Schema.string(),
             query: Schema.string(),
             profile: profileInputSchema(),
             ...catalogParameters(),
+            ...claimParameters(),
+            offset: Schema.natural(),
             message_ids: Schema.array(Schema.string()),
             person_id: Schema.string(),
             person_revision: Schema.number(),
@@ -546,6 +576,36 @@ export function applySharedMemory(ctx: Context, config: Config) {
                     )
                         throw new Error("人物资料或查询权限已改变，请重新查询");
                 };
+                if (["claims", "claim_evidence", "propose_claim"].includes(args.action)) {
+                    const targets = await targetsFor(session, scope);
+                    const activeRequest = () => requestCurrent() && targets.every((target) => targetAllowed(target, session));
+                    const result = await executeClaimTool(args, {
+                        store: writingStore(session),
+                        scope,
+                        ref: refOf(session, args.account_id),
+                        active: activeRequest,
+                        allowClaim: (claim) =>
+                            !claim.scene ||
+                            targets.some(
+                                (target) =>
+                                    claim.scene === sceneKey({ ...target, userId: target.userId || session.userId } as SceneInput) &&
+                                    targetAllowed(target, session),
+                            ),
+                        allowEvidence: (source) =>
+                            !!source.provenance &&
+                            targets.some(
+                                (target) =>
+                                    source.provenance!.scene === sceneKey({ ...target, userId: target.userId || session.userId } as SceneInput) &&
+                                    targetAllowed(target, session),
+                            ),
+                        sourceId: (id) => (id.startsWith("source:") ? id : sourceRef(session as SceneInput, id)),
+                    });
+                    if (args.action === "propose_claim") {
+                        const latest = await store.read(scope);
+                        if (!activeRequest() || latest.settings.mode === "off") throw new Error("人物维护权限已改变");
+                    } else await ensureCurrent(targets);
+                    return success(result);
+                }
                 if (args.action === "list" || args.action === "read_many") {
                     const targets = await targetsFor(session, scope);
                     const allowScene = (scene: { key: string; platform: string; selfId: string; channelId: string }) =>
@@ -570,6 +630,17 @@ export function applySharedMemory(ctx: Context, config: Config) {
                     const targets = await targetsFor(session, scope);
                     const projected = Object.values(state.people).map((person) => ({
                         ...person,
+                        legacyProfile: person.stale ? undefined : person.legacyProfile,
+                        claims: visibleClaims(
+                            person,
+                            (claim) =>
+                                !claim.scene ||
+                                targets.some(
+                                    (target) =>
+                                        claim.scene === sceneKey({ ...target, userId: target.userId || session.userId } as SceneInput) &&
+                                        targetAllowed(target, session),
+                                ),
+                        ),
                         ...visibleProfile(person, (scene) => profileSceneAllowed(scene, targets, session)),
                         evidence: [],
                     }));
@@ -590,13 +661,34 @@ export function applySharedMemory(ctx: Context, config: Config) {
                     await ensureCurrent(targets);
                     return success({
                         ...found.person,
+                        claims: visibleClaims(
+                            found.person,
+                            (claim) =>
+                                !claim.scene ||
+                                targets.some(
+                                    (target) =>
+                                        claim.scene === sceneKey({ ...target, userId: target.userId || session.userId } as SceneInput) &&
+                                        targetAllowed(target, session),
+                                ),
+                        ),
+                        legacyProfile: found.person.stale ? undefined : found.person.legacyProfile,
                         ...visibleProfile(found.person, (scene) => profileSceneAllowed(scene, targets, session)),
-                        evidence: found.person.evidence.map((e) => ({
-                            id: e.id,
-                            userId: e.userId,
-                            timestamp: e.timestamp,
-                            provenance: e.provenance,
-                        })),
+                        evidence: found.person.evidence
+                            .filter(
+                                (e) =>
+                                    !!e.provenance &&
+                                    targets.some(
+                                        (target) =>
+                                            e.provenance!.scene === sceneKey({ ...target, userId: target.userId || session.userId } as SceneInput) &&
+                                            targetAllowed(target, session),
+                                    ),
+                            )
+                            .map((e) => ({
+                                id: e.id,
+                                userId: e.userId,
+                                timestamp: e.timestamp,
+                                provenance: e.provenance,
+                            })),
                         accounts: found.accounts,
                     });
                 }
@@ -639,21 +731,23 @@ export function applySharedMemory(ctx: Context, config: Config) {
                 if (!isCurrent()) throw new Error("共同记忆请求或来源权限已失效");
                 const writing = writingStore(args.session),
                     expected = { personId: args.person_id, personRevision: args.person_revision, accountRevision: args.account_revision };
-                if (args.action === "propose") return success(await writing.propose(scope, ref, args.profile, ids, "main-model", expected, isCurrent));
+                if (args.action === "propose") {
+                    const proposal = await writing.propose(scope, ref, args.profile, ids, "main-model", expected, isCurrent);
+                    return success({ id: proposal.id, type: "profile", personId: proposal.personId, state: proposal.state });
+                }
                 if (!Number.isSafeInteger(args.target_revision) || args.target_revision < 0) throw new Error("请提供目标人物版本");
-                return success(
-                    await writing.proposeLink(
-                        scope,
-                        ref,
-                        args.target_person_id,
-                        args.confidence,
-                        args.reason,
-                        ids,
-                        "main-model",
-                        { ...expected, targetRevision: args.target_revision },
-                        isCurrent,
-                    ),
+                const proposal = await writing.proposeLink(
+                    scope,
+                    ref,
+                    args.target_person_id,
+                    args.confidence,
+                    args.reason,
+                    ids,
+                    "main-model",
+                    { ...expected, targetRevision: args.target_revision },
+                    isCurrent,
                 );
+                return success({ id: proposal.id, type: "link", sourcePersonId: proposal.sourcePersonId, state: "pending" });
             } catch (error) {
                 return failed(error);
             }
@@ -761,13 +855,13 @@ export function applySharedMemory(ctx: Context, config: Config) {
         }
         await w.settings(scope, { mode }, actor(s));
         generations.set(scope, (generations.get(scope) ?? 0) + 1);
-        worker.cancel(scope);
+        await worker.cancel(scope);
         return `共同记忆模式：${mode}`;
     });
     for (const paused of [true, false])
         command(`people.${paused ? "pause" : "resume"}`, paused ? "暂停模型维护，读取和人工修改继续" : "恢复模型维护", async (s, w, scope) => {
             await w.settings(scope, { paused }, actor(s));
-            if (paused) worker.cancel(scope);
+            if (paused) await worker.cancel(scope);
             return `维护${paused ? "已暂停" : "已恢复"}`;
         });
     command("people.sources <account:string>", "查看有原始定位的近期证据", async (s, _w, scope, [account]) => store.sources(scope, refOf(s, account), 10));
@@ -792,7 +886,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
     });
     command("people.revert <id:string>", "条件撤销修改，保留递增版本", async (s, w, scope, [id]) => {
         await w.revert(scope, id, actor(s));
-        worker.cancel(scope);
+        await worker.cancel(scope);
         return "已撤销；人物与关联版本继续递增";
     });
     command("people.archive <ref:string> [revision:natural]", "预览或按版本归档档案", async (s, w, scope, [ref, revision]) => {
@@ -832,12 +926,12 @@ export function applySharedMemory(ctx: Context, config: Config) {
     });
     ctx.on("dispose", async () => {
         active = false;
-        worker.stop();
+        const stopped = worker.stop();
         if (typeof inject === "function") inject();
         removers.forEach((remove, i) => {
             if (typeof remove === "function") remove();
             else toolService.unregisterTool(i ? "person_recall" : "person_memory");
         });
-        await Promise.allSettled([...pending, worker.idle()]);
+        await Promise.allSettled([...pending, stopped]);
     });
 }

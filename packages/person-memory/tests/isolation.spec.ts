@@ -6,8 +6,12 @@ import { WorldStateService } from "../../core/src/world/service";
 import { PersonStore, registerModels } from "../src/store";
 import { fixture } from "./helpers";
 function wrap(db, intercept) {
+    // Separate connection coordinators model independent processes; the backing
+    // database still arbitrates commits through its unique audit INSERT.
+    const connectionTables = {};
     return new Proxy(db, {
         get(target, key) {
+            if (key === "tables") return connectionTables;
             if (key === "transact") return (fn) => target.transact((tx) => fn(wrap(tx, intercept)));
             if (key === "create") return (table, data) => intercept(target, table, data);
             const value = target[key];
@@ -167,8 +171,11 @@ test("a delayed cache write may regress but reads replay committed state and rep
     await store.recognize("s", "old", "Old");
     const started = deferred(),
         release = deferred();
+    const connectionTables = {};
     const db = new Proxy(ctx.database, {
         get(target, key) {
+            // Simulate a second process without sharing the in-process scope mutex.
+            if (key === "tables") return connectionTables;
             if (key === "set")
                 return async (table, query, data) => {
                     if (table === "person_memory.state" && data.revision === 2) {

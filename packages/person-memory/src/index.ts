@@ -1,14 +1,19 @@
 import { Context, Schema, h, type Session } from "koishi";
+import * as core from "koishi-plugin-yesimbot";
 
 import { PeopleCatalog } from "./catalog";
+import { claimParameters, executeClaimTool, visibleClaims } from "./claim-tools";
+import type { ClaimChange } from "./claims";
 import { describePeopleCommand } from "./command-help";
 import { identityWarning, renderPeople } from "./context";
 import type { ProfileDocument } from "./profile";
 import { DEFAULT_PROFILE_SYSTEM_PROMPT, mainProfilePolicy } from "./profile-prompt";
 import { catalogParameters, catalogProfile, catalogRequest, profileInputSchema, visibleProfile } from "./profile-tools";
 import { applySharedMemory } from "./shared-runtime";
+import { summarySourceAllowed } from "./source-policy";
 import { PersonStore, registerModels, sceneKey, type Audit, type LinkProposal, type Mode, type Person, type Proposal, type SceneInput } from "./store";
-import { SummaryWorker, summaryResponseText, type SummaryModel } from "./worker";
+import { registerSummaryQueueModels, SummaryQueue } from "./summary-queue";
+import { SummaryWorker, summaryResponseText, type SummaryModel, type WorkerConfig } from "./worker";
 
 declare module "koishi" {
     interface Events {
@@ -139,6 +144,8 @@ function profileView(p: Person) {
         name: p.name,
         provisional: p.provisional,
         ...visibleProfile(p),
+        claims: visibleClaims(p),
+        legacyProfile: p.stale ? undefined : p.legacyProfile,
         stale: p.stale,
         locked: p.locked,
         revision: p.revision,
@@ -235,6 +242,7 @@ export function apply(ctx: Context, config: Config) {
         return applySharedMemory(ctx, config);
     }
     registerModels(ctx);
+    if (config.modelGroup) registerSummaryQueueModels(ctx);
     const logger = ctx.logger(name),
         store = new PersonStore(ctx.database, config.mode);
     let active = true;
@@ -260,18 +268,28 @@ export function apply(ctx: Context, config: Config) {
             const result = await (models?.withUsageScope ? models.withUsageScope(attribution || { purpose: "人物记忆摘要" }, request) : request());
             return summaryResponseText(result, config.summaryMaxTokens ?? 4096);
         };
-    const worker = new SummaryWorker(
-        store,
-        model,
-        {
-            threshold: config.summaryThreshold,
-            cooldownMs: config.cooldownSeconds * 1000,
-            timeoutMs: config.timeoutSeconds * 1000,
-            maxQueue: config.maxQueue,
-            systemPrompt: config.profileSystemPrompt,
-        },
-        (error) => logger.warn(`后台人物总结未接受：${String(error)}`),
-    );
+    const workerConfig: WorkerConfig = {
+        threshold: config.summaryThreshold,
+        cooldownMs: config.cooldownSeconds * 1000,
+        timeoutMs: config.timeoutSeconds * 1000,
+        maxQueue: config.maxQueue,
+        systemPrompt: config.profileSystemPrompt,
+        sourceAllowed: (scope, _userId, evidence) => summarySourceAllowed(ctx, evidence, scope, false, allowed, key),
+    };
+    const worker = new SummaryWorker(store, model, workerConfig, (error) => logger.warn(`后台人物总结未接受：${String(error)}`));
+    if (model) {
+        const getScope = (core as unknown as { getPersistentInstanceScope?: (ctx: Context, options?: { owner?: Context }) => string })
+            .getPersistentInstanceScope;
+        if (!getScope) throw new Error("持久人物总结需要支持稳定实例 scope 的 YesImBot core，请升级核心");
+        ctx.on("ready", async () => {
+            if (!active) return;
+            await ctx.database.prepared();
+            if (!active) return;
+            const domain = JSON.stringify([getScope(ctx), getScope(ctx, { owner: ctx })]);
+            workerConfig.durableQueue = new SummaryQueue(ctx.database, domain);
+            await worker.init();
+        });
+    }
     const removeInjection = deps.yesimbot.prompt.inject("person_memory", 35, async (view) => {
         if (!view.session || !allowed(view.session)) return "";
         const session = view.session;
@@ -320,6 +338,7 @@ export function apply(ctx: Context, config: Config) {
                     text: session.content,
                     timestamp: Number(session.timestamp) || Date.now(),
                     provenance: {
+                        guildId: session.guildId,
                         platform: session.platform,
                         selfId: session.selfId || session.bot.selfId,
                         channelId: session.channelId!,
@@ -341,7 +360,7 @@ export function apply(ctx: Context, config: Config) {
     const tool = {
         name: "person_memory",
         description:
-            "仅操作当前场景。list 列出可查询人物；read_many 用 account_ids 多选或 all=true 全选，fields 选 overview/structured/full，cursor 继续分页。read(account_id) 读取账号 ID 或人物 UUID 的画像与版本；search(query) 最多返回 5 个摘要；history(account_id) 读取该账号或人物最近 10 次修改的元数据和有限变更摘要，详细证据由管理员核对。propose 提交完整画像，需 account_id、profile、message_ids、person_id、person_revision、account_revision；auto 模式可接受画像。propose_link 提交账号关联建议，另需 target_person_id、target_revision、confidence、reason；即使 auto 模式也始终待管理员审核。两种候选都需 1–10 个当前账号的实际消息 ID 和最新版本。资料是可修正信念，确信度不代表身份认证。不能跨群、直接关联、合并、审批或覆盖人工锁定。",
+            "仅操作当前场景。claims 列出逐条认识及版本，claim_evidence 读取原始证据，propose_claim 补证/反证/修订/停用；已有逐条认识后请用该入口维护，不能整段覆盖。list 列出可查询人物；read_many 用 account_ids 多选或 all=true 全选，fields 选 overview/structured/full，cursor 继续分页。read(account_id) 读取账号 ID 或人物 UUID 的画像与版本；search(query) 最多返回 5 个摘要；history(account_id) 读取该账号或人物最近 10 次修改的元数据和有限变更摘要，详细证据由管理员核对。propose 提交完整画像，需 account_id、profile、message_ids、person_id、person_revision、account_revision；auto 模式可接受画像。propose_link 提交账号关联建议，另需 target_person_id、target_revision、confidence、reason；即使 auto 模式也始终待管理员审核。两种候选都需 1–10 个当前账号的实际消息 ID 和最新版本。资料是可修正信念，确信度不代表身份认证。不能跨群、直接关联、合并、审批或覆盖人工锁定。",
         parameters: Schema.object({
             action: Schema.union([
                 Schema.const("read"),
@@ -351,11 +370,16 @@ export function apply(ctx: Context, config: Config) {
                 Schema.const("history"),
                 Schema.const("propose"),
                 Schema.const("propose_link"),
+                Schema.const("claims"),
+                Schema.const("claim_evidence"),
+                Schema.const("propose_claim"),
             ]).required(),
             account_id: Schema.string().description("read/history 必填；当前场景的平台账号 ID 或人物 UUID；候选须平台账号 ID"),
             query: Schema.string().description("search 必填；1–80 字的关键词"),
             profile: profileInputSchema(),
             ...catalogParameters(),
+            ...claimParameters(),
+            offset: Schema.natural().description("claims/claim_evidence 分页位置"),
             message_ids: Schema.array(Schema.string()).description("两种候选必填；实际来源消息 ID，1 到 10 个"),
             person_id: Schema.string().description("两种候选必填；来源人物 UUID"),
             person_revision: Schema.number().min(0).step(1).description("两种候选必填；读到的来源画像 revision"),
@@ -372,6 +396,9 @@ export function apply(ctx: Context, config: Config) {
             account_id?: string;
             query?: string;
             profile?: string | ProfileDocument;
+            claim_id?: string;
+            changes?: ClaimChange[];
+            offset?: number;
             account_ids?: string[];
             all?: boolean;
             fields?: "overview" | "structured" | "full";
@@ -418,6 +445,20 @@ export function apply(ctx: Context, config: Config) {
                     )
                         throw new Error("人物资料或查询权限已改变，请重新查询");
                 };
+                if (["claims", "claim_evidence", "propose_claim"].includes(args.action)) {
+                    if (!args.account_id) throw new Error("请提供 account_id");
+                    const result = await executeClaimTool(args, {
+                        store,
+                        scope,
+                        ref: args.account_id,
+                        active: current,
+                        allowClaim: () => current(),
+                        allowEvidence: () => current(),
+                        sourceId: (id) => id,
+                    });
+                    if (!current()) throw new Error("认识请求已失效");
+                    return Success(result);
+                }
                 if (args.action === "list" || args.action === "read_many") {
                     const result = await catalog.query(
                         `${scope}:${binding}`,
@@ -545,12 +586,13 @@ export function apply(ctx: Context, config: Config) {
         },
     };
     const removeTool = deps.yesimbot.tool.registerTool(tool);
-    ctx.on("dispose", () => {
+    ctx.on("dispose", async () => {
         active = false;
-        worker.stop();
+        const stopped = worker.stop();
         if (typeof removeTool === "function") removeTool();
         else deps.yesimbot.tool.unregisterTool(tool.name);
         if (typeof removeInjection === "function") removeInjection();
+        await stopped;
     });
 
     function command(
@@ -733,7 +775,7 @@ export function apply(ctx: Context, config: Config) {
     for (const paused of [true, false])
         command(`people.${paused ? "pause" : "resume"}`, paused ? "暂停当前场景模型维护，仍可查询和人工修改" : "恢复当前场景模型维护", async (scope, actor) => {
             await store.settings(scope, { paused }, actor);
-            if (paused) worker.cancel(scope);
+            if (paused) await worker.cancel(scope);
             return `当前场景已${paused ? "暂停" : "恢复"}维护`;
         });
     command("people.mode [mode:string]", "查看或设置当前场景 off/review/auto，不自动接受既有候选", async (scope, actor, [mode]) => {
@@ -744,7 +786,7 @@ export function apply(ctx: Context, config: Config) {
         await store.settings(scope, { mode }, actor);
         modes.set(scope, mode);
         generations.set(scope, (generations.get(scope) ?? 0) + 1);
-        worker.cancel(scope);
+        await worker.cancel(scope);
         return `当前场景维护模式：${mode}`;
     });
     command(
