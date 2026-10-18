@@ -12,6 +12,7 @@ async function getForward(payload: unknown, transform?: (elements: any[]) => Pro
     const extension = Object.create(InteractionsExtension.prototype);
     extension.ctx = stubCtx({ asset: { transform: transform || (async (elements: any[]) => elements.join("")) } }, { logger: { error() {} } });
     return extension.getForwardMsg({
+        mode: "recursive",
         session: { selfId: "bot", onebot: { getForwardMsg: async () => payload } },
         id: "forward-id",
     } as any);

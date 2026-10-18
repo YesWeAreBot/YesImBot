@@ -12,6 +12,7 @@ async function read(payloads: Record<string, unknown>, transform?: (elements: El
     const extension = Object.create(InteractionsExtension.prototype);
     extension.ctx = stubCtx({ asset: { transform: transform ?? (async (elements: Element[]) => elements.join("")) } }, { logger: { error() {}, debug() {} } });
     const result = await extension.getForwardMsg({
+        mode: "recursive",
         id: "root",
         session: {
             selfId: "bot",

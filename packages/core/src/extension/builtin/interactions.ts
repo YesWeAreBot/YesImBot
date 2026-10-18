@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { Context, h, Schema } from "koishi";
 import { CQCode } from "koishi-plugin-adapter-onebot";
 
@@ -5,6 +7,7 @@ import { Extension, Tool, withInnerThoughts } from "../../extension/decorators";
 import { Failed, Success } from "../../extension/helpers";
 import { Infer } from "../../extension/types";
 import { assertReplyTurn, formatDate, isEmpty } from "../../shared";
+import { ForwardLayerCache, forwardMessageList } from "../forward-layer";
 
 interface InteractionsConfig {}
 
@@ -19,6 +22,7 @@ const InteractionsConfigSchema: Schema<InteractionsConfig> = Schema.object({});
     builtin: true,
 })
 export default class InteractionsExtension {
+    private forwardLayers?: ForwardLayerCache;
     static readonly Config = InteractionsConfigSchema;
     static readonly inject = ["yesimbot"];
 
@@ -127,28 +131,118 @@ export default class InteractionsExtension {
 
     @Tool({
         name: "get_forward_msg",
-        description: `获取合并转发消息的内容，按根转发第0层、子转发第1层、普通内容第2层展开；第2层的转发不再展开。同层并列内容不设数量上限。无法展开的子转发保留标记及原因，平台未返回的内容无法恢复。`,
+        description: `按转发资源 ID 读取当前一层，保留普通消息与子包 <forward id="..."/>；有子包时用子包 ID 再调用本工具，不要把外层消息 ID 当资源 ID。offset/limit 分页，nextOffset 继续，无横向总条数截断。mode=recursive 可显式选择旧版三层自动展开。`,
         parameters: withInnerThoughts({
-            id: Schema.string().required().description("合并转发 ID，如在 `<forward id='12345'>` 中的 12345 即是其 ID"),
+            id: Schema.string().required().description("转发资源 ID（必须字符串，如 7697801892654501477），不是外层消息 ID"),
+            mode: Schema.union(["layer", "recursive"]).default("layer"),
+            offset: Schema.natural().default(0),
+            limit: Schema.natural().min(1).max(50).default(20),
         }),
         isSupported: (session) => session.platform === "onebot",
     })
-    async getForwardMsg({ session, id }: Infer<{ id: string }>) {
+    async getForwardMsg({
+        session,
+        id,
+        mode = "layer",
+        offset = 0,
+        limit = 20,
+    }: Infer<{ id: string; mode?: "layer" | "recursive"; offset?: number; limit?: number }>) {
         if (!session) return Failed("session 不可用");
-        if (isEmpty(id)) return Failed("id is required");
+        if (typeof id !== "string" || !id.trim()) return Failed("转发资源 ID 必须为非空字符串，避免大整数精度丢失");
         try {
+            if (typeof id !== "string" || !id.trim()) throw new Error("转发资源 ID 必须为非空字符串，避免大整数精度丢失");
+            if (mode !== "layer" && mode !== "recursive") throw new Error("无效转发读取模式");
+            const internal =
+                typeof session.onebot?.getForwardMsg === "function"
+                    ? session.onebot
+                    : (session.bot?.internal as { getForwardMsg?: (id: string) => Promise<unknown> });
+            if (typeof internal?.getForwardMsg !== "function") throw new Error("当前适配器未提供 OneBot getForwardMsg 接口");
+            if (mode === "layer") {
+                if (!session.platform || !session.selfId || !session.channelId) throw new Error("转发读取缺少当前会话身份");
+                if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 50)
+                    throw new Error("转发分页须为非负 offset 和 1–50 的 limit");
+                const binding = () =>
+                    JSON.stringify([session.platform, session.selfId, session.channelId, !!session.isDirect, session.userId, session.guildId]);
+                const original = binding();
+                const world = this.ctx.yesimbot.world;
+                const target = {
+                    platform: session.platform,
+                    channelId: session.channelId,
+                    channelType: session.isDirect ? ("private" as const) : ("guild" as const),
+                };
+                const generation = world.l2_manager?.getHistoryGeneration(target) ?? 0;
+                const current = () => {
+                    assertReplyTurn();
+                    if (
+                        binding() !== original ||
+                        (typeof this.ctx.filter === "function" && !this.ctx.filter(session)) ||
+                        (typeof world.isChannelAllowed === "function" && !world.isChannelAllowed(session)) ||
+                        (world.l2_manager?.getHistoryGeneration(target) ?? 0) !== generation
+                    )
+                        throw new Error("转发读取期间会话、权限或历史已变化");
+                };
+                current();
+                this.forwardLayers ??= new ForwardLayerCache();
+                const scope = JSON.stringify([original, generation]);
+                let messages = this.forwardLayers.get(scope, id);
+                let snapshotCached = !!messages;
+                if (!messages) {
+                    if (id.startsWith("inline-forward:")) throw new Error("内嵌转发缓存不存在或已过期，请重新读取父包所在页");
+                    messages = forwardMessageList(await internal.getForwardMsg(id));
+                    current();
+                    snapshotCached = this.forwardLayers.put(scope, id, messages);
+                }
+                const nested = new Set<string>();
+                const selected = messages.slice(offset, offset + limit);
+                const content = selected.length
+                    ? await formatForwardMessage(
+                          this.ctx,
+                          selected,
+                          async () => {
+                              throw new Error("当前层不自动获取子包");
+                          },
+                          new Set([id]),
+                          {
+                              remember: (childId, payload) => {
+                                  current();
+                                  if (!this.forwardLayers!.put(scope, childId, forwardMessageList(payload)))
+                                      throw new Error("内嵌包超过缓存容量；可使用父包 ID 和 mode=recursive 读取完整内容");
+                              },
+                              nested,
+                          },
+                      )
+                    : "";
+                current();
+                const returned = Math.min(limit, Math.max(0, messages.length - offset));
+                const hasMore = offset + returned < messages.length;
+                return Success({
+                    kind: "forward-page",
+                    forwardId: id,
+                    snapshotCached,
+                    content,
+                    total: messages.length,
+                    offset,
+                    returned,
+                    hasMore,
+                    nextOffset: hasMore ? offset + returned : null,
+                    nestedForwardIds: [...nested],
+                    historyGeneration: generation,
+                    projection: { kind: "recalled", isNewEvidence: false },
+                    tips: "子包请用对应 forward ID 再读取；内嵌快照缓存10分钟，失效后可重新读取父包所在页。",
+                });
+            }
             const cache = new Map<string, Promise<unknown>>();
             const load = (forwardId: string): Promise<unknown> => {
                 assertReplyTurn();
                 let request = cache.get(forwardId);
                 if (!request) {
-                    request = Promise.resolve().then(() => session.onebot!.getForwardMsg(forwardId));
+                    request = Promise.resolve().then(() => internal.getForwardMsg!(forwardId));
                     cache.set(forwardId, request);
                 }
                 return request;
             };
             const forwardMessages = await load(id);
-            const formattedResult = await formatForwardMessage(this.ctx, forwardMessages, load, new Set([id]));
+            const formattedResult = await formatForwardMessage(this.ctx, forwardMessageList(forwardMessages), load, new Set([id]));
 
             return Success(formattedResult);
         } catch (error) {
@@ -181,7 +275,13 @@ function forwardTime(value: unknown): string {
 // The outer forward is level 0; ordinary messages may occupy level 2.
 const MAX_FORWARD_LEVEL = 2;
 
-async function formatForwardMessage(ctx: Context, messages: unknown, load: (id: string) => Promise<unknown>, ancestors: Set<string>): Promise<string> {
+async function formatForwardMessage(
+    ctx: Context,
+    messages: unknown,
+    load: (id: string) => Promise<unknown>,
+    ancestors: Set<string>,
+    layer?: { remember: (id: string, payload: unknown) => void; nested: Set<string> },
+): Promise<string> {
     const chunks: string[] = [];
     const append = (text: string) => chunks.push(text);
     const render = async (list: unknown, level: number, path: Set<string>): Promise<void> => {
@@ -235,6 +335,22 @@ async function formatForwardMessage(ctx: Context, messages: unknown, load: (id: 
                         case "forward": {
                             const id = forwardId(element.attrs.id, "forward.id");
                             const marker = h("forward", { id }).toString();
+                            const embedded = element.attrs.content ?? element.attrs.message;
+                            if (layer) {
+                                if (embedded !== undefined) {
+                                    try {
+                                        layer.remember(id, embedded);
+                                    } catch (error) {
+                                        assertReplyTurn();
+                                        append(`${marker}（内嵌内容未缓存：${error.message}）`);
+                                        layer.nested.add(id);
+                                        break;
+                                    }
+                                }
+                                layer.nested.add(id);
+                                append(marker);
+                                break;
+                            }
                             if (path.has(id)) {
                                 append(`${marker}（循环引用，未继续展开）`);
                                 break;
@@ -245,7 +361,7 @@ async function formatForwardMessage(ctx: Context, messages: unknown, load: (id: 
                             }
                             let opened = false;
                             try {
-                                const nested = await load(id);
+                                const nested = embedded !== undefined ? forwardMessageList(embedded) : await load(id);
                                 if (nested === undefined || nested === null) {
                                     append(`${marker}（平台未提供子转发内容）`);
                                     break;
@@ -256,7 +372,7 @@ async function formatForwardMessage(ctx: Context, messages: unknown, load: (id: 
                                         .replace(/\/>$/, ">")}\n`,
                                 );
                                 opened = true;
-                                await render(nested, level + 1, new Set(path).add(id));
+                                await render(forwardMessageList(nested), level + 1, new Set(path).add(id));
                             } catch {
                                 assertReplyTurn();
                                 append(`${marker}（子转发获取失败或数据无效）`);
@@ -266,6 +382,21 @@ async function formatForwardMessage(ctx: Context, messages: unknown, load: (id: 
                             break;
                         }
                         case "node": {
+                            if (layer) {
+                                const inlineId = `inline-forward:${createHash("sha256").update(JSON.stringify(element.attrs)).digest("hex").slice(0, 32)}`;
+                                const marker = h("forward", { id: inlineId, inline: true }).toString();
+                                try {
+                                    layer.remember(inlineId, [{ type: "node", data: element.attrs }]);
+                                } catch (error) {
+                                    assertReplyTurn();
+                                    append(`${marker}（内嵌内容未缓存：${error.message}）`);
+                                    layer.nested.add(inlineId);
+                                    break;
+                                }
+                                layer.nested.add(inlineId);
+                                append(marker);
+                                break;
+                            }
                             if (level + 1 >= MAX_FORWARD_LEVEL) {
                                 append("<forward/>（已达三层展开上限：第0层根转发、第1层子转发、第2层普通内容）");
                                 break;

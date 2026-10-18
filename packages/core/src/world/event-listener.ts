@@ -1,5 +1,6 @@
-import { Argv, Context, Logger, Random, Session } from "koishi";
+import { Argv, Context, Logger, Random, Session, h } from "koishi";
 import type { Universal } from "koishi";
+import { CQCode } from "koishi-plugin-adapter-onebot";
 
 import { AssetService } from "../asset";
 import type { LoggerService } from "../logger";
@@ -321,7 +322,22 @@ export class EventListenerManager {
         }
 
         // 使用原生序列化还原被分离到 session.quote 的引用元素。
-        const messageContent = session.toJSON().message?.content ?? session.content;
+        let messageContent = session.toJSON().message?.content ?? session.content;
+        // Some adapters render forward segments as unsupported text. Recover only
+        // the explicit OneBot segment resource ID, never QQ raw.msgId/resId guesses.
+        if (session.platform === "onebot" && session.onebot?.message) {
+            try {
+                const segments = CQCode.parse(session.onebot.message);
+                for (const element of segments) {
+                    if (element.type !== "forward" || typeof element.attrs.id !== "string" || !element.attrs.id) continue;
+                    const marker = h("forward", { id: element.attrs.id }).toString();
+                    if (!h.parse(messageContent || "").some((existing) => existing.type === "forward" && existing.attrs.id === element.attrs.id))
+                        messageContent = (messageContent || "") + marker;
+                }
+            } catch {
+                this.logger.debug("原始转发引用提取失败，保留适配器内容");
+            }
+        }
         const content = await this.assetService.transform(messageContent ?? "");
         this.logger.debug(`记录转义后的消息：${content}`);
 
