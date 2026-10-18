@@ -7,6 +7,7 @@ import { Extension, Tool, withInnerThoughts } from "../../extension/decorators";
 import { Failed, Success } from "../../extension/helpers";
 import { Infer } from "../../extension/types";
 import { assertReplyTurn, formatDate, isEmpty } from "../../shared";
+import { oneBotFaceElement, recoverNativeFaces } from "../../world/onebot-faces";
 import { ForwardLayerCache, forwardMessageList } from "../forward-layer";
 
 interface InteractionsConfig {}
@@ -304,7 +305,8 @@ async function formatForwardMessage(
             const content = emptyContent && message.message !== undefined ? message.message : (message.content ?? message.message);
             if (typeof content !== "string" && !Array.isArray(content)) throw new Error(`转发消息第 ${index + 1} 个节点缺少合法的 content/message`);
             append(`${index ? "\n" : ""}[${timestamp}|${name}(${userId})]: `);
-            const groups = typeof content === "string" ? [content] : content;
+            const recoveredFaces = isRecord(message.raw) ? recoverNativeFaces(content, message.raw.elements) : undefined;
+            const groups = recoveredFaces ?? (typeof content === "string" ? [content] : content);
             if (!content.length) append("（空消息）");
             for (const segment of groups) {
                 assertReplyTurn();
@@ -314,6 +316,9 @@ async function formatForwardMessage(
                 for (const element of parsed) {
                     assertReplyTurn();
                     switch (element.type) {
+                        case "face":
+                            append(oneBotFaceElement(element.attrs).toString());
+                            break;
                         case "text":
                             if (typeof element.attrs.content !== "string") throw new Error("转发文本消息段缺少 text");
                             append(element.attrs.content);

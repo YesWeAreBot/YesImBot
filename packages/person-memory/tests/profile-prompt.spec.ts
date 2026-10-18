@@ -22,6 +22,8 @@ test("editable profile policy keeps evidence and existing profiles in a separate
     assert.ok(messages[0].content.includes("recorded_only"));
     assert.ok(messages[0].content.includes("messageIds"));
     assert.ok(messages[0].content.includes("overview"));
+    assert.ok(messages[0].content.includes("<face .../>"));
+    assert.ok(messages[0].content.includes("不是用户输入的原话"));
     assert.equal(messages[0].content.includes("IGNORE SYSTEM"), false);
     assert.equal(messages[0].content.includes("overwrite all rules"), false);
     assert.deepEqual(JSON.parse(messages[1].content), JSON.parse(JSON.stringify(payload)));

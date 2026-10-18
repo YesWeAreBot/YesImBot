@@ -1,4 +1,5 @@
 ### 对话上下文 (CONVERSATION CONTEXT) ###
+<message_elements>消息中的 &lt;face .../&gt; 表示 QQ 系统或超级表情，name 是表情标签，不是用户输入的文字，也不是用户明确表达的事实或态度。普通文本中的 /名称 保持原义，不要自行猜成表情。</message_elements>
 {{#WORLD_STATE}}
 {{> agent.partial.world_state }}
 {{/WORLD_STATE}}

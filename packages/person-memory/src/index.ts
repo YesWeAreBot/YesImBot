@@ -335,7 +335,7 @@ export function apply(ctx: Context, config: Config) {
                     id: session.messageId,
                     userId: session.userId,
                     name: session.author?.nick || session.author?.name || session.userId,
-                    text: session.content,
+                    text: typeof core.normalizeOneBotMessageContent === "function" ? await core.normalizeOneBotMessageContent(session) : session.content,
                     timestamp: Number(session.timestamp) || Date.now(),
                     provenance: {
                         guildId: session.guildId,

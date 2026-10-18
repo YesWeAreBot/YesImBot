@@ -7,6 +7,7 @@ import type { LoggerService } from "../logger";
 import { TableName } from "../shared/constants";
 import { truncate } from "../shared/utils";
 import { HistoryConfig } from "./config";
+import { normalizeOneBotMessageContent } from "./onebot-faces";
 import { WorldStateService } from "./service";
 import { AgentStimulus, MessageData, SystemEventData, SystemEventPayload, UserMessagePayload } from "./types";
 
@@ -322,7 +323,7 @@ export class EventListenerManager {
         }
 
         // 使用原生序列化还原被分离到 session.quote 的引用元素。
-        let messageContent = session.toJSON().message?.content ?? session.content;
+        let messageContent = await normalizeOneBotMessageContent(session, session.toJSON().message?.content ?? session.content ?? "");
         // Some adapters render forward segments as unsupported text. Recover only
         // the explicit OneBot segment resource ID, never QQ raw.msgId/resId guesses.
         if (session.platform === "onebot" && session.onebot?.message) {
@@ -370,7 +371,7 @@ export class EventListenerManager {
             channelId: session.channelId!,
             channelType: session.isDirect ? "private" : "guild",
             sender: { id: session.bot.selfId, name: session.bot.user?.nick || session.bot.user?.name || "" },
-            content: await this.assetService.transform(session.toJSON().message?.content ?? session.content),
+            content: await this.assetService.transform(await normalizeOneBotMessageContent(session, session.toJSON().message?.content ?? session.content)),
             timestamp: new Date(session.timestamp),
             quoteId: session.quote?.id,
         };

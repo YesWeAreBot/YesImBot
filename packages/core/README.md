@@ -220,3 +220,11 @@ yarn bundle
 `get_forward_msg` 默认只读取当前层：普通消息直接呈现，子包保留 `<forward id="..."/>`，模型需要时再用子包 ID 调用工具。`offset` 和 `limit` 用于分页（每页 1–50 条，默认 20 条），按 `nextOffset` 继续；没有横向总条数截断。`mode: "recursive"` 保留旧版三层自动展开。
 
 父包附带的内嵌子包按当前机器人、会话、调用者和历史代次隔离缓存；匿名内嵌节点使用 `inline-forward:` 临时引用，不冒充平台资源 ID。缓存最多 128 个包、合计 16 MiB，10 分钟到期或服务重载后失效；可重新读取父包所在页恢复。超出缓存的根包仍可逐页读取，内嵌内容无法缓存时明确说明，并可显式使用父包的递归读取模式回读。缓存限制不裁掉普通消息或后续页。
+
+## OneBot 表情与文字
+
+QQ 系统表情在上下文、人物记忆采集和合并转发中使用 `<face platform="onebot" id="..." name="冤种" kind="super"/>` 等 XML 标记，名称只是表情标签。优先保留原始表情段的名称、超级表情及连击信息；没有可靠名称时显示“未知QQ表情”和 ID。手打的 `/冤种` 仍是文字。
+
+当 OneBot 将表情降级为文本，但上报中还保留原生 `faceElement` 时，只有原始消息数组与原生元素位置一致、名称完全匹配，且重新解码的完整消息与当前适配器内容一致，才恢复表情标记。没有类型证据或内容已经被其他插件改写时不猜测；已存储的旧纯文字记录也不会被批量改写。本处理仅整理提供给模型和记忆的副本，不修改其他 Koishi 插件收到的会话。
+
+格式参考：[OneBot 11](https://github.com/botuniverse/onebot-11/blob/master/message/segment.md)、[NapCat](https://napneko.github.io/onebot/segment)、[LLBot 收消息实现](https://github.com/LLOneBot/LuckyLilliaBot/blob/main/src/onebot11/transform/message/incoming.ts)、[Lagrange OneBot v1](https://github.com/LagrangeDev/Lagrange.Core/blob/v1/Lagrange.OneBot/Message/Entity/FaceSegment.cs)。
