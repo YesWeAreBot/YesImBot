@@ -200,3 +200,13 @@ yarn bundle
 ## ⭐ Star 历史
 
 [![Athena/YesImBot Star 历史图表](https://api.star-history.com/svg?repos=Hydrogest/Yesimbot&type=Date)](https://star-history.com/#Hydrogest/Yesimbot&Date)
+
+## 上下文整理与来源回读
+
+`contextInputBudgetTokens` 控制发送模型前的上下文软预算，默认 16000，设为 0 关闭。整理优先保留本轮触发消息、引用来源、最新工具轮次与尚未消费的手动召回结果，再裁减较低优先级摘要和旧轮次。原始记录不被修改；固定提示词或受保护内容仍可能超过软预算，最终模型容量检查继续生效。
+
+- `conversation_read`：按当前会话的原始消息 ID 读取前后文，保留 XML、媒体和引用关系。前后最多各 50 条，每页最多 20 条；使用返回的游标继续读取。
+- `conversation_state_read` / `conversation_state_update`：保存当前会话的工作话题和未决问题。更新需要版本号及当前会话原始消息来源；来源丢失、变化或历史清除后返回未知。工作笔记不代表已核实的事实。
+- `tool_output_read`：读取长工具结果。超过 24000 个 JSON 字符的成功结果返回预览和资源地址，按 `nextOffset` 继续读取完整 JSON。偏移按 UTF-16 代码单元计算；未读取内容不能视作已知。
+
+工具结果资源绑定当前实例、会话与历史代次，最长保存 24 小时，服务重载后旧地址失效；单文件上限 64 MiB，目录上限 256 MiB / 512 个文件。序列化或保存失败会明确返回结果不可读取的信息，已完成工具操作的执行状态保持不变，避免诱发重复执行。

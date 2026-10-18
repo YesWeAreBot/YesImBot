@@ -133,6 +133,76 @@ export default class MemoryExtension {
         }
     }
     @Tool({
+        name: "conversation_read",
+        description:
+            "按当前会话消息 ID 读取完整原始消息及前后文；按时间和 ID 稳定排序，保留 XML/媒体和引用关系。前后最多各 50 条，每页最多 20 条，用 nextOffset 继续；窗口外用 before/after.nextAnchorId 继续。重复读取同一 sourceIdentity 不构成新证据。",
+        parameters: withInnerThoughts({
+            message_id: Schema.string().required().description("当前会话中的原始消息 ID"),
+            before: Schema.number().min(0).max(50).step(1).default(5),
+            after: Schema.number().min(0).max(50).step(1).default(5),
+            offset: Schema.number().min(0).step(1).default(0),
+            limit: Schema.number().min(1).max(20).step(1).default(20),
+        }),
+    })
+    async conversationRead(args: Infer<{ message_id: string; before?: number; after?: number; offset?: number; limit?: number }>) {
+        if (!args.session) return Failed("session 不可用");
+        try {
+            return Success(
+                await this.ctx.yesimbot.world.readMessageWindow(args.session, {
+                    messageId: args.message_id,
+                    before: args.before,
+                    after: args.after,
+                    offset: args.offset,
+                    limit: args.limit,
+                }),
+            );
+        } catch (error) {
+            return Failed(`消息读取失败：${String(error)}`);
+        }
+    }
+
+    @Tool({
+        name: "conversation_state_read",
+        description: "读取当前会话显式保存的工作话题和未决问题（不是事实断言）；无已验证来源时返回 unknown。使用返回 revision 进行替换更新。",
+        parameters: withInnerThoughts({}),
+    })
+    async conversationStateRead(args: Infer<{}>) {
+        if (!args.session) return Failed("session 不可用");
+        try {
+            return Success(await this.ctx.yesimbot.world.getConversationState(args.session));
+        } catch (error) {
+            return Failed(`工作状态读取失败：${String(error)}`);
+        }
+    }
+
+    @Tool({
+        name: "conversation_state_update",
+        description:
+            "显式完整替换当前会话工作话题/未决问题；不自动推断事实。非空状态须引用当前会话中 1–10 个现存原始消息 ID，并提交读取到的 expectedRevision（初始 0）。空 topic/issues 和空来源数组可清空；省略字段按空替换。",
+        parameters: withInnerThoughts({
+            topic: Schema.string().max(1000),
+            openIssues: Schema.array(Schema.string().max(500)).max(10),
+            sourceMessageIds: Schema.array(Schema.string()).max(10).required(),
+            expectedRevision: Schema.number().min(0).step(1).required(),
+        }),
+    })
+    async conversationStateUpdate(args: Infer<{ topic?: string; openIssues?: string[]; sourceMessageIds: string[]; expectedRevision: number }>) {
+        if (!args.session) return Failed("session 不可用");
+        try {
+            return Success(
+                await this.ctx.yesimbot.world.updateConversationState(args.session, {
+                    topic: args.topic,
+                    openIssues: args.openIssues,
+                    sourceMessageIds: args.sourceMessageIds,
+                    expectedRevision: args.expectedRevision,
+                }),
+            );
+        } catch (error) {
+            return Failed(`工作状态更新失败：${String(error)}`);
+        }
+    }
+
+    @Tool({
         name: "memory_recall",
         description:
             "分页读取当前频道原始消息、L2 摘要或 L3 日记并提供完整原文；不裁正文。返回 hasMore 时用 nextOffset 继续。display 仅控制是否同时发送到聊天窗口，结果始终作为观察提供给你。",

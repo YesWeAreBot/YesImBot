@@ -2,3 +2,5 @@
 {{#WORLD_STATE}}
 {{> agent.partial.world_state }}
 {{/WORLD_STATE}}
+<conversation_focus>{{{CONVERSATION_FOCUS}}}</conversation_focus>
+{{#CONTEXT_BUDGET}}<context_budget>{{{CONTEXT_BUDGET}}}</context_budget>{{/CONTEXT_BUDGET}}

@@ -7,7 +7,7 @@ import { afterEach, expect, it } from "vitest";
 
 import { AgentCore } from "../src/agent/agent-core";
 import { Config } from "../src/config";
-import { getInstanceDirectory, getInstanceScope } from "../src/shared/instance-scope";
+import { getInstanceDirectory, getInstanceScope, getPersistentInstanceScope } from "../src/shared/instance-scope";
 import { InteractionManager } from "../src/world/interaction-manager";
 import { stubCtx } from "./helpers/yesimbot";
 
@@ -183,4 +183,15 @@ it("allows extensions sharing a core to explicitly retain their own plugin scope
     const b = { ...f.context("durable:b"), get: () => ({ ctx: core }) } as any;
     expect(getInstanceScope(a)).toBe(getInstanceScope(b));
     expect(getInstanceScope(a, undefined, { owner: a })).not.toBe(getInstanceScope(b, undefined, { owner: b }));
+});
+
+it("persistent consumers reject temporary scopes even after another consumer cached one", async () => {
+    const f = await fixture();
+    const owner = f.context();
+    const temporary = getInstanceScope(owner);
+    expect(() => getInstanceScope(owner, undefined, { requirePersistent: true })).toThrow("稳定");
+    expect(getInstanceScope(owner)).toBe(temporary);
+    expect(() => getPersistentInstanceScope(owner)).toThrow("稳定");
+    owner.scope.key = "yesimbot:late-loader-key";
+    expect(getInstanceScope(owner, undefined, { requirePersistent: true })).toBe(getInstanceScope(f.context("yesimbot:late-loader-key")));
 });

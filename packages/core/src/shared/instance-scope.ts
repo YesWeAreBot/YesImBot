@@ -8,6 +8,8 @@ const unmanagedScopes = new WeakMap<object, string>();
 export interface InstanceScopeOptions {
     /** Extensions can retain their own scope even when attached to a core. */
     owner?: Context;
+    /** Durable consumers must never adopt the per-process fallback namespace. */
+    requirePersistent?: boolean;
 }
 
 /**
@@ -44,6 +46,7 @@ export function getInstanceScope(ctx: Context, warn?: (message: string) => void,
     let namespace: string;
     if (keys.length) namespace = JSON.stringify(keys.reverse());
     else {
+        if (options.requirePersistent) throw new Error("未找到稳定插件实例标识，无法恢复持久任务");
         namespace = unmanagedScopes.get(owner)!;
         if (!namespace) {
             namespace = `unmanaged-${randomUUID()}`;
@@ -52,6 +55,11 @@ export function getInstanceScope(ctx: Context, warn?: (message: string) => void,
         }
     }
     return createHash("sha256").update(namespace).digest("hex").slice(0, 24);
+}
+
+/** A versioned entry point for consumers that require restart-stable ownership. */
+export function getPersistentInstanceScope(ctx: Context, options: Pick<InstanceScopeOptions, "owner"> = {}): string {
+    return getInstanceScope(ctx, undefined, { ...options, requirePersistent: true });
 }
 
 /** Legacy files at the root have no instance owner and must never be adopted. */

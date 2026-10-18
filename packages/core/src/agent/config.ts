@@ -217,6 +217,8 @@ export type AgentBehaviorConfig = ArousalConfig &
         streamAction: boolean;
         nativeToolCalling?: boolean;
         heartbeat: number;
+        /** Soft input packing budget; 0 disables packing. The model capacity guard remains authoritative. */
+        contextInputBudgetTokens?: number;
 
         newMessageStrategy: "skip" | "immediate" | "deferred";
         deferredProcessingTime?: number;
@@ -227,6 +229,9 @@ export const AgentBehaviorConfigSchema: Schema<AgentBehaviorConfig> = Schema.int
     Schema.object({
         nativeToolCalling: Schema.boolean().default(false).description("使用模型原生工具调用（需模型支持），关闭时沿用 JSON 动作"),
         streamAction: Schema.boolean().default(false).experimental().description("实验性流式动作处理"),
+        contextInputBudgetTokens: Schema.natural()
+            .default(16000)
+            .description("上下文软输入预算（估算 Token，默认 16000；0 关闭）。优先保留本次触发消息、引用原文和近期完整轮次；模型容量与输出预留仍独立检查"),
         heartbeat: Schema.number().min(1).max(10).default(5).role("slider").step(1).description("每轮对话最大心跳次数"),
         newMessageStrategy: Schema.union([
             Schema.const("skip").description("跳过新消息（默认）"),

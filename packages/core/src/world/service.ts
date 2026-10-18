@@ -8,16 +8,20 @@ import type { LoggerService } from "../logger";
 import { ModelService } from "../model";
 import { TableName } from "../shared/constants";
 import { sanitizeDiagnostic } from "../shared/diagnostic-sanitizer";
+import { getInstanceScope } from "../shared/instance-scope";
 import { YesImBotService } from "../shared/service";
 import { HISTORY_CHANNELS, MESSAGE_KEY_MIGRATION, registerChannelModel, sessionChannelType } from "./channel-metadata";
 import { HistoryCommandManager } from "./commands";
 import { ContextBuilder } from "./context-builder";
+import { ConversationStateManager, registerConversationStateModel, type ConversationStateInput } from "./conversation-state";
 import { EventListenerManager } from "./event-listener";
 import { historyCoordinator, withHistoryBarrier } from "./history-coordinator";
 import { InteractionManager } from "./interaction-manager";
 import { SemanticMemoryManager } from "./l2-semantic-memory";
 import { ArchivalMemoryManager } from "./l3-archival-memory";
 import { diaryDateKey } from "./memory-date";
+import type { MessageWindowTarget } from "./message-window";
+import { readMessageWindowPage, type MessageWindowOptions } from "./message-window";
 import { recallRawPage, type RawRecallOptions } from "./raw-recall";
 import { recallStoredMemories, type StoredRecallOptions } from "./recall";
 import { AgentStimulus, BotMuteStateData, DiaryEntryData, MemberData, MemoryChunkData, MessageData, SystemEventData, WorldState } from "./types";
@@ -64,6 +68,7 @@ export class WorldStateService extends YesImBotService<Config> {
     private readonly mutedChannels = new Map<string, number>();
     private readonly allMutedChannels = new Map<string, number>();
     private muteWrites?: Promise<void>;
+    private conversationState?: ConversationStateManager;
 
     private clearTimer: ReturnType<Context["setInterval"]> | null = null;
 
@@ -99,6 +104,7 @@ export class WorldStateService extends YesImBotService<Config> {
     }
 
     public async stop(): Promise<void> {
+        this.conversationState?.dispose();
         this.eventListenerManager.stop();
         const stoppingDiaries = this.l3_manager.stop();
         if (this.clearTimer) {
@@ -150,6 +156,78 @@ export class WorldStateService extends YesImBotService<Config> {
         if (!this.ctx.filter(session) || !this.isChannelAllowed(session)) throw new Error("召回期间会话配置已改变");
         if (this.l2_manager.getHistoryGeneration(target) !== historyGeneration) throw new Error("召回期间历史已清除，请重新召回");
         return { ...page, historyGeneration };
+    }
+
+    /** Exact current-target raw source read. Session identity is fixed across every await. */
+    public async readMessageWindow(session: Session, options: MessageWindowOptions) {
+        const target = { platform: session.platform, channelId: session.channelId!, selfId: session.selfId, channelType: sessionChannelType(session)! };
+        const binding = () =>
+            JSON.stringify([session.platform, session.channelId, session.selfId, sessionChannelType(session), session.userId, session.guildId]);
+        const originalBinding = binding();
+        const assertAuthorized = () => {
+            if (binding() !== originalBinding) throw new Error("读取期间会话身份已改变");
+            if (!this.ctx.filter(session) || !this.isChannelAllowed(session)) throw new Error("消息窗口会话授权或配置已改变");
+        };
+        assertAuthorized();
+        await this.l2_manager.waitForHistoryClear(target);
+        assertAuthorized();
+        const historyGeneration = this.l2_manager.getHistoryGeneration(target);
+        const assertCurrent = () => {
+            assertAuthorized();
+            if (this.l2_manager.getHistoryGeneration(target) !== historyGeneration) throw new Error("读取期间历史已清除，请重新读取");
+        };
+        const result = await withHistoryBarrier(historyCoordinator(this.ctx.database), target, async () => {
+            assertCurrent();
+            const page = await readMessageWindowPage(this.ctx.database, target, options);
+            assertCurrent();
+            return page;
+        });
+        assertCurrent();
+        return { ...result, historyGeneration };
+    }
+
+    public getConversationState(session: Session) {
+        return this.withConversationState(session, (manager, target, instance, assertCurrent) => manager.read(target, instance, assertCurrent));
+    }
+
+    public updateConversationState(session: Session, input: ConversationStateInput) {
+        return this.withConversationState(session, (manager, target, instance, assertCurrent) => manager.update(target, instance, input, assertCurrent));
+    }
+
+    private async withConversationState<T>(
+        session: Session,
+        operation: (manager: ConversationStateManager, target: MessageWindowTarget, instance: string, assertCurrent: () => void) => Promise<T>,
+    ) {
+        const target: MessageWindowTarget = {
+            platform: session.platform,
+            selfId: session.selfId,
+            channelId: session.channelId!,
+            channelType: sessionChannelType(session)!,
+        };
+        const binding = () =>
+            JSON.stringify([session.platform, session.selfId, session.channelId, sessionChannelType(session), session.userId, session.guildId]);
+        const original = binding(),
+            instance = getInstanceScope(this.ctx);
+        const assertAuthorized = () => {
+            if (binding() !== original || getInstanceScope(this.ctx) !== instance) throw new Error("工作状态读取期间会话身份已改变");
+            if (!this.ctx.filter(session) || !this.isChannelAllowed(session)) throw new Error("工作状态会话授权或配置已改变");
+            if (!target.platform || !target.selfId || !target.channelId || !target.channelType) throw new Error("工作状态会话身份不完整");
+        };
+        assertAuthorized();
+        await this.l2_manager.waitForHistoryClear(target);
+        assertAuthorized();
+        const generation = this.l2_manager.getHistoryGeneration(target);
+        const assertCurrent = () => {
+            assertAuthorized();
+            if (this.l2_manager.getHistoryGeneration(target) !== generation) throw new Error("工作状态操作期间历史已清除");
+        };
+        this.conversationState ??= new ConversationStateManager(this.ctx, this.l2_manager, (error) => this.logger?.warn(`工作状态清除失败：${String(error)}`));
+        const result = await withHistoryBarrier(historyCoordinator(this.ctx.database), target, async () => {
+            assertCurrent();
+            return operation(this.conversationState!, target, instance, assertCurrent);
+        });
+        assertCurrent();
+        return result;
     }
 
     /** Administrator commands use the same full observation path as model tools. */
@@ -381,6 +459,7 @@ export class WorldStateService extends YesImBotService<Config> {
     }
 
     private registerModels(): void {
+        registerConversationStateModel(this.ctx);
         registerChannelModel(this.ctx);
         this.ctx.model.extend(
             TableName.BotMuteState,

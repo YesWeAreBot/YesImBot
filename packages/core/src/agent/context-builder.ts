@@ -8,6 +8,8 @@ import type { LoggerService } from "../logger";
 import { MemoryService } from "../memory";
 import { ChatModelSwitcher } from "../model";
 import { AgentStimulus, ContextualMessage, UserMessagePayload, WorldState, WorldStateService } from "../world";
+import { deriveConversationFocus, FocusedWorldState } from "./context-packing";
+import { assertReplyTurn } from "./reply-turn";
 
 interface ImageCandidate {
     id: string;
@@ -54,7 +56,31 @@ export class PromptContextBuilder {
     public async build(stimulus: AgentStimulus<any>) {
         const { type, session, payload } = stimulus;
 
-        const worldState = await this.worldStateService.buildWorldState(session);
+        const sourceWorldState = await this.worldStateService.buildWorldState(session);
+        const focus = deriveConversationFocus(stimulus, sourceWorldState);
+        // Optional for older service adapters. The service validates raw sources and current scope.
+        const stateService = this.worldStateService as WorldStateService & {
+            getConversationState?: (session: AgentStimulus<any>["session"]) => Promise<{
+                unknown: boolean;
+                state?: { revision: number; topic?: string; openIssues: string[]; sourceMessageIds: string[]; createdAt: string; updatedAt: string };
+            }>;
+        };
+        const working = await stateService.getConversationState?.(session);
+        assertReplyTurn();
+        focus.explicitWorkingState = {
+            ...(working?.unknown === false ? working.state : undefined),
+            unknown: working?.unknown ?? true,
+            sourceProvenance: "explicit_scoped_tool_state_not_verified_fact",
+        };
+        const present = new Set(
+            [...sourceWorldState.l1_working_memory.processed_events, ...sourceWorldState.l1_working_memory.new_events].flatMap((item) =>
+                item.type === "message" ? [item.id] : [],
+            ),
+        );
+        focus.missingMessageIds = [
+            ...new Set([...focus.missingMessageIds, ...(focus.explicitWorkingState?.sourceMessageIds ?? []).filter((id) => !present.has(id))]),
+        ];
+        const worldState: FocusedWorldState = { ...sourceWorldState, conversationFocus: focus };
 
         let triggerContext: object = {};
         switch (type) {
@@ -67,7 +93,7 @@ export class PromptContextBuilder {
             default:
                 break;
         }
-        worldState.triggerContext = triggerContext;
+        worldState.triggerContext = { ...triggerContext, conversationFocus: worldState.conversationFocus };
 
         // 5. 返回最终的上下文对象
         return {
@@ -108,7 +134,7 @@ export class PromptContextBuilder {
             (item): item is { type: "message" } & ContextualMessage => item.type === "message",
         );
 
-        const messageMap = new Map(allMessages.map((m) => [m.id, m]));
+        const quoteIds = new Set(allMessages.flatMap((message) => (message.quoteId ? [message.quoteId] : [])));
 
         const imageTags = ["img", "image"];
 
@@ -117,14 +143,8 @@ export class PromptContextBuilder {
             const elements = msg.elements;
             const imageIds = elements.filter((e) => imageTags.includes(e.type) && e.attrs.id).map((e) => e.attrs.id as string);
 
-            // 检查引用，为被引用的图片赋予更高优先级
-            let isQuotedImage = false;
-            if (msg.quoteId && messageMap.has(msg.quoteId)) {
-                const quotedElements = messageMap.get(msg.quoteId)!.elements;
-                if (quotedElements.some((e) => imageTags.includes(e.type))) {
-                    isQuotedImage = true;
-                }
-            }
+            // The referenced source carries the image, rather than the quoting message.
+            const isQuotedImage = quoteIds.has(msg.id);
 
             return imageIds.map((id) => ({
                 id,

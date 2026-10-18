@@ -7,9 +7,11 @@ import { Config } from "../config";
 import type { LoggerService } from "../logger";
 import { PromptService } from "../prompt";
 import { sanitizeDiagnostic } from "../shared/diagnostic-sanitizer";
+import { getInstanceDirectory, getInstanceScope } from "../shared/instance-scope";
 import { YesImBotService } from "../shared/service";
 import { isEmpty, stringify, truncate } from "../shared/utils";
 import type { WorldStateService } from "../world";
+import { sessionChannelType } from "../world/channel-metadata";
 import CommandExtension from "./builtin/command";
 import CoreUtilExtension from "./builtin/core-util";
 import InteractionsExtension from "./builtin/interactions";
@@ -17,6 +19,7 @@ import MemoryExtension from "./builtin/memory";
 import QManagerExtension from "./builtin/qmanager";
 import SearchExtension from "./builtin/search";
 import { extractMetaFromSchema, Failed } from "./helpers";
+import { ToolOutputStore, TOOL_OUTPUT_THRESHOLD, ToolOutputOwner } from "./tool-output-store";
 import { IExtension, Properties, ToolCallResult, ToolDefinition, ToolSchema } from "./types";
 
 /** Keep JSON containers and quoted values intact before Koishi's tool-schema validation. */
@@ -118,6 +121,9 @@ export class ToolService extends YesImBotService<Config> {
         return Object.freeze({ trustedToolSession: 1 as const });
     }
 
+    private outputStore?: ToolOutputStore;
+    private outputOwnerContext?: Context;
+
     private tools: Map<string, ToolDefinition> = new Map();
     private extensions: Map<string, IExtension> = new Map();
     // Disabled instances are also retained so their own plugin scope can be re-enabled.
@@ -137,6 +143,24 @@ export class ToolService extends YesImBotService<Config> {
     }
 
     public async start() {
+        this.outputOwnerContext = this.ctx;
+        this.registerTool({
+            name: "tool_output_read",
+            description:
+                "Read exact pages of a long tool result JSON text. Use nextOffset until null and concatenate text to reconstruct. Offsets count UTF-16 code units. Resources expire after 24 hours or service reload.",
+            parameters: Schema.object({
+                uri: Schema.string().required(),
+                offset: Schema.number().min(0).step(1).default(0),
+                limit: Schema.number().min(1).max(8000).step(1).default(6000),
+            }),
+            execute: async ({ session, ...options }) => {
+                try {
+                    return { status: "success", result: await this.readToolOutput(session, options as { uri: string; offset?: number; limit?: number }) };
+                } catch (error) {
+                    return Failed({ name: "ToolOutputReadError", message: error.message, retryable: false });
+                }
+            },
+        });
         const builtinExtensions = [CoreUtilExtension, CommandExtension, MemoryExtension, QManagerExtension, SearchExtension, InteractionsExtension];
         const loadedExtensions = new Map<string, ForkScope>();
 
@@ -510,14 +534,52 @@ export class ToolService extends YesImBotService<Config> {
     public async invoke(functionName: string, params: Record<string, unknown>, session?: Session): Promise<ToolCallResult> {
         const startedAt = new Date(),
             requestId = randomUUID();
-        const result = await this.executeInvocation(functionName, params, session);
+        // Fix trusted identity and clear generation before the tool can await external work.
+        const capture =
+            session && typeof this.ctx?.filter === "function" && this.deps.world?.l2_manager
+                ? ToolService.prototype.captureOutputOwner.call(this, session)
+                : undefined;
+        let result = await this.executeInvocation(functionName, params, session);
+        if (session && functionName !== "tool_output_read" && result.status === "success" && result.result !== undefined) {
+            try {
+                const text = JSON.stringify(result.result, (_key, value) => {
+                    if (["function", "symbol", "bigint"].includes(typeof value) || (typeof value === "number" && !Number.isFinite(value)))
+                        throw new Error("Tool result contains a non-JSON value");
+                    return value;
+                });
+                if (text === undefined) throw new Error("Tool result is not JSON serializable");
+                if (text.length > TOOL_OUTPUT_THRESHOLD) {
+                    if (!capture) throw new Error("Tool output resource requires a scoped authorized session");
+                    capture.assertCurrent();
+                    const store = ToolService.prototype.getOutputStore.call(this);
+                    const resource = await store.save(text, capture.owner, capture.assertCurrent);
+                    capture.assertCurrent();
+                    result = { ...result, result: resource };
+                }
+            } catch (error) {
+                // Execution already completed: archival failure must never trigger a retry of its side effects.
+                result = {
+                    ...result,
+                    result: {
+                        kind: "tool-output-unavailable",
+                        message: "Tool completed; result payload could not be serialized or archived. Do not retry the completed tool.",
+                    },
+                    metadata: { ...result.metadata, payloadError: { name: "ToolOutputError", message: error.message, retryable: false } },
+                };
+            }
+        }
         assertReplyTurn();
         const world = this.deps.world;
         if (session?.platform && session.channelId && world?.recordSystemEvent) {
             const channelId = session.channelId;
             try {
                 const admin = session.argv?.command?.name === "tool.call";
-                const historyGeneration = Number.isSafeInteger(result.result?.historyGeneration) ? result.result.historyGeneration : undefined;
+                const historyGeneration =
+                    result.result?.kind === "tool-output-resource" || result.metadata?.payloadError
+                        ? capture?.owner.generation
+                        : Number.isSafeInteger(result.result?.historyGeneration)
+                          ? result.result.historyGeneration
+                          : undefined;
                 const recorded = await awaitReplyTurn(() =>
                     world.recordSystemEvent(
                         {
@@ -545,14 +607,86 @@ export class ToolService extends YesImBotService<Config> {
                         historyGeneration,
                     ),
                 );
-                if (recorded === false && historyGeneration !== undefined) return Failed("召回后历史已清除，请重新召回");
+                if (recorded === false && historyGeneration !== undefined) {
+                    if (result.result?.kind !== "tool-output-resource" && !result.metadata?.payloadError) return Failed("召回后历史已清除，请重新召回");
+                    result = {
+                        ...result,
+                        result: {
+                            kind: "tool-output-unavailable",
+                            message: "Tool completed; output expired after history clear. Do not retry the completed tool.",
+                        },
+                        metadata: {
+                            ...result.metadata,
+                            payloadError: { name: "ToolOutputError", message: "History cleared before receipt publication", retryable: false },
+                        },
+                    };
+                }
             } catch (error) {
                 assertReplyTurn();
                 this._logger.warn(`工具结果事件投递失败：${String(error)}`);
             }
         }
         assertReplyTurn();
+        if (result.result?.kind === "tool-output-resource") {
+            try {
+                capture?.assertCurrent();
+            } catch (error) {
+                result = {
+                    ...result,
+                    result: {
+                        kind: "tool-output-unavailable",
+                        message: "Tool completed; output authorization or history changed. Do not retry the completed tool.",
+                    },
+                    metadata: { ...result.metadata, payloadError: { name: "ToolOutputError", message: error.message, retryable: false } },
+                };
+            }
+        }
         return result;
+    }
+
+    private getOutputStore() {
+        return (this.outputStore ??= new ToolOutputStore(getInstanceDirectory(this.outputOwnerContext ?? this.ctx, "data/yesimbot/tool-outputs")));
+    }
+
+    private captureOutputOwner(session: Session) {
+        const ctx = this.outputOwnerContext ?? this.ctx;
+        const world = this.deps.world;
+        const channelType = sessionChannelType(session);
+        const owner: ToolOutputOwner = {
+            instance: getInstanceScope(ctx),
+            platform: session.platform,
+            selfId: session.selfId,
+            channelId: session.channelId!,
+            channelType: channelType!,
+            privateUserId: channelType === "private" ? session.userId : undefined,
+            generation: world.l2_manager.getHistoryGeneration({ platform: session.platform, channelId: session.channelId!, channelType }),
+        };
+        const binding = () =>
+            JSON.stringify([session.platform, session.selfId, session.channelId, sessionChannelType(session), session.userId, session.guildId]);
+        const original = binding();
+        const assertCurrent = () => {
+            if (
+                !owner.platform ||
+                !owner.selfId ||
+                !owner.channelId ||
+                !owner.channelType ||
+                (owner.channelType === "private" && !owner.privateUserId) ||
+                binding() !== original
+            )
+                throw new Error("Tool output session identity missing or changed");
+            if (!ctx.filter(session) || !world.isChannelAllowed(session)) throw new Error("Tool output session authorization revoked");
+            if (world.l2_manager.getHistoryGeneration(owner) !== owner.generation) throw new Error("Tool output history generation expired after clear");
+        };
+        return { owner, assertCurrent };
+    }
+
+    public async readToolOutput(session: Session | undefined, options: { uri: string; offset?: number; limit?: number }) {
+        if (!session) throw new Error("Tool output read requires an authenticated session");
+        const captured = this.captureOutputOwner(session);
+        captured.assertCurrent();
+        const page = await this.getOutputStore().read(options.uri, captured.owner, options.offset, options.limit, captured.assertCurrent);
+        captured.assertCurrent();
+        return page;
     }
 
     private async executeInvocation(functionName: string, params: Record<string, unknown>, session?: Session): Promise<ToolCallResult> {
