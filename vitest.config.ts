@@ -18,6 +18,7 @@ export default defineConfig({
         },
     },
     test: {
+        setupFiles: ["./scripts/test-setup.ts"],
         exclude: ["**/node_modules/**", "**/.git/**"],
         include: ["packages/*/tests/**/*.spec.ts"],
         // onebot-directory pulls a 2005-member list into the database per test;
