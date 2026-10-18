@@ -92,5 +92,9 @@ it("review probe: a new claim must not make identity-invalidated legacy structur
     await f.capture("fresh");
     await f.propose([{ action: "support", category: "goals", statement: "new supported goal", messageIds: ["fresh"] }]);
     const updated = (await f.store.find("review-probe", "u"))!.person;
-    expect(updated.stale || !updated.structuredProfile?.background.includes("unverified legacy background")).toBe(true);
+    expect(updated.stale).toBe(false);
+    expect(updated.structuredProfile?.background).toEqual([]);
+    expect(updated.structuredProfile?.goals).toEqual(["new supported goal"]);
+    expect(updated.legacyStructuredProfile?.background).toEqual(["unverified legacy background"]);
+    expect(updated.legacyProfileStale).toBe(true);
 });

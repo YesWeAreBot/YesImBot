@@ -202,7 +202,7 @@ test("archive and import never transfer the managed ledger to a fresh identity",
     await store.recognize("s", "u", "再见");
     assert.deepEqual(await store.readClaims("s", "u"), []);
 });
-test("merge retires active managed claims while retaining the target unmanaged structured facts", async (t) => {
+test("merge retires managed claims and retains the target legacy facts only as a review snapshot", async (t) => {
     const { store, source, propose } = await setup(t);
     await store.setProfile(
         "s",
@@ -218,7 +218,9 @@ test("merge retires active managed claims while retaining the target unmanaged s
     const merged = (await store.find("s", "u"))!.person;
     assert.equal(merged.claims![0].status, "retired");
     assert.deepEqual(merged.structuredProfile!.goals, []);
-    assert.deepEqual(merged.structuredProfile!.background, ["遗留背景"]);
+    assert.deepEqual(merged.structuredProfile!.background, []);
+    assert.deepEqual(merged.legacyStructuredProfile!.background, ["遗留背景"]);
+    assert.equal(merged.legacyProfileStale, true);
 });
 test("every scene claim citation must belong to that scene even when both scenes are already known", async (t) => {
     const { store, source, propose } = await setup(t);
@@ -291,4 +293,98 @@ test("scoped Koishi database views share physical table identity and serialize c
     ]);
     assert.equal(a.id, b.id);
     assert.equal((await store.readClaims("s", "u")).length, 1);
+});
+
+test("active claim projection does not mix untracked legacy conclusions into the current profile", async (t) => {
+    const { store, source, propose } = await setup(t);
+    await store.setProfile(
+        "s",
+        "u",
+        { version: 1, background: ["旧背景"], goals: [], contexts: [], needs: [], preferences: ["不喜欢茶"], values: [], scenes: [], overview: "" },
+        "admin",
+    );
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    await source("fresh");
+    await propose([{ action: "support", category: "preferences", statement: "喜欢茶", messageIds: ["fresh"] }]);
+    const current = (await store.find("s", "u"))!.person;
+    assert.deepEqual(current.structuredProfile!.preferences, ["喜欢茶"]);
+    assert.deepEqual(current.structuredProfile!.background, []);
+    assert.equal(current.profile.includes("不喜欢茶"), false);
+    assert.deepEqual(current.legacyStructuredProfile!.preferences, ["不喜欢茶"]);
+    assert.ok(current.legacyProfile!.includes("旧背景"));
+});
+
+test("repeated support without independent evidence leaves person and claim versions unchanged", async (t) => {
+    const { store, source, propose } = await setup(t);
+    await source("m");
+    await propose([{ action: "support", category: "preferences", statement: "喜欢茶", messageIds: ["m"] }]);
+    const before = (await store.find("s", "u"))!.person;
+    const auditCount = (await store.history("s", 100)).length;
+    const result = await propose([{ action: "support", claimId: before.claims![0].id, expectedRevision: 1, messageIds: ["m"] }]);
+    assert.equal(result.state, "unchanged");
+    assert.deepEqual((await store.find("s", "u"))!.person, before);
+    assert.equal((await store.history("s", 100)).length, auditCount);
+});
+
+test("support and counter cannot silently discard a changed statement", async (t) => {
+    const { store, source, propose } = await setup(t);
+    await source("m");
+    await propose([{ action: "support", category: "preferences", statement: "喜欢茶", messageIds: ["m"] }]);
+    const [claim] = await store.readClaims("s", "u");
+    await source("n");
+    for (const action of ["support", "counter"])
+        await assert.rejects(propose([{ action, claimId: claim.id, expectedRevision: 1, statement: "喜欢咖啡", messageIds: ["n"] }]), /修订|revise/);
+    assert.equal((await store.readClaims("s", "u"))[0].revision, 1);
+});
+
+test("claim-only facts preserve program-derived scene activity without old scene conclusions", async (t) => {
+    const { store, source, propose } = await setup(t);
+    await source("old");
+    await store.setProfile(
+        "s",
+        "u",
+        {
+            version: 1,
+            background: [],
+            goals: [],
+            contexts: [],
+            needs: [],
+            preferences: [],
+            values: [],
+            overview: "",
+            scenes: [
+                {
+                    key: JSON.stringify(["qq", "bot", "c"]),
+                    platform: "qq",
+                    selfId: "bot",
+                    channelId: "c",
+                    nickname: "甲",
+                    recent: {
+                        from: 1,
+                        to: Date.now(),
+                        coverage: "recorded_only",
+                        messageCount: 99,
+                        activeDays: 7,
+                        topics: ["旧话题"],
+                        emotions: [],
+                        events: [],
+                        interactions: [],
+                        disagreements: [],
+                    },
+                    taboos: ["旧禁忌"],
+                    openers: [],
+                },
+            ],
+        },
+        "admin",
+    );
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    await source("new");
+    await propose([{ action: "support", category: "preferences", statement: "喜欢茶", messageIds: ["new"] }]);
+    const scene = (await store.find("s", "u"))!.person.structuredProfile!.scenes[0];
+    assert.ok(scene, "current activity is not a legacy model conclusion");
+    assert.equal(scene.recent.messageCount, 1);
+    assert.equal(scene.recent.activeDays, 1);
+    assert.deepEqual(scene.recent.topics, []);
+    assert.deepEqual(scene.taboos, []);
 });

@@ -1,3 +1,4 @@
+import { visibleProfile } from "./profile-tools";
 import { type PersonStore, sceneKey } from "./store";
 
 export const identityWarning =
@@ -57,7 +58,7 @@ export async function renderPeople(store: PersonStore, view: Record<string, any>
             const prefix = `<person id="${p.id}" account="${escapeContext(a.userId)}" person_revision="${p.revision}" account_revision="${a.revision}" seen="${escapeContext(a.name)}" name="${escapeContext(p.name)}" confidence="${a.confidence}" provisional="${p.provisional}" locked="${p.locked}" stale="${p.stale}" identity_changed="${!!p.identityChanged}">\n${p.identityChanged ? `${identityWarning}\n` : ""}`;
             const suffix = `\n${pending.length ? `待审核画像候选：${pending.join("，")}` : ""}\n${linkPending.length ? `待审核账号关联候选：${linkPending.join("，")}` : ""}\n</person>`;
             const budget = 6000 - parts.join("\n").length - prefix.length - suffix.length - 1;
-            entry = prefix + (p.stale ? "旧画像需复核，暂不作为记忆使用。" : boundedProfile(p.profile, budget)) + suffix;
+            entry = prefix + (p.stale ? "旧画像需复核，暂不作为记忆使用。" : boundedProfile(visibleProfile(p).profile, budget)) + suffix;
         }
         if (parts.join("\n").length + entry.length + 1 > 6000) break;
         parts.push(entry);

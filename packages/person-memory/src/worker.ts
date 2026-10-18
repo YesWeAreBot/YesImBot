@@ -1,5 +1,6 @@
 import { claimCategories, type ClaimChange } from "./claims";
 import { buildProfileMessages } from "./profile-prompt";
+import { visibleProfile } from "./profile-tools";
 import { type Evidence, type PersonStore, type Provenance } from "./store";
 import { type SummaryJob, type SummaryQueue } from "./summary-queue";
 
@@ -282,8 +283,8 @@ export class SummaryWorker {
         let messages = buildProfileMessages(
             {
                 target: { scope, userId, personId: p.id, name: p.name },
-                existingProfile: p.stale ? "" : p.profile,
-                existingStructuredProfile: p.stale ? undefined : p.structuredProfile,
+                existingProfile: visibleProfile(p).profile,
+                existingStructuredProfile: visibleProfile(p).structuredProfile,
                 ...(claimMode
                     ? {
                           claims: p.claims?.map(({ id, revision, status, category, scene, statement, evidence }) => ({

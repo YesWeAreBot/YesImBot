@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { test } from "vitest";
+import { expect, test } from "vitest";
 
 import { PersonStore, registerModels } from "../src/store";
 import { SummaryWorker, summaryResponseText } from "../src/worker";
@@ -323,7 +323,7 @@ test("durable failures stop at three attempts and paused jobs do not resume auto
     );
     t.onTestFinished(() => worker.stop());
     await assert.rejects(worker.summarize("s", "u"), /provider/);
-    for (let i = 0; i < 100 && (await queue.list())[0]?.status !== "failed"; i++) await new Promise((resolve) => setTimeout(resolve, 5));
+    await expect.poll(async () => (await queue.list())[0]?.status, { timeout: 5000, interval: 10 }).toBe("failed");
     await worker.idle();
     assert.equal(calls, 3);
     const [failed] = await queue.list();

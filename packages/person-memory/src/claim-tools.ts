@@ -29,6 +29,8 @@ export function claimSummary(claim: Claim) {
         action: claim.action,
         updatedAt: claim.createdAt,
         evidenceCount: claimEvidence(claim).length,
+        historyCount: claim.history.length,
+        scope: claim.scene ? { kind: "scene", scene: claim.scene } : { kind: "person" },
     };
 }
 export function visibleClaims(person: Person, allow: (claim: Claim) => boolean = () => true) {
@@ -83,7 +85,25 @@ export async function executeClaimTool(args: any, context: ClaimToolContext): Pr
         if (!claim || !allowClaim(claim)) throw new Error("当前范围没有此认识");
         const accountIds = new Set(found.accounts.map((account) => account.userId));
         const evidence = (await store.claimEvidence(scope, ref, claim.id)).filter((item) => accountIds.has(item.userId) && allowEvidence(item));
-        const result = page(evidence.map((item) => ({ ...item, evidenceRoot: evidenceRoot(item), isNewEvidence: false })));
+        const result = page(
+            evidence.map((item) => {
+                const root = evidenceRoot(item);
+                return {
+                    ...item,
+                    evidenceRoot: root,
+                    isNewEvidence: false,
+                    uses: claim.history
+                        .filter((revision) => revision.evidence.some((source) => evidenceRoot(source) === root))
+                        .map((revision) => ({
+                            revision: revision.revision,
+                            action: revision.action,
+                            status: revision.status,
+                            statement: revision.statement,
+                            createdAt: revision.createdAt,
+                        })),
+                };
+            }),
+        );
         await current();
         if (!allowClaim(claim) || evidence.some((item) => !allowEvidence(item))) throw new Error("证据的来源权限已变化");
         return { ...result, claimId: claim.id, claimRevision: claim.revision, status: claim.status, projection: "original_evidence_read_not_new_support" };

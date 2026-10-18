@@ -121,6 +121,12 @@ for (const shared of [false, true]) {
         const evidence = await f.tool.execute({ session: f.session, action: "claim_evidence", account_id: "u", claim_id: claim.id });
         expect(evidence.status).toBe("success");
         expect(evidence.result.items.map((e: any) => e.text)).toEqual(expect.arrayContaining(["我喜欢 Python", "其实我现在更喜欢 Rust"]));
+        expect(evidence.result.items.find((e: any) => e.text === "我喜欢 Python").uses).toEqual([
+            expect.objectContaining({ revision: 1, action: "support", status: "active" }),
+        ]);
+        expect(evidence.result.items.find((e: any) => e.text.includes("Rust")).uses).toEqual([
+            expect.objectContaining({ revision: 2, action: "counter", status: "contested" }),
+        ]);
         f.revoke();
         expect((await f.tool.execute({ session: f.session, action: "claim_evidence", account_id: "u", claim_id: claim.id })).status).toBe("error");
     });

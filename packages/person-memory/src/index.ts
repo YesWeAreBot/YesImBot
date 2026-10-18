@@ -8,7 +8,7 @@ import { describePeopleCommand } from "./command-help";
 import { identityWarning, renderPeople } from "./context";
 import type { ProfileDocument } from "./profile";
 import { DEFAULT_PROFILE_SYSTEM_PROMPT, mainProfilePolicy } from "./profile-prompt";
-import { catalogParameters, catalogProfile, catalogRequest, profileInputSchema, visibleProfile } from "./profile-tools";
+import { catalogParameters, catalogProfile, catalogRequest, profileInputSchema, visibleProfile, visibleLegacyProfile } from "./profile-tools";
 import { applySharedMemory } from "./shared-runtime";
 import { summarySourceAllowed } from "./source-policy";
 import { PersonStore, registerModels, sceneKey, type Audit, type LinkProposal, type Mode, type Person, type Proposal, type SceneInput } from "./store";
@@ -145,7 +145,7 @@ function profileView(p: Person) {
         provisional: p.provisional,
         ...visibleProfile(p),
         claims: visibleClaims(p),
-        legacyProfile: p.stale ? undefined : p.legacyProfile,
+        ...visibleLegacyProfile(p),
         stale: p.stale,
         locked: p.locked,
         revision: p.revision,
@@ -156,7 +156,7 @@ function profileView(p: Person) {
     };
 }
 function show(p: Person) {
-    return `${p.name} (${p.id})\n画像版本 ${p.revision}；${p.provisional ? "独立临时档案" : "人工确认称呼"}；${p.locked ? "已锁定" : "未锁定"}；${p.stale ? "旧画像需复核" : "画像可用"}${p.identityChanged ? `\n${identityWarning}` : ""}\n${p.profile || "暂无画像"}\n来源：${p.evidence.map((e) => `${e.id}@${e.userId}`).join("，") || "人工编辑或暂无来源"}`;
+    return `${p.name} (${p.id})\n画像版本 ${p.revision}；${p.provisional ? "独立临时档案" : "人工确认称呼"}；${p.locked ? "已锁定" : "未锁定"}；${p.stale ? "旧画像需复核" : "画像可用"}${p.identityChanged ? `\n${identityWarning}` : ""}\n${p.profile || "暂无画像"}${p.legacyProfile ? `\n旧资料快照（${p.legacyProfileStale ? "需复核" : "未纳入当前认识"}）：\n${p.legacyProfile}` : ""}\n来源：${p.evidence.map((e) => `${e.id}@${e.userId}`).join("，") || "人工编辑或暂无来源"}`;
 }
 function summarizeChange(value: unknown) {
     if (!value || typeof value !== "object") return null;

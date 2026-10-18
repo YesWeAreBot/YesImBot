@@ -69,6 +69,8 @@ export function applyClaimChanges(person: Person, changes: ClaimChange[], source
         if (claim && (change.claimId || change.expectedRevision !== undefined) && change.expectedRevision !== claim.revision) throw new Error("主张版本已变化");
         if (claim && ((change.category && change.category !== claim.category) || (change.scene && change.scene !== claim.scene)))
             throw new Error("主张分类或场景不能更改");
+        if (claim && change.action !== "revise" && change.statement !== undefined && change.statement.trim() !== claim.statement)
+            throw new Error("修改认识陈述请使用 revise 修订，不可作为补证、反证或停用提交");
         if (claim?.status === "retired" && change.action !== "retire" && change.action !== "revise") throw new Error("已退役主张只能通过明确修订恢复");
         const statement = change.action === "revise" || !claim ? change.statement?.trim() : claim.statement;
         if (!statement || statement.length > 400 || /[\u0000-\u001f\u007f]/.test(statement)) throw new Error("主张陈述无效");
@@ -119,9 +121,28 @@ export function applyClaimChanges(person: Person, changes: ClaimChange[], source
     return claims;
 }
 export function projectClaims(person: Person, claims: Claim[]): ProfileDocument {
-    const doc: ProfileDocument = structuredClone(
-        person.structuredProfile || { version: 1, background: [], goals: [], contexts: [], needs: [], preferences: [], values: [], scenes: [], overview: "" },
-    );
+    // Only accepted active claims define the current view. Old complete profiles
+    // remain separate snapshots; they are never promoted to sourced claims.
+    const doc: ProfileDocument = {
+        version: 1,
+        background: [],
+        goals: [],
+        contexts: [],
+        needs: [],
+        preferences: [],
+        values: [],
+        overview: "",
+        // Scene identity and program counts are observations, not legacy model
+        // conclusions. Keep them while rebuilding every inferred fact array.
+        scenes: person.stale
+            ? []
+            : structuredClone(person.structuredProfile?.scenes || []).map((scene) => ({
+                  ...scene,
+                  recent: { ...scene.recent, topics: [], emotions: [], events: [], interactions: [], disagreements: [] },
+                  taboos: [],
+                  openers: [],
+              })),
+    };
     for (const claim of claims.filter((claim) => claim.status === "active")) {
         if (!claim.scene || doc.scenes.some((s) => s.key === claim.scene)) continue;
         const evidence = claimEvidence(claim).filter(
@@ -130,18 +151,19 @@ export function projectClaims(person: Person, claims: Claim[]): ProfileDocument 
         const origin = evidence[0]?.provenance;
         if (!origin) throw new Error("主张场景缺少原始来源");
         const times = evidence.map((e) => e.timestamp);
+        const previous = person.structuredProfile?.scenes.find((scene) => scene.key === claim.scene);
         doc.scenes.push({
             key: claim.scene,
             platform: origin.platform,
             selfId: origin.selfId,
             channelId: origin.channelId,
-            nickname: evidence[0].name,
+            nickname: previous?.nickname ?? evidence[0].name,
             recent: {
-                from: Math.min(...times),
-                to: Math.max(...times),
+                from: previous?.recent.from ?? Math.min(...times),
+                to: previous?.recent.to ?? Math.max(...times),
                 coverage: "recorded_only",
-                messageCount: evidence.length,
-                activeDays: new Set(times.map((t) => new Date(t).toISOString().slice(0, 10))).size,
+                messageCount: previous?.recent.messageCount ?? evidence.length,
+                activeDays: previous?.recent.activeDays ?? new Set(times.map((t) => new Date(t).toISOString().slice(0, 10))).size,
                 topics: [],
                 emotions: [],
                 events: [],
@@ -151,16 +173,6 @@ export function projectClaims(person: Person, claims: Claim[]): ProfileDocument 
             taboos: [],
             openers: [],
         });
-    }
-    // Remove every historical managed statement. Legacy facts have no invented provenance.
-    for (const c of [...(person.claims || []), ...claims]) {
-        if (c.scene && !doc.scenes.some((scene) => scene.key === c.scene)) continue;
-        const values = c.scene ? sceneList(doc, c) : (doc[c.category as "background"] as string[]);
-        if (values)
-            for (const statement of new Set(c.history.map((r) => r.statement))) {
-                let index;
-                while ((index = values.indexOf(statement)) >= 0) values.splice(index, 1);
-            }
     }
     for (const c of claims.filter((c) => c.status === "active")) {
         const values = c.scene ? sceneList(doc, c) : (doc[c.category as "background"] as string[]);

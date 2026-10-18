@@ -58,6 +58,8 @@ export interface Person {
     structuredProfile?: ProfileDocument;
     claims?: Claim[];
     legacyProfile?: string;
+    legacyStructuredProfile?: ProfileDocument;
+    legacyProfileStale?: boolean;
     evidence: Evidence[];
     locked: boolean;
     stale: boolean;
@@ -225,6 +227,7 @@ function createPerson(name: string): Person {
     return { id: randomUUID(), name: text(name, 80, "称呼"), provisional: true, profile: "", evidence: [], locked: false, stale: false, revision: 0 };
 }
 function invalidate(state: State, p: Person) {
+    if (p.legacyProfile) p.legacyProfileStale = true;
     if (p.claims?.length) {
         const claims = retireClaims(p.claims);
         p.structuredProfile = projectClaims(p, claims);
@@ -613,6 +616,8 @@ export class PersonStore {
             if (typeof profile === "string") {
                 if (p.claims?.length) p.claims = retireClaims(p.claims);
                 delete p.legacyProfile;
+                delete p.legacyStructuredProfile;
+                delete p.legacyProfileStale;
                 p.profile = profile ? text(profile, 2000, "画像") : "";
                 delete p.structuredProfile;
             } else {
@@ -892,6 +897,8 @@ export class PersonStore {
         requestId?: string,
     ) {
         if (!Array.isArray(claimChanges) || !claimChanges.length || claimChanges.length > 20) throw new Error("主张变更数量无效");
+        claimChanges = structuredClone(claimChanges);
+        expected = structuredClone(expected);
         return this.edit(
             scope,
             actor,
@@ -918,6 +925,8 @@ export class PersonStore {
                     });
                 });
                 const claims = applyClaimChanges(p, claimChanges, evidence);
+                if (JSON.stringify(claims) === JSON.stringify(p.claims || []))
+                    return { id: `unchanged:${p.id}:${p.revision}`, personId: p.id, state: "unchanged" as const };
                 const structuredProfile = await this.groundedProfile(scope, state, userId, projectClaims(p, claims));
                 const proposal: Proposal = {
                     id: randomUUID(),
@@ -951,13 +960,19 @@ export class PersonStore {
             throw new Error("候选已过期，请重新总结");
         if (proposal.claims) {
             if (state.settings.paused || state.settings.mode === "off") throw new Error("维护已暂停或关闭");
-            if (!p.structuredProfile && p.profile) p.legacyProfile = p.profile;
+            if ((!p.claims?.length || !p.structuredProfile) && p.profile) {
+                p.legacyProfile = p.profile;
+                p.legacyProfileStale = p.stale;
+                if (p.structuredProfile) p.legacyStructuredProfile = structuredClone(p.structuredProfile);
+                else delete p.legacyStructuredProfile;
+            }
             p.structuredProfile = projectClaims({ ...p, structuredProfile: proposal.structuredProfile }, proposal.claims);
             p.profile = renderProfileDocument(p.structuredProfile);
             p.claims = structuredClone(proposal.claims);
             p.evidence = structuredClone(proposal.evidence);
-            // Incremental support cannot validate identity-contaminated unmanaged legacy fields.
-            p.stale = p.stale && !!p.identityChanged;
+            // The new view contains only identity-checked claims; the old snapshot
+            // retains its own review flag and never regains validity implicitly.
+            p.stale = false;
             p.revision++;
             return;
         }

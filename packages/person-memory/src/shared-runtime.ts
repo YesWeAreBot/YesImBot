@@ -10,7 +10,7 @@ import { escapeContext } from "./context";
 import { ContinuityStore, registerContinuityModels, sourceRef, summaryUnsafeIn, type RecallTarget } from "./continuity";
 import type { Config, Dependencies } from "./index";
 import { mainProfilePolicy } from "./profile-prompt";
-import { catalogParameters, catalogProfile, catalogRequest, profileInputSchema, visibleProfile } from "./profile-tools";
+import { catalogParameters, catalogProfile, catalogRequest, profileInputSchema, visibleProfile, visibleLegacyProfile } from "./profile-tools";
 import { summarySourceAllowed } from "./source-policy";
 import { PersonStore, accountRef, mindScope, registerModels, sceneKey, type Audit, type Mode, type SceneInput } from "./store";
 import { registerSummaryQueueModels, SummaryQueue } from "./summary-queue";
@@ -630,7 +630,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
                     const targets = await targetsFor(session, scope);
                     const projected = Object.values(state.people).map((person) => ({
                         ...person,
-                        legacyProfile: person.stale ? undefined : person.legacyProfile,
+                        ...visibleLegacyProfile(person, (scene) => profileSceneAllowed(scene, targets, session)),
                         claims: visibleClaims(
                             person,
                             (claim) =>
@@ -671,7 +671,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
                                         targetAllowed(target, session),
                                 ),
                         ),
-                        legacyProfile: found.person.stale ? undefined : found.person.legacyProfile,
+                        ...visibleLegacyProfile(found.person, (scene) => profileSceneAllowed(scene, targets, session)),
                         ...visibleProfile(found.person, (scene) => profileSceneAllowed(scene, targets, session)),
                         evidence: found.person.evidence
                             .filter(

@@ -1,6 +1,7 @@
 import { Schema } from "koishi";
 
 import type { CatalogArgs, CatalogFields } from "./catalog";
+import { projectClaims } from "./claims";
 import { validateProfileDocument, renderProfileDocument, type ProfileScene } from "./profile";
 import type { Account, Person } from "./store";
 
@@ -64,10 +65,27 @@ export function catalogRequest(args: CatalogArgs): CatalogArgs {
     };
 }
 
+/** Legacy snapshots are data for review, never part of the current derived view. */
+export function visibleLegacyProfile(person: Person, allowScene: (scene: ProfileScene) => boolean = () => true) {
+    const stale = person.legacyProfileStale ?? person.stale;
+    const legacy = person.legacyStructuredProfile;
+    return {
+        legacyProfile: stale
+            ? undefined
+            : legacy
+              ? renderProfileDocument(validateProfileDocument({ ...legacy, scenes: legacy.scenes.filter(allowScene) }))
+              : person.legacyProfile,
+        // Always overwrite raw spread fields in shared runtime responses.
+        legacyStructuredProfile: undefined,
+        legacyProfileStatus: person.legacyProfile ? (stale ? "needs_review" : "unmanaged_snapshot") : undefined,
+    };
+}
+
 export function visibleProfile(person: Person, allowScene: (scene: ProfileScene) => boolean = () => true) {
     if (person.stale) return { profile: "", structuredProfile: undefined, overview: "", format: "stale" };
     if (!person.structuredProfile) return { profile: person.profile, structuredProfile: undefined, overview: person.profile, format: "legacy" };
-    const structuredProfile = validateProfileDocument({ ...person.structuredProfile, scenes: person.structuredProfile.scenes.filter(allowScene) });
+    const current = person.claims?.length ? projectClaims(person, person.claims) : person.structuredProfile;
+    const structuredProfile = validateProfileDocument({ ...current, scenes: current.scenes.filter(allowScene) });
     return { profile: renderProfileDocument(structuredProfile), structuredProfile, overview: structuredProfile.overview, format: "structured" };
 }
 
@@ -87,5 +105,5 @@ export function catalogProfile(person: Person, accounts: Account[], fields: Cata
     if (fields === "overview") return { ...metadata, overview: visible.overview };
     if (fields === "structured")
         return { ...metadata, structuredProfile: visible.structuredProfile, legacyProfile: visible.format === "legacy" ? visible.profile : undefined };
-    return { ...metadata, ...visible, legacyProfile: person.stale ? undefined : person.legacyProfile };
+    return { ...metadata, ...visible, ...visibleLegacyProfile(person, allowScene) };
 }
