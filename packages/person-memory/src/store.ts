@@ -238,8 +238,11 @@ function invalidate(state: State, p: Person) {
     if (p.legacyProfile) p.legacyProfileStale = true;
     if (p.claims?.length) {
         const claims = retireClaims(p.claims);
-        p.structuredProfile = projectClaims(p, claims);
-        p.profile = renderProfileDocument(p.structuredProfile);
+        // A manual text correction retains retired claims only as an audit trail.
+        if (p.structuredProfile) {
+            p.structuredProfile = projectClaims(p, claims);
+            p.profile = renderProfileDocument(p.structuredProfile);
+        }
         p.claims = claims;
     }
     if (p.profile) p.stale = true;
@@ -692,12 +695,16 @@ export class PersonStore {
             if (a.locked || b.locked) throw new Error("请先解锁再合并人物");
             invalidate(state, a);
             invalidate(state, b);
+            const plaintext = [b, a].filter((p) => !p.structuredProfile && p.profile).map((p) => p.profile);
             b.profile = [b.profile, a.profile].filter(Boolean).join("\n");
-            if (!b.claims?.length) delete b.structuredProfile;
-            if (b.claims?.length) {
+            if (plaintext.length && (a.claims?.length || b.claims?.length)) {
+                // Preserve explicit text separately from the retired claim view.
+                b.profile = plaintext.join("\n");
+                delete b.structuredProfile;
+            } else if (b.claims?.length && b.structuredProfile) {
                 b.structuredProfile = projectClaims(b, b.claims);
                 b.profile = renderProfileDocument(b.structuredProfile);
-            }
+            } else delete b.structuredProfile;
             b.evidence = [...b.evidence, ...a.evidence].slice(0, 20);
             if (b.profile) b.stale = true;
             b.provisional = false;
@@ -952,7 +959,8 @@ export class PersonStore {
                 if (p.structuredProfile) p.legacyStructuredProfile = structuredClone(p.structuredProfile);
                 else delete p.legacyStructuredProfile;
             }
-            p.structuredProfile = projectClaims({ ...p, structuredProfile: proposal.structuredProfile }, proposal.claims);
+            const projection = projectClaims({ ...p, structuredProfile: proposal.structuredProfile }, proposal.claims);
+            p.structuredProfile = await this.groundedProfile(scope, state, proposal.userId, projection, proposal.structuredProfile);
             p.profile = renderProfileDocument(p.structuredProfile);
             p.claims = structuredClone(proposal.claims);
             p.evidence = structuredClone(proposal.evidence);

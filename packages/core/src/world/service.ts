@@ -8,12 +8,12 @@ import type { LoggerService } from "../logger";
 import { ModelService } from "../model";
 import { TableName } from "../shared/constants";
 import { sanitizeDiagnostic } from "../shared/diagnostic-sanitizer";
-import { getInstanceScope } from "../shared/instance-scope";
+import { getPersistentInstanceScope } from "../shared/instance-scope";
 import { YesImBotService } from "../shared/service";
 import { HISTORY_CHANNELS, MESSAGE_KEY_MIGRATION, registerChannelModel, sessionChannelType } from "./channel-metadata";
 import { HistoryCommandManager } from "./commands";
 import { ContextBuilder } from "./context-builder";
-import { ConversationStateManager, registerConversationStateModel, type ConversationStateInput } from "./conversation-state";
+import { ConversationStateManager, pruneConversationStates, registerConversationStateModel, type ConversationStateInput } from "./conversation-state";
 import { EventListenerManager } from "./event-listener";
 import { historyCoordinator, withHistoryBarrier } from "./history-coordinator";
 import { InteractionManager } from "./interaction-manager";
@@ -220,9 +220,9 @@ export class WorldStateService extends YesImBotService<Config> {
         const binding = () =>
             JSON.stringify([session.platform, session.selfId, session.channelId, sessionChannelType(session), session.userId, session.guildId]);
         const original = binding(),
-            instance = getInstanceScope(this.ctx);
+            instance = getPersistentInstanceScope(this.ctx);
         const assertAuthorized = () => {
-            if (binding() !== original || getInstanceScope(this.ctx) !== instance) throw new Error("工作状态读取期间会话身份已改变");
+            if (binding() !== original || getPersistentInstanceScope(this.ctx) !== instance) throw new Error("工作状态读取期间会话身份已改变");
             if (!this.ctx.filter(session) || !this.isChannelAllowed(session)) throw new Error("工作状态会话授权或配置已改变");
             if (!target.platform || !target.selfId || !target.channelId || !target.channelType) throw new Error("工作状态会话身份不完整");
         };
@@ -582,6 +582,7 @@ export class WorldStateService extends YesImBotService<Config> {
             // Retention shares the physical-database barrier with export, restore and clear.
             await withHistoryBarrier(historyCoordinator(this.ctx.database), { type: "all" }, async () => {
                 this.l2_manager.pruneExpiredBuffers(expiresAt);
+                await pruneConversationStates(this.ctx.database, new Date(expiresAt));
                 // Each retention deletion is idempotent and retried next run on
                 // failure. A shared SQLite transaction could roll back unrelated
                 // ordinary writes accepted while cleanup awaits its next deletion.

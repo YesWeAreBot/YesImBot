@@ -161,14 +161,12 @@ it("does not publish a cancellable owner's ID before its rollback outcome is kno
     release.resolve();
     expect(await created).toMatchObject({ message: "cancelled" });
     const element = h.parse(await transformed)[0];
-    // Failed preparation retains the original URL rather than a rolled-back ID.
-    expect(element.attrs.id).toBeUndefined();
-    expect(element.attrs.src).toBe(source);
-    expect(await f.ctx.database.get(TableName.Assets, {})).toEqual([]);
-    expect(await readdir(f.config.storagePath)).toEqual([]);
-    const retry = await f.assets.create(source);
-    expect(await f.assets.read(retry)).toEqual(Buffer.from("hello"));
-    expect(await f.ctx.database.get(TableName.Assets, {})).toMatchObject([{ id: retry }]);
+    expect(element.attrs.id).toBeTruthy();
+    expect(element.attrs.src).toBeUndefined();
+    expect(await f.assets.create(source)).toBe(element.attrs.id);
+    expect(await f.assets.read(element.attrs.id)).toEqual(Buffer.from("hello"));
+    expect(await f.ctx.database.get(TableName.Assets, {})).toMatchObject([{ id: element.attrs.id }]);
+    expect(await readdir(f.config.storagePath)).toEqual([element.attrs.id]);
 });
 
 it("keeps a shared non-cancellable writer intact when a joining create is cancelled", async () => {
@@ -195,4 +193,61 @@ it("keeps a shared non-cancellable writer intact when a joining create is cancel
     expect(await f.assets.read(id)).toEqual(Buffer.from("hello"));
     expect(await f.ctx.database.get(TableName.Assets, {})).toMatchObject([{ id }]);
     expect(await readdir(f.config.storagePath)).toEqual([id]);
+});
+
+it("retries an independent create after the deduplicated owner's rollback", async () => {
+    const f = await fixture();
+    const entered = deferred(),
+        release = deferred();
+    const controller = new AbortController();
+    const storage = (f.assets as any).storage;
+    const write = storage.write.bind(storage);
+    vi.spyOn(storage, "write").mockImplementationOnce(async (...args: any[]) => {
+        await write(...args);
+        entered.resolve();
+        await release.promise;
+    });
+    const owner = f.assets.create(Buffer.from("shared"), {}, { signal: controller.signal }).catch((error) => error);
+    await entered.promise;
+    const independent = f.assets.create(Buffer.from("shared"));
+    const result = independent.then(
+        (id) => ({ id }),
+        (error) => ({ error }),
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+    controller.abort(new Error("owner cancelled"));
+    release.resolve();
+    expect(await owner).toMatchObject({ message: "owner cancelled" });
+    const completed = await result;
+    expect(completed).toHaveProperty("id");
+    const id = (completed as { id: string }).id;
+    expect(await f.assets.read(id)).toEqual(Buffer.from("shared"));
+    expect(await readdir(f.config.storagePath)).toEqual([id]);
+});
+
+it("lets a joining caller cancel without waiting for the shared writer", async () => {
+    const f = await fixture();
+    const entered = deferred(),
+        release = deferred();
+    const storage = (f.assets as any).storage;
+    const write = storage.write.bind(storage);
+    vi.spyOn(storage, "write").mockImplementation(async (...args: any[]) => {
+        entered.resolve();
+        await release.promise;
+        return write(...args);
+    });
+    const owner = f.assets.create(Buffer.from("shared"));
+    await entered.promise;
+    const controller = new AbortController();
+    const waiter = f.assets.create(Buffer.from("shared"), {}, { signal: controller.signal }).catch((error) => error);
+    await new Promise((resolve) => setImmediate(resolve));
+    controller.abort(new Error("waiter cancelled"));
+    try {
+        const outcome = await Promise.race([waiter, new Promise((resolve) => setTimeout(() => resolve("still waiting"), 200))]);
+        expect(outcome).toMatchObject({ message: "waiter cancelled" });
+    } finally {
+        release.resolve();
+        await owner;
+        await waiter;
+    }
 });

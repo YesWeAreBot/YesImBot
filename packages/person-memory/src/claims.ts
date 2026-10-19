@@ -121,6 +121,8 @@ export function applyClaimChanges(person: Person, changes: ClaimChange[], source
     return claims;
 }
 export function projectClaims(person: Person, claims: Claim[]): ProfileDocument {
+    const now = Date.now(),
+        since = now - 7 * 86400000;
     // Only accepted active claims define the current view. Old complete profiles
     // remain separate snapshots; they are never promoted to sourced claims.
     const doc: ProfileDocument = {
@@ -177,6 +179,13 @@ export function projectClaims(person: Person, claims: Claim[]): ProfileDocument 
     for (const c of claims.filter((c) => c.status === "active")) {
         const values = c.scene ? sceneList(doc, c) : (doc[c.category as "background"] as string[]);
         if (!Array.isArray(values)) throw new Error("场景分类需要有效场景");
+        if (c.scene && ["topics", "emotions", "events", "interactions", "disagreements"].includes(c.category)) {
+            // A scene's unrelated new messages cannot refresh an old conclusion.
+            // Earlier statements' evidence also cannot date the current revision.
+            let start = 0;
+            for (let i = 0; i < c.history.length; i++) if (c.history[i].action === "revise") start = i;
+            if (!c.history.slice(start).some((revision) => revision.evidence.some((e) => e.timestamp >= since && e.timestamp <= now))) continue;
+        }
         if (!values.includes(c.statement)) values.push(c.statement);
     }
     return validateProfileDocument(doc);

@@ -170,9 +170,19 @@ export class MCPManager {
     private async connectTransport(client: Client, transport: SSEClientTransport | StdioClientTransport | StreamableHTTPClientTransport): Promise<void> {
         this.clients.push(client);
         this.transports.push(transport);
-        const connected = client.connect(transport, { signal: this.shutdown.signal, timeout: this.config.timeout }).then(async () => {
-            // Keep these attempt-local references: fallback must not redirect late cleanup.
-            if (this.disposed) {
+        const controller = new AbortController();
+        const signal = AbortSignal.any([this.shutdown.signal, controller.signal]);
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const deadline = new Promise<never>((_, reject) => {
+            timer = setTimeout(() => {
+                const error = new Error(`MCP connection timed out (${this.config.timeout}ms)`);
+                controller.abort(error);
+                reject(error);
+            }, this.config.timeout);
+        });
+        const connected = client.connect(transport, { signal, timeout: this.config.timeout }).then(async () => {
+            // Keep attempt-local references, including a connection completing after its deadline.
+            if (signal.aborted) {
                 try {
                     await client.close();
                 } finally {
@@ -180,7 +190,13 @@ export class MCPManager {
                 }
             }
         });
-        await this.untilShutdown(connected);
+        try {
+            // SDK request timeouts start after transport.start(); SSE may wait there
+            // indefinitely for its endpoint event, so bound the entire attempt.
+            await this.untilShutdown(Promise.race([connected, deadline]));
+        } finally {
+            clearTimeout(timer);
+        }
     }
 
     private async closeConnection(client?: Client, transport?: SSEClientTransport | StdioClientTransport | StreamableHTTPClientTransport): Promise<void> {

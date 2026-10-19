@@ -144,7 +144,13 @@ export class SummaryWorker {
                     if (!(await durableQueue.valid(job.durable))) throw new Error("任务已取消或失效");
                     if (!durableQueue.claim(job.durable)) throw new Error("总结任务已由其他工作器处理");
                     job.claimed = true;
-                    if (job.durable.nextAttempt > Date.now()) throw new Error("总结任务等待重试");
+                    const remaining = job.durable.nextAttempt - Date.now();
+                    if (remaining > 0) {
+                        // Timers can wake before the wall-clock deadline (or the
+                        // clock can move backwards). Keep a wakeup for this job.
+                        this.schedule(job.durable, remaining);
+                        throw new Error("总结任务等待重试");
+                    }
                     if (job.durable.attempts >= 3 && !job.durable.output) throw new Error("总结任务已达重试上限");
                     await durableQueue.patch(job.durable, { attempts: job.durable.attempts + 1 });
                 }
@@ -218,6 +224,16 @@ export class SummaryWorker {
             .filter((e) => e.timestamp >= from && e.timestamp <= to && (!this.config.sourceAllowed || this.config.sourceAllowed(scope, userId, e)))
             .sort((left, right) => left.timestamp - right.timestamp || left.id.localeCompare(right.id));
         const sourceAllowed = (item: Evidence) => !this.config.sourceAllowed || this.config.sourceAllowed(scope, userId, item);
+        // Manual/legacy prose has no scene authorization basis. Leave it in the
+        // store, but let authorized new evidence be summarized without it.
+        const omitUnattributedProfile = !!(
+            this.config.sourceAllowed &&
+            !p.stale &&
+            p.profile &&
+            !p.structuredProfile &&
+            !p.evidence.length &&
+            !p.claims?.some((claim) => claim.status !== "retired")
+        );
         // Persist the authorization basis of every piece of supplied context,
         // including earlier profile and claim evidence, not just new messages.
         const permissionEvidence = saved?.permissionEvidence ?? [
@@ -227,9 +243,9 @@ export class SummaryWorker {
         ];
         const inputsAllowed = () => {
             if (!this.config.sourceAllowed) return true;
-            // A legacy prose profile without any recorded origin cannot prove
-            // which scene's permission authorizes sending it to the model.
-            if (!p.stale && p.profile && !p.structuredProfile && !p.evidence.length && !p.claims?.length) return false;
+            // Older saved requests may still contain the unattributed prose;
+            // only replay requests that recorded its omission explicitly.
+            if (saved && omitUnattributedProfile && !saved.omittedUnattributedProfile) return false;
             if (saved && !saved.permissionEvidence) return false;
             if (!permissionEvidence.length || !permissionEvidence.every(sourceAllowed)) return false;
             const profile = p.stale ? undefined : p.structuredProfile;
@@ -283,8 +299,8 @@ export class SummaryWorker {
         let messages = buildProfileMessages(
             {
                 target: { scope, userId, personId: p.id, name: p.name },
-                existingProfile: visibleProfile(p).profile,
-                existingStructuredProfile: visibleProfile(p).structuredProfile,
+                existingProfile: omitUnattributedProfile ? "" : visibleProfile(p).profile,
+                existingStructuredProfile: omitUnattributedProfile ? undefined : visibleProfile(p).structuredProfile,
                 ...(claimMode
                     ? {
                           claims: p.claims?.map(({ id, revision, status, category, scene, statement, evidence }) => ({
@@ -319,6 +335,7 @@ export class SummaryWorker {
             await durableQueue!.patch(durable, {
                 input: {
                     protocol: claimMode ? "claims" : "profile",
+                    omittedUnattributedProfile: omitUnattributedProfile,
                     permissionEvidence,
                     claimRevisions,
                     messages,

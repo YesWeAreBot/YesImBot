@@ -165,53 +165,81 @@ export class AssetService extends YesImBotService<Config> {
         if (!data || data.length === 0) throw new Error("资源内容为空");
         const hash = createHash("sha256").update(data).digest("hex");
         const pending = (this.pendingAssets ??= new Map());
-        let entry = pending.get(hash);
-        if (!entry) {
-            entry = {
-                signal,
-                preparation: Promise.resolve().then(async () => {
-                    const [existing] = await this.ctx.database.get(TableName.Assets, { hash });
-                    signal?.throwIfAborted();
-                    if (existing) {
-                        await this._updateLastUsed(existing.id);
+        while (true) {
+            signal?.throwIfAborted();
+            let entry = pending.get(hash);
+            if (!entry) {
+                entry = {
+                    signal,
+                    preparation: Promise.resolve().then(async () => {
+                        const [existing] = await this.ctx.database.get(TableName.Assets, { hash });
                         signal?.throwIfAborted();
-                        return { id: existing.id, persisted: Promise.resolve(existing.id) };
-                    }
-                    if (type.startsWith("image/")) {
-                        try {
-                            const jimp = await Jimp.read(data);
-                            metadata.width = jimp.width;
-                            metadata.height = jimp.height;
-                        } catch (error) {
-                            this.logger.warn(`无法解析图片元数据: ${error.message}`);
+                        if (existing) {
+                            await this._updateLastUsed(existing.id);
+                            signal?.throwIfAborted();
+                            return { id: existing.id, persisted: Promise.resolve(existing.id) };
                         }
-                    }
-                    const id = options.id || uuidv4();
-                    const asset: AssetData = {
-                        id,
-                        mime: type,
-                        hash,
-                        size: data.length,
-                        createdAt: new Date(),
-                        lastUsedAt: new Date(),
-                        metadata,
-                    };
-                    return { id, persisted: this._persistAsset(asset, data, signal) };
-                }),
-            };
-            pending.set(hash, entry);
-            const reserved = entry;
-            const release = () => {
-                if (pending.get(hash) === reserved) pending.delete(hash);
-            };
-            // Both promise branches are handled even for background callers.
-            entry.preparation.then(({ persisted }: PreparedAsset) => persisted.then(release, release), release);
+                        if (type.startsWith("image/")) {
+                            try {
+                                const jimp = await Jimp.read(data);
+                                metadata.width = jimp.width;
+                                metadata.height = jimp.height;
+                            } catch (error) {
+                                this.logger.warn(`无法解析图片元数据: ${error.message}`);
+                            }
+                        }
+                        const id = options.id || uuidv4();
+                        const asset: AssetData = {
+                            id,
+                            mime: type,
+                            hash,
+                            size: data.length,
+                            createdAt: new Date(),
+                            lastUsedAt: new Date(),
+                            metadata,
+                        };
+                        return { id, persisted: this._persistAsset(asset, data, signal) };
+                    }),
+                };
+                pending.set(hash, entry);
+                const reserved = entry;
+                const release = () => {
+                    if (pending.get(hash) === reserved) pending.delete(hash);
+                };
+                // Both promise branches are handled even for background callers.
+                entry.preparation.then(({ persisted }: PreparedAsset) => persisted.then(release, release), release);
+            }
+            try {
+                const prepared = await (entry.signal === signal ? entry.preparation : this._awaitAsset(entry.preparation, signal));
+                // A different caller waits until the owner can no longer roll back this ID.
+                if (entry.signal && entry.signal !== signal) await this._awaitAsset(prepared.persisted, signal);
+                signal?.throwIfAborted();
+                return signal && entry.signal !== signal ? { ...prepared, persisted: this._awaitAsset(prepared.persisted, signal) } : prepared;
+            } catch (error) {
+                signal?.throwIfAborted();
+                if (!entry.signal || entry.signal === signal || !entry.signal.aborted || error instanceof AggregateError) throw error;
+                // The cancelled owner's preparation/rollback is finished. Independent
+                // callers reserve again using their own cancellation and metadata.
+                if (pending.get(hash) === entry) pending.delete(hash);
+            }
         }
-        const prepared = await entry.preparation;
-        // Another caller must not publish an ID its owner can still roll back.
-        if (entry.signal && entry.signal !== signal) await prepared.persisted;
-        signal?.throwIfAborted();
-        return prepared;
+    }
+
+    private async _awaitAsset<T>(operation: Promise<T>, signal?: AbortSignal): Promise<T> {
+        if (!signal) return operation;
+        signal.throwIfAborted();
+        let abort!: () => void;
+        try {
+            return await Promise.race([
+                operation,
+                new Promise<never>((_, reject) => {
+                    abort = () => reject(signal.reason);
+                    signal.addEventListener("abort", abort, { once: true });
+                }),
+            ]);
+        } finally {
+            signal.removeEventListener("abort", abort);
+        }
     }
 
     private async _persistAsset(asset: AssetData, data: Buffer, signal?: AbortSignal): Promise<string> {

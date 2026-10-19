@@ -217,3 +217,117 @@ it("keeps known empty-clear revision available for subsequent optimistic updates
     const fresh = await f.world.updateConversationState(f.session(), { ...update, expectedRevision: cleared.state.revision });
     expect(fresh.state.revision).toBe(3);
 });
+
+it("deletes persisted unread state after restart when its channel history is cleared", async () => {
+    const f = await fixture();
+    await f.add(source("a"), source("other", { channelId: "elsewhere" }));
+    await f.world.updateConversationState(f.session(), update);
+    await f.world.updateConversationState(f.session("bot", "elsewhere"), { ...update, sourceMessageIds: ["other"] });
+    f.world.conversationState.dispose();
+    const restarted = f.restart();
+    await restarted.l2_manager.clearHistory(target, () => f.app.database.remove(TableName.Messages, target));
+    expect(await f.app.database.get("worldstate.conversation_state", {})).toHaveLength(1);
+    await f.add(source("a"));
+    expect(await restarted.getConversationState(f.session())).toEqual({ unknown: true });
+    expect((await restarted.getConversationState(f.session("bot", "elsewhere"))).state?.topic).toBe(update.topic);
+});
+
+it("clears unread persisted states by channel type without removing other types", async () => {
+    const f = await fixture();
+    await f.add(source("a"), source("p", { channelId: "private-room", channelType: "private" }));
+    await f.world.updateConversationState(f.session(), update);
+    const other = f.restart("core-b");
+    await other.updateConversationState(f.session(), update);
+    other.conversationState.dispose();
+    await f.world.updateConversationState(f.session("bot", "private-room", 1), { ...update, sourceMessageIds: ["p"] });
+    f.world.conversationState.dispose();
+    const restarted = f.restart();
+    await restarted.l2_manager.clearHistory({ type: "guild" }, async () => {});
+    const remaining = await f.app.database.get("worldstate.conversation_state", {});
+    expect(remaining).toHaveLength(1);
+    expect((await restarted.getConversationState(f.session("bot", "private-room", 1))).state?.topic).toBe(update.topic);
+});
+
+it("retention removes unread working states whose sources expire while preserving fresh states", async () => {
+    const f = await fixture();
+    await f.add(source("a"), source("fresh", { channelId: "fresh-room", timestamp: new Date() }));
+    await f.world.updateConversationState(f.session(), update);
+    await f.world.updateConversationState(f.session("bot", "fresh-room"), { ...update, sourceMessageIds: ["fresh"] });
+    f.world.conversationState.dispose();
+    const restarted = f.restart();
+    Object.assign(restarted, { logger, l1_manager: { pruneOldData: async () => {} } });
+    restarted.config.dataRetentionDays = 30;
+    await restarted.clear();
+    expect(await f.app.database.get("worldstate.conversation_state", {})).toHaveLength(1);
+    await f.add(source("a"));
+    expect(await restarted.getConversationState(f.session())).toEqual({ unknown: true });
+    expect((await restarted.getConversationState(f.session("bot", "fresh-room"))).state?.topic).toBe(update.topic);
+});
+
+it("rejects durable working-state writes without a stable plugin instance owner", async () => {
+    const f = await fixture();
+    await f.add(source("a"));
+    f.world.ctx.scope = {};
+    await expect(f.world.updateConversationState(f.session(), update)).rejects.toThrow(/稳定|持久/);
+    expect(await f.app.database.get("worldstate.conversation_state", {})).toEqual([]);
+});
+
+it("maintenance removes legacy payload-only rows that cannot be reliably scoped after restart", async () => {
+    const f = await fixture();
+    await f.add(source("a"));
+    await f.world.updateConversationState(f.session(), update);
+    const [stored] = await f.app.database.get("worldstate.conversation_state", {});
+    await f.app.database.remove("worldstate.conversation_state", {});
+    await f.app.database.create("worldstate.conversation_state", { id: stored.id, payload: stored.payload });
+    f.world.conversationState.dispose();
+    await f.restart().l2_manager.clearHistory({ type: "all" }, async () => {});
+    expect(await f.app.database.get("worldstate.conversation_state", {})).toEqual([]);
+});
+
+it("does not restore a late persistent write after history clear starts", async () => {
+    const f = await fixture();
+    await f.add(source("a"));
+    await f.world.updateConversationState(f.session(), update);
+    const entered = deferred(),
+        hold = deferred();
+    const upsert = f.app.database.upsert.bind(f.app.database);
+    let held = false;
+    f.app.database.upsert = (async (...args: any[]) => {
+        const result = await (upsert as any)(...args);
+        if (args[0] === "worldstate.conversation_state" && !held) {
+            held = true;
+            entered.resolve();
+            await hold.promise;
+        }
+        return result;
+    }) as any;
+    const writing = f.world.updateConversationState(f.session(), { ...update, expectedRevision: 1, topic: "late revision" });
+    await entered.promise;
+    const clearing = f.restart().l2_manager.clearHistory(target, () => f.app.database.remove(TableName.Messages, target));
+    hold.resolve();
+    await expect(writing).rejects.toThrow(/清除/);
+    await clearing;
+    expect(await f.app.database.get("worldstate.conversation_state", {})).toEqual([]);
+    await f.add(source("a"));
+    expect(await f.restart().getConversationState(f.session())).toEqual({ unknown: true });
+});
+
+it("targeted clear preserves legacy notes in other channels until global migration cleanup", async () => {
+    const f = await fixture();
+    await f.add(source("a"), source("other", { channelId: "elsewhere" }));
+    await f.world.updateConversationState(f.session(), update);
+    await f.world.updateConversationState(f.session("bot", "elsewhere"), { ...update, sourceMessageIds: ["other"] });
+    const rows = await f.app.database.get("worldstate.conversation_state", {});
+    f.world.conversationState.dispose();
+    await f.app.database.remove("worldstate.conversation_state", {});
+    for (const row of rows) await f.app.database.create("worldstate.conversation_state", { id: row.id, payload: row.payload });
+    await f.app.database.create("worldstate.conversation_state", { id: "malformed-legacy", payload: { ...rows[0].payload, scope: "not-json" } });
+    const restarted = f.restart();
+    await restarted.l2_manager.clearHistory(target, async () => {});
+    const remaining = await f.app.database.get("worldstate.conversation_state", {});
+    expect(remaining).toHaveLength(2);
+    expect(remaining.some((row) => row.id === "malformed-legacy")).toBe(true);
+    expect(JSON.parse(remaining.find((row) => row.id !== "malformed-legacy")!.payload.scope)[3]).toBe("elsewhere");
+    await restarted.l2_manager.clearHistory({ type: "all" }, async () => {});
+    expect(await f.app.database.get("worldstate.conversation_state", {})).toEqual([]);
+});

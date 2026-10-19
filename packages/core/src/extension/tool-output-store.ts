@@ -14,7 +14,7 @@ export interface ToolOutputOwner {
 const TTL = 24 * 60 * 60 * 1000;
 const MAX_FILE_BYTES = 64 * 1024 * 1024;
 const MAX_FOLDER_BYTES = 256 * 1024 * 1024;
-const FILE_NAME = /^[a-f0-9-]{36}\.json(?:\.tmp)?$/;
+const FILE_NAME = /^(?:([a-f0-9-]{36})\.)?[a-f0-9-]{36}\.json(?:\.tmp)?$/;
 const RESOURCE = /^tool-output:\/\/([a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12})$/;
 export const TOOL_OUTPUT_THRESHOLD = 24000;
 export const TOOL_OUTPUT_PAGE_LIMIT = 8000;
@@ -36,6 +36,10 @@ export class ToolOutputStore {
             for (const name of names) {
                 const file = path.join(this.directory, name);
                 try {
+                    if (FILE_NAME.exec(name)?.[1] !== this.boot) {
+                        await rm(file, { force: true });
+                        continue;
+                    }
                     const info = await stat(file);
                     if (Date.now() - info.mtimeMs >= TTL) await rm(file, { force: true });
                     else {
@@ -51,7 +55,7 @@ export class ToolOutputStore {
             const data = JSON.stringify({ owner, boot: this.boot, expiresAt, text });
             const size = Buffer.byteLength(data);
             if (size > MAX_FILE_BYTES || bytes + size > MAX_FOLDER_BYTES || count >= 512) throw new Error("Tool output resource storage capacity exceeded");
-            const file = path.join(this.directory, `${id}.json`),
+            const file = path.join(this.directory, `${this.boot}.${id}.json`),
                 temporary = `${file}.tmp`;
             try {
                 assertCurrent();
@@ -84,11 +88,21 @@ export class ToolOutputStore {
         if (!match) throw new Error("Invalid tool-output resource URI");
         if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > TOOL_OUTPUT_PAGE_LIMIT)
             throw new Error("Invalid character range (limit 1–8000 UTF-16 code units)");
-        const file = path.join(this.directory, `${match[1]}.json`);
-        const info = await stat(file);
+        const file = path.join(this.directory, `${this.boot}.${match[1]}.json`);
+        let info: Awaited<ReturnType<typeof stat>>;
+        try {
+            info = await stat(file);
+        } catch (error) {
+            throw new Error(error.code === "ENOENT" ? "Tool output resource expired (24 hours or service reload)" : "Tool output resource unavailable");
+        }
         assertCurrent();
         if (info.size > MAX_FILE_BYTES) throw new Error("Invalid resource size");
-        const resource = JSON.parse(await readFile(file, "utf8"));
+        let resource: any;
+        try {
+            resource = JSON.parse(await readFile(file, "utf8"));
+        } catch (error) {
+            throw new Error(error.code === "ENOENT" ? "Tool output resource expired (24 hours or service reload)" : "Tool output resource unavailable");
+        }
         assertCurrent();
         if (resource.boot !== this.boot || Date.parse(resource.expiresAt) <= Date.now())
             throw new Error("Tool output resource expired (24 hours or service reload)");

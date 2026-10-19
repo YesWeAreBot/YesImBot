@@ -9,6 +9,18 @@ import { loggingStub, stubCtx } from "./helpers/yesimbot";
 const root = "7697801892654501477";
 const text = (text: string) => ({ type: "text", data: { text } });
 const node = (...message: any[]) => ({ message_id: "node-id", sender: { user_id: 1798037526, nickname: "许仙" }, time: 1792284169, message });
+it("does not evict inline children or the root while constructing one large page", async () => {
+    const f = setup([node(...Array.from({ length: 150 }, (_, i) => ({ type: "node", data: node(text(`child-${i}`)) })))]);
+    const page = await f.extension.getForwardMsg({ session: f.session, id: root });
+    expect(page.status).toBe("success");
+    const firstChild = await f.extension.getForwardMsg({ session: f.session, id: page.result.nestedForwardIds[0] });
+    expect(firstChild.status).toBe("success");
+    expect(firstChild.result.content).toContain("child-0");
+    expect(page.result.content).toContain("内嵌内容未缓存");
+    expect(page.result.content).toContain("mode=recursive");
+    await f.extension.getForwardMsg({ session: f.session, id: root });
+    expect(f.api).toHaveBeenCalledTimes(1);
+});
 it("keeps new system faces typed in forwarded mixed messages", async () => {
     const f = setup([node(text("手打 /冤种"), { type: "face", data: { id: "99999", raw: { faceText: "/冤种", faceType: 3 } } })]);
     const page = await f.extension.getForwardMsg({ session: f.session, id: root });

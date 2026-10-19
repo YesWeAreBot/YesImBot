@@ -1,4 +1,5 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -17,6 +18,25 @@ async function store() {
 }
 const owner: ToolOutputOwner = { instance: "instance-a", platform: "test", selfId: "bot", channelId: "group", channelType: "guild", generation: 0 };
 describe("tool output immutable resources", () => {
+    it("reclaims unreadable resources from previous boots before applying the quota", async () => {
+        const old = await store();
+        const receipt = await old.save('"old"', owner, () => {});
+        const directory = dirs.at(-1)!;
+        await Promise.all(Array.from({ length: 511 }, () => writeFile(path.join(directory, `${randomUUID()}.json`), "{}")));
+        const current = new ToolOutputStore(directory);
+        const saved = await current.save('"current"', owner, () => {});
+        expect((await current.read(saved.uri, owner, 0, 100, () => {})).text).toBe('"current"');
+        expect(await readdir(directory)).toHaveLength(1);
+        await expect(current.read(receipt.uri, owner, 0, 100, () => {})).rejects.toThrow(/expired/i);
+    });
+    it("normalizes missing files and storage failures without returning server paths", async () => {
+        const output = await store();
+        const uri = `tool-output://${randomUUID()}`;
+        await expect(output.read(uri, owner, 0, 100, () => {})).rejects.toThrow(/expired/i);
+        const file = path.join(dirs.at(-1)!, "not-a-directory");
+        await writeFile(file, "file");
+        await expect(new ToolOutputStore(file).read(uri, owner, 0, 100, () => {})).rejects.toThrow(/^Tool output resource unavailable$/);
+    });
     it("reconstructs long single lines and Unicode exactly in UTF-16 units", async () => {
         const output = await store();
         const source = JSON.stringify({ value: '🙂汉字\\"'.repeat(12000) });

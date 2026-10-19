@@ -97,3 +97,37 @@ it("closes a pending legacy SSE connection during shutdown", async () => {
     expect((manager as any).clients).toHaveLength(0);
     expect((manager as any).transports).toHaveLength(0);
 });
+
+it.each(["sse", "http"])("times out a %s connection before its SSE endpoint arrives", async (protocol) => {
+    vi.stubGlobal("fetch", localFetch);
+    onTestFinished(() => vi.unstubAllGlobals());
+    let streamClosed = false;
+    const server = createServer((req, res) => {
+        if (req.method === "POST") res.writeHead(405).end();
+        else {
+            res.writeHead(200, { "Content-Type": "text/event-stream" });
+            res.flushHeaders();
+            res.on("close", () => {
+                streamClosed = true;
+            });
+        }
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const manager = new MCPManager({} as any, { debug() {}, error() {}, success() {}, info() {}, warn() {} } as any, {} as any, {} as any, {
+        timeout: 200,
+        mcpServers: { test: { url: `${protocol}://127.0.0.1:${(server.address() as any).port}/sse` } },
+    });
+    onTestFinished(async () => {
+        await manager.cleanup();
+        server.closeAllConnections();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+    });
+    const connection = manager.connectServers();
+    const finished = await Promise.race([connection.then(() => true), new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 2000))]);
+    expect(finished).toBe(true);
+    expect((manager as any).clients).toHaveLength(0);
+    expect((manager as any).transports).toHaveLength(0);
+    // Allow the server to observe the client's socket cancellation.
+    await vi.waitFor(() => expect(streamClosed).toBe(true), { timeout: 1000 });
+});

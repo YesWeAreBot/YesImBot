@@ -185,52 +185,59 @@ export default class InteractionsExtension {
                 current();
                 this.forwardLayers ??= new ForwardLayerCache();
                 const scope = JSON.stringify([original, generation]);
-                let messages = this.forwardLayers.get(scope, id);
-                let snapshotCached = !!messages;
-                if (!messages) {
-                    if (id.startsWith("inline-forward:")) throw new Error("内嵌转发缓存不存在或已过期，请重新读取父包所在页");
-                    messages = forwardMessageList(await internal.getForwardMsg(id));
-                    current();
-                    snapshotCached = this.forwardLayers.put(scope, id, messages);
-                }
-                const nested = new Set<string>();
-                const selected = messages.slice(offset, offset + limit);
-                const content = selected.length
-                    ? await formatForwardMessage(
-                          this.ctx,
-                          selected,
-                          async () => {
-                              throw new Error("当前层不自动获取子包");
-                          },
-                          new Set([id]),
-                          {
-                              remember: (childId, payload) => {
-                                  current();
-                                  if (!this.forwardLayers!.put(scope, childId, forwardMessageList(payload)))
-                                      throw new Error("内嵌包超过缓存容量；可使用父包 ID 和 mode=recursive 读取完整内容");
+                const read = this.forwardLayers.beginRead();
+                try {
+                    let messages = this.forwardLayers.get(scope, id);
+                    let snapshotCached = !!messages;
+                    if (!messages) {
+                        if (id.startsWith("inline-forward:")) throw new Error("内嵌转发缓存不存在或已过期，请重新读取父包所在页");
+                        messages = forwardMessageList(await internal.getForwardMsg(id));
+                        current();
+                        snapshotCached = this.forwardLayers.put(scope, id, messages);
+                    }
+                    if (snapshotCached) read.pin(scope, id);
+                    const nested = new Set<string>();
+                    const selected = messages.slice(offset, offset + limit);
+                    const content = selected.length
+                        ? await formatForwardMessage(
+                              this.ctx,
+                              selected,
+                              async () => {
+                                  throw new Error("当前层不自动获取子包");
                               },
-                              nested,
-                          },
-                      )
-                    : "";
-                current();
-                const returned = Math.min(limit, Math.max(0, messages.length - offset));
-                const hasMore = offset + returned < messages.length;
-                return Success({
-                    kind: "forward-page",
-                    forwardId: id,
-                    snapshotCached,
-                    content,
-                    total: messages.length,
-                    offset,
-                    returned,
-                    hasMore,
-                    nextOffset: hasMore ? offset + returned : null,
-                    nestedForwardIds: [...nested],
-                    historyGeneration: generation,
-                    projection: { kind: "recalled", isNewEvidence: false },
-                    tips: "子包请用对应 forward ID 再读取；内嵌快照缓存10分钟，失效后可重新读取父包所在页。",
-                });
+                              new Set([id]),
+                              {
+                                  remember: (childId, payload) => {
+                                      current();
+                                      if (!this.forwardLayers!.put(scope, childId, forwardMessageList(payload)))
+                                          throw new Error("内嵌包超过缓存容量；可使用父包 ID 和 mode=recursive 读取完整内容");
+                                      read.pin(scope, childId);
+                                  },
+                                  nested,
+                              },
+                          )
+                        : "";
+                    current();
+                    const returned = Math.min(limit, Math.max(0, messages.length - offset));
+                    const hasMore = offset + returned < messages.length;
+                    return Success({
+                        kind: "forward-page",
+                        forwardId: id,
+                        snapshotCached,
+                        content,
+                        total: messages.length,
+                        offset,
+                        returned,
+                        hasMore,
+                        nextOffset: hasMore ? offset + returned : null,
+                        nestedForwardIds: [...nested],
+                        historyGeneration: generation,
+                        projection: { kind: "recalled", isNewEvidence: false },
+                        tips: "子包请用对应 forward ID 再读取；内嵌快照缓存10分钟，失效后可重新读取父包所在页。",
+                    });
+                } finally {
+                    read.release();
+                }
             }
             const cache = new Map<string, Promise<unknown>>();
             const load = (forwardId: string): Promise<unknown> => {

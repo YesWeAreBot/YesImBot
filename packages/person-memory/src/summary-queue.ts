@@ -10,6 +10,7 @@ export type SummaryOutput = { profile: any; messageIds: string[] } | { changes: 
 export interface SummaryInput {
     protocol?: "profile" | "claims";
     permissionEvidence?: Evidence[];
+    omittedUnattributedProfile?: boolean;
     claimRevisions?: Record<string, number>;
     messages: Array<{ role: "system" | "user"; content: string }>;
     expected: { personId: string; personRevision: number; accountRevision: number };

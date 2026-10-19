@@ -1,6 +1,7 @@
 import memory from "@koishijs/plugin-database-memory";
 import { Bot, Context } from "koishi";
-import { expect, it, onTestFinished } from "vitest";
+import { OneBotBot } from "koishi-plugin-adapter-onebot";
+import { expect, it, onTestFinished, vi } from "vitest";
 
 import { withReplyTurn } from "../src/agent/reply-turn";
 import CommandExtension from "../src/extension/builtin/command";
@@ -115,3 +116,54 @@ for (const [name, type] of [
         expect(f.outbound[0].actor).toBe("bot");
     });
 }
+
+for (const role of ["admin", "owner"]) {
+    it(`uses the bot's own ${role} membership for native permission checks`, async () => {
+        const f = await fixture(0);
+        f.source.bot.checkPermission = OneBotBot.prototype.checkPermission;
+        f.source.bot.getGuildMember = vi.fn<(guildId: string, userId: string) => Promise<any>>(async () => ({
+            user: { id: "bot" },
+            nick: "Bot member",
+            roles: [{ id: role }],
+        }));
+        let actor: string | undefined;
+        f.ctx.command("native-role", { permissions: [`onebot.group.${role}`] }).action(({ session }) => {
+            actor = session!.userId;
+            expect(session!.author.nick).toBe("Bot member");
+            return "allowed";
+        });
+        await f.extension.executeKoishiCommand({ session: f.source, command: "native-role" } as any);
+        expect(actor).toBe("bot");
+        expect(f.source.bot.getGuildMember).toHaveBeenCalledWith("guild", "bot");
+        expect(f.source.event.member.nick).toBe("Human nick");
+    });
+}
+
+it("makes native adapter APIs available without copying the triggering user's raw payload", async () => {
+    const f = await fixture(0);
+    f.source.bot.internal = { getLoginInfo: async () => ({ user_id: "bot" }) };
+    f.source.setInternal("onebot", { user_id: "human", sender: { role: "owner" }, message_id: "trigger" });
+    let observed: any;
+    f.ctx.command("native-api").action(async ({ session }) => {
+        observed = { result: await session!.onebot!.getLoginInfo(), rawUser: session!.onebot!.user_id, actor: session!.userId };
+        return "native API called";
+    });
+    await f.extension.executeKoishiCommand({ session: f.source, command: "native-api" } as any);
+    expect(observed).toEqual({ result: { user_id: "bot" }, rawUser: undefined, actor: "bot" });
+    expect(f.source.onebot.user_id).toBe("human");
+});
+
+it("does not replace a missing bot role with the triggering owner's membership", async () => {
+    const f = await fixture(0);
+    f.source.bot.checkPermission = OneBotBot.prototype.checkPermission;
+    f.source.event.member.roles = [{ id: "owner" }];
+    f.source.bot.getGuildMember = async () => ({ user: { id: "bot" }, roles: [{ id: "member" }] });
+    let invoked = false;
+    f.ctx.command("owner-only", { permissions: ["onebot.group.owner"] }).action(() => {
+        invoked = true;
+        return "not permitted";
+    });
+    await f.extension.executeKoishiCommand({ session: f.source, command: "owner-only" } as any);
+    expect(invoked).toBe(false);
+    expect(f.outbound[0].content).toContain("权限不足");
+});

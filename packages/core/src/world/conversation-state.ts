@@ -4,7 +4,7 @@ import type { Context } from "koishi";
 
 import { TableName } from "../shared/constants";
 import { historyCoordinator } from "./history-coordinator";
-import type { SemanticMemoryManager } from "./l2-semantic-memory";
+import type { SemanticMemoryManager, SemanticMemoryScope } from "./l2-semantic-memory";
 import type { MessageWindowTarget } from "./message-window";
 import type { MessageData } from "./types";
 
@@ -34,16 +34,74 @@ export interface ConversationStateResult {
 interface StatePayload extends ConversationState {
     scope: string;
     sourceFingerprints: string[];
+    sourceOldestAt?: string;
+}
+
+interface StateRow {
+    id: string;
+    owner: string;
+    platform: string;
+    selfId: string;
+    channelId: string;
+    channelType: string;
+    retentionTimestamp: Date;
+    schemaVersion: number;
+    payload: StatePayload;
 }
 
 declare module "koishi" {
     interface Tables {
-        [CONVERSATION_STATE]: { id: string; payload: StatePayload };
+        [CONVERSATION_STATE]: StateRow;
     }
 }
 
 export function registerConversationStateModel(ctx: Context): void {
-    ctx.model.extend(CONVERSATION_STATE, { id: "string(64)", payload: "json" }, { primary: "id" });
+    ctx.model.extend(
+        CONVERSATION_STATE,
+        {
+            id: "string(64)",
+            owner: "string(64)",
+            platform: "string(255)",
+            selfId: "string(255)",
+            channelId: "string(255)",
+            channelType: "string(16)",
+            retentionTimestamp: "timestamp",
+            // Existing payload-only rows get 0; only validated, stably owned writes use 1.
+            schemaVersion: { type: "unsigned", initial: 0 },
+            payload: "json",
+        },
+        { primary: "id" },
+    );
+}
+
+/** Call under the history barrier, after earlier reads/writes have drained. */
+export async function clearConversationStates(database: Context["database"], scope: SemanticMemoryScope) {
+    // Standalone semantic-memory users may not register the optional working-state model.
+    if (!database?.tables?.[CONVERSATION_STATE]) return;
+    const query = "type" in scope ? (scope.type === "all" ? {} : { channelType: scope.type }) : { platform: scope.platform, channelId: scope.channelId };
+    // Old rows cannot prove stable ownership and are never adopted. Their embedded
+    // routing scope is sufficient for targeted deletion; global retention removes
+    // all remaining legacy rows, including malformed/unscopable payloads.
+    const legacy = await database.get(CONVERSATION_STATE, { schemaVersion: 0 });
+    const legacyIds = legacy
+        .filter(({ payload }) => {
+            if ("type" in scope && scope.type === "all") return true;
+            try {
+                const stored = JSON.parse(payload.scope);
+                if (!Array.isArray(stored) || stored.length !== 5) return false;
+                return "type" in scope ? stored[4] === scope.type : stored[1] === scope.platform && stored[3] === scope.channelId;
+            } catch {
+                return false;
+            }
+        })
+        .map(({ id }) => id);
+    await database.remove(CONVERSATION_STATE, legacyIds.length ? { $or: [query, { id: { $in: legacyIds } }] } : query);
+}
+
+/** Retention follows the oldest source, or updatedAt for an explicitly empty state. */
+export async function pruneConversationStates(database: Context["database"], cutoff: Date) {
+    if (!database?.tables?.[CONVERSATION_STATE]) return;
+    await database.remove(CONVERSATION_STATE, { $or: [{ retentionTimestamp: { $lt: cutoff } }, { schemaVersion: 0 }] });
 }
 
 // Cordis proxies for the same physical DB share a coordinator and mutex ownership.
@@ -134,7 +192,7 @@ export class ConversationStateManager {
     }
 
     private async sourceFingerprints(target: MessageWindowTarget, ids: string[]) {
-        if (!ids.length) return [];
+        if (!ids.length) return { fingerprints: [], sourceOldestAt: undefined };
         const scope = { platform: target.platform, channelId: target.channelId, channelType: target.channelType };
         const rows = await this.ctx.database.get(TableName.Messages, { ...scope, id: { $in: ids } });
         if (
@@ -142,11 +200,12 @@ export class ConversationStateManager {
             rows.some((r) => r.platform !== target.platform || r.channelId !== target.channelId || r.channelType !== target.channelType)
         )
             throw new SourceUnavailableError("工作状态的原始来源不存在或不属于当前会话");
-        return ids.map((id) => {
+        const fingerprints = ids.map((id) => {
             const matching = rows.filter((r) => r.id === id);
             if (matching.length !== 1) throw new SourceUnavailableError("工作状态的原始来源不唯一");
             return fingerprint(matching[0]);
         });
+        return { fingerprints, sourceOldestAt: new Date(Math.min(...rows.map((row) => new Date(row.timestamp).getTime()))).toISOString() };
     }
 
     private async readPayload(id: string, scope: string, target: MessageWindowTarget, assertCurrent: () => void): Promise<StatePayload | undefined> {
@@ -154,7 +213,17 @@ export class ConversationStateManager {
         assertCurrent();
         if (!row) return undefined;
         const state = row.payload;
-        let valid = !this.invalidated.has(id) && state?.scope === scope && Number.isSafeInteger(state.revision) && state.revision > 0;
+        let valid =
+            row.schemaVersion === 1 &&
+            row.owner === JSON.parse(scope)[0] &&
+            row.platform === target.platform &&
+            row.selfId === target.selfId &&
+            row.channelId === target.channelId &&
+            row.channelType === target.channelType &&
+            !this.invalidated.has(id) &&
+            state?.scope === scope &&
+            Number.isSafeInteger(state.revision) &&
+            state.revision > 0;
         valid = valid && Number.isFinite(Date.parse(state.createdAt)) && Number.isFinite(Date.parse(state.updatedAt)) && state.createdAt <= state.updatedAt;
         if (valid) {
             try {
@@ -165,7 +234,7 @@ export class ConversationStateManager {
         }
         if (valid) {
             try {
-                const fingerprints = await this.sourceFingerprints(target, state.sourceMessageIds);
+                const { fingerprints } = await this.sourceFingerprints(target, state.sourceMessageIds);
                 valid = JSON.stringify(fingerprints) === JSON.stringify(state.sourceFingerprints);
             } catch (error) {
                 if (!(error instanceof SourceUnavailableError)) throw error;
@@ -183,7 +252,7 @@ export class ConversationStateManager {
 
     private result(payload?: StatePayload): ConversationStateResult {
         if (!payload) return { unknown: true };
-        const { scope: _scope, sourceFingerprints: _fingerprints, ...state } = payload;
+        const { scope: _scope, sourceFingerprints: _fingerprints, sourceOldestAt: _sourceOldestAt, ...state } = payload;
         return { state, unknown: !state.topic.trim() && !state.openIssues.length };
     }
 
@@ -204,23 +273,35 @@ export class ConversationStateManager {
             assertCurrent();
             const current = await this.readPayload(id, scope, target, assertCurrent);
             if ((current?.revision ?? 0) !== expectedRevision) throw new Error("工作会话状态 revision 版本已改变，请重新读取");
-            const sourceFingerprints = await this.sourceFingerprints(target, fields.sourceMessageIds);
+            const { fingerprints: sourceFingerprints, sourceOldestAt } = await this.sourceFingerprints(target, fields.sourceMessageIds);
             assertCurrent();
             const now = new Date().toISOString();
             const payload: StatePayload = {
                 ...fields,
                 scope,
                 sourceFingerprints,
+                sourceOldestAt,
                 revision: expectedRevision + 1,
                 createdAt: current?.createdAt ?? now,
                 updatedAt: now,
             };
-            await this.ctx.database.upsert(CONVERSATION_STATE, [{ id, payload }]);
+            const row = (state: StatePayload): StateRow => ({
+                id,
+                owner: instance,
+                platform: target.platform,
+                selfId: target.selfId,
+                channelId: target.channelId,
+                channelType: target.channelType,
+                retentionTimestamp: new Date(state.sourceOldestAt ?? state.updatedAt),
+                schemaVersion: 1,
+                payload: state,
+            });
+            await this.ctx.database.upsert(CONVERSATION_STATE, [row(payload)]);
             try {
                 assertCurrent();
             } catch (error) {
                 // Restore the previous committed state if authorization changed during the write.
-                if (current) await this.ctx.database.upsert(CONVERSATION_STATE, [{ id, payload: current }]);
+                if (current) await this.ctx.database.upsert(CONVERSATION_STATE, [row(current)]);
                 else await this.ctx.database.remove(CONVERSATION_STATE, { id });
                 throw error;
             }

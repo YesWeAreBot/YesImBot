@@ -8,6 +8,7 @@ import type { LoggerService } from "../logger";
 import { MemoryService } from "../memory";
 import { ChatModelSwitcher } from "../model";
 import { AgentStimulus, ContextualMessage, UserMessagePayload, WorldState, WorldStateService } from "../world";
+import { sessionChannelType } from "../world/channel-metadata";
 import { deriveConversationFocus, FocusedWorldState } from "./context-packing";
 import { assertReplyTurn } from "./reply-turn";
 
@@ -55,8 +56,30 @@ export class PromptContextBuilder {
      */
     public async build(stimulus: AgentStimulus<any>) {
         const { type, session, payload } = stimulus;
-
+        const target = { platform: session.platform, channelId: session.channelId!, channelType: sessionChannelType(session) };
+        const binding = () =>
+            JSON.stringify([
+                session.platform,
+                session.selfId,
+                session.channelId,
+                sessionChannelType(session),
+                session.isDirect,
+                session.userId,
+                session.guildId,
+            ]);
+        const originalBinding = binding();
+        const generation = this.worldStateService.l2_manager?.getHistoryGeneration?.(target);
+        const assertContextCurrent = () => {
+            assertReplyTurn();
+            if (binding() !== originalBinding) throw new Error("上下文构建期间会话身份已改变");
+            if (this.ctx.filter?.(session) === false || this.worldStateService.isChannelAllowed?.(session) === false)
+                throw new Error("上下文构建期间会话授权或配置已改变");
+            if (generation !== undefined && this.worldStateService.l2_manager?.getHistoryGeneration?.(target) !== generation)
+                throw new Error("上下文构建期间历史已清除");
+        };
+        assertContextCurrent();
         const sourceWorldState = await this.worldStateService.buildWorldState(session);
+        assertContextCurrent();
         const focus = deriveConversationFocus(stimulus, sourceWorldState);
         // Optional for older service adapters. The service validates raw sources and current scope.
         const stateService = this.worldStateService as WorldStateService & {
@@ -65,8 +88,15 @@ export class PromptContextBuilder {
                 state?: { revision: number; topic?: string; openIssues: string[]; sourceMessageIds: string[]; createdAt: string; updatedAt: string };
             }>;
         };
-        const working = await stateService.getConversationState?.(session);
-        assertReplyTurn();
+        let working: Awaited<ReturnType<NonNullable<typeof stateService.getConversationState>>> | undefined;
+        try {
+            working = await stateService.getConversationState?.(session);
+        } catch (error) {
+            assertContextCurrent();
+            if (error instanceof Error && error.name === "AbortError") throw error;
+            this.logger.warn(`工作状态读取失败，继续使用 unknown：${String(error)}`);
+        }
+        assertContextCurrent();
         focus.explicitWorkingState = {
             ...(working?.unknown === false ? working.state : undefined),
             unknown: working?.unknown ?? true,

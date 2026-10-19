@@ -7,6 +7,7 @@ import { withUsageScope } from "../model/usage";
 import { TableName } from "../shared/constants";
 import { cosineSimilarity } from "../shared/utils";
 import { HistoryConfig } from "./config";
+import { clearConversationStates } from "./conversation-state";
 import { historyCoordinator, withHistoryBarrier } from "./history-coordinator";
 import { keywordRelevance, recallKeywordCandidates, recallTokens, withinRecallScope } from "./hybrid-recall";
 import { ContextualMessage, HistoryChannelType, MemoryChunkData, MessageData } from "./types";
@@ -156,7 +157,10 @@ export class SemanticMemoryManager {
             }
         }
 
-        return this.withHistoryBarrier(scope, clear);
+        return this.withHistoryBarrier(scope, async () => {
+            await clearConversationStates(this.ctx.database, scope);
+            return clear();
+        });
     }
 
     /** Exclusive snapshot/maintenance without discarding buffers or changing generations. */

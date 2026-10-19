@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { Context, h, Schema } from "koishi";
 
-import { guardReplySession } from "../../../agent/reply-turn";
+import { assertReplyTurn, guardReplySession } from "../../../agent/reply-turn";
 import { Extension, Tool, withInnerThoughts } from "../../../extension/decorators";
 import { Failed, Success } from "../../../extension/helpers";
 import { Infer } from "../../../extension/types";
@@ -35,6 +35,7 @@ export default class CommandExtension {
     async executeKoishiCommand({ session, command }: Infer<{ command: string }>) {
         if (!session) return Failed("session 不可用");
         try {
+            assertReplyTurn();
             // A fresh session prevents the trigger's observed user/permissions/member
             // from leaking into command execution. Keep the destination independently
             // from the actor, especially for a private conversation with another user.
@@ -48,6 +49,17 @@ export default class CommandExtension {
                     message: { id: `bot-command-${randomUUID()}`, content: command },
                 }),
             );
+            // Initialize API methods from the bot, with no triggering user's raw event.
+            if (commandSession.bot.internal) commandSession.setInternal(session.event._type || session.platform, {});
+            if (!commandSession.isDirect && commandSession.guildId) {
+                try {
+                    commandSession.event.member = await commandSession.bot.getGuildMember(commandSession.guildId, commandSession.selfId);
+                } catch {
+                    // Missing membership must fail closed for native role permissions.
+                    this.ctx.logger.debug(`无法获取 Bot[${session.selfId}] 的群成员权限`);
+                }
+            }
+            assertReplyTurn();
             await commandSession.sendQueued(h("execute", {}, command));
 
             this.ctx.logger.info(`Bot[${session.selfId}]执行了指令: ${command}`);
