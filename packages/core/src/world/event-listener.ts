@@ -130,7 +130,6 @@ export class EventListenerManager {
 
                 if (session.type === "notice" && session.platform == "onebot") return this.handleNotice(session);
                 if (session.type === "guild-member" && session.platform == "onebot") return this.handleGuildMember(session);
-                if (session.type === "message-deleted") return this.handleMessageDeleted(session);
             }),
         );
     }
@@ -224,12 +223,6 @@ export class EventListenerManager {
             };
             this.ctx.emit(session, "agent/stimulus", stimulus, this.service.stimulusOwnerId);
         }
-    }
-
-    private async handleMessageDeleted(session: Session): Promise<void> {
-        const channelId = session.channelId;
-        const messageId = session.messageId;
-        const operator = session.operatorId;
     }
 
     private async handleOperatorMessage(session: Session): Promise<void> {

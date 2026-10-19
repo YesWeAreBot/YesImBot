@@ -144,8 +144,9 @@ test("revert then rebind never recycles an association version or revives old pr
     const p = await store.create(scene, "甲", actor);
     await store.bind(scene, "u1", p.id, 1, actor);
     const bind = (await store.history(scene))[0];
-    const original = (await store.find(scene, "u1")).accounts[0].revision;
-    await store.capture(scene, source("m1"));
+    const bound = await store.find(scene, "u1");
+    const original = bound.accounts[0].revision;
+    await store.capture(scene, { ...source("m1"), timestamp: bound.person.identityChangedAt + 1 });
     const proposal = await store.propose(scene, "u1", "旧候选", ["m1"], "model");
     await store.revert(scene, bind.id, actor);
     await store.bind(scene, "u1", p.id, 1, actor);

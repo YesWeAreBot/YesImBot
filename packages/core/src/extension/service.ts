@@ -573,7 +573,7 @@ export class ToolService extends YesImBotService<Config> {
         if (session?.platform && session.channelId && world?.recordSystemEvent) {
             const channelId = session.channelId;
             try {
-                const admin = session.argv?.command?.name === "tool.call";
+                const admin = session.argv?.command?.name === "tool.invoke";
                 const historyGeneration =
                     result.result?.kind === "tool-output-resource" || result.metadata?.payloadError
                         ? capture?.owner.generation

@@ -171,8 +171,9 @@ export default class CodeToImage {
                 theme = this.config.defaultTheme;
             }
 
+            const { isPlainLang } = await import("shiki/core");
             const loadedLanguages = this.highlighter.getLoadedLanguages();
-            if (!loadedLanguages.includes(lang)) {
+            if (!isPlainLang(lang) && !loadedLanguages.includes(lang)) {
                 try {
                     await this.highlighter.loadLanguage(import(`@shikijs/langs/${lang}`));
                 } catch (error) {
@@ -348,9 +349,4 @@ export default class CodeToImage {
 </body>
 </html>`;
     }
-}
-
-function randomPick(array: any[], num: number = 3) {
-    const shuffled = array.sort(() => 0.5 - Math.random());
-    return shuffled.slice(0, num);
 }

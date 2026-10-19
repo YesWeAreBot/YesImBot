@@ -16,10 +16,12 @@
  * 输出：1.0.1-canary.f812fe7
  */
 
-const fs = require("fs");
-const path = require("path");
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const PACKAGES_DIR = path.join(__dirname, "../packages");
+const scriptPath = fileURLToPath(import.meta.url);
+const PACKAGES_DIR = path.join(path.dirname(scriptPath), "../packages");
 
 /**
  * 缩短预发布版本中的commit id至7位
@@ -194,13 +196,8 @@ function processPackages() {
 }
 
 // 执行主函数
-if (require.main === module) {
+if (process.argv[1] && path.resolve(process.argv[1]) === scriptPath) {
     processPackages();
 }
 
-module.exports = {
-    shortenCanaryVersion,
-    updatePackageJson,
-    updateChangelog,
-    processPackages,
-};
+export { shortenCanaryVersion, updatePackageJson, updateChangelog, processPackages };

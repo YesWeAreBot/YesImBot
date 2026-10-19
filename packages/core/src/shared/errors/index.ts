@@ -140,6 +140,9 @@ export class ErrorReporter {
                     {
                         error: detailed ? cleaned.error : summarizeError(cleaned.error),
                         additionalInfo: detailed ? cleaned.additionalInfo : summarizeContext(cleaned.additionalInfo),
+                        ...(this.config.includeSystemInfo
+                            ? { systemInfo: { nodeVersion: process.version, platform: process.platform, architecture: process.arch } }
+                            : {}),
                     },
                     null,
                     2,

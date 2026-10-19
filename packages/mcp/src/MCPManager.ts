@@ -1,7 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { StreamableHTTPClientTransport, StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Context, Schema } from "koishi";
 import { Failed, Infer, replyTurnSignal, type ToolCallResult, type ToolService } from "koishi-plugin-yesimbot";
 
@@ -99,14 +99,18 @@ export class MCPManager {
         const server = this.config.mcpServers[serverName];
         let transport: any;
         let client: Client | undefined;
+        let fallbackUrl: URL | undefined;
 
         try {
             // 创建传输层
             if (server.url) {
-                if (server.url.includes("http://") || server.url.includes("https://")) {
-                    transport = new StreamableHTTPClientTransport(new URL(server.url));
-                } else if (server.url.includes("sse://")) {
-                    transport = new SSEClientTransport(new URL(server.url));
+                const url = new URL(server.url);
+                if (url.protocol === "http:" || url.protocol === "https:") {
+                    transport = new StreamableHTTPClientTransport(url);
+                    fallbackUrl = url;
+                } else if (url.protocol === "sse:") {
+                    // Legacy configuration shorthand; SSE itself uses HTTP.
+                    transport = new SSEClientTransport(new URL(server.url.replace(/^sse:/i, "http:")));
                 } else {
                     this.logger.error(`不支持的服务器 URL: ${server.url}`);
                     return;
@@ -130,21 +134,28 @@ export class MCPManager {
 
             // 创建客户端并连接
             client = new Client({ name: serverName, version: "1.0.0" });
-            this.clients.push(client);
-            this.transports.push(transport);
-            const connection = client.connect(transport, { signal: this.shutdown.signal, timeout: this.config.timeout });
-            // A transport may complete initialization after cancellation. Close that
-            // late connection too, even if its implementation ignores the signal.
-            const connected = connection.then(async () => {
-                if (this.disposed) {
-                    try {
-                        await client!.close();
-                    } finally {
-                        await transport.close();
-                    }
+            try {
+                await this.connectTransport(client, transport);
+            } catch (error) {
+                // Only initialization responses indicating an unsupported endpoint
+                // permit protocol fallback. Auth, network and later tool errors do not.
+                if (
+                    !this.disposed &&
+                    fallbackUrl &&
+                    error instanceof StreamableHTTPError &&
+                    typeof error.code === "number" &&
+                    [400, 404, 405].includes(error.code)
+                ) {
+                    await this.closeConnection(client, transport);
+                    if (this.disposed) return;
+                    this.logger.debug(`服务器 ${serverName} 尝试使用旧版 HTTP+SSE 连接`);
+                    transport = new SSEClientTransport(fallbackUrl);
+                    client = new Client({ name: serverName, version: "1.0.0" });
+                    await this.connectTransport(client, transport);
+                } else {
+                    throw error;
                 }
-            });
-            await this.untilShutdown(connected);
+            }
             if (this.disposed) return;
             this.logger.success(`已连接服务器: ${serverName}`);
 
@@ -152,23 +163,39 @@ export class MCPManager {
             await this.registerTools(client, serverName);
         } catch (error) {
             this.logger.error(`连接服务器 ${serverName} 失败: ${error.message}`);
-            if (client) {
+            await this.closeConnection(client, transport);
+        }
+    }
+
+    private async connectTransport(client: Client, transport: SSEClientTransport | StdioClientTransport | StreamableHTTPClientTransport): Promise<void> {
+        this.clients.push(client);
+        this.transports.push(transport);
+        const connected = client.connect(transport, { signal: this.shutdown.signal, timeout: this.config.timeout }).then(async () => {
+            // Keep these attempt-local references: fallback must not redirect late cleanup.
+            if (this.disposed) {
                 try {
                     await client.close();
-                } catch (closeError) {
-                    this.logger.debug(`关闭客户端失败: ${closeError.message}`);
-                }
-                this.clients = this.clients.filter((item) => item !== client);
-            }
-            if (transport) {
-                try {
+                } finally {
                     await transport.close();
-                } catch (closeError) {
-                    this.logger.debug(`关闭传输连接失败: ${closeError.message}`);
                 }
             }
-            this.transports = this.transports.filter((item) => item !== transport);
+        });
+        await this.untilShutdown(connected);
+    }
+
+    private async closeConnection(client?: Client, transport?: SSEClientTransport | StdioClientTransport | StreamableHTTPClientTransport): Promise<void> {
+        try {
+            await client?.close();
+        } catch (error) {
+            this.logger.debug(`关闭客户端失败: ${error.message}`);
         }
+        this.clients = this.clients.filter((item) => item !== client);
+        try {
+            await transport?.close();
+        } catch (error) {
+            this.logger.debug(`关闭传输连接失败: ${error.message}`);
+        }
+        this.transports = this.transports.filter((item) => item !== transport);
     }
 
     /**
@@ -364,18 +391,21 @@ function convertJsonSchemaToSchemastery(jsonSchema: any): Schema<any> {
                 schema = Schema.string();
                 break;
 
-            case "number":
+            case "integer":
+            case "number": {
                 schema = Schema.number();
+                const integer = jsonSchema.type === "integer";
+                if (integer) schema = schema.step(1);
                 const { minimum, maximum } = jsonSchema;
-                if (typeof minimum === "number" || typeof maximum === "number") {
-                    if (minimum !== undefined) {
-                        schema = schema.min(minimum);
-                    }
-                    if (maximum !== undefined) {
-                        schema = schema.max(maximum);
-                    }
+                if (typeof minimum === "number") {
+                    // Schemastery measures steps from min, so keep integer bounds integral.
+                    schema = schema.min(integer ? Math.ceil(minimum) : minimum);
+                }
+                if (typeof maximum === "number") {
+                    schema = schema.max(integer ? Math.floor(maximum) : maximum);
                 }
                 break;
+            }
 
             case "boolean":
                 schema = Schema.boolean();

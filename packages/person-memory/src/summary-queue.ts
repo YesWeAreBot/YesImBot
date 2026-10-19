@@ -84,9 +84,6 @@ export class SummaryQueue {
     async pending() {
         return (await this.list()).filter((job) => job.status === "pending");
     }
-    async checkpoint(scope: string, userId: string) {
-        return (await this.read(this.key(scope, userId)))?.checkpoint ?? [];
-    }
     async enqueue(scope: string, userId: string) {
         const key = this.key(scope, userId);
         return this.serial(key, async () => {

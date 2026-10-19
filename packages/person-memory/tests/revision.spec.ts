@@ -160,7 +160,11 @@ test("identity link suggestions require scoped evidence and explicit admin accep
     assert.equal((await store.read("s")).linkProposals[candidate.id], undefined);
     await accounts(store, "other");
     const other = await store.find("other", "b");
-    await assert.rejects(store.proposeLink("s", "a", other.person.id, 0.8, "跨群猜测", ["m"], "main-model", versions(bound, other)), /当前场景|不存在/);
+    await store.capture("s", { id: "after-bind", userId: "a", name: "甲", text: "关联后的新消息", timestamp: bound.person.identityChangedAt + 1 });
+    await assert.rejects(
+        store.proposeLink("s", "a", other.person.id, 0.8, "跨群猜测", ["after-bind"], "main-model", versions(bound, other)),
+        /当前场景|不存在/,
+    );
 });
 
 test("stale identity link proposals cannot override a revised target or wrong-account evidence", async (t) => {

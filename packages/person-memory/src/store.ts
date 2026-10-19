@@ -226,6 +226,14 @@ function account(state: State, id: string) {
 function createPerson(name: string): Person {
     return { id: randomUUID(), name: text(name, 80, "称呼"), provisional: true, profile: "", evidence: [], locked: false, stale: false, revision: 0 };
 }
+function currentIdentitySource(source: Evidence, p: Person, a: Account) {
+    return (
+        (!p.memoryChangedAt || source.timestamp > p.memoryChangedAt) &&
+        (source.provenance
+            ? source.provenance.personId === p.id && source.provenance.accountRevision === (a.bindingRevision ?? 0)
+            : !p.identityChangedAt || source.timestamp > p.identityChangedAt)
+    );
+}
 function invalidate(state: State, p: Person) {
     if (p.legacyProfile) p.legacyProfileStale = true;
     if (p.claims?.length) {
@@ -505,14 +513,7 @@ export class PersonStore {
             .map((row) => row.source)
             .filter((source) => {
                 const a = byId.get(source.userId);
-                return (
-                    a &&
-                    source.timestamp <= Date.now() &&
-                    (!p.memoryChangedAt || source.timestamp > p.memoryChangedAt) &&
-                    (source.provenance
-                        ? source.provenance.personId === p.id && source.provenance.accountRevision === (a.bindingRevision ?? 0)
-                        : !p.identityChangedAt || source.timestamp > p.identityChangedAt)
-                );
+                return a && source.timestamp <= Date.now() && currentIdentitySource(source, p, a);
             });
     }
     private async groundedProfile(
@@ -756,14 +757,7 @@ export class PersonStore {
                 if (state.settings.paused || state.settings.mode === "off") throw new Error("维护已暂停或关闭");
                 const a = account(state, userId),
                     source = state.people[a.personId];
-                if (
-                    evidence.some(
-                        (e) =>
-                            (!!source.memoryChangedAt && e.timestamp <= source.memoryChangedAt) ||
-                            (e.provenance && (e.provenance.personId !== a.personId || e.provenance.accountRevision !== (a.bindingRevision ?? 0))),
-                    )
-                )
-                    throw new Error("来源身份已过期，请使用纠错后新消息");
+                if (evidence.some((e) => !currentIdentitySource(e, source, a))) throw new Error("来源身份已过期，请使用纠错后新消息");
                 const target = Object.hasOwn(state.people, targetPersonId) ? state.people[targetPersonId] : undefined;
                 if (!target) throw new Error("当前场景不存在目标人物");
                 if (source.id === target.id) throw new Error("账号已关联到此人物");
@@ -843,15 +837,7 @@ export class PersonStore {
                         : (await this.currentProfileSources(scope, state, userId, 0)).filter((source) => ids.has(source.id));
                 if (sources.length !== ids.size || new Set(sources.map((source) => source.id)).size !== sources.length)
                     throw new Error("消息来源不属于当前人物身份、存在歧义或已超出保留范围");
-                if (
-                    sources.some(
-                        (e) =>
-                            (!!p.memoryChangedAt && e.timestamp <= p.memoryChangedAt) ||
-                            (e.provenance &&
-                                (e.provenance.personId !== p.id || e.provenance.accountRevision !== (account(state, e.userId).bindingRevision ?? 0))),
-                    )
-                )
-                    throw new Error("来源身份已过期，请使用纠错后新消息");
+                if (sources.some((e) => !currentIdentitySource(e, p, account(state, e.userId)))) throw new Error("来源身份已过期，请使用纠错后新消息");
                 if (state.settings.mode !== "auto" && Object.keys(state.proposals).length + Object.keys(state.linkProposals).length >= 50)
                     throw new Error("待审核候选已达 50 个，请先处理");
                 const combined = [...sources, ...(p.stale ? [] : p.evidence)];

@@ -141,20 +141,33 @@ export class WorldStateService extends YesImBotService<Config> {
         const { platform, channelId } = session;
         if (!platform || !channelId) throw new Error("当前会话缺少平台或频道");
         const target = { platform, channelId };
+        const binding = () =>
+            JSON.stringify([session.platform, session.channelId, session.selfId, sessionChannelType(session), session.userId, session.guildId]);
+        const originalBinding = binding();
+        const assertAuthorized = () => {
+            if (binding() !== originalBinding) throw new Error("召回期间会话身份已改变");
+            if (!this.ctx.filter(session) || !this.isChannelAllowed(session)) throw new Error("召回期间会话配置已改变");
+        };
         await this.l2_manager.waitForHistoryClear(target);
+        assertAuthorized();
         const historyGeneration = this.l2_manager.getHistoryGeneration(target);
+        const assertCurrent = () => {
+            assertAuthorized();
+            if (this.l2_manager.getHistoryGeneration(target) !== historyGeneration) throw new Error("召回期间历史已清除，请重新召回");
+        };
         const page = await recallRawPage(this.ctx.database, target, options);
+        assertCurrent();
         if (page.kind !== "messages") {
             const state: any = { l2_retrieved_memories: [], l3_diary_entries: [] };
             const key = page.kind === "l3" ? "l3_diary_entries" : "l2_retrieved_memories";
             state[key] = page.records.map((record) => ({ ...record, timestamp: (record as any).startTimestamp }));
             await this.ctx.parallel(session, "yesimbot/filter-recalled-memory", session, state);
+            assertCurrent();
             const accepted = new Set(state[key].map((record: any) => record.id));
             page.records = page.records.filter((record) => accepted.has(record.id));
             page.returned = page.records.length;
         }
-        if (!this.ctx.filter(session) || !this.isChannelAllowed(session)) throw new Error("召回期间会话配置已改变");
-        if (this.l2_manager.getHistoryGeneration(target) !== historyGeneration) throw new Error("召回期间历史已清除，请重新召回");
+        assertCurrent();
         return { ...page, historyGeneration };
     }
 

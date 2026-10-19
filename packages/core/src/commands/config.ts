@@ -107,16 +107,6 @@ function set(currentData: any, keyChain: Array<string | number>, value: any): an
     }
 }
 
-function hasCommonKeys(obj1: any, obj2: any) {
-    // 如果 obj1 是空对象，我们将其视为可以合并，因为它不应该阻止任何新属性的添加
-    // 否则，只有当两者有共同键时才被视为可以合并
-    if (Object.keys(obj1).length === 0) return true;
-
-    const keys1 = Object.keys(obj1);
-    const keys2 = Object.keys(obj2);
-    return keys1.some((key) => keys2.includes(key));
-}
-
 /**
  * 解析键字符串，支持点分隔和方括号索引格式。
  * 例如 "a.b[0].c" => ["a", "b", 0, "c"]

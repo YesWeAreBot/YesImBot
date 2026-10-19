@@ -42,11 +42,6 @@ export default class MultiEngineCodeExecutor {
         const engineConfigs = this.config.engines;
         if (!engineConfigs?.python) return;
 
-        // if (engineConfigs.javascript.enabled) {
-        //     this.registerExecutor(new JavaScriptExecutor(this.ctx, engineConfigs.javascript, this.config.shared));
-        // }
-
-        // 2. Python Engine
         if (engineConfigs.python.enabled) {
             this.registerExecutor(new PythonExecutor(this.ctx, engineConfigs.python, this.config.shared!));
         }

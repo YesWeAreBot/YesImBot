@@ -24,7 +24,7 @@ test("pending input, output, attempt reasons and receipts survive adapter replac
     assert.deepEqual(restored.input.sourceCursor, ["m"]);
     await second.accept(restored, "proposal");
     assert.equal((await new SummaryQueue(ctx.database, "plugin").pending()).length, 0);
-    assert.deepEqual(await first.checkpoint("s", "u"), ["m"]);
+    assert.deepEqual((await new SummaryQueue(ctx.database, "plugin").list())[0].checkpoint, ["m"]);
     assert.equal((await second.list())[0].receipt, "proposal");
     assert.equal((await second.list())[0].input, undefined);
     assert.equal((await second.list())[0].output, undefined);

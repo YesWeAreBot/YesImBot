@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { test } from "vitest";
+import { test, vi } from "vitest";
 
 import { PersonStore, registerModels } from "../src/store";
 import { SummaryWorker } from "../src/worker";
@@ -49,6 +49,65 @@ test("clear also prevents legacy old evidence from creating identity link propos
     const proposal = await store.proposeLink("s", "u", target.person.id, 0.8, "same person", ["new"], "model", expected);
     assert.equal(proposal.state, "pending");
 });
+
+for (const operation of ["bind", "split", "unbind"] as const)
+    for (const action of ["propose", "proposeLink"] as const)
+        test(`${operation} rejects old legacy evidence for ${action} while allowing fresh current-identity sources`, async (t) => {
+            vi.useFakeTimers({ toFake: ["Date"] });
+            vi.setSystemTime(new Date("2026-10-19T12:00:00Z"));
+            t.onTestFinished(() => vi.useRealTimers());
+            const app = await fixture(t, registerModels);
+            const store = new PersonStore(app.database, "auto", { autoLinks: true });
+            const original = await store.recognize("s", "u", "User");
+            await store.capture("s", source("old", Date.now() - 1000));
+            const destination = await store.recognize("s", "v", "Destination");
+            const linkTarget = await store.recognize("s", "w", "Link target");
+            if (operation === "bind") await store.bind("s", "u", destination.person.id, 1, "admin");
+            else if (operation === "split") await store.split("s", "u", "Corrected user", "admin");
+            else await store.unbind("s", "u", "admin");
+
+            const current = await store.find("s", "u");
+            const binding = current.accounts.find((account) => account.userId === "u");
+            const expected = { personId: current.person.id, personRevision: current.person.revision, accountRevision: binding.revision };
+            const propose = (id: string) =>
+                action === "propose"
+                    ? store.propose("s", "u", "fresh facts", [id], "model", expected)
+                    : store.proposeLink("s", "u", linkTarget.person.id, 0.9, "fresh identity evidence", [id], "model", {
+                          ...expected,
+                          targetRevision: linkTarget.person.revision,
+                      });
+            assert.deepEqual(await store.profileSources("s", "u", 0), []);
+            await assert.rejects(propose("old"), /来源.*过期/);
+            await store.capture("s", source("boundary", current.person.identityChangedAt));
+            await assert.rejects(propose("boundary"), /来源.*过期/);
+
+            vi.setSystemTime(current.person.identityChangedAt + 1);
+            const provenance = {
+                platform: "test",
+                selfId: "bot",
+                channelId: "group",
+                messageId: "wrong-person",
+                personId: original.person.id,
+                accountRevision: binding.bindingRevision,
+            };
+            await store.capture("s", { ...source("wrong-person", Date.now()), provenance });
+            await assert.rejects(propose("wrong-person"), /来源.*过期/);
+            await store.capture("s", {
+                ...source("wrong-binding", Date.now()),
+                provenance: { ...provenance, messageId: "wrong-binding", personId: current.person.id, accountRevision: original.account.bindingRevision },
+            });
+            await assert.rejects(propose("wrong-binding"), /来源.*过期/);
+            await store.capture("s", source("fresh", Date.now()));
+            assert.deepEqual(
+                (await store.profileSources("s", "u", 0)).map((item) => item.id),
+                ["fresh"],
+            );
+            assert.equal((await propose("fresh")).state, "accepted");
+            const accepted = await store.find("s", "u");
+            if (action === "propose") assert.equal(accepted.person.profile, "fresh facts");
+            else assert.equal(accepted.person.id, linkTarget.person.id);
+            assert.equal((await store.sources("s", "u")).length, 5, "identity correction retains original sources for review");
+        });
 
 test("pending legacy summarize cannot undo a clear and a later job only sees fresh evidence", async (t) => {
     const store = await setup(t);

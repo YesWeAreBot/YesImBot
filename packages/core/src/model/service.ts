@@ -170,6 +170,7 @@ export class ModelService extends YesImBotService<Config> {
         return instance ? instance.getEmbedModel(modelId) : null;
     }
 
+    /** Retain the returned switcher to preserve its round-robin cursors and breakers; each call creates a fresh one. */
     public useChatGroup(name: string): ChatModelSwitcher | undefined {
         const groupName = this.resolveGroupName(name);
         if (!groupName) return undefined;
@@ -322,7 +323,7 @@ export class ModelService extends YesImBotService<Config> {
     }
 
     public useEmbeddingGroup(name: string): ModelSwitcher<IEmbedModel> | undefined {
-        if (name === TaskType.Embedding && !this.config.task[name]) return undefined;
+        if (name === TaskType.Embedding && !this.config.task[name] && !this.config.modelGroups.some((group) => group.name === name)) return undefined;
         const groupName = this.resolveGroupName(name);
         if (!groupName) return undefined; // resolveGroupName 内部会记录日志
 
@@ -341,11 +342,12 @@ export class ModelService extends YesImBotService<Config> {
     }
 
     private resolveGroupName(name: string): string | undefined {
-        if ((this.config.task as Record<string, string>)[name]) {
+        if (Object.hasOwn(this.config.task, name) && (this.config.task as Record<string, string>)[name]) {
             return (this.config.task as Record<string, string>)[name];
         }
+        if (this.config.modelGroups.some((group) => group.name === name)) return name;
 
-        this.logger.warn(`[切换器] ⚠ 无效的任务名称 | 任务: ${String(name)}`);
+        this.logger.warn(`[切换器] ⚠ 无效的任务或模型组名称 | 名称: ${String(name)}`);
         return undefined;
     }
 }
@@ -366,7 +368,7 @@ class RequestExecutor {
         this.logger = logging.getLogger(`[请求执行器][${groupName}]`);
     }
 
-    public async execute(options: ChatRequestOptions): Promise<GenerateTextResult> {
+    public async execute(options: ChatRequestOptions, onFirstAttempt?: (model: IChatModel) => void): Promise<GenerateTextResult> {
         for (const model of this.candidateModels) {
             options.abortSignal?.throwIfAborted();
             const breaker = this.circuitBreakers.get(model);
@@ -375,6 +377,9 @@ class RequestExecutor {
                 this.logger.info(`[跳过] 模型 ${formatModelIdentity({ ...model.config, modelId: model.id })} (断路器开启)`);
                 continue;
             }
+            // Advance selection once, after atomic breaker admission and before any asynchronous model work.
+            onFirstAttempt?.(model);
+            onFirstAttempt = undefined;
 
             // 执行单个模型的请求尝试（包含内部重试）
             const modelOptions = model.config.disableNativeToolCalling && options.nativeToolCallingFallback ? options.nativeToolCallingFallback : options;
@@ -596,7 +601,7 @@ export class ModelSwitcher<T extends BaseModel> {
 
     constructor(
         protected readonly ctx: Context,
-        protected readonly groupConfig: { name: string; models: ModelDescriptor[] },
+        protected readonly groupConfig: { name: string; models: ModelDescriptor[]; strategy?: ModelSwitchingStrategy },
         modelGetter: (providerName: string, modelId: string) => T | null,
         protected readonly logging: LoggerService,
     ) {
@@ -646,10 +651,12 @@ export class ModelSwitcher<T extends BaseModel> {
 export class ChatModelSwitcher extends ModelSwitcher<IChatModel> {
     private readonly visionModels: IChatModel[];
     private readonly nonVisionModels: IChatModel[];
+    // Candidate pools rotate independently and live only as long as this switcher.
+    private readonly roundRobinCursors = new Map<readonly IChatModel[], number>();
 
     constructor(
         ctx: Context,
-        groupConfig: { name: string; models: ModelDescriptor[] },
+        groupConfig: { name: string; models: ModelDescriptor[]; strategy?: ModelSwitchingStrategy },
         modelGetter: (providerName: string, modelId: string) => IChatModel | null,
         logging: LoggerService,
     ) {
@@ -693,7 +700,16 @@ export class ChatModelSwitcher extends ModelSwitcher<IChatModel> {
             });
         }
 
+        let onFirstAttempt: ((model: IChatModel) => void) | undefined;
+        if (this.groupConfig.strategy === ModelSwitchingStrategy.RoundRobin) {
+            const pool = candidateModels;
+            const cursor = this.roundRobinCursors.get(pool) ?? 0;
+            const rotated = [...pool.slice(cursor), ...pool.slice(0, cursor)];
+            candidateModels = rotated;
+            onFirstAttempt = (model) => this.roundRobinCursors.set(pool, (cursor + rotated.indexOf(model) + 1) % pool.length);
+        }
+
         const executor = new RequestExecutor(this.ctx, this.groupConfig.name, candidateModels, this.getCircuitBreakers(), this.logging);
-        return executor.execute(options);
+        return executor.execute(options, onFirstAttempt);
     }
 }

@@ -18,6 +18,9 @@ import { AssetData, AssetInfo, AssetMetadata, FileResponse, ReadAssetOptions, St
 
 const ELEMENT_TO_PROCESS = ["img", "image", "audio", "video", "file", "mface"];
 
+type PreparedAsset = { id: string; persisted: Promise<string> };
+type PendingAsset = { signal?: AbortSignal; preparation: Promise<PreparedAsset> };
+
 /**
  * 根据 MIME 类型获取对应的 Koishi 元素标签名
  * @param mime - MIME 类型字符串
@@ -63,6 +66,7 @@ export class AssetService extends YesImBotService<Config> {
 
     private assetEndpoint: string;
     private readonly maxFileSizeBytes: number;
+    private pendingAssets?: Map<string, PendingAsset>;
 
     constructor(ctx: Context, config: Config, logging: LoggerService) {
         super(ctx, config);
@@ -127,10 +131,8 @@ export class AssetService extends YesImBotService<Config> {
     }
 
     /**
-     * 异步转换消息内容，立即返回带占位符ID的消息，并在后台进行资源持久化
-     * 适用于不要求立即使用资源的场景，可以提高响应速度
-     * @param source - 原始消息字符串或元素数组
-     * @returns 转换后的消息字符串
+     * 读取并校验来源、确定去重后的资源 ID，再在后台完成持久化。
+     * 返回时来源下载已经完成，但新资源的文件与数据库写入可能仍在进行。
      */
     async transformAsync(source: string | Element[]): Promise<string> {
         const elements = typeof source === "string" ? h.parse(source) : source;
@@ -146,57 +148,83 @@ export class AssetService extends YesImBotService<Config> {
      * @returns 资源的唯一 ID
      */
     async create(source: string | Buffer, metadata: AssetMetadata = {}, options: { id?: string; signal?: AbortSignal } = {}): Promise<string> {
+        const prepared = await this._prepareAsset(source, metadata, options);
+        const id = await prepared.persisted;
+        options.signal?.throwIfAborted();
+        return id;
+    }
+
+    /** Reserve a canonical ID before publishing it, including concurrent callers. */
+    private async _prepareAsset(source: string | Buffer, metadata: AssetMetadata, options: { id?: string; signal?: AbortSignal } = {}): Promise<PreparedAsset> {
         const { signal } = options;
         signal?.throwIfAborted();
-        // Cancellation rollback only owns a freshly generated ID. It must never
-        // delete a caller's existing resource after a replacement was cancelled.
+        // A cancellable writer only owns freshly generated IDs for rollback.
         if (signal && options.id !== undefined) throw new Error("Asset create options.signal cannot be combined with options.id");
         const { data, type } = await this._getSourceBuffer(source);
         signal?.throwIfAborted();
         if (!data || data.length === 0) throw new Error("资源内容为空");
-
         const hash = createHash("sha256").update(data).digest("hex");
-        const [existing] = await this.ctx.database.get(TableName.Assets, { hash });
+        const pending = (this.pendingAssets ??= new Map());
+        let entry = pending.get(hash);
+        if (!entry) {
+            entry = {
+                signal,
+                preparation: Promise.resolve().then(async () => {
+                    const [existing] = await this.ctx.database.get(TableName.Assets, { hash });
+                    signal?.throwIfAborted();
+                    if (existing) {
+                        await this._updateLastUsed(existing.id);
+                        signal?.throwIfAborted();
+                        return { id: existing.id, persisted: Promise.resolve(existing.id) };
+                    }
+                    if (type.startsWith("image/")) {
+                        try {
+                            const jimp = await Jimp.read(data);
+                            metadata.width = jimp.width;
+                            metadata.height = jimp.height;
+                        } catch (error) {
+                            this.logger.warn(`无法解析图片元数据: ${error.message}`);
+                        }
+                    }
+                    const id = options.id || uuidv4();
+                    const asset: AssetData = {
+                        id,
+                        mime: type,
+                        hash,
+                        size: data.length,
+                        createdAt: new Date(),
+                        lastUsedAt: new Date(),
+                        metadata,
+                    };
+                    return { id, persisted: this._persistAsset(asset, data, signal) };
+                }),
+            };
+            pending.set(hash, entry);
+            const reserved = entry;
+            const release = () => {
+                if (pending.get(hash) === reserved) pending.delete(hash);
+            };
+            // Both promise branches are handled even for background callers.
+            entry.preparation.then(({ persisted }: PreparedAsset) => persisted.then(release, release), release);
+        }
+        const prepared = await entry.preparation;
+        // Another caller must not publish an ID its owner can still roll back.
+        if (entry.signal && entry.signal !== signal) await prepared.persisted;
         signal?.throwIfAborted();
+        return prepared;
+    }
 
-        if (existing) {
-            await this._updateLastUsed(existing.id);
-            signal?.throwIfAborted();
-            return existing.id;
-        }
-
-        // 如果是图片，尝试获取尺寸信息
-        if (type.startsWith("image/")) {
-            try {
-                const jimp = await Jimp.read(data);
-                metadata.width = jimp.width;
-                metadata.height = jimp.height;
-            } catch (error) {
-                this.logger.warn(`无法解析图片元数据: ${error.message}`);
-            }
-        }
-
-        const id = options.id || uuidv4();
-        const assetData: AssetData = {
-            id,
-            mime: type,
-            hash,
-            size: data.length,
-            createdAt: new Date(),
-            lastUsedAt: new Date(),
-            metadata,
-        };
-
+    private async _persistAsset(asset: AssetData, data: Buffer, signal?: AbortSignal): Promise<string> {
+        const { id, mime } = asset;
         signal?.throwIfAborted();
         try {
             await this.storage.write(id, data);
             signal?.throwIfAborted();
-            await this.ctx.database.upsert(TableName.Assets, [assetData]);
+            await this.ctx.database.upsert(TableName.Assets, [asset]);
             signal?.throwIfAborted();
         } catch (error) {
             if (signal) {
-                // An adapter may commit before reporting an error, so remove the
-                // owned row even when upsert rejected. Always try both cleanups.
+                // An adapter may commit before reporting an error; try both cleanups.
                 const cleanup = await Promise.allSettled([
                     Promise.resolve().then(() => this.ctx.database.remove(TableName.Assets, { id })),
                     Promise.resolve().then(() => this.storage.delete(id)),
@@ -206,7 +234,7 @@ export class AssetService extends YesImBotService<Config> {
             }
             throw error;
         }
-        this.logger.info(`新资源已存储 | ID: ${id} | 类型: ${type} | 大小: ${formatSize(data.length)}`);
+        this.logger.info(`新资源已存储 | ID: ${id} | 类型: ${mime} | 大小: ${formatSize(data.length)}`);
         return id;
     }
 
@@ -345,30 +373,31 @@ export class AssetService extends YesImBotService<Config> {
             delete displayAttrs["filename"];
         }
 
-        if (isAsync) {
-            const placeholderId = uuidv4();
-            // 立即返回带占位符ID的元素，后台执行持久化
-            (async () => {
-                try {
-                    await this.create(originalUrl, metadata, { id: placeholderId });
-                } catch (error) {
-                    this.logger.error(`后台资源持久化失败 (ID: ${placeholderId}, 源: ${truncate(originalUrl, 100)}): ${error.message}`);
-                    // 可在此处添加失败处理逻辑，如更新数据库标记此ID无效
-                }
-            })();
-            return h(tagName, { ...displayAttrs, id: placeholderId });
-        } else {
-            try {
-                const id = await this.create(originalUrl, metadata);
+        try {
+            if (isAsync) {
+                const { id, persisted } = await this._prepareAsset(originalUrl, metadata);
+                persisted.catch((error) => {
+                    this.logger.error(`后台资源持久化失败 (ID: ${id}, 源: ${truncate(originalUrl, 100)}): ${error.message}`);
+                });
                 return h(tagName, { ...displayAttrs, id });
-            } catch (error) {
-                this.logger.error(`资源持久化失败 (源: ${truncate(originalUrl, 100)}): ${error.message}`);
-                return element; // 失败时返回原始元素
             }
+            const id = await this.create(originalUrl, metadata);
+            return h(tagName, { ...displayAttrs, id });
+        } catch (error) {
+            this.logger.error(`资源持久化失败 (源: ${truncate(originalUrl, 100)}): ${error.message}`);
+            return element; // 失败时返回原始元素
         }
     }
 
     private async _getSourceBuffer(source: string | Buffer): Promise<FileResponse> {
+        const result = await this._loadSourceBuffer(source);
+        if (result.data.length > this.maxFileSizeBytes) {
+            throw new Error(`文件大小 (${formatSize(result.data.length)}) 超出限制 (${formatSize(this.maxFileSizeBytes)})`);
+        }
+        return result;
+    }
+
+    private async _loadSourceBuffer(source: string | Buffer): Promise<FileResponse> {
         if (Buffer.isBuffer(source)) {
             const mime = getMimeType(source);
             return {
@@ -380,7 +409,7 @@ export class AssetService extends YesImBotService<Config> {
             const match = source.match(/^data:.+;base64,(.*)$/);
             if (!match) throw new Error("无效的 data: URL 格式");
             return {
-                type: match[0].split("/")[1].split(";")[0],
+                type: match[0].slice("data:".length).split(";")[0],
                 data: Buffer.from(match[1], "base64"),
             };
         }
@@ -410,10 +439,13 @@ export class AssetService extends YesImBotService<Config> {
         }
 
         const response = await this.ctx.http.file(url, { timeout: this.config.downloadTimeout });
-
+        const data = Buffer.from(response.data);
+        if (data.length > this.maxFileSizeBytes) {
+            throw new Error(`文件大小 (${formatSize(data.length)}) 超出限制 (${formatSize(this.maxFileSizeBytes)})`);
+        }
         return {
             type: response.type,
-            data: Buffer.from(response.data),
+            data,
             filename: response.filename,
         };
     }

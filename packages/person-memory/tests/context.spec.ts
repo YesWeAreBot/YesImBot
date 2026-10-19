@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 
 import { h } from "koishi";
-import { test } from "vitest";
+import { test, vi } from "vitest";
 
 import { renderPeople } from "../src/context";
 import { PersonStore, registerModels, sceneKey } from "../src/store";
@@ -56,7 +56,11 @@ test("identity warning survives cleared stale state and related link candidates 
     assert.match(result, /身份关联曾改变/);
     assert.match(result, /最新画像/);
     await store.unbind(scope, "u1", "admin");
-    await store.capture(scope, { id: "e", userId: "u1", name: "来源", text: "关联依据", timestamp: Date.now() });
+    const corrected = await store.find(scope, "u1");
+    const afterCorrection = Math.max(Date.now(), corrected.person.identityChangedAt + 1);
+    const clock = vi.spyOn(Date, "now").mockReturnValue(afterCorrection);
+    t.onTestFinished(() => clock.mockRestore());
+    await store.capture(scope, { id: "e", userId: "u1", name: "来源", text: "关联依据", timestamp: afterCorrection });
     const a = await store.find(scope, "u1"),
         b = await store.find(scope, "u2");
     const proposed = await store.proposeLink(scope, "u1", b.person.id, 0.7, "关联依据", ["e"], "model", {

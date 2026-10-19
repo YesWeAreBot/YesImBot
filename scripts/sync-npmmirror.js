@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 
-const fs = require("fs");
-const path = require("path");
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 /**
  * 同步npm包到npmmirror.com的脚本
  * 读取packages目录下所有npm包的包名，并通过访问同步URL手动同步版本
  */
 
-const PACKAGES_DIR = path.join(__dirname, "..", "packages");
+const scriptPath = fileURLToPath(import.meta.url);
+const PACKAGES_DIR = path.join(path.dirname(scriptPath), "..", "packages");
 const BASE_URL = "http://registry-direct.npmmirror.com/-/package";
 
 /**
@@ -182,11 +184,11 @@ async function main() {
 }
 
 // 运行脚本
-if (require.main === module) {
+if (process.argv[1] && path.resolve(process.argv[1]) === scriptPath) {
     main().catch((error) => {
         console.error("💥 脚本执行失败:", error);
         process.exit(1);
     });
 }
 
-module.exports = { getAllPackageNames, syncPackage, main };
+export { getAllPackageNames, syncPackage, main };
