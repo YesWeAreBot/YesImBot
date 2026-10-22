@@ -7,6 +7,7 @@ import { ToolService } from "../extension";
 import type { LoggerService } from "../logger";
 import { MemoryService } from "../memory";
 import { ChatModelSwitcher } from "../model";
+import { conversationChannelId } from "../shared/utils/conversation-scope";
 import { AgentStimulus, ContextualMessage, UserMessagePayload, WorldState, WorldStateService } from "../world";
 import { sessionChannelType } from "../world/channel-metadata";
 import { deriveConversationFocus, FocusedWorldState } from "./context-packing";
@@ -56,7 +57,7 @@ export class PromptContextBuilder {
      */
     public async build(stimulus: AgentStimulus<any>) {
         const { type, session, payload } = stimulus;
-        const target = { platform: session.platform, channelId: session.channelId!, channelType: sessionChannelType(session) };
+        const target = { platform: session.platform, channelId: conversationChannelId(session)!, channelType: sessionChannelType(session) };
         const binding = () =>
             JSON.stringify([
                 session.platform,

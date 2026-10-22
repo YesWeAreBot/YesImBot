@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { Session } from "koishi";
+import { conversationChannelId, conversationCid } from "koishi-plugin-yesimbot";
 
 import type { DurableTask } from "./store";
 
@@ -44,7 +45,7 @@ export async function dispatchReminder(
     task: DurableTask,
     ownerId: string,
 ): Promise<void> {
-    const target = { platform: task.platform, channelId: task.channelId, channelType: task.isDirect ? ("private" as const) : ("guild" as const) };
+    const target = { platform: task.platform, channelId: conversationChannelId(task)!, channelType: task.isDirect ? ("private" as const) : ("guild" as const) };
     const generation = world.l2_manager.getHistoryGeneration(target);
     const valid = () => world.stimulusOwnerId === ownerId && world.l2_manager.getHistoryGeneration(target) === generation;
     if (!(await allowed()) || !valid()) throw new Error("delivery_invalidated");
@@ -62,5 +63,5 @@ export async function dispatchReminder(
         generation,
     );
     if (!recorded || !(await allowed()) || !valid()) throw new Error("delivery_invalidated");
-    emit(session, "agent/stimulus", { type: "scheduled_task", session, channelCid: session.cid, priority: 5, payload: { taskId: task.id } }, ownerId);
+    emit(session, "agent/stimulus", { type: "scheduled_task", session, channelCid: conversationCid(task), priority: 5, payload: { taskId: task.id } }, ownerId);
 }

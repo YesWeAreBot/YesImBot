@@ -1,6 +1,7 @@
 import { $, type Context } from "koishi";
 
 import { TableName } from "../shared/constants";
+import { parseConversationChannelId } from "../shared/utils/conversation-scope";
 import type { HistoryChannelType, MessageData } from "./types";
 
 export interface MessageWindowOptions {
@@ -23,7 +24,7 @@ function sourceRecord(record: MessageData) {
     // The raw table is shared across bots and has no persisted observer/self identity.
     const sourceIdentity = {
         platform: record.platform,
-        channelId: record.channelId,
+        ...parseConversationChannelId(record.platform, record.channelId),
         channelType: record.channelType!,
         messageId: record.id,
         ownership: "shared-history" as const,

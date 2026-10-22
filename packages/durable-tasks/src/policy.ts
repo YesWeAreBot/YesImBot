@@ -1,4 +1,5 @@
 import { Universal, type Bot, type Session } from "koishi";
+import { conversationCid } from "koishi-plugin-yesimbot";
 
 import type { DurableTask } from "./store";
 
@@ -18,7 +19,7 @@ export function currentTargetAllowed(runtime: DeliveryRuntime, session: Session,
         runtime.bots.some((bot) => bot.platform === session.platform && bot.selfId === session.selfId && bot.status === Universal.Status.ONLINE) &&
         runtime.filter(session) &&
         runtime.world.isChannelAllowed(session) &&
-        !runtime.world.isBotMuted(session.cid, session.selfId)
+        !runtime.world.isBotMuted(conversationCid(session), session.selfId)
     );
 }
 export async function prepareDelivery(

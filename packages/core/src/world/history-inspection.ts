@@ -4,6 +4,7 @@ import type { ContextBudgetReport } from "../agent/context-budget";
 import { getContextSnapshots } from "../model/context-snapshot";
 import { estimateTokens, getUsageLedger, TokenUsage, UsageRecord } from "../model/usage";
 import { TableName } from "../shared/constants";
+import { parseConversationChannelId } from "../shared/utils/conversation-scope";
 import { HISTORY_CHANNELS } from "./channel-metadata";
 
 const dimensions = ["adapter", "bot", "provider", "model", "target"] as const;
@@ -222,6 +223,7 @@ export class InspectionPages {
 /** The legacy DB is shared by target, not by bot. Respect the plugin's Koishi filter. */
 function visibleTarget(ctx: Context, platform: string, channelId: string, channelType?: string): boolean {
     if (!platform || !channelId) return false;
+    const native = parseConversationChannelId(platform, channelId);
     return ctx.bots.some((bot) => {
         if (bot.platform !== platform) return false;
         const visible = (type: "private" | "guild") =>
@@ -229,8 +231,8 @@ function visibleTarget(ctx: Context, platform: string, channelId: string, channe
                 bot.session({
                     platform,
                     selfId: bot.selfId,
-                    channel: { id: channelId, type: type === "private" ? 1 : 0 },
-                    guild: type === "private" ? undefined : { id: channelId },
+                    channel: { id: native.channelId, type: type === "private" ? 1 : 0 },
+                    guild: type === "private" ? undefined : { id: native.guildId || native.channelId },
                 } as any),
             );
         return channelType === "private" || channelType === "guild" ? visible(channelType) : visible("private") && visible("guild");

@@ -97,3 +97,13 @@ describe("long tool invocation receipts", () => {
         }
     });
 });
+
+it("denies a tool-output URI from the same native Telegram topic ID in another guild", async () => {
+    const { tools, session } = await fixture();
+    Object.assign(session, { platform: "telegram", channelId: "7", guildId: "-10001" });
+    register(tools, async () => ({ status: "success", result: "x".repeat(30000) }));
+    const receipt = await tools.invoke("probe", {}, session);
+    expect(receipt.result.kind).toBe("tool-output-resource");
+    await expect(tools.readToolOutput({ ...session, guildId: "-10002" }, { uri: receipt.result.uri })).rejects.toThrow(/scope/);
+    expect((await tools.readToolOutput(session, { uri: receipt.result.uri })).text.length).toBeGreaterThan(0);
+});

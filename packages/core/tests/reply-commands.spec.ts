@@ -198,3 +198,18 @@ it("requires an explicit platform for a raw channel ID shared by different platf
     expect(control.get({ platform: "onebot", selfId: "bot", channelId: "same" })).toBeDefined();
     expect(await invoke("chat.resume", { target: "discord:same" })).toContain("已解除 discord:discord-bot:same");
 });
+
+it("keeps current Telegram topic pause/resume isolated by native guild", async () => {
+    const f = fixture();
+    const bot: any = { platform: "telegram", selfId: "tg" };
+    f.ctx.bots.push(bot);
+    const a = { ...f.session, platform: "telegram", selfId: "tg", bot, channelId: "7", guildId: "-10001", isDirect: false };
+    const b = { ...a, guildId: "-10002" };
+    expect(await f.invoke("chat.pause", {}, undefined, a)).toContain("已更新");
+    expect(f.control.get(a)?.guildId).toBe(a.guildId);
+    expect(f.control.get(b)).toBeUndefined();
+    expect(await f.invoke("chat.resume", {}, undefined, b)).toContain("当前没有");
+    expect(f.control.get(a)).toBeDefined();
+    expect(await f.invoke("chat.pause", { channel: "8" }, undefined, a)).toContain("所属群ID");
+    expect(await f.invoke("chat.resume", {}, undefined, a)).toContain("已解除");
+});

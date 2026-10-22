@@ -2,6 +2,7 @@ import { Bot, Context, Logger, Session } from "koishi";
 
 import type { LoggerService } from "../logger";
 import { TableName } from "../shared/constants";
+import { conversationChannelId } from "../shared/utils/conversation-scope";
 import { HistoryConfig } from "./config";
 import { InteractionManager } from "./interaction-manager";
 import { SemanticMemoryManager } from "./l2-semantic-memory";
@@ -26,7 +27,7 @@ export class ContextBuilder {
 
     public async build(session: Session): Promise<WorldState> {
         const { platform, isDirect } = session;
-        const channelId = session.channelId!;
+        const channelId = conversationChannelId(session)!;
 
         const raw_l1_history = await this.interactionManager.getL1History(platform, channelId, this.config.l1_memory.maxMessages, session.selfId);
 
@@ -104,7 +105,7 @@ export class ContextBuilder {
 
         const worldState: WorldState = {
             channel: {
-                id: channelId,
+                id: session.channelId!,
                 name: channelInfo.name ?? "",
                 type: session.isDirect ? "private" : "guild",
                 platform: platform,

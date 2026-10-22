@@ -11,6 +11,7 @@ import { getInstanceDirectory, guardReplySession, withReplyTurn } from "../share
 import { AppError, handleError } from "../shared/errors";
 import { ErrorDefinitions } from "../shared/errors/definitions";
 import { YesImBotService } from "../shared/service";
+import { conversationChannelId, conversationCid } from "../shared/utils/conversation-scope";
 import { AgentStimulus, WorldStateService } from "../world";
 import { PromptContextBuilder } from "./context-builder";
 import { registerDecisionCommands } from "./decision-commands";
@@ -85,7 +86,7 @@ export class AgentCore extends YesImBotService<Config> {
             ),
             busy: this.scheduler.isBusy(key),
             assessing: this.pendingAssessments.has(key),
-            muted: this.worldState.peekBotMuted(session.cid, session.selfId),
+            muted: this.worldState.peekBotMuted(conversationCid(session), session.selfId),
             participation: this.willing.getParticipation(key),
             suppression: this.replyControl.peek(target),
         });
@@ -139,7 +140,7 @@ export class AgentCore extends YesImBotService<Config> {
             this.recordDecision(stimulus, { stage: "blocked", reason: "reply_suppressed", allowed: [] });
             return;
         }
-        if (this.worldState.isBotMuted(session.cid, session.selfId)) {
+        if (this.worldState.isBotMuted(conversationCid(session), session.selfId)) {
             this.logger.debug(`[${channelCid}] 跳过意愿评估 | 原因: 机器人被禁言 | 消息ID: ${session.messageId ?? "未知"}`);
             this.recordDecision(stimulus, { stage: "blocked", reason: "muted" });
             return;
@@ -284,7 +285,7 @@ export class AgentCore extends YesImBotService<Config> {
                 await this.worldState.recordSystemEvent({
                     id: `reply_control_${Random.id()}`,
                     platform: target.platform,
-                    channelId: target.channelId,
+                    channelId: conversationChannelId(target)!,
                     type: "reply-control",
                     timestamp: new Date(),
                     payload: {
@@ -319,14 +320,16 @@ export class AgentCore extends YesImBotService<Config> {
                 this.activeDecisionIds.set(channelCid, (stimulus as TracedStimulus).decisionId!);
                 let success = false;
                 const valid = () =>
-                    !controller.signal.aborted && this.replyControl.valid(target, token) && !this.worldState.isBotMuted(stimulus.session.cid, target.selfId);
+                    !controller.signal.aborted &&
+                    this.replyControl.valid(target, token) &&
+                    !this.worldState.isBotMuted(conversationCid(stimulus.session), target.selfId);
                 try {
                     await this.replyControl.flush();
                     if (controller.signal.aborted || !this.replyControl.valid(target, token) || !this.allowedCategories(stimulus).length) {
                         this.recordDecision(stimulus, { stage: "cancelled", reason: "invalid_generation", success: false });
                         return;
                     }
-                    if (this.worldState.isBotMuted(stimulus.session.cid, target.selfId)) {
+                    if (this.worldState.isBotMuted(conversationCid(stimulus.session), target.selfId)) {
                         this.recordDecision(stimulus, { stage: "blocked", reason: "muted", success: false });
                         return;
                     }
@@ -340,7 +343,7 @@ export class AgentCore extends YesImBotService<Config> {
                         },
                         controller.signal,
                         (destination) => {
-                            if (this.worldState.isBotMuted(`${destination.platform}:${destination.channelId}`, destination.selfId)) return false;
+                            if (this.worldState.isBotMuted(conversationCid(destination), destination.selfId)) return false;
                             if (replyKey(destination) === channelCid) return true;
                             const rule = this.replyControl.get(destination);
                             const categories: ReplyCategory[] = destination.isDirect || rule?.isDirect ? ["text", "direct"] : ["text"];
@@ -402,6 +405,7 @@ export class AgentCore extends YesImBotService<Config> {
                 platform: "string",
                 selfId: "string",
                 channelId: "string",
+                guildId: "string",
                 isDirect: "boolean",
                 blocked: "json",
                 expiresAt: { type: "double", nullable: true, initial: null },
@@ -438,7 +442,7 @@ export class AgentCore extends YesImBotService<Config> {
         }
         const channelCid = replyKey(this.replyTarget(session));
 
-        if (this.worldState.isBotMuted(session.cid, session.selfId)) {
+        if (this.worldState.isBotMuted(conversationCid(session), session.selfId)) {
             this.recordDecision(stimulus, { stage: "blocked", reason: "muted" });
             this.logger.warn(`[${channelCid}] 机器人已被禁言，响应终止。`);
             return;
@@ -556,7 +560,7 @@ export class AgentCore extends YesImBotService<Config> {
     }
 
     private replyTarget(session: Session): ReplyTarget {
-        return { platform: session.platform, selfId: session.selfId, channelId: session.channelId!, isDirect: session.isDirect };
+        return { platform: session.platform, selfId: session.selfId, channelId: session.channelId!, guildId: session.guildId, isDirect: session.isDirect };
     }
 
     private allowedCategories(stimulus: AgentStimulus<any>): ReplyCategory[] {

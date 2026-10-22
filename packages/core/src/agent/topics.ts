@@ -4,6 +4,7 @@ import type { LoggerService } from "../logger";
 import type { ModelService } from "../model";
 import { withUsageScope } from "../model/usage";
 import { TableName } from "../shared/constants";
+import { conversationChannelId } from "../shared/utils/conversation-scope";
 
 export interface TopicConfig {
     enabled: boolean;
@@ -264,7 +265,7 @@ export class TopicManager {
                 TableName.Messages,
                 {
                     platform: session.platform,
-                    channelId: session.channelId,
+                    channelId: conversationChannelId(session),
                     timestamp: { $lte: new Date(session.timestamp) },
                 },
                 { limit: this.config.historyLimit + 1, sort: { timestamp: "desc" } },

@@ -136,3 +136,31 @@ it("records suppression and muting without scheduling a reply", async () => {
     expect(t.decisions.latest(t.target)?.reason).toBe("muted");
     expect(t.scheduled).toHaveLength(0);
 });
+
+it("separates Telegram topic decisions, scheduler keys, willingness and mute checks by guild", () => {
+    const f = setup();
+    const muted: string[] = [];
+    f.core.worldState.isBotMuted = (cid: string) => {
+        muted.push(cid);
+        return false;
+    };
+    const a = { ...f.session, platform: "telegram", channelId: "7", guildId: "-10001", cid: "telegram:7" };
+    const b = { ...a, guildId: "-10002" };
+    const random = Math.random;
+    Math.random = () => 0;
+    try {
+        f.core.receiveStimulus({ type: "user_message", session: a });
+        f.core.receiveStimulus({ type: "user_message", session: b });
+        const first = f.decisions.latest(a)!,
+            second = f.decisions.latest(b)!;
+        expect(first.id).not.toBe(second.id);
+        expect(first.target.guildId).toBe("-10001");
+        expect(second.calculation?.before).toBe(0);
+        expect(first.key).not.toBe(second.key);
+        expect(f.scheduled.map((s) => s.channelCid)).toEqual([first.key, second.key]);
+        expect(new Set(muted)).toEqual(new Set(['telegram:telegram-topic:["-10001","7"]', 'telegram:telegram-topic:["-10002","7"]']));
+        expect(a.channelId).toBe("7");
+    } finally {
+        Math.random = random;
+    }
+});

@@ -43,3 +43,25 @@ for (const race of ["clear", "owner", "cancel", "record"] as const)
         await expect(dispatchReminder(f.world, f.emit, f.allowed, f.session, task, "world")).rejects.toThrow("delivery_invalidated");
         expect(f.emit).not.toHaveBeenCalled();
     });
+
+it("qualifies Telegram topic generation, event and wakeup keys by their parent chat", async () => {
+    const f = fixture();
+    const input = { ...task, platform: "telegram", channelId: "7", guildId: "-1001" };
+    const targets: any[] = [];
+    f.world.l2_manager.getHistoryGeneration = (target: any) => {
+        targets.push(target);
+        return 3;
+    };
+    await dispatchReminder(
+        f.world,
+        f.emit,
+        f.allowed,
+        { platform: "telegram", channelId: "7", guildId: "-1001", isDirect: false, cid: "telegram:7" } as any,
+        input,
+        "world",
+    );
+    const canonical = 'telegram-topic:["-1001","7"]';
+    expect(targets.every((target) => target.channelId === canonical)).toBe(true);
+    expect(f.world.recordSystemEvent.mock.calls[0][0].channelId).toBe(canonical);
+    expect(f.emit.mock.calls[0][2].channelCid).toBe(`telegram:${canonical}`);
+});

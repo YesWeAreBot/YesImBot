@@ -4,6 +4,7 @@ import { Context, h, Logger, Query, Session } from "koishi";
 
 import type { LoggerService } from "../logger";
 import { TableName } from "../shared/constants";
+import { conversationChannelId } from "../shared/utils/conversation-scope";
 import { HISTORY_CHANNELS } from "./channel-metadata";
 import { HistoryConfig } from "./config";
 import { registerHistoryBackup } from "./history-backup-commands";
@@ -109,7 +110,7 @@ export class HistoryCommandManager {
             .action(async ({ session, options }) => {
                 if (!session || !options) return;
                 let platform = options.platform || session.platform;
-                let channelId = options.channel || session.channelId;
+                let channelId = options.channel || conversationChannelId(session);
 
                 // 从 -t, --target 解析
                 if (options.target) {
@@ -322,7 +323,8 @@ export class HistoryCommandManager {
                 if (ambiguousChannels.length > 0) return `操作已中止:\n${ambiguousChannels.join("\n")}\n请使用 -p 或 -t 指定平台`;
 
                 if (targetsToProcess.length === 0 && !options.target && !options.channel) {
-                    if (session.platform && session.channelId) targetsToProcess.push({ platform: session.platform, channelId: session.channelId });
+                    if (session.platform && session.channelId)
+                        targetsToProcess.push({ platform: session.platform, channelId: conversationChannelId(session)! });
                     else return "无法确定当前会话，请使用选项指定频道";
                 }
 

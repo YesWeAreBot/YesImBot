@@ -8,6 +8,7 @@ interface Target {
     selfId: string;
     channelId: string;
     isDirect?: boolean;
+    guildId?: string;
 }
 interface TargetOptions {
     platform?: string;
@@ -61,6 +62,7 @@ async function resolveTarget(ctx: Context, control: ReplyControl, session: Sessi
     const bot = bots.find((bot) => bot.selfId === selfId);
     if (!bot) throw new Error(`未找到平台 ${platform} 上的机器人 ${selfId || "（未指定）"}。`);
 
+    let guildId: string | undefined;
     let isDirect = matches.find((rule) => rule.selfId === selfId)?.isDirect;
     if (options.user) {
         const userId = options.user.replace(/^private:/, "");
@@ -70,11 +72,14 @@ async function resolveTarget(ctx: Context, control: ReplyControl, session: Sessi
         isDirect = true;
     } else if (!channelId) {
         channelId = session.channelId;
+        guildId = session.guildId;
         isDirect = session.isDirect;
     } else if (options.group) isDirect = false;
     else if (channelId.startsWith("private:")) isDirect = true;
+    if (platform === "telegram" && !isDirect && !guildId && channelId && /^\d+$/.test(channelId))
+        throw new Error("Telegram 话题需要所属群ID，请在目标话题中执行指令。");
     if (!platform || !selfId || !channelId?.trim()) throw new Error("目标信息不完整，请明确指定会话ID。");
-    return { platform, selfId, channelId, isDirect };
+    return { platform, selfId, channelId, isDirect, ...(guildId ? { guildId } : {}) };
 }
 
 function parseDuration(value: string | undefined, defaultDuration: number): number | null {

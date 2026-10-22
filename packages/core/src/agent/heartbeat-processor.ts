@@ -14,6 +14,7 @@ import { withUsageScope } from "../model/usage";
 import { PromptService } from "../prompt";
 import { AppError, ErrorDefinitions, handleError } from "../shared/errors";
 import { estimateTokensByRegex, formatDate, JsonParser, StreamParser } from "../shared/utils";
+import { conversationChannelId, conversationCid } from "../shared/utils/conversation-scope";
 import { AgentResponse, AgentStimulus, WorldStateService } from "../world";
 import { InteractionManager } from "../world/interaction-manager";
 import { manualRecallOwners } from "../world/manual-recall";
@@ -75,7 +76,7 @@ export class HeartbeatProcessor {
             );
         const memory = this.world?.l2_manager;
         if (!memory) return run(stimulus);
-        const target = { platform: stimulus.session.platform, channelId: stimulus.session.channelId! };
+        const target = { platform: stimulus.session.platform, channelId: conversationChannelId(stimulus.session)! };
         const generation = memory.getHistoryGeneration(target);
         const controller = new AbortController();
         const unwatch = memory.watchHistory(target, () => controller.abort());
@@ -120,7 +121,7 @@ export class HeartbeatProcessor {
                     await this.interactionManager.recordHeartbeat(
                         turnId,
                         stimulus.session.platform,
-                        stimulus.session.channelId!,
+                        conversationChannelId(stimulus.session)!,
                         heartbeatCount,
                         this.config.heartbeat,
                     );
@@ -298,7 +299,8 @@ export class HeartbeatProcessor {
         onReplySent: () => void,
     ): Promise<{ continue: boolean; replySent: boolean } | null> {
         const { session } = stimulus;
-        const { platform, channelId = session.channelId! } = session;
+        const { platform } = session;
+        const channelId = conversationChannelId(session)!;
         // 步骤 1-4: 准备请求
         const { messages, manualRecallIds } = await this._prepareLlmRequest(stimulus);
 
@@ -319,7 +321,7 @@ export class HeartbeatProcessor {
 
         // 步骤 6: 解析和验证响应
         this.logger.debug("步骤 6/7: 解析并验证LLM响应...");
-        const agentResponseData = this.parseAndValidateResponse(llmRawResponse, session.cid);
+        const agentResponseData = this.parseAndValidateResponse(llmRawResponse, conversationCid(session));
         if (!agentResponseData) {
             this.logger.error("LLM响应解析或验证失败，终止本次心跳");
             return null;
@@ -346,7 +348,8 @@ export class HeartbeatProcessor {
         onReplySent: () => void,
     ): Promise<{ continue: boolean; replySent: boolean } | null> {
         const { session } = stimulus;
-        const { platform, channelId = session.channelId! } = session;
+        const { platform } = session;
+        const channelId = conversationChannelId(session)!;
 
         // 步骤 1-4: 准备请求
         const { messages, manualRecallIds } = await this._prepareLlmRequest(stimulus);
@@ -454,7 +457,7 @@ export class HeartbeatProcessor {
 
         // 模型重试和切换结束后，以最终响应为唯一动作来源。
         assertReplyTurn();
-        const response = this.parseAndValidateResponse(llmRawResponse, session.cid);
+        const response = this.parseAndValidateResponse(llmRawResponse, conversationCid(session));
         if (!response) return null;
         await this.interactionManager.recordThought(turnId, platform, channelId, response.thoughts, manualRecallIds);
         const replySent = await this.executeActions(turnId, session, response.actions, onReplySent);
@@ -563,10 +566,10 @@ export class HeartbeatProcessor {
         });
         assertReplyTurn();
         if (!response.toolCalls?.length) {
-            const legacy = this.parseAndValidateResponse(response, session.cid);
+            const legacy = this.parseAndValidateResponse(response, conversationCid(session));
             if (!legacy) throw new Error("模型没有返回有效工具调用");
             this.displayThoughts(legacy.thoughts);
-            await this.interactionManager.recordThought(turnId, session.platform, session.channelId!, legacy.thoughts, manualRecallIds);
+            await this.interactionManager.recordThought(turnId, session.platform, conversationChannelId(session)!, legacy.thoughts, manualRecallIds);
             const replySent = await this.executeActions(turnId, session, legacy.actions, onReplySent);
             return { continue: legacy.request_heartbeat, replySent };
         }
@@ -590,7 +593,7 @@ export class HeartbeatProcessor {
         let replySent = false;
         for (const action of actions) {
             assertReplyTurn();
-            const actionId = await this.interactionManager.recordAction(turnId, session.platform, session.channelId!, action, manualRecallIds);
+            const actionId = await this.interactionManager.recordAction(turnId, session.platform, conversationChannelId(session)!, action, manualRecallIds);
             assertReplyTurn();
             const result = await this.toolService.invoke(action.function, action.params, session);
             assertReplyTurn();
@@ -611,11 +614,14 @@ export class HeartbeatProcessor {
     }
 
     private async recordToolObservation(actionId: string, session: Session, observation: any) {
-        const write = () => this.interactionManager.recordObservation(actionId, session.platform, session.channelId!, observation);
+        const write = () => this.interactionManager.recordObservation(actionId, session.platform, conversationChannelId(session)!, observation);
         const generation = observation.result?.historyGeneration;
         if (!Number.isSafeInteger(generation)) return write();
         const world = this.world;
-        if (!world?.l2_manager || !(await world.l2_manager.writeMemory({ platform: session.platform, channelId: session.channelId! }, generation, write))) {
+        if (
+            !world?.l2_manager ||
+            !(await world.l2_manager.writeMemory({ platform: session.platform, channelId: conversationChannelId(session)! }, generation, write))
+        ) {
             throw new Error("召回后历史已清除，请重新召回");
         }
     }
@@ -635,7 +641,8 @@ export class HeartbeatProcessor {
             return false;
         }
 
-        const { platform, channelId = session.channelId! } = session;
+        const { platform } = session;
+        const channelId = conversationChannelId(session)!;
         let replySent = false;
 
         for await (const action of actions) {

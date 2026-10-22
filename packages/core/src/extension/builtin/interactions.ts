@@ -7,6 +7,7 @@ import { Extension, Tool, withInnerThoughts } from "../../extension/decorators";
 import { Failed, Success } from "../../extension/helpers";
 import { Infer } from "../../extension/types";
 import { assertReplyTurn, formatDate, isEmpty } from "../../shared";
+import { conversationChannelId } from "../../shared/utils/conversation-scope";
 import { oneBotFaceElement, recoverNativeFaces } from "../../world/onebot-faces";
 import { ForwardLayerCache, forwardMessageList } from "../forward-layer";
 
@@ -168,7 +169,7 @@ export default class InteractionsExtension {
                 const world = this.ctx.yesimbot.world;
                 const target = {
                     platform: session.platform,
-                    channelId: session.channelId,
+                    channelId: conversationChannelId(session)!,
                     channelType: session.isDirect ? ("private" as const) : ("guild" as const),
                 };
                 const generation = world.l2_manager?.getHistoryGeneration(target) ?? 0;

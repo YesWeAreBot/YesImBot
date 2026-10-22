@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import type { Context } from "koishi";
+import { conversationChannelId } from "koishi-plugin-yesimbot";
 
 import { applyClaimChanges, projectClaims, retireClaims, claimEvidence as allClaimEvidence, type Claim, type ClaimChange } from "./claims";
 import { validateProfileDocument, renderProfileDocument, type ProfileDocument } from "./profile";
@@ -11,12 +12,13 @@ export interface SceneInput {
     selfId?: string;
     bot?: { selfId: string };
     channelId: string;
+    guildId?: string;
     userId: string;
     isDirect?: boolean;
 }
 export function sceneKey(s: SceneInput): string {
     const bot = s.selfId || s.bot?.selfId;
-    const channel = s.isDirect ? s.userId : s.channelId;
+    const channel = s.isDirect ? s.userId : conversationChannelId(s);
     if (!s.platform || !bot || !channel || !s.userId) throw new Error("会话缺少平台、机器人或场景 ID");
     return digest(JSON.stringify([s.platform, bot, s.isDirect ? "private" : "channel", channel]));
 }

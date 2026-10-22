@@ -6,6 +6,7 @@ import { AssetService } from "../asset";
 import type { LoggerService } from "../logger";
 import { TableName } from "../shared/constants";
 import { truncate } from "../shared/utils";
+import { conversationChannelId, conversationCid } from "../shared/utils/conversation-scope";
 import { HistoryConfig } from "./config";
 import { normalizeOneBotMessageContent } from "./onebot-faces";
 import { WorldStateService } from "./service";
@@ -93,7 +94,7 @@ export class EventListenerManager {
                     }
                     const stimulus: AgentStimulus<UserMessagePayload> = {
                         type: "user_message",
-                        channelCid: session.cid,
+                        channelCid: conversationCid(session),
                         session,
                         priority: 5, // Normal message priority
                         payload: { messageIds: [session.messageId!] },
@@ -153,7 +154,7 @@ export class EventListenerManager {
                 this.service.recordSystemEvent({
                     id: `sysevt_poke_${Random.id()}`,
                     platform: session.platform,
-                    channelId: session.channelId,
+                    channelId: conversationChannelId(session),
                     channelType: session.isDirect ? "private" : "guild",
                     timestamp: new Date(),
                     ...payload,
@@ -201,22 +202,22 @@ export class EventListenerManager {
         };
 
         if (allMembers) {
-            await this.service.updateMuteStatus(session.cid, released ? 0 : Infinity, selfId, "all");
+            await this.service.updateMuteStatus(conversationCid(session), released ? 0 : Infinity, selfId, "all");
         } else if (isTargetingBot || this.ctx.bots.some((bot) => bot.platform === session.platform && bot.selfId === userId)) {
-            await this.service.updateMuteStatus(session.cid, released ? 0 : timestamp.getTime() + duration, userId);
+            await this.service.updateMuteStatus(conversationCid(session), released ? 0 : timestamp.getTime() + duration, userId);
         }
         await this.service.recordSystemEvent({
             id: `sysevt_${released ? "unban" : "ban"}_${Random.id()}`,
             platform: session.platform,
-            channelId: session.channelId,
+            channelId: conversationChannelId(session),
             channelType: session.isDirect ? "private" : "guild",
             timestamp,
             ...payload,
         } as SystemEventData);
-        if (!allMembers && released && isTargetingBot && !this.service.isBotMuted(session.cid, selfId)) {
+        if (!allMembers && released && isTargetingBot && !this.service.isBotMuted(conversationCid(session), selfId)) {
             const stimulus: AgentStimulus<SystemEventPayload> = {
                 type: "system_event",
-                channelCid: session.cid,
+                channelCid: conversationCid(session),
                 session,
                 priority: 8,
                 payload: payload as SystemEventPayload,
@@ -226,7 +227,7 @@ export class EventListenerManager {
     }
 
     private async handleOperatorMessage(session: Session): Promise<void> {
-        this.logger.debug(`记录手动发送的消息 | 频道: ${session.cid}`);
+        this.logger.debug(`记录手动发送的消息 | 频道: ${conversationCid(session)}`);
         await this.recordBotSentMessage(session);
     }
 
@@ -235,13 +236,13 @@ export class EventListenerManager {
         if (!session || !command) return;
         const generation = this.generation;
 
-        this.logger.info(`记录指令调用 | 用户: ${session.author.name || session.userId} | 指令: ${command.name} | 频道: ${session.cid}`);
+        this.logger.info(`记录指令调用 | 用户: ${session.author.name || session.userId} | 指令: ${command.name} | 频道: ${conversationCid(session)}`);
         const commandEventId = `cmd_invoked_${session.messageId || "call"}_${Random.id()}`;
 
         const eventPayload: SystemEventData = {
             id: commandEventId,
             platform: session.platform,
-            channelId: session.channelId!,
+            channelId: conversationChannelId(session)!,
             channelType: session.isDirect ? "private" : "guild",
             type: "command-invoked",
             timestamp: new Date(),
@@ -278,7 +279,7 @@ export class EventListenerManager {
     }
 
     private commandKey(session: Session): string {
-        return JSON.stringify([session.platform, session.channelId, session.selfId || session.bot?.selfId]);
+        return JSON.stringify([session.platform, conversationChannelId(session), session.selfId || session.bot?.selfId]);
     }
 
     private async matchCommandResult(session: Session, options?: Universal.SendOptions): Promise<void> {
@@ -309,7 +310,7 @@ export class EventListenerManager {
     private async recordUserMessage(session: Session): Promise<void> {
         await this.service.observeChannel(session);
         /* prettier-ignore */
-        this.logger.info(`用户消息 | ${session.author.name} | 频道: ${session.cid} | 内容: ${truncate(session.content ?? "").replace(/\n/g, " ")}`);
+        this.logger.info(`用户消息 | ${session.author.name} | 频道: ${conversationCid(session)} | 内容: ${truncate(session.content ?? "").replace(/\n/g, " ")}`);
 
         if (session.guildId) {
             await this.updateMemberInfo(session);
@@ -332,13 +333,13 @@ export class EventListenerManager {
                 this.logger.debug("原始转发引用提取失败，保留适配器内容");
             }
         }
-        const content = await this.assetService.transform(messageContent ?? "");
+        const content = await this.assetService.transform(messageContent ?? "", { session });
         this.logger.debug(`记录转义后的消息：${content}`);
 
         const message: MessageData = {
             id: session.messageId!,
             platform: session.platform,
-            channelId: session.channelId!,
+            channelId: conversationChannelId(session)!,
             channelType: session.isDirect ? "private" : "guild",
             sender: {
                 id: session.userId ?? "",
@@ -356,15 +357,17 @@ export class EventListenerManager {
         if (!session.content || !session.messageId) return;
 
         await this.service.observeChannel(session);
-        this.logger.debug(`记录机器人消息 | 频道: ${session.cid} | 消息ID: ${session.messageId}`);
+        this.logger.debug(`记录机器人消息 | 频道: ${conversationCid(session)} | 消息ID: ${session.messageId}`);
 
         const message: MessageData = {
             id: session.messageId,
             platform: session.platform,
-            channelId: session.channelId!,
+            channelId: conversationChannelId(session)!,
             channelType: session.isDirect ? "private" : "guild",
             sender: { id: session.bot.selfId, name: session.bot.user?.nick || session.bot.user?.name || "" },
-            content: await this.assetService.transform(await normalizeOneBotMessageContent(session, session.toJSON().message?.content ?? session.content)),
+            content: await this.assetService.transform(await normalizeOneBotMessageContent(session, session.toJSON().message?.content ?? session.content), {
+                session,
+            }),
             timestamp: new Date(session.timestamp),
             quoteId: session.quote?.id,
         };

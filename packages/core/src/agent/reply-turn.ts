@@ -16,12 +16,25 @@ const encoderSendToken = Symbol("reply encoder send");
 
 // 不代理整个 bot，也不改变 transport 方法的 this，兼容 JS 私有字段。
 // 这里只覆盖编码器通过 bot.internal / bot.http 读取的常见出站接口。
-function guardTransport(transport: any, key: "internal" | "http", check: () => void): any {
+const internalOutbound = new Set([
+    "chatPostMessage",
+    "startThreadFromMessage",
+    "modifyChannel",
+    "im.message.create",
+    "im.message.reply",
+    "im.message.patch",
+    "im.message.update",
+    "im.image.create",
+    "im.file.create",
+]);
+const internalNamespaces = new Set(["im", "im.message", "im.image", "im.file"]);
+function guardTransport(transport: any, key: "internal" | "http", check: () => void, path = ""): any {
     if (!transport || !["object", "function"].includes(typeof transport)) return transport;
     const outbound = (method: PropertyKey) =>
         key === "http"
             ? ["request", "post", "put", "patch", "delete"].includes(String(method))
-            : /^(send[A-Z_]|createMessage$|execute$|request$)/.test(String(method));
+            : /^(send[A-Z_]|createMessage$|execute$|request$)/.test(String(method)) ||
+              internalOutbound.has(path ? `${path}.${String(method)}` : String(method));
     return new Proxy(transport, {
         apply(target, _receiver, args) {
             check();
@@ -29,6 +42,10 @@ function guardTransport(transport: any, key: "internal" | "http", check: () => v
         },
         get(target, method) {
             const value = Reflect.get(target, method, target);
+            const nested = path ? `${path}.${String(method)}` : String(method);
+            // Lark 的 SDK 按命名空间保存出站方法；只代理已知发送路径，
+            // 不遍历响应对象或改变读取接口的调用接收者。
+            if (key === "internal" && internalNamespaces.has(nested)) return guardTransport(value, key, check, nested);
             if (typeof value !== "function") return value;
             return (...args: any[]) => {
                 if (outbound(method)) check();
@@ -76,7 +93,7 @@ async function withGuardedEncoder<T>(
     bot: Bot,
     channelId: string,
     options: any,
-    check: (channelId: string) => void,
+    check: (channelId: string, guildId?: string) => void,
     task: (options: any) => T,
 ): Promise<Awaited<T>> {
     // 内层新 turn 必须从真实适配器类构造，避免嵌套旧代理擦除新 turn 的上下文。
@@ -99,10 +116,10 @@ async function withGuardedEncoder<T>(
                 const method = encoder[key];
                 if (typeof method !== "function") continue;
                 encoder[key] = function (...args: any[]) {
-                    if (guarded) check(encoder.channelId);
+                    if (guarded) check(encoder.channelId, encoder.session?.guildId);
                     const scope = new Map(outboundScopes.getStore());
                     // 普通发送在自己的编码器中移除父异步链的旧保护。
-                    if (guarded) scope.set(bot, () => check(encoder.channelId));
+                    if (guarded) scope.set(bot, () => check(encoder.channelId, encoder.session?.guildId));
                     else scope.delete(bot);
                     return outboundScopes.run(scope, () => method.apply(encoder, args));
                 };
@@ -195,9 +212,9 @@ export function guardReplyBot(bot: Bot): Bot {
         if (restrictions.some((restriction) => restriction.signal?.aborted || !restriction.valid())) throw new DOMException("聊天任务已取消", "AbortError");
     };
     const canSend = (target: ReplyTarget) => restrictions.every((restriction) => restriction.canSend?.(target) !== false);
-    const destination = (channelId: string, isDirect?: boolean) => {
+    const destination = (channelId: string, isDirect?: boolean, guildId?: string) => {
         check();
-        if (!canSend({ platform: bot.platform!, selfId: bot.selfId, channelId, isDirect })) throw new Error("目标会话的回复已被抑制");
+        if (!canSend({ platform: bot.platform!, selfId: bot.selfId, channelId, isDirect, guildId })) throw new Error("目标会话的回复已被抑制");
     };
     // OneBot 在内容转换、before-send 和分段发送之后才调用这些出站方法。
     // 只代理本次回复，普通指令仍使用原机器人和 internal。
@@ -246,7 +263,8 @@ export function guardReplyBot(bot: Bot): Bot {
                         return onebot ? send() : withGuardedEncoder(target, channel.id, args[3], (id) => destination(id, true), send);
                     }
                     const isDirect = key === "sendMessage" ? args[3]?.session?.isDirect : undefined;
-                    const targetDestination = { platform: target.platform!, selfId: target.selfId, channelId: args[0] as string, isDirect };
+                    const guildId = key === "sendMessage" ? args[3]?.session?.guildId : undefined;
+                    const targetDestination = { platform: target.platform!, selfId: target.selfId, channelId: args[0] as string, isDirect, guildId };
                     if (!canSend(targetDestination)) throw new Error("目标会话的回复已被抑制");
                     if (onebot || key === "sendUpload") return value.apply(onebot ? receiver : target, args);
                     const send = (options: any) => {
@@ -254,7 +272,7 @@ export function guardReplyBot(bot: Bot): Bot {
                         if (options !== args[3]) sendArgs[3] = options;
                         return value.apply(target, sendArgs);
                     };
-                    return withGuardedEncoder(target, args[0], args[3], (id) => destination(id, isDirect), send);
+                    return withGuardedEncoder(target, args[0], args[3], (id, parent) => destination(id, isDirect, parent ?? guildId), send);
                 };
             }
             return typeof value === "function" ? value.bind(target) : value;

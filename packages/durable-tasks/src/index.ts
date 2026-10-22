@@ -75,7 +75,7 @@ export function apply(ctx: Context, config: Config) {
         rules: (task) =>
             (ctx.database as unknown as { get(table: string, query: object): Promise<Array<{ blocked: string[]; expiresAt: number | null }>> }).get(
                 "yesimbot.reply_rules",
-                { platform: task.platform, selfId: task.selfId, channelId: task.channelId },
+                { id: JSON.stringify([task.platform, task.selfId, shared.conversationChannelId(task)]) },
             ),
     };
     const createWorker = () =>

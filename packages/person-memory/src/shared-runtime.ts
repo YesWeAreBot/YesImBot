@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 
 import { Context, Schema, h, type Session } from "koishi";
 import * as core from "koishi-plugin-yesimbot";
+import { conversationChannelId } from "koishi-plugin-yesimbot";
 
 import { PeopleCatalog } from "./catalog";
 import { claimParameters, executeClaimTool, visibleClaims } from "./claim-tools";
@@ -90,6 +91,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
                 platform: source.platform,
                 selfId: source.selfId,
                 channel: { id: source.channelId, type: 0 },
+                guild: source.guildId ? { id: source.guildId } : undefined,
                 user: { id: "summary-model" },
             } as any);
             await event(
@@ -141,7 +143,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
             await world.recordSystemEvent({
                 id: createHash("sha256").update(id).digest("hex"),
                 platform: session.platform,
-                channelId: session.channelId,
+                channelId: conversationChannelId(session),
                 eventScope: "mind",
                 botKey: scopeOf(session),
                 type: "memory-maintenance",
@@ -200,7 +202,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
                 target.platform === scene.platform &&
                 target.selfId === scene.selfId &&
                 target.channelId === scene.channelId &&
-                scene.key === sceneKey({ ...target, userId: target.userId || session.userId } as SceneInput) &&
+                scene.key === sceneKey({ ...target, userId: target.userId || session.userId || "" } as SceneInput) &&
                 targetAllowed(target, session),
         );
     const targetsFor = async (session: Session, scope: string): Promise<RecallTarget[]> => {
@@ -217,14 +219,14 @@ export function applySharedMemory(ctx: Context, config: Config) {
         const result = new Map<string, RecallTarget>();
         for (const target of candidates) {
             if (!targetAllowed(target, session)) continue;
-            result.set(JSON.stringify([target.platform, target.selfId, target.isDirect ? "private" : "channel", target.channelId]), target);
+            result.set(sceneKey({ ...target, userId: target.userId || session.userId || "" }), target);
         }
         return [...result.values()];
     };
     const ambiguousChannels = async (scope: string) => {
         const kinds = new Map<string, Set<boolean>>();
         for (const t of await memories.scenes(scope)) {
-            const key = JSON.stringify([t.platform, t.channelId]);
+            const key = JSON.stringify([t.platform, conversationChannelId(t)]);
             if (!kinds.has(key)) kinds.set(key, new Set());
             kinds.get(key)!.add(!!t.isDirect);
         }
@@ -247,12 +249,12 @@ export function applySharedMemory(ctx: Context, config: Config) {
             limit: args.limit,
         });
         const ambiguous = await ambiguousChannels(scope);
-        const legacyTargets = targets.filter((t) => !ambiguous.has(JSON.stringify([t.platform, t.channelId])));
+        const legacyTargets = targets.filter((t) => !ambiguous.has(JSON.stringify([t.platform, conversationChannelId(t)])));
         const summaries =
             typeof world.recallMemory === "function"
                 ? await world.recallMemory({
                       query: args.query,
-                      targets: legacyTargets.map((t) => ({ platform: t.platform, channelId: t.channelId })),
+                      targets: legacyTargets.map((t) => ({ platform: t.platform, channelId: conversationChannelId(t)! })),
                       start,
                       end,
                       limit: args.limit ?? 6,
@@ -277,9 +279,9 @@ export function applySharedMemory(ctx: Context, config: Config) {
         const safeSummaries = [];
         for (const item of summaries)
             if (!(await memories.summaryUnsafe(scope, item.platform, item.participants, item.startedAt ?? item.timestamp))) safeSummaries.push(item);
-        const allowed = new Set((await targetsFor(session, scope)).map((t) => JSON.stringify([t.platform, t.selfId, !!t.isDirect, t.channelId])));
-        const sources = fresh.items.filter((t) => allowed.has(JSON.stringify([t.platform, t.selfId, !!t.isDirect, t.channelId])));
-        const allowedChannels = new Set((await targetsFor(session, scope)).map((t) => JSON.stringify([t.platform, t.channelId])));
+        const allowed = new Set((await targetsFor(session, scope)).map((t) => sceneKey({ ...t, userId: t.userId || session.userId || "" })));
+        const sources = fresh.items.filter((t) => allowed.has(sceneKey(t)));
+        const allowedChannels = new Set((await targetsFor(session, scope)).map((t) => JSON.stringify([t.platform, conversationChannelId(t)])));
         const { state: finalState } = await assertEnabled(session);
         const freshAccounts = new Map(Object.values(finalState.accounts).map((a) => [a.userId, a]));
         return {
@@ -487,7 +489,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
         if ((await modeOf(scope)).settings.mode === "off") return;
         try {
             const ambiguous = await ambiguousChannels(scope);
-            if (ambiguous.has(JSON.stringify([session.platform, session.channelId]))) {
+            if (ambiguous.has(JSON.stringify([session.platform, conversationChannelId(session)]))) {
                 state.l2_retrieved_memories = [];
                 state.l3_diary_entries = [];
                 filterRecallObservations(state, () => false);
@@ -589,14 +591,14 @@ export function applySharedMemory(ctx: Context, config: Config) {
                             !claim.scene ||
                             targets.some(
                                 (target) =>
-                                    claim.scene === sceneKey({ ...target, userId: target.userId || session.userId } as SceneInput) &&
+                                    claim.scene === sceneKey({ ...target, userId: target.userId || session.userId || "" } as SceneInput) &&
                                     targetAllowed(target, session),
                             ),
                         allowEvidence: (source) =>
                             !!source.provenance &&
                             targets.some(
                                 (target) =>
-                                    source.provenance!.scene === sceneKey({ ...target, userId: target.userId || session.userId } as SceneInput) &&
+                                    source.provenance!.scene === sceneKey({ ...target, userId: target.userId || session.userId || "" } as SceneInput) &&
                                     targetAllowed(target, session),
                             ),
                         sourceId: (id) => (id.startsWith("source:") ? id : sourceRef(session as SceneInput, id)),
@@ -638,7 +640,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
                                 !claim.scene ||
                                 targets.some(
                                     (target) =>
-                                        claim.scene === sceneKey({ ...target, userId: target.userId || session.userId } as SceneInput) &&
+                                        claim.scene === sceneKey({ ...target, userId: target.userId || session.userId || "" } as SceneInput) &&
                                         targetAllowed(target, session),
                                 ),
                         ),
@@ -668,7 +670,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
                                 !claim.scene ||
                                 targets.some(
                                     (target) =>
-                                        claim.scene === sceneKey({ ...target, userId: target.userId || session.userId } as SceneInput) &&
+                                        claim.scene === sceneKey({ ...target, userId: target.userId || session.userId || "" } as SceneInput) &&
                                         targetAllowed(target, session),
                                 ),
                         ),
@@ -680,7 +682,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
                                     !!e.provenance &&
                                     targets.some(
                                         (target) =>
-                                            e.provenance!.scene === sceneKey({ ...target, userId: target.userId || session.userId } as SceneInput) &&
+                                            e.provenance!.scene === sceneKey({ ...target, userId: target.userId || session.userId || "" } as SceneInput) &&
                                             targetAllowed(target, session),
                                     ),
                             )
@@ -720,7 +722,8 @@ export function applySharedMemory(ctx: Context, config: Config) {
                 const sourceTargets: RecallTarget[] = [];
                 for (const id of ids) {
                     const provenance = sourceRows.find((e) => e.id === id)?.provenance;
-                    const target = provenance && targets.find((t) => provenance.scene === sceneKey({ ...t, userId: t.userId || session.userId } as SceneInput));
+                    const target =
+                        provenance && targets.find((t) => provenance.scene === sceneKey({ ...t, userId: t.userId || session.userId || "" } as SceneInput));
                     if (!target) throw new Error("候选来源不在当前允许的回忆范围");
                     sourceTargets.push(structuredClone(target));
                 }

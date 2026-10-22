@@ -5,7 +5,7 @@ import { fileURLToPath } from "url";
 
 import { GifUtil } from "@miaowfish/gifwrap";
 import { Jimp } from "jimp";
-import { Context, Element, Logger, h } from "koishi";
+import { Context, Element, Logger, h, type Session } from "koishi";
 import { v4 as uuidv4 } from "uuid";
 
 import { Config } from "../config";
@@ -17,6 +17,10 @@ import { LocalStorageDriver } from "./drivers/local";
 import { AssetData, AssetInfo, AssetMetadata, FileResponse, ReadAssetOptions, StorageDriver } from "./types";
 
 const ELEMENT_TO_PROCESS = ["img", "image", "audio", "video", "file", "mface"];
+
+interface AssetTransformOptions {
+    session?: Pick<Session, "platform" | "bot">;
+}
 
 type PreparedAsset = { id: string; persisted: Promise<string> };
 type PendingAsset = { signal?: AbortSignal; preparation: Promise<PreparedAsset> };
@@ -124,9 +128,9 @@ export class AssetService extends YesImBotService<Config> {
      * @param source - 原始消息字符串或元素数组
      * @returns 转换后的消息字符串
      */
-    async transform(source: string | Element[]): Promise<string> {
+    async transform(source: string | Element[], options: AssetTransformOptions = {}): Promise<string> {
         const elements = typeof source === "string" ? h.parse(source) : source;
-        const transformedElements = await h.transformAsync(elements, (el) => this._processTransformElement(el, false));
+        const transformedElements = await h.transformAsync(elements, (el) => this._processTransformElement(el, false, options));
         return transformedElements.join("");
     }
 
@@ -134,15 +138,15 @@ export class AssetService extends YesImBotService<Config> {
      * 读取并校验来源、确定去重后的资源 ID，再在后台完成持久化。
      * 返回时来源下载已经完成，但新资源的文件与数据库写入可能仍在进行。
      */
-    async transformAsync(source: string | Element[]): Promise<string> {
+    async transformAsync(source: string | Element[], options: AssetTransformOptions = {}): Promise<string> {
         const elements = typeof source === "string" ? h.parse(source) : source;
-        const transformedElements = await h.transformAsync(elements, (el) => this._processTransformElement(el, true));
+        const transformedElements = await h.transformAsync(elements, (el) => this._processTransformElement(el, true, options));
         return transformedElements.join("");
     }
 
     /**
      * 创建一个新资源。
-     * @param source - 资源的来源 (Buffer, data:, file:, http(s): URL)
+     * @param source - 资源的来源 (Buffer, data:, file:, http(s):, Satori internal: URL)
      * @param metadata - 资源的元数据
      * @param options - 内部选项，如预设的ID
      * @returns 资源的唯一 ID
@@ -372,11 +376,13 @@ export class AssetService extends YesImBotService<Config> {
     /**
      * 处理 transform/transformAsync 中的单个元素
      */
-    private async _processTransformElement(element: Element, isAsync: boolean): Promise<Element> {
+    private async _processTransformElement(element: Element, isAsync: boolean, options: AssetTransformOptions): Promise<Element> {
         if (!ELEMENT_TO_PROCESS.includes(element.type)) return element;
         const originalUrl = element.attrs.src || element.attrs.url || element.attrs.file;
         const filename = element.attrs.filename || element.attrs.name || element.attrs.fileName;
-        if (!originalUrl || element.attrs.id) return element;
+        if (!originalUrl) return element;
+        // Adapters may attach their own file IDs alongside a source URL.
+        if (element.attrs.id && (await this.getInfo(element.attrs.id))) return element;
 
         // 根据元素类型和URL协议决定是否处理
         let tagName = element.type;
@@ -385,8 +391,8 @@ export class AssetService extends YesImBotService<Config> {
             tagName = "img";
         }
 
-        if (tagName === "file" && !String(originalUrl).startsWith("http")) {
-            return element; // 只处理网络文件资源
+        if (tagName === "file" && !String(originalUrl).startsWith("http") && !String(originalUrl).startsWith("internal:")) {
+            return element; // 只处理网络或适配器文件资源
         }
 
         const metadata: AssetMetadata = {
@@ -402,14 +408,38 @@ export class AssetService extends YesImBotService<Config> {
         }
 
         try {
+            let source: string | Buffer = originalUrl;
+            if (options.session?.platform === "slack") {
+                const url = new URL(originalUrl);
+                if (
+                    url.protocol === "https:" &&
+                    url.hostname === "files.slack.com" &&
+                    !url.port &&
+                    !url.username &&
+                    !url.password &&
+                    url.pathname.startsWith("/files-pri/")
+                ) {
+                    const token = (options.session.bot.config as { botToken?: string }).botToken;
+                    if (!token) throw new Error("Slack 私有附件缺少当前机器人鉴权");
+                    const response = await this.ctx.http.get(originalUrl, {
+                        responseType: "arraybuffer",
+                        headers: { Authorization: `Bearer ${token}` },
+                        redirect: "error",
+                        timeout: this.config.downloadTimeout,
+                    });
+                    source = Buffer.from(response);
+                    // Private downloads cannot be recovered later without their originating authorization.
+                    delete metadata.src;
+                }
+            }
             if (isAsync) {
-                const { id, persisted } = await this._prepareAsset(originalUrl, metadata);
+                const { id, persisted } = await this._prepareAsset(source, metadata);
                 persisted.catch((error) => {
                     this.logger.error(`后台资源持久化失败 (ID: ${id}, 源: ${truncate(originalUrl, 100)}): ${error.message}`);
                 });
                 return h(tagName, { ...displayAttrs, id });
             }
-            const id = await this.create(originalUrl, metadata);
+            const id = await this.create(source, metadata);
             return h(tagName, { ...displayAttrs, id });
         } catch (error) {
             this.logger.error(`资源持久化失败 (源: ${truncate(originalUrl, 100)}): ${error.message}`);
@@ -451,6 +481,11 @@ export class AssetService extends YesImBotService<Config> {
         }
         if (source.startsWith("http")) {
             return this._downloadResource(source);
+        }
+        if (source.startsWith("internal:")) {
+            // Satori routes adapter resources through its authenticated http/file handler.
+            const response = await this.ctx.http.file(source, { timeout: this.config.downloadTimeout });
+            return { type: response.type, data: Buffer.from(response.data), filename: response.filename };
         }
         throw new Error(`不支持的资源来源: "${truncate(source, 50)}"`);
     }

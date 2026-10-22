@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import { conversationChannelId } from "koishi-plugin-yesimbot";
+
 import { validateProfileDocument, type ProfileDocument } from "./profile";
 import type { Evidence, Person } from "./store";
 
@@ -47,7 +49,7 @@ export interface Claim extends ClaimRevision {
 /** A recall alias can never turn the same original platform message into independent support. */
 export function evidenceRoot(e: Evidence): string {
     const p = e.provenance;
-    return p ? JSON.stringify([p.platform, p.channelId, p.messageId]) : JSON.stringify([e.userId, e.id]);
+    return p ? JSON.stringify([p.platform, conversationChannelId(p), p.messageId]) : JSON.stringify([e.userId, e.id]);
 }
 export function claimEvidence(claim: Claim): Evidence[] {
     return [...new Map(claim.history.flatMap((r) => r.evidence).map((e) => [evidenceRoot(e), e])).values()];

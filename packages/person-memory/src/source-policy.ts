@@ -25,7 +25,14 @@ export function summarySourceAllowed(
         const bot = ctx.bots.find((bot) => bot.platform === source.platform && bot.selfId === source.selfId);
         if (!bot) return false;
         const candidates = [false, true].filter((isDirect) => {
-            const input: SceneInput = { platform: source.platform, selfId: source.selfId, channelId: source.channelId, userId, isDirect };
+            const input: SceneInput = {
+                platform: source.platform,
+                selfId: source.selfId,
+                channelId: source.channelId,
+                guildId: source.guildId,
+                userId,
+                isDirect,
+            };
             return sceneKey(input) === source.scene;
         });
         if (candidates.length !== 1) return false;
@@ -46,6 +53,7 @@ export function summarySourceAllowed(
                 platform: session.platform,
                 selfId: session.selfId,
                 channelId: session.channelId || "",
+                guildId: session.guildId,
                 userId: session.userId || "",
                 isDirect: session.isDirect,
             }) === source.scene &&

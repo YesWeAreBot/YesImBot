@@ -122,6 +122,7 @@ export function sanitizeDecisionRecord(value: unknown): DecisionRecord | undefin
             platform: value.target.platform,
             selfId: value.target.selfId,
             channelId: value.target.channelId,
+            ...(identifier(value.target.guildId) ? { guildId: value.target.guildId } : {}),
             ...(typeof value.target.isDirect === "boolean" ? { isDirect: value.target.isDirect } : {}),
         };
     }

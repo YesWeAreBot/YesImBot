@@ -1,3 +1,4 @@
+import { conversationChannelId } from "../shared/utils/conversation-scope";
 import { manualRecallOwners } from "../world/manual-recall";
 import type { AgentStimulus, L1HistoryItem, WorldState } from "../world/types";
 
@@ -45,7 +46,7 @@ export function deriveConversationFocus(stimulus: AgentStimulus<any>, world: Wor
     const quotes = [...new Set(messages.filter((item) => ids.includes(item.id)).flatMap((item) => (item.quoteId ? [item.quoteId] : [])))];
     const present = new Set(messages.map((item) => item.id));
     return {
-        target: { platform: session.platform, selfId: session.selfId, channelId: session.channelId! },
+        target: { platform: session.platform, selfId: session.selfId, channelId: conversationChannelId(session)! },
         targetUserId: session.userId,
         triggerType: stimulus.type,
         triggerMessageIds: ids,

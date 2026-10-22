@@ -38,3 +38,18 @@ for (const denied of ["owner", "bot", "offline", "channel", "filter", "allowlist
         if (denied === "pause") runtime.rules = async () => [{ blocked: ["scheduled"], expiresAt: null }];
         expect(await prepareDelivery(runtime as any, task, "current-owner")).toHaveProperty("error");
     });
+
+it("checks the parent-qualified Telegram topic mute state when restoring a reminder", async () => {
+    const f = fixture();
+    f.bot.platform = "telegram";
+    f.bot.getChannel = async () => ({ id: "7", type: Universal.Channel.Type.TEXT });
+    f.bot.session = (event: any) => ({ ...event, channelId: event.channel.id, guildId: event.guild.id, isDirect: false, selfId: "bot", cid: "telegram:7" });
+    const checked: string[] = [];
+    f.world.isBotMuted = (cid: string) => {
+        checked.push(cid);
+        return false;
+    };
+    const input = { ...task, platform: "telegram", channelId: "7", guildId: "-1001" };
+    expect(await prepareDelivery(f.runtime as any, input, "current-owner")).not.toHaveProperty("error");
+    expect(checked).toEqual(Array.from({ length: 2 }, () => 'telegram:telegram-topic:["-1001","7"]'));
+});

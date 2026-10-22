@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import type { Context } from "koishi";
+import { conversationChannelId } from "koishi-plugin-yesimbot";
 
 import { accountRef, sceneKey, type Account, type Person, type PersonStore, type SceneInput, type Evidence, type State } from "./store";
 
@@ -115,7 +116,7 @@ export class ContinuityStore {
             channelId: session.channelId,
             isDirect: !!session.isDirect,
             userId: session.userId,
-            guildId: (session as SceneInput & { guildId?: string }).guildId,
+            guildId: session.guildId,
         };
         if (!active()) throw new Error("任务已取消");
         await this.db.upsert(SCENES, [{ id: hash([scope, sceneKey(session)]), scope, ...location }]);
@@ -182,6 +183,7 @@ export class ContinuityStore {
                               selfId: t.selfId,
                               channelId: t.channelId,
                               isDirect: !!t.isDirect,
+                              ...(conversationChannelId(t) !== t.channelId ? { guildId: t.guildId } : {}),
                               ...(t.isDirect && t.userId ? { userId: t.userId } : {}),
                           })),
                       }
@@ -192,6 +194,8 @@ export class ContinuityStore {
         const state = await this.people.read(scope),
             accounts = new Map(Object.values(state.accounts).map((a) => [a.userId, a]));
         const usable = candidates.filter((row) => {
+            // Topic rows written under the former unqualified scene are not current evidence.
+            if (conversationChannelId(row) !== row.channelId && row.id !== hash([scope, sceneKey(row), row.messageId])) return false;
             const account = accounts.get(row.account);
             return account?.personId === row.personId && (account.bindingRevision ?? 0) === row.bindingRevision;
         });

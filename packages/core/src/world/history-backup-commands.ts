@@ -1,5 +1,6 @@
 import { h, type Command, type Context, type Session } from "koishi";
 
+import { conversationChannelId } from "../shared/utils/conversation-scope";
 import { sessionChannelType } from "./channel-metadata";
 import { HistoryBackupManager, type BackupTarget } from "./history-backup";
 import type { WorldStateService } from "./service";
@@ -29,7 +30,8 @@ function receipt(report: any) {
 export function registerHistoryBackup(ctx: Context, command: Command, world: WorldStateService) {
     const targetFor = (session?: Session): BackupTarget => {
         if (!session || !ctx.filter(session) || !world.isChannelAllowed(session)) throw new Error("当前会话未启用历史备份");
-        const { platform, channelId, selfId } = session;
+        const { platform, selfId } = session;
+        const channelId = conversationChannelId(session);
         if (!platform || !channelId || !selfId) throw new Error("当前会话缺少平台、频道或机器人标识");
         const channelType = sessionChannelType(session);
         return { platform, channelId, selfId, ...(channelType ? { channelType } : {}) };

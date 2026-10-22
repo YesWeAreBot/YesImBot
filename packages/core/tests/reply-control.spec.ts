@@ -113,3 +113,16 @@ it("restores permanent and unexpired rules in a fresh instance after restart", a
     expect(restarted.get(other)?.expiresAt).toBe(61000);
     expect(restarted.allowed(target, ["at", "text"])).toEqual(["text"]);
 });
+
+it("isolates Telegram forum topics with equal native IDs in different groups", async () => {
+    const { control } = fixture();
+    const a = { platform: "telegram", selfId: "bot", channelId: "7", guildId: "-10001", isDirect: false };
+    const b = { ...a, guildId: "-10002" };
+    const token = control.token(b);
+    await control.set(a, ["all"], null);
+    expect(control.allowed(b, ["text"])).toEqual(["text"]);
+    expect(control.valid(b, token)).toBe(true);
+    expect(control.get(a)?.guildId).toBe(a.guildId);
+    expect(await control.resume(b)).toBe(false);
+    expect(control.allowed(a, ["text"])).toEqual([]);
+});

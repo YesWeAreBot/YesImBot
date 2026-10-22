@@ -3,3 +3,4 @@ export * from "./stream-parser";
 export * from "./string";
 export * from "./toolkit";
 export * from "./vector";
+export * from "./conversation-scope";

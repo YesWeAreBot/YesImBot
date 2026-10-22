@@ -2,6 +2,7 @@ import { Context, Eval, Logger, Session } from "koishi";
 
 import { Config } from "../config";
 import type { LoggerService } from "../logger";
+import { conversationCid } from "../shared/utils/conversation-scope";
 import { WillingnessConfig } from "./config";
 import type { WillingnessCalculation } from "./decision-record";
 import type { ReplyCategory } from "./reply-control";
@@ -373,7 +374,7 @@ export class WillingnessManager {
      */
     public shouldReply(
         session: Session,
-        chatId: string = session.cid,
+        chatId: string = conversationCid(session),
         allowedCategories?: ReplyCategory[],
         assessmentMultiplier = 1,
         topic?: TopicWillingnessInput,

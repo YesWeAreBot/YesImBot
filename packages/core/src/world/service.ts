@@ -10,6 +10,7 @@ import { TableName } from "../shared/constants";
 import { sanitizeDiagnostic } from "../shared/diagnostic-sanitizer";
 import { getPersistentInstanceScope } from "../shared/instance-scope";
 import { YesImBotService } from "../shared/service";
+import { conversationChannelId } from "../shared/utils/conversation-scope";
 import { HISTORY_CHANNELS, MESSAGE_KEY_MIGRATION, registerChannelModel, sessionChannelType } from "./channel-metadata";
 import { HistoryCommandManager } from "./commands";
 import { ContextBuilder } from "./context-builder";
@@ -138,7 +139,8 @@ export class WorldStateService extends YesImBotService<Config> {
 
     public async recallContext(session: Session, options: RawRecallOptions) {
         if (!this.ctx.filter(session) || !this.isChannelAllowed(session)) throw new Error("当前会话未启用记忆召回");
-        const { platform, channelId } = session;
+        const { platform } = session;
+        const channelId = conversationChannelId(session);
         if (!platform || !channelId) throw new Error("当前会话缺少平台或频道");
         const target = { platform, channelId };
         const binding = () =>
@@ -173,7 +175,12 @@ export class WorldStateService extends YesImBotService<Config> {
 
     /** Exact current-target raw source read. Session identity is fixed across every await. */
     public async readMessageWindow(session: Session, options: MessageWindowOptions) {
-        const target = { platform: session.platform, channelId: session.channelId!, selfId: session.selfId, channelType: sessionChannelType(session)! };
+        const target = {
+            platform: session.platform,
+            channelId: conversationChannelId(session)!,
+            selfId: session.selfId,
+            channelType: sessionChannelType(session)!,
+        };
         const binding = () =>
             JSON.stringify([session.platform, session.channelId, session.selfId, sessionChannelType(session), session.userId, session.guildId]);
         const originalBinding = binding();
@@ -214,7 +221,7 @@ export class WorldStateService extends YesImBotService<Config> {
         const target: MessageWindowTarget = {
             platform: session.platform,
             selfId: session.selfId,
-            channelId: session.channelId!,
+            channelId: conversationChannelId(session)!,
             channelType: sessionChannelType(session)!,
         };
         const binding = () =>
@@ -246,7 +253,8 @@ export class WorldStateService extends YesImBotService<Config> {
     /** Administrator commands use the same full observation path as model tools. */
     public async injectRecall(session: Session, result: unknown, operation = "memory_recall") {
         if (!this.ctx.filter(session) || !this.isChannelAllowed(session)) throw new Error("当前会话未启用记忆注入");
-        const { platform, channelId } = session;
+        const { platform } = session;
+        const channelId = conversationChannelId(session);
         if (!platform || !channelId) throw new Error("当前会话缺少平台或频道");
         const target = { platform, channelId };
         const generation = (result as any).historyGeneration;
@@ -264,7 +272,8 @@ export class WorldStateService extends YesImBotService<Config> {
 
     public async triggerDiary(session: Session, date?: string) {
         if (!this.ctx.filter(session) || !this.isChannelAllowed(session)) throw new Error("当前会话未启用 L3");
-        const { platform, channelId } = session;
+        const { platform } = session;
+        const channelId = conversationChannelId(session);
         if (!platform || !channelId) throw new Error("当前会话缺少平台或频道");
         const day = date === undefined ? new Date() : new Date(`${date}T00:00:00`);
         if (!Number.isFinite(day.getTime()) || (date !== undefined && (!/^\d{4}-\d{2}-\d{2}$/.test(date) || diaryDateKey(day) !== date)))
@@ -278,7 +287,7 @@ export class WorldStateService extends YesImBotService<Config> {
     }
 
     public async buildWorldState(session: Session): Promise<WorldState> {
-        const target = { platform: session.platform, channelId: session.channelId! };
+        const target = { platform: session.platform, channelId: conversationChannelId(session)! };
         await this.l2_manager.waitForHistoryClear(target);
         const generation = this.l2_manager.getHistoryGeneration(target);
         const state = await this.contextBuilder.build(session);
@@ -292,7 +301,7 @@ export class WorldStateService extends YesImBotService<Config> {
     public async observeChannel(session: Session): Promise<void> {
         const channelType = sessionChannelType(session);
         if (!channelType || !session.platform || !session.channelId) return;
-        const target = { platform: session.platform, channelId: session.channelId };
+        const target = { platform: session.platform, channelId: conversationChannelId(session)! };
         this.l2_manager.observeChannel(target, channelType);
         await this.ctx.database.upsert(HISTORY_CHANNELS, [{ ...target, channelType }]);
     }

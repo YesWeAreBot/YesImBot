@@ -10,6 +10,7 @@ import { sanitizeDiagnostic } from "../shared/diagnostic-sanitizer";
 import { getInstanceDirectory, getInstanceScope } from "../shared/instance-scope";
 import { YesImBotService } from "../shared/service";
 import { isEmpty, stringify, truncate } from "../shared/utils";
+import { conversationChannelId } from "../shared/utils/conversation-scope";
 import type { WorldStateService } from "../world";
 import { sessionChannelType } from "../world/channel-metadata";
 import CommandExtension from "./builtin/command";
@@ -511,7 +512,7 @@ export class ToolService extends YesImBotService<Config> {
             await world.recordSystemEvent({
                 id: randomUUID(),
                 platform: session.platform,
-                channelId: session.channelId,
+                channelId: conversationChannelId(session)!,
                 eventScope: "global",
                 type: "framework-maintenance",
                 timestamp: new Date(),
@@ -571,7 +572,7 @@ export class ToolService extends YesImBotService<Config> {
         assertReplyTurn();
         const world = this.deps.world;
         if (session?.platform && session.channelId && world?.recordSystemEvent) {
-            const channelId = session.channelId;
+            const channelId = conversationChannelId(session)!;
             try {
                 const admin = session.argv?.command?.name === "tool.invoke";
                 const historyGeneration =
@@ -595,8 +596,14 @@ export class ToolService extends YesImBotService<Config> {
                                 requester: session.userId,
                                 operation: functionName,
                                 scope: "channel",
-                                origin: { platform: session.platform, selfId: session.selfId, adapter: session.bot?.platform, channelId },
-                                target: { platform: session.platform, selfId: session.selfId, channelId },
+                                origin: {
+                                    platform: session.platform,
+                                    selfId: session.selfId,
+                                    adapter: session.bot?.platform,
+                                    channelId: session.channelId,
+                                    guildId: session.guildId,
+                                },
+                                target: { platform: session.platform, selfId: session.selfId, channelId: session.channelId, guildId: session.guildId },
                                 startedAt: startedAt.toISOString(),
                                 finishedAt: new Date().toISOString(),
                                 status: result.status,
@@ -656,10 +663,10 @@ export class ToolService extends YesImBotService<Config> {
             instance: getInstanceScope(ctx),
             platform: session.platform,
             selfId: session.selfId,
-            channelId: session.channelId!,
+            channelId: conversationChannelId(session)!,
             channelType: channelType!,
             privateUserId: channelType === "private" ? session.userId : undefined,
-            generation: world.l2_manager.getHistoryGeneration({ platform: session.platform, channelId: session.channelId!, channelType }),
+            generation: world.l2_manager.getHistoryGeneration({ platform: session.platform, channelId: conversationChannelId(session)!, channelType }),
         };
         const binding = () =>
             JSON.stringify([session.platform, session.selfId, session.channelId, sessionChannelType(session), session.userId, session.guildId]);

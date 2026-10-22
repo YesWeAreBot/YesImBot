@@ -9,6 +9,7 @@ import type { LoggerService } from "../logger";
 import { getInstanceDirectory } from "../shared";
 import { TableName } from "../shared/constants";
 import { sanitizeDiagnostic } from "../shared/diagnostic-sanitizer";
+import { parseConversationChannelId } from "../shared/utils/conversation-scope";
 import { HISTORY_CHANNELS } from "./channel-metadata";
 import { HistoryConfig } from "./config";
 import { retainPendingRecalls } from "./manual-recall";
@@ -58,7 +59,9 @@ export class InteractionManager {
     // --- 文件日志系统 ---
 
     private getLogFilePath(platform: string, channelId: string): string {
-        return path.join(this.basePath, clear(platform), `${clear(channelId)}.agent.jsonl`);
+        // Topic storage keys contain JSON quotes; encode them for Windows-safe filenames.
+        const fileId = parseConversationChannelId(platform, channelId).guildId ? encodeURIComponent(channelId) : clear(channelId);
+        return path.join(this.basePath, clear(platform), `${fileId}.agent.jsonl`);
     }
 
     private canIdentifyLegacyLogOwner(filePath: string, channelId?: string, channelType?: "private" | "guild" | "all"): boolean {

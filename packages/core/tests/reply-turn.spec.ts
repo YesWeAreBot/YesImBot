@@ -117,6 +117,7 @@ async function encoderFixture(
             else if (transport === "internal" && ["qq", "qqguild"].includes(platform))
                 await this.bot.internal[this.channelId === "real-dm" ? "sendDM" : "sendMessage"](this.channelId, this.#marker);
             else if (transport === "internal") await this.bot.internal.sendGroupMsg(this.channelId, this.#marker);
+            else if (transport === "contract") await (this.bot as any).deliverContract(this.channelId);
             else if (transport === "http-call") await (this.bot as any).http("POST", this.channelId, { data: this.#marker });
             else await (this.bot as any).http.post(this.channelId, this.#marker);
         }
@@ -732,3 +733,182 @@ for (const platform of ["qq", "qqguild"]) {
         }
     });
 }
+
+// Source-derived outbound contracts, not full adapter integration: satorijs/satori
+// 7606a0c3bd1ec7756a893bfce4129db9548df213, adapters/{lark,slack,discord,telegram,kook}/src/message.ts.
+// Keep the real Koishi Bot.sendMessage / MessageEncoder lifecycle and local transport sinks.
+for (const contract of [
+    "lark:create",
+    "lark:reply",
+    "lark:patch",
+    "lark:update",
+    "lark:image",
+    "lark:file",
+    "slack:text",
+    "slack:upload",
+    "discord:thread",
+    "discord:channel",
+    "telegram:media",
+    "kook:post",
+]) {
+    for (const revoke of ["cancel", "destination"])
+        it(`rechecks ${revoke} at the stable-v4 ${contract} outbound capability captured before asynchronous preparation`, async () => {
+            const platform = contract.split(":")[0];
+            const f = await encoderFixture(platform, "contract-bot", true, undefined, "contract");
+            let entered!: () => void,
+                release!: () => void,
+                valid = true,
+                first = true,
+                reads = 0;
+            const started = new Promise<void>((resolve) => (entered = resolve));
+            const gate = new Promise<void>((resolve) => (release = resolve));
+            class Endpoint {
+                #marker = "endpoint";
+                get marker() {
+                    return this.#marker;
+                }
+                async get() {
+                    expect(this.#marker).toBe("endpoint");
+                    reads++;
+                }
+                async create(id: string) {
+                    expect(this.#marker).toBe("endpoint");
+                    f.deliveries.push(id);
+                }
+                reply = this.create;
+                patch = this.create;
+                update = this.create;
+                chatPostMessage = this.create;
+                startThreadFromMessage = this.create;
+                modifyChannel = this.create;
+                sendMediaGroup = this.create;
+            }
+            class Namespace {
+                #endpoint = new Endpoint();
+                get message() {
+                    return this.#endpoint;
+                }
+                get image() {
+                    return this.#endpoint;
+                }
+                get file() {
+                    return this.#endpoint;
+                }
+            }
+            const endpoint = new Endpoint();
+            f.bot.internal = platform === "lark" ? { im: new Namespace() } : endpoint;
+            // Slack.request reads this.http on the bot; Internal.chatPostMessage instead
+            // retains its own HTTP client, so the internal capability needs its own check.
+            f.bot.request = async function (_method: string, path: string, id: string) {
+                await this.http.post(path, id);
+            };
+            f.bot.http = {
+                post: async (_path: string, id: string) => {
+                    f.deliveries.push(id);
+                },
+            };
+            f.bot.deliverContract = async function (id: string) {
+                const api =
+                    platform === "lark" ? this.internal.im[contract === "lark:image" ? "image" : contract === "lark:file" ? "file" : "message"] : this.internal;
+                const method = contract.startsWith("lark:")
+                    ? ["image", "file"].includes(contract.split(":")[1])
+                        ? "create"
+                        : contract.split(":")[1]
+                    : contract === "slack:text"
+                      ? "chatPostMessage"
+                      : contract === "discord:thread"
+                        ? "startThreadFromMessage"
+                        : contract === "discord:channel"
+                          ? "modifyChannel"
+                          : "sendMediaGroup";
+                const send = api[method].bind(api);
+                if (platform === "lark") expect(api.marker).toBe("endpoint");
+                if (first) {
+                    first = false;
+                    entered();
+                    await gate;
+                }
+                // Cancellation must leave preparation/read APIs callable.
+                await api.get();
+                if (contract === "slack:upload") await this.request("POST", "/files.upload", id);
+                else if (contract === "kook:post") await this.http.post("/message/create", id);
+                else await send(id);
+            };
+            try {
+                const pending = withReplyTurn(
+                    () => revoke === "destination" || valid,
+                    () => guardReplySession(f.session).bot.sendMessage("old", "reply"),
+                    undefined,
+                    () => revoke !== "destination" || valid,
+                );
+                const outcome = pending.catch((error) => error);
+                await started;
+                valid = false;
+                expect(await f.bot.sendMessage("ordinary", "command")).toEqual(["sent"]);
+                expect(
+                    await withReplyTurn(
+                        () => true,
+                        () => guardReplySession(f.session).bot.sendMessage("fresh", "reply"),
+                    ),
+                ).toEqual(["sent"]);
+                release();
+                expect((await outcome)?.message).toContain(revoke === "destination" ? "抑制" : "取消");
+                expect(f.deliveries).toEqual(["ordinary", "fresh"]);
+                expect(reads).toBe(3);
+                expect(Object.hasOwn(f.bot, "constructor")).toBe(false);
+            } finally {
+                release();
+                await f.bot.dispose();
+                await f.ctx.stop();
+            }
+        });
+}
+
+it("blocks the stable-v4 Lark reply after an awaited thread lookup inside post", async () => {
+    const f = await encoderFixture("lark", "lark-bot", true, undefined, "contract");
+    let entered!: () => void,
+        release!: () => void,
+        valid = true;
+    const started = new Promise<void>((resolve) => (entered = resolve));
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    // LarkMessageEncoder.post: card.action.trigger first resolves thread metadata,
+    // then invokes im.message.reply; no new encoder stage begins between the two.
+    class Messages {
+        #marker = "messages";
+        async get(_id: string) {
+            expect(this.#marker).toBe("messages");
+            entered();
+            await gate;
+            return { items: [{ thread_id: "thread" }] };
+        }
+        async reply(_id: string, payload: { channel: string; reply_in_thread: boolean }) {
+            expect(this.#marker).toBe("messages");
+            f.deliveries.push(payload.channel);
+        }
+    }
+    f.bot.internal = { im: { message: new Messages() } };
+    f.bot.deliverContract = async function (channel: string) {
+        const {
+            items: [message],
+        } = await this.internal.im.message.get("card-message");
+        if (message.thread_id) await this.internal.im.message.reply("card-message", { channel, reply_in_thread: true });
+    };
+    try {
+        const pending = withReplyTurn(
+            () => valid,
+            () => guardReplySession(f.session).bot.sendMessage("old", "reply"),
+        );
+        const outcome = pending.catch((error) => error);
+        await started;
+        valid = false;
+        release();
+        expect((await outcome)?.message).toContain("取消");
+        expect(f.deliveries).toEqual([]);
+        expect(await f.bot.sendMessage("ordinary", "command")).toEqual(["sent"]);
+        expect(f.deliveries).toEqual(["ordinary"]);
+    } finally {
+        release();
+        await f.bot.dispose();
+        await f.ctx.stop();
+    }
+});

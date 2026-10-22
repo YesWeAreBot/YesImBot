@@ -1,5 +1,7 @@
 import type { Session } from "koishi";
 
+import { conversationChannelId } from "../shared/utils/conversation-scope";
+
 export const REPLY_CATEGORIES = ["text", "at", "quote", "direct", "system", "scheduled", "background"] as const;
 export type ReplyCategory = (typeof REPLY_CATEGORIES)[number];
 export interface ReplyTarget {
@@ -7,6 +9,7 @@ export interface ReplyTarget {
     selfId: string;
     channelId: string;
     isDirect?: boolean;
+    guildId?: string;
 }
 export interface ReplyActor {
     id: string;
@@ -18,7 +21,7 @@ export interface ReplyRule extends ReplyTarget {
     expiresAt: number | null;
 }
 export function replyKey(target: ReplyTarget): string {
-    return JSON.stringify([target.platform, target.selfId, target.channelId]);
+    return JSON.stringify([target.platform, target.selfId, conversationChannelId(target)]);
 }
 export function messageCategories(session: Session): ReplyCategory[] {
     const categories: ReplyCategory[] = ["text"];

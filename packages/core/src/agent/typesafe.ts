@@ -4,6 +4,7 @@ import { Config } from "../config";
 import type { ModelService } from "../model";
 import { withUsageScope } from "../model/usage";
 import { TableName } from "../shared/constants";
+import { conversationChannelId } from "../shared/utils/conversation-scope";
 
 const positive = (n: number) => Math.max(0, n * 2 - 1);
 
@@ -125,7 +126,7 @@ export class TypeSafeEvaluator {
                 TableName.Messages,
                 {
                     platform: session.platform,
-                    channelId: session.channelId,
+                    channelId: conversationChannelId(session),
                     timestamp: { $lte: new Date(session.timestamp) },
                 },
                 { limit: config.historyLimit + 1, sort: { timestamp: "desc" } },

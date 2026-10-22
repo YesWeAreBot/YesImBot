@@ -1,3 +1,5 @@
+import { conversationChannelId } from "koishi-plugin-yesimbot";
+
 import { claimCategories, type ClaimChange } from "./claims";
 import { buildProfileMessages } from "./profile-prompt";
 import { visibleProfile } from "./profile-tools";
@@ -5,7 +7,10 @@ import { type Evidence, type PersonStore, type Provenance } from "./store";
 import { type SummaryJob, type SummaryQueue } from "./summary-queue";
 
 function evidenceSceneKey(item: Evidence) {
-    return item.provenance?.scene || JSON.stringify([item.provenance?.platform ?? "", item.provenance?.selfId ?? "", item.provenance?.channelId ?? ""]);
+    return (
+        item.provenance?.scene ||
+        JSON.stringify([item.provenance?.platform ?? "", item.provenance?.selfId ?? "", item.provenance ? conversationChannelId(item.provenance) : ""])
+    );
 }
 
 export function summaryResponseText(result: { text?: string; finishReason?: string }, budget: number): string {
@@ -263,7 +268,7 @@ export class SummaryWorker {
             JSON.stringify([
                 item.provenance?.platform ?? "",
                 item.provenance?.selfId ?? "",
-                item.provenance?.channelId ?? "",
+                item.provenance ? conversationChannelId(item.provenance) : "",
                 item.provenance?.messageId ?? item.id,
                 item.userId,
             ]),
@@ -326,9 +331,12 @@ export class SummaryWorker {
         const singleTarget =
             first &&
             sources.length === evidence.length &&
-            sources.every((source) => source.platform === first.platform && source.selfId === first.selfId && source.channelId === first.channelId);
+            sources.every(
+                (source) =>
+                    source.platform === first.platform && source.selfId === first.selfId && conversationChannelId(source) === conversationChannelId(first),
+            );
         const attribution = singleTarget
-            ? { platform: first.platform, botId: first.selfId, target: first.channelId, purpose: "人物记忆摘要" }
+            ? { platform: first.platform, botId: first.selfId, target: conversationChannelId(first), purpose: "人物记忆摘要" }
             : { purpose: "人物记忆摘要" };
         if (saved) messages = saved.messages;
         if (durable && !saved)
