@@ -1,4 +1,4 @@
-import { Bot, Context, MessageEncoder } from "koishi";
+import { Bot, Context, MessageEncoder, Universal } from "koishi";
 import { expect, it } from "vitest";
 
 import { withReplyTurn, withReplyTurnGuard, assertReplyTurn, guardReplySession } from "../src/agent/reply-turn";
@@ -113,7 +113,10 @@ async function encoderFixture(
         async visit() {}
         async deliver() {
             await prepare?.();
-            if (transport === "internal") await this.bot.internal.sendGroupMsg(this.channelId, this.#marker);
+            if (transport === "guild") await this.bot.internal.sendGuildChannelMsg("guild", this.channelId, this.#marker);
+            else if (transport === "internal" && ["qq", "qqguild"].includes(platform))
+                await this.bot.internal[this.channelId === "real-dm" ? "sendDM" : "sendMessage"](this.channelId, this.#marker);
+            else if (transport === "internal") await this.bot.internal.sendGroupMsg(this.channelId, this.#marker);
             else if (transport === "http-call") await (this.bot as any).http("POST", this.channelId, { data: this.#marker });
             else await (this.bot as any).http.post(this.channelId, this.#marker);
         }
@@ -164,6 +167,24 @@ async function encoderFixture(
             deliveries.push(id);
         }
     }
+    class QQInternal {
+        #marker = "qq-internal";
+        async sendMessage(id: string) {
+            expect(this.#marker).toBe("qq-internal");
+            deliveries.push(id);
+        }
+        async sendDM(id: string) {
+            expect(this.#marker).toBe("qq-internal");
+            deliveries.push(id);
+        }
+    }
+    class LegacyGuildInternal {
+        #marker = "legacy-internal";
+        async sendGuildChannelMsg(_guild: string, id: string) {
+            expect(this.#marker).toBe("legacy-internal");
+            deliveries.push(id);
+        }
+    }
     class Http {
         #marker = "http";
         async post(id: string) {
@@ -171,7 +192,9 @@ async function encoderFixture(
             deliveries.push(id);
         }
     }
-    if (platform !== "onebot") bot.internal = new Internal();
+    if (transport === "guild") bot.internal = new LegacyGuildInternal();
+    else if (["qq", "qqguild"].includes(platform)) bot.internal = new QQInternal();
+    else if (platform !== "onebot") bot.internal = new Internal();
     bot.http =
         transport === "http-call"
             ? async (_method: string, id: string) => {
@@ -185,7 +208,7 @@ async function encoderFixture(
     return { ctx, bot, session, deliveries };
 }
 
-for (const platform of ["discord", "onebot"]) {
+for (const platform of ["discord", "onebot", "qq", "qqguild"]) {
     for (const method of ["send", "sendQueued", "sendMessage", "sendPrivateMessage"] as const) {
         it(`cancels ${platform} ${method} after the real encoder before-send hook`, async () => {
             const f = await encoderFixture(platform);
@@ -585,3 +608,127 @@ it("cannot revive an old guarded session by wrapping it in a fresh turn", async 
         await f.ctx.stop();
     }
 });
+
+for (const platform of ["qq", "qqguild"])
+    for (const transport of ["internal", "http-post", "http-call"])
+        for (const privateReceiver of [false, true])
+            it(`blocks late ${platform} ${transport} sends with ${privateReceiver ? "private" : "ordinary"} receivers`, async () => {
+                let entered!: () => void, release!: () => void;
+                const started = new Promise<void>((resolve) => (entered = resolve));
+                const gate = new Promise<void>((resolve) => (release = resolve));
+                let valid = true,
+                    first = true;
+                const f = await encoderFixture(
+                    platform,
+                    "qq-bot",
+                    privateReceiver,
+                    async () => {
+                        if (!first) return;
+                        first = false;
+                        entered();
+                        await gate;
+                    },
+                    transport,
+                );
+                try {
+                    const sending = withReplyTurn(
+                        () => valid,
+                        () => guardReplySession(f.session).bot.sendPrivateMessage("user", "old"),
+                    );
+                    // Attach before waiting so receiver errors remain observable without unhandled rejections.
+                    const outcome = sending.then(
+                        () => undefined,
+                        (error) => error,
+                    );
+                    await Promise.race([
+                        started,
+                        outcome.then((error) => {
+                            if (error) throw error;
+                        }),
+                    ]);
+                    valid = false;
+                    expect(await f.bot.sendMessage("ordinary", "command")).toEqual(["sent"]);
+                    release();
+                    expect((await outcome)?.message).toContain("取消");
+                    expect(f.deliveries).toEqual(["ordinary"]);
+                    expect(Object.hasOwn(f.bot, "constructor")).toBe(false);
+                } finally {
+                    release();
+                    if (privateReceiver) await f.bot.dispose();
+                    await f.ctx.stop();
+                }
+            });
+
+it("keeps legacy OneBot qqguild sends guarded at sendGuildChannelMsg", async () => {
+    let entered!: () => void, release!: () => void;
+    const started = new Promise<void>((resolve) => (entered = resolve));
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let valid = true;
+    const f = await encoderFixture("qqguild", "legacy-bot", false, undefined, "guild");
+    f.ctx.on("before-send", async () => {
+        entered();
+        await gate;
+    });
+    try {
+        const sending = withReplyTurn(
+            () => valid,
+            () => guardReplySession(f.session).bot.sendMessage("group", "old"),
+        ).catch((error) => error);
+        await started;
+        valid = false;
+        release();
+        await sending;
+        expect(f.deliveries).toEqual([]);
+        expect(await f.bot.sendMessage("ordinary", "command")).toEqual(["sent"]);
+        expect(f.deliveries).toEqual(["ordinary"]);
+    } finally {
+        release();
+        await f.ctx.stop();
+    }
+});
+
+for (const platform of ["qq", "qqguild"]) {
+    it(`preserves ${platform} routed direct category at initial and encoder checks`, async () => {
+        const f = await encoderFixture(platform);
+        const routing = f.bot.session({ type: "message", channel: { id: "native-dm", type: Universal.Channel.Type.DIRECT }, user: { id: "user" } });
+        const destinations: Array<{ channelId: string; isDirect?: boolean }> = [];
+        try {
+            expect(routing.isDirect).toBe(true);
+            const sent = await withReplyTurn(
+                () => true,
+                () => guardReplySession(f.session).bot.sendMessage("native-dm", "reply", undefined, { session: routing }),
+                undefined,
+                (target) => {
+                    destinations.push({ channelId: target.channelId, isDirect: target.isDirect });
+                    return target.isDirect === true;
+                },
+            );
+            expect(sent).toEqual(["sent"]);
+            expect(f.deliveries).toEqual(["native-dm"]);
+            expect(destinations.length).toBeGreaterThan(1);
+            expect(destinations.every((target) => target.channelId === "native-dm" && target.isDirect === true)).toBe(true);
+        } finally {
+            await f.ctx.stop();
+        }
+    });
+
+    it(`rechecks ${platform} routed direct suppression after asynchronous encoder preparation`, async () => {
+        let allowed = true;
+        const f = await encoderFixture(platform, "qq-bot", false, async () => {
+            allowed = false;
+        });
+        const routing = f.bot.session({ type: "message", channel: { id: "native-dm", type: Universal.Channel.Type.DIRECT }, user: { id: "user" } });
+        try {
+            const sent = withReplyTurn(
+                () => true,
+                () => guardReplySession(f.session).bot.sendMessage("native-dm", "reply", undefined, { session: routing }),
+                undefined,
+                (target) => target.isDirect !== true || allowed,
+            );
+            await expect(sent).rejects.toThrow("抑制");
+            expect(f.deliveries).toEqual([]);
+        } finally {
+            await f.ctx.stop();
+        }
+    });
+}

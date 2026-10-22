@@ -78,11 +78,16 @@ export default class CoreUtilExtension {
         * NEVER output them at the top-level of your reply or inside "thoughts".
         * Do not wrap them in Markdown.`),
             target: Schema.string().description(`Optional. Specifies where to send the message, using \`platform:id\` format.
-      Defaults to the current channel. E.g., \`onebot:123456789\` (group), \`discord:private:987654321\` (private chat)`),
+      Defaults to the current channel. Use the adapter's exact channel ID, e.g. \`onebot:123456789\`.
+      For a private recipient user ID, set target_type to private; the adapter resolves its channel ID.`),
+            self_id: Schema.string().description("发送所用的机器人账号 ID。同平台默认使用当前账号；其他平台有多个账号时必须指定"),
+            target_type: Schema.union([Schema.const("channel"), Schema.const("private")]).description(
+                "目标为原生频道 ID（channel）或私聊用户 ID（private）；默认 channel",
+            ),
         }),
     })
-    async sendMessage(args: Infer<{ message: string; target?: string }>) {
-        const { session, message, target } = args;
+    async sendMessage(args: Infer<{ message: string; target?: string; self_id?: string; target_type?: "channel" | "private" }>) {
+        const { session, message, target, self_id, target_type } = args;
 
         if (!session) {
             this.logger.warn("✖ 缺少有效会话，无法发送消息");
@@ -96,17 +101,9 @@ export default class CoreUtilExtension {
         }
 
         try {
-            const { bot, channelId, finalTarget } = this.determineTarget(session, target);
+            const { bot, channelId, channel, userId } = await this.determineTarget(session, target, self_id, target_type);
 
-            if (!bot) {
-                const availablePlatforms = this.ctx.bots.map((b) => b.platform).join(", ");
-                this.logger.warn(`✖ 未找到机器人实例 | 目标平台: ${target}, 可用平台: ${availablePlatforms}`);
-                return Failed(`未找到平台 ${target} 对应的机器人实例`);
-            }
-
-            // this.logger.info(`准备发送消息 | 目标: ${finalTarget} | 分段数: ${messages.length}`);
-
-            await this.sendMessagesWithHumanLikeDelay(messages, bot, channelId, session);
+            await this.sendMessagesWithHumanLikeDelay(messages, bot, channelId, session, channel, userId);
 
             return Success();
         } catch (error) {
@@ -247,22 +244,47 @@ export default class CoreUtilExtension {
     /**
      * 决定消息的最终目标和使用的机器人实例
      */
-    private determineTarget(koishiSession: Session, target?: string): { bot: Bot | undefined; channelId: string; finalTarget: string } {
-        if (!target || target === `${koishiSession.platform}:${koishiSession.channelId}`) {
-            // 发送至当前会话
-            return {
-                bot: koishiSession.bot,
-                channelId: koishiSession.channelId!,
-                finalTarget: `${koishiSession.platform}:${koishiSession.channelId!}`,
-            };
-        } else {
-            // 发送至指定目标
-            const parts = target.split(":");
-            const platform = parts[0];
-            const channelId = parts.slice(1).join(":");
-            const bot = this.ctx.bots.find((b) => b.platform === platform);
-            return { bot: bot && guardReplyBot(bot), channelId, finalTarget: target };
+    private async determineTarget(
+        session: Session,
+        target?: string,
+        selfId?: string,
+        targetType: "channel" | "private" = "channel",
+    ): Promise<{ bot: Bot; channelId: string; channel?: Universal.Channel; userId?: string }> {
+        let platform = session.platform;
+        let channelId = session.channelId!;
+        if (target !== undefined) {
+            const separator = target.indexOf(":");
+            if (separator <= 0 || separator === target.length - 1) throw new Error("目标格式必须为 platform:id，平台和 ID 均不能为空");
+            platform = target.slice(0, separator);
+            channelId = target.slice(separator + 1);
+        } else if (targetType === "private") {
+            throw new Error("私聊用户目标需要提供 target");
         }
+        if (!platform || !channelId) throw new Error("目标平台或频道为空");
+
+        let bot: Bot;
+        if (platform === session.platform && (selfId === undefined || selfId === session.selfId)) {
+            bot = session.bot;
+        } else {
+            const candidates = this.ctx.bots.filter((candidate) => candidate.platform === platform && (selfId === undefined || candidate.selfId === selfId));
+            if (candidates.length !== 1) {
+                throw new Error(candidates.length ? "目标平台存在多个机器人账号，请指定 self_id" : "未找到目标平台和 self_id 对应的机器人账号");
+            }
+            bot = guardReplyBot(candidates[0]);
+        }
+
+        // Explicit QQ private prefixes are resolved through each adapter's native channel mapping.
+        const currentTarget = bot === session.bot && channelId === session.channelId;
+        const privateTarget = targetType === "private" || (!currentTarget && platform === "qq" && channelId.startsWith("private:"));
+        if (privateTarget) {
+            const userId = platform === "qq" && channelId.startsWith("private:") ? channelId.slice(8) : channelId;
+            if (!userId) throw new Error("私聊用户 ID 不能为空");
+            const guildId = platform === session.platform && bot.selfId === session.selfId ? session.guildId : undefined;
+            const channel = await bot.createDirectChannel(userId, guildId);
+            if (!channel?.id) throw new Error("适配器未返回私聊频道 ID");
+            return { bot, channelId: channel.id, channel: { ...channel, type: Universal.Channel.Type.DIRECT }, userId };
+        }
+        return { bot, channelId };
     }
 
     private getSendErrorMessage(error: unknown, seen = new Set<unknown>()): string {
@@ -285,7 +307,31 @@ export default class CoreUtilExtension {
      * @param channelId 目标频道ID
      * @param originalSession 原始会话，用于被动回复及创建after-send事件
      */
-    private async sendMessagesWithHumanLikeDelay(messages: string[], bot: Bot, channelId: string, originalSession: Session): Promise<void> {
+    private async sendMessagesWithHumanLikeDelay(
+        messages: string[],
+        bot: Bot,
+        channelId: string,
+        originalSession: Session,
+        channel?: Universal.Channel,
+        userId?: string,
+    ): Promise<void> {
+        const sameSession =
+            bot === originalSession.bot &&
+            channelId === originalSession.channelId &&
+            (channel?.type === undefined || (channel.type === Universal.Channel.Type.DIRECT) === !!originalSession.isDirect);
+        let routingSession: ReturnType<Bot["session"]> | undefined;
+        if (!sameSession && (channel || bot.platform === "qq")) {
+            const direct = channel?.type === Universal.Channel.Type.DIRECT;
+            routingSession = bot.session({
+                type: "send",
+                channel: channel ?? { id: channelId, type: Universal.Channel.Type.TEXT },
+                guild: !direct && bot.platform === "qq" ? { id: channelId } : undefined,
+                user: userId ? { id: userId } : undefined,
+                message: userId ? { user: { id: userId } } : undefined,
+            });
+            // Older QQ encoders dereference this payload even for active messages.
+            if (bot.platform === "qq") (routingSession as any).qq = {};
+        }
         for (let i = 0; i < messages.length; i++) {
             const msg = messages[i].trim();
             if (!msg) continue;
@@ -301,20 +347,28 @@ export default class CoreUtilExtension {
             await sleep(delay);
 
             if (this.disposed) throw new Error("核心工具已卸载，消息未发送");
-            assertReplyDestination({ platform: bot.platform!, selfId: bot.selfId, channelId });
+            assertReplyDestination({
+                platform: bot.platform!,
+                selfId: bot.selfId,
+                channelId,
+                isDirect: channel?.type === Universal.Channel.Type.DIRECT || (sameSession && originalSession.isDirect),
+            });
 
             // --- 发送消息 ---
-            const sameSession = bot === originalSession.bot && channelId === originalSession.channelId;
             const messageIds = sameSession
                 ? await bot.sendMessage(channelId, content, originalSession.event.referrer, { session: originalSession })
-                : await bot.sendMessage(channelId, content);
+                : routingSession
+                  ? await bot.sendMessage(channelId, content, undefined, { session: routingSession })
+                  : await bot.sendMessage(channelId, content);
             if (!messageIds?.length) {
                 throw new Error("适配器未返回消息 ID，无法确认发送结果");
             }
 
             // --- 发送后处理 ---
             if (messageIds && messageIds.length > 0) {
-                await this.emitAfterSendEvent(bot, channelId, msg, messageIds[0], originalSession);
+                for (const messageId of new Set(messageIds)) {
+                    await this.emitAfterSendEvent(bot, channelId, msg, messageId, originalSession, channel);
+                }
             }
 
             // 如果还有下一条消息，增加一个“段落间隔”延迟
@@ -329,9 +383,16 @@ export default class CoreUtilExtension {
     /**
      * 封装 after-send 事件的发射逻辑
      */
-    private async emitAfterSendEvent(bot: Bot, channelId: string, content: string, messageId: string, originalSession: Session): Promise<void> {
+    private async emitAfterSendEvent(
+        bot: Bot,
+        channelId: string,
+        content: string,
+        messageId: string,
+        originalSession: Session,
+        resolvedChannel?: Universal.Channel,
+    ): Promise<void> {
         const sameSession = bot === originalSession.bot && channelId === originalSession.channelId;
-        let channel = sameSession ? originalSession.event.channel : undefined;
+        let channel = resolvedChannel ?? (sameSession ? originalSession.event.channel : undefined);
         if (!channel) {
             try {
                 channel = await bot.getChannel(channelId);
@@ -342,7 +403,11 @@ export default class CoreUtilExtension {
         channel = {
             ...channel,
             id: channelId,
-            type: channel?.type ?? (channelId.startsWith("private:") ? Universal.Channel.Type.DIRECT : Universal.Channel.Type.TEXT),
+            type:
+                channel?.type ??
+                ((sameSession ? originalSession.isDirect : bot.platform === "onebot" && channelId.startsWith("private:"))
+                    ? Universal.Channel.Type.DIRECT
+                    : Universal.Channel.Type.TEXT),
         };
         const guild =
             channel.type === Universal.Channel.Type.DIRECT

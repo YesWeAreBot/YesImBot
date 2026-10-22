@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { withReplyTurn } from "../src/agent/reply-turn";
 import CoreUtilExtension from "../src/extension/builtin/core-util";
 
 function setup(send: (...args: any[]) => Promise<string[]> = async () => ["sent"]) {
@@ -79,7 +80,10 @@ describe("send_message delivery", () => {
             });
             ctx.bots.push({ ...bot, platform: "onebot" });
             expect((await tool.sendMessage({ session, message: "hello", target } as any)).status).toBe("success");
-            expect(calls[0]).toEqual([target.split(":").slice(1).join(":"), "hello"]);
+            expect(calls[0].slice(0, 2)).toEqual([target.split(":").slice(1).join(":"), "hello"]);
+            expect(calls[0][3]?.session).not.toBe(session);
+            expect(calls[0][3]?.session?.messageId).toBeUndefined();
+            expect(calls[0][2]).toBeUndefined();
         });
     }
 
@@ -127,7 +131,10 @@ describe("send_message delivery", () => {
             },
         };
         await (tool as any).sendMessagesWithHumanLikeDelay(["hello"], otherBot, "group", session);
-        expect(calls).toEqual([["group", "hello"]]);
+        expect(calls).toHaveLength(1);
+        expect(calls[0].slice(0, 2)).toEqual(["group", "hello"]);
+        expect(calls[0][3]?.session).not.toBe(session);
+        expect(calls[0][3]?.session?.messageId).toBeUndefined();
     });
 
     it("keeps the delivered paragraph but does not retry when a later paragraph fails", async () => {
@@ -165,4 +172,144 @@ describe("send_message delivery", () => {
         const result = await tool.sendMessage({ session, message: "hello" } as any);
         expect(result.error?.message).toContain("root reason");
     });
+});
+
+describe("send_message adapter routing", () => {
+    it("keeps the current account for another channel on the same platform", async () => {
+        const calls: string[] = [];
+        const f = setup(async () => {
+            calls.push("current");
+            return ["sent"];
+        });
+        f.ctx.bots.unshift({
+            ...f.bot,
+            selfId: "first-bot",
+            sendMessage: async () => {
+                calls.push("first");
+                return ["wrong"];
+            },
+        });
+        const result = await f.tool.sendMessage({ session: f.session, message: "hello", target: "qq:other" } as any);
+        expect(result.status).toBe("success");
+        expect(calls).toEqual(["current"]);
+    });
+
+    it("rejects an ambiguous platform instead of selecting its first account", async () => {
+        let sent = 0;
+        const f = setup();
+        for (const selfId of ["a", "b"])
+            f.ctx.bots.push({
+                ...f.bot,
+                platform: "discord",
+                selfId,
+                sendMessage: async () => {
+                    sent++;
+                    return ["sent"];
+                },
+            });
+        const result = await f.tool.sendMessage({ session: f.session, message: "hello", target: "discord:channel" } as any);
+        expect(result.status).toBe("error");
+        expect(result.error?.message).toMatch(/self_id|多个/);
+        expect(sent).toBe(0);
+    });
+
+    it("selects an explicitly named account without borrowing another account's passive context", async () => {
+        const calls: any[] = [];
+        const f = setup();
+        f.ctx.bots.push({
+            ...f.bot,
+            selfId: "second-bot",
+            sendMessage: async (...args: any[]) => {
+                calls.push(args);
+                return ["sent"];
+            },
+        });
+        const result = await f.tool.sendMessage({ session: f.session, message: "hello", self_id: "second-bot" } as any);
+        expect(result.status).toBe("success");
+        expect(calls).toHaveLength(1);
+        expect(calls[0].slice(0, 2)).toEqual(["group", "hello"]);
+        expect(calls[0][3]?.session).not.toBe(f.session);
+        expect(calls[0][3]?.session?.messageId).toBeUndefined();
+    });
+
+    it("does not fall back to a different account when an explicit account is unavailable", async () => {
+        let sent = 0;
+        const f = setup(async () => {
+            sent++;
+            return ["sent"];
+        });
+        const result = await f.tool.sendMessage({ session: f.session, message: "hello", target: "qq:other", self_id: "missing" } as any);
+        expect(result.status).toBe("error");
+        expect(sent).toBe(0);
+    });
+
+    for (const target of ["qq:", ":channel", "qq"]) {
+        it(`rejects malformed destination ${target}`, async () => {
+            let sent = 0;
+            const f = setup(async () => {
+                sent++;
+                return ["sent"];
+            });
+            expect((await f.tool.sendMessage({ session: f.session, message: "hello", target } as any)).status).toBe("error");
+            expect(sent).toBe(0);
+        });
+    }
+
+    for (const nativeId of ["recipient", "private:recipient"]) {
+        it(`uses the adapter's private channel ${nativeId} and direct routing metadata`, async () => {
+            const calls: any[] = [];
+            const f = setup(async (...args) => {
+                calls.push(args);
+                return ["sent"];
+            });
+            f.session.messageId = "incoming-group";
+            f.session.seq = 4;
+            f.bot.createDirectChannel = async (userId: string) => {
+                expect(userId).toBe("recipient");
+                return { id: nativeId, type: 1 };
+            };
+            const result = await f.tool.sendMessage({
+                session: f.session,
+                message: '<quote id="source"/>hello',
+                target: "qq:recipient",
+                target_type: "private",
+            } as any);
+            expect(result.status).toBe("success");
+            expect(calls[0][0]).toBe(nativeId);
+            expect(calls[0][1]).toBe('<quote id="source"/>hello');
+            const route = calls[0][3]?.session;
+            expect(route.event.channel).toMatchObject({ id: nativeId, type: 1 });
+            expect(route.messageId).toBeUndefined();
+            expect(route.seq).toBeUndefined();
+            expect(f.session.seq).toBe(4);
+            expect(f.events[0][1].event.channel).toMatchObject({ id: nativeId, type: 1 });
+        });
+    }
+
+    it("keeps a private session private even when the adapter has no channel type metadata", async () => {
+        const f = setup();
+        f.session.channelId = "raw-user-id";
+        f.session.isDirect = true;
+        f.session.event.channel = { id: "raw-user-id" };
+        expect((await f.tool.sendMessage({ session: f.session, message: "hello" } as any)).status).toBe("success");
+        expect(f.events[0][1].event.channel.type).toBe(1);
+    });
+
+    it("records every returned message ID once for a split adapter response", async () => {
+        const f = setup(async () => ["text-part", "image-part", "text-part"]);
+        expect((await f.tool.sendMessage({ session: f.session, message: "hello" } as any)).status).toBe("success");
+        expect(f.events.map((event) => event[1].event.message.id)).toEqual(["text-part", "image-part"]);
+    });
+});
+
+it("preserves the direct destination category when resolving a private tool target", async () => {
+    const f = setup();
+    f.bot.createDirectChannel = async () => ({ id: "recipient", type: 1 });
+    const result = await withReplyTurn(
+        () => true,
+        () => f.tool.sendMessage({ session: f.session, target: "qq:recipient", target_type: "private", message: "hello" } as any),
+        undefined,
+        (target) => target.isDirect === true,
+    );
+    expect(result.status).toBe("success");
 });

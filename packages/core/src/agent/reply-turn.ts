@@ -201,7 +201,8 @@ export function guardReplyBot(bot: Bot): Bot {
     };
     // OneBot 在内容转换、before-send 和分段发送之后才调用这些出站方法。
     // 只代理本次回复，普通指令仍使用原机器人和 internal。
-    const onebot = bot.platform === "onebot" || bot.platform === "qqguild";
+    // 旧频道适配器暴露 OneBot 发送接口；同名平台也可能使用独立的编码器。
+    const onebot = bot.platform === "onebot" || (bot.platform === "qqguild" && typeof bot.internal?.sendGuildChannelMsg === "function");
     const internal =
         onebot && bot.internal
             ? new Proxy(bot.internal, {
@@ -244,7 +245,8 @@ export function guardReplyBot(bot: Bot): Bot {
                         const send = (options = args[3]) => target.sendMessage.apply(onebot ? receiver : target, [channel.id, args[1], null, options]);
                         return onebot ? send() : withGuardedEncoder(target, channel.id, args[3], (id) => destination(id, true), send);
                     }
-                    const targetDestination = { platform: target.platform!, selfId: target.selfId, channelId: args[0] as string };
+                    const isDirect = key === "sendMessage" ? args[3]?.session?.isDirect : undefined;
+                    const targetDestination = { platform: target.platform!, selfId: target.selfId, channelId: args[0] as string, isDirect };
                     if (!canSend(targetDestination)) throw new Error("目标会话的回复已被抑制");
                     if (onebot || key === "sendUpload") return value.apply(onebot ? receiver : target, args);
                     const send = (options: any) => {
@@ -252,7 +254,7 @@ export function guardReplyBot(bot: Bot): Bot {
                         if (options !== args[3]) sendArgs[3] = options;
                         return value.apply(target, sendArgs);
                     };
-                    return withGuardedEncoder(target, args[0], args[3], (id) => destination(id), send);
+                    return withGuardedEncoder(target, args[0], args[3], (id) => destination(id, isDirect), send);
                 };
             }
             return typeof value === "function" ? value.bind(target) : value;
