@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, onTestFinished } from "vitest";
 
 import { ChatModel } from "../src/model/chat-model";
 import { ModelAbility } from "../src/model/config";
@@ -546,12 +546,12 @@ it("preserves cancellation at EOF even after validator-approved text", async () 
     }
 });
 
-it("accepts only the validator's own early-exit abort reason", async () => {
+it("keeps validated early termination independent of the caller abort controller", async () => {
     const controller = new AbortController();
     (controller.signal as any).controller = controller;
     const { model } = fixture(() => sse(frame({ content: '{"answer":1}' })));
     expect((await model.chat({ messages: [], abortSignal: controller.signal, validation: { format: "json" } })).text).toBe('{"answer":1}');
-    expect(controller.signal.reason.message).toBe("early_exit");
+    expect(controller.signal.aborted).toBe(false);
 });
 
 it("does not reuse validator approval from a completed tool step for the next response EOF", async () => {
@@ -682,4 +682,157 @@ it("accepts a legitimate oversized tool frame with finish_reason and executes on
     });
     expect(result.finishReason).toBe("tool_calls");
     expect(executions).toBe(1);
+});
+
+it("validates each complete content delta once before the transport EOF check", async () => {
+    const seen: string[] = [];
+    const { model } = fixture(() => sse(frame({ content: '{"answer":' }) + frame({ content: "1}" })));
+    const result = await model.chat({
+        messages: [],
+        validation: {
+            validator: (text, final) => {
+                if (!final) seen.push(text);
+                return { valid: text === '{"answer":1}', earlyExit: !final && text === '{"answer":1}' };
+            },
+        },
+    });
+    expect(result.text).toBe('{"answer":1}');
+    expect(seen).toEqual(['{"answer":', '{"answer":1}']);
+});
+
+it("does not swallow an exception from the content validator", async () => {
+    const reason = new Error("validator rejected content");
+    const { model } = fixture(() => sse(frame({ content: '{"answer":1}' })));
+    await expect(
+        model.chat({
+            messages: [],
+            validation: {
+                validator: () => {
+                    throw reason;
+                },
+            },
+        }),
+    ).rejects.toMatchObject({ cause: reason });
+});
+
+it("does not accept a partial SSE tail after approved JSON text", async () => {
+    const { model } = fixture(() => sse(frame({ content: '{"answer":1}' }) + 'data: {"choices":['));
+    await expect(model.chat({ messages: [], validation: { format: "json" } })).rejects.toBeInstanceOf(AppError);
+});
+
+for (const errorFrame of ["data: {broken}\n\n", 'data: {"error":{"message":"upstream rejected"}}\n\n', frame({ refusal: "declined" })]) {
+    it(`preserves a received error after approved JSON: ${errorFrame.slice(0, 30)}`, async () => {
+        const { model } = fixture(() => sse(frame({ content: '{"answer":1}' }) + errorFrame));
+        await expect(model.chat({ messages: [], validation: { format: "json" } })).rejects.toBeInstanceOf(AppError);
+    });
+}
+
+it("does not stop a configured tool response at an earlier validated text chunk", async () => {
+    let executions = 0;
+    const chunks = [
+        frame({ content: '{"answer":1}' }),
+        frame({ tool_calls: [{ index: 0, id: "call", type: "function", function: { name: "lookup", arguments: "{}" } }] }),
+    ];
+    const { model } = fixture(
+        () =>
+            new Response(
+                new ReadableStream({
+                    pull(controller) {
+                        const chunk = chunks.shift();
+                        if (chunk) controller.enqueue(new TextEncoder().encode(chunk));
+                        else controller.close();
+                    },
+                }),
+                { headers: { "content-type": "text/event-stream" } },
+            ),
+    );
+    await expect(
+        model.chat({
+            messages: [],
+            validation: { format: "json" },
+            tools: [
+                {
+                    type: "function",
+                    function: { name: "lookup", parameters: { type: "object" } },
+                    execute: async () => {
+                        executions++;
+                        return "result";
+                    },
+                },
+            ],
+        }),
+    ).rejects.toBeInstanceOf(AppError);
+    expect(executions).toBe(0);
+});
+
+it("preserves caller cancellation raised when validated content first arrives", async () => {
+    const controller = new AbortController(),
+        reason = new DOMException("user stopped", "AbortError");
+    const { model } = fixture(() => sse(frame({ content: '{"answer":1}' })));
+    await expect(
+        model.chat({ messages: [], validation: { format: "json" }, abortSignal: controller.signal, onStreamStart: () => controller.abort(reason) }),
+    ).rejects.toBe(reason);
+});
+
+it.each([null, "stop"])(
+    "closes an unfinished text response after validation without aborting its caller (%s)",
+    async (finishReason) => {
+        const caller = new AbortController();
+        let cancelled = false,
+            source!: ReadableStreamDefaultController<Uint8Array>;
+        const { model } = fixture(
+            () =>
+                new Response(
+                    new ReadableStream<Uint8Array>({
+                        start(controller) {
+                            source = controller;
+                            controller.enqueue(new TextEncoder().encode(frame({ content: '{"answer":1}' }, finishReason)));
+                        },
+                        cancel() {
+                            cancelled = true;
+                        },
+                    }),
+                    { headers: { "content-type": "text/event-stream" } },
+                ),
+        );
+        onTestFinished(() => {
+            try {
+                source.close();
+            } catch {}
+        });
+        const result = await model.chat({ messages: [], abortSignal: caller.signal, validation: { format: "json" } });
+        expect(result.text).toBe('{"answer":1}');
+        expect(caller.signal.aborted).toBe(false);
+        expect(cancelled).toBe(true);
+    },
+    2000,
+);
+
+it("does not collect text after a received DONE marker", async () => {
+    const { model } = fixture(() => sse(frame({ content: "accepted" }) + done + frame({ content: "unaccepted" })));
+    expect((await model.chat({ messages: [] })).text).toBe("accepted");
+});
+
+it("preserves an upstream abort after approved text when tool availability requires reading the full response", async () => {
+    const reason = new DOMException("early_exit", "AbortError");
+    let pulls = 0;
+    const { model } = fixture(
+        () =>
+            new Response(
+                new ReadableStream({
+                    pull(controller) {
+                        if (!pulls++) controller.enqueue(new TextEncoder().encode(frame({ content: '{"answer":1}' })));
+                        else controller.error(reason);
+                    },
+                }),
+                { headers: { "content-type": "text/event-stream" } },
+            ),
+    );
+    await expect(
+        model.chat({
+            messages: [],
+            validation: { format: "json" },
+            tools: [{ type: "function", function: { name: "lookup", parameters: { type: "object" } }, execute: async () => "unused" }],
+        }),
+    ).rejects.toMatchObject({ code: ErrorDefinitions.LLM.TIMEOUT.code });
 });

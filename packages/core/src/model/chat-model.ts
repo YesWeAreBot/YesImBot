@@ -7,7 +7,7 @@ import { budgetContext } from "../agent/context-budget";
 import { generateText, streamText } from "../dependencies/xsai";
 import type { LoggerService } from "../logger";
 import { AppError, ErrorDefinitions } from "../shared/errors";
-import { isEmpty, isNotEmpty, JsonParser, toBoolean } from "../shared/utils";
+import { isEmpty, JsonParser, toBoolean } from "../shared/utils";
 import { BaseModel, formatModelIdentity } from "./base-model";
 import { ModelAbility, ModelConfig } from "./config";
 import { parseContextLimit } from "./context-limit";
@@ -276,7 +276,6 @@ export class ChatModel extends BaseModel implements IChatModel {
 
         let completion = new StreamCompletion();
         let buffer: string[] = [];
-        let earlyExitError: DOMException | undefined;
         let diagnostics = new StreamDiagnostics(stime);
         const originalFetch = chatOptions.fetch as (url: any, init: any) => Promise<Response>;
         const streamOptions = {
@@ -285,9 +284,24 @@ export class ChatModel extends BaseModel implements IChatModel {
                 const response = await originalFetch(url, init);
                 // 多步工具响应每次都必须有自己的终止信号。
                 diagnostics = new StreamDiagnostics(stime);
-                const responseCompletion = (completion = new StreamCompletion());
                 buffer = [];
-                earlyExitError = undefined;
+                // Validate complete SSE text before the transport EOF gate, not in downstream SDK events.
+                const responseCompletion = (completion = new StreamCompletion((textDelta) => {
+                    if (responseCompletion.earlyExit || !textDelta) return;
+                    if (!streamStarted) {
+                        onStreamStart?.();
+                        streamStarted = true;
+                        this.logger.debug(`🌊 流式传输已开始 | 延迟: ${Date.now() - stime}ms`);
+                    }
+                    buffer.push(textDelta);
+                    finalContentParts.push(textDelta);
+                    if (!validator) return;
+                    const validationResult = validator(buffer.join(""));
+                    if (!validationResult.valid || !validationResult.earlyExit) return;
+                    responseCompletion.earlyExit = true;
+                    this.logger.debug(`✅ 内容有效，可提前结束流 | 耗时: ${Date.now() - stime}ms`);
+                    if (validationResult.parsedData) finalContentParts.splice(0, finalContentParts.length, JSON.stringify(validationResult.parsedData));
+                }));
                 diagnostics.recordResponse(response);
                 this.logger.debug(`[${requestId}] HTTP 响应 | ${JSON.stringify(diagnostics.summary())}`);
                 if (response.ok) {
@@ -307,8 +321,19 @@ export class ChatModel extends BaseModel implements IChatModel {
                     const body = observed.body.pipeThrough(
                         new TransformStream<Uint8Array, Uint8Array>({
                             transform: (chunk, controller) => {
+                                chatOptions.abortSignal?.throwIfAborted();
                                 responseCompletion.observe(chunk);
+                                chatOptions.abortSignal?.throwIfAborted();
                                 controller.enqueue(chunk);
+                                // Tool-capable responses must finish before the SDK may execute their calls.
+                                // Termination closes only this body; it never aborts the caller's controller.
+                                if (
+                                    responseCompletion.earlyExit &&
+                                    !chatOptions.tools?.length &&
+                                    !responseCompletion.hasTools &&
+                                    !responseCompletion.hasUnterminatedData()
+                                )
+                                    controller.terminate();
                             },
                             flush: () => {
                                 responseCompletion.finish();
@@ -318,7 +343,10 @@ export class ChatModel extends BaseModel implements IChatModel {
                                 const summary = diagnostics.summary();
                                 const completed = !responseCompletion.hasUnterminatedData() && responseCompletion.completed;
                                 // 验证器只能提前接受文本，不能授权不完整的工具调用。
-                                if (!completed && (!responseCompletion.earlyExit || responseCompletion.hasTools)) {
+                                if (
+                                    responseCompletion.hasUnterminatedData() ||
+                                    (!completed && (!responseCompletion.earlyExit || responseCompletion.hasTools))
+                                ) {
                                     throw new AppError(ErrorDefinitions.LLM.REQUEST_FAILED, {
                                         args: ["SSE 响应异常 EOF：未收到完整的完成或终止信号"],
                                         context: { streamDiagnostics: summary },
@@ -341,37 +369,6 @@ export class ChatModel extends BaseModel implements IChatModel {
                     if (!streamStarted && (event.type === "tool-call-streaming-start" || event.type === "tool-call-delta")) {
                         onStreamStart?.();
                         streamStarted = true;
-                    }
-                    if (event.type !== "text-delta" || completion.earlyExit) return;
-
-                    const textDelta = event.text || "";
-                    if (!streamStarted && isNotEmpty(textDelta)) {
-                        onStreamStart?.();
-                        streamStarted = true;
-                        this.logger.debug(`🌊 流式传输已开始 | 延迟: ${Date.now() - stime}ms`);
-                    }
-
-                    if (textDelta === "") return;
-
-                    buffer.push(textDelta);
-                    finalContentParts.push(textDelta);
-
-                    if (validator) {
-                        const validationResult = validator(buffer.join(""));
-                        if (validationResult.valid && validationResult.earlyExit) {
-                            this.logger.debug(`✅ 内容有效，提前中断流... | 耗时: ${Date.now() - stime}ms`);
-                            completion.earlyExit = true;
-                            // 使用解析后的干净数据替换部分流式文本
-                            if (validationResult.parsedData) {
-                                finalContentParts.splice(0, finalContentParts.length, JSON.stringify(validationResult.parsedData));
-                            }
-                            // 触发 AbortController 来中断HTTP连接
-                            const controller = (chatOptions.abortSignal as any)?.controller;
-                            if (controller) {
-                                earlyExitError = new DOMException("early_exit", "AbortError");
-                                controller.abort(earlyExitError);
-                            }
-                        }
                     }
                 },
             });
@@ -409,21 +406,16 @@ export class ChatModel extends BaseModel implements IChatModel {
                 }
             })();
         } catch (error) {
-            // "early_exit" 是我们主动中断流时产生的预期错误，应静默处理
-            if (completion.earlyExit && earlyExitError && error === earlyExitError) {
-                this.logger.debug(`🟢 [流式] 捕获到预期的 AbortError，流程正常结束。`);
-            } else {
-                this.logger.debug(`[${requestId}] 流式异常 | 类型: ${error.name} | ${JSON.stringify(diagnostics.summary())}`);
-                const summary = diagnostics.summary();
-                if (!(error instanceof AppError) && (summary.errorFrames || summary.malformedFrames)) {
-                    throw new AppError(ErrorDefinitions.LLM.REQUEST_FAILED, {
-                        args: [error.message],
-                        cause: error,
-                        context: { streamDiagnostics: summary },
-                    });
-                }
-                throw error; // 重新抛出其他未预料的错误
+            this.logger.debug(`[${requestId}] 流式异常 | 类型: ${error.name} | ${JSON.stringify(diagnostics.summary())}`);
+            const summary = diagnostics.summary();
+            if (!(error instanceof AppError) && (summary.errorFrames || summary.malformedFrames)) {
+                throw new AppError(ErrorDefinitions.LLM.REQUEST_FAILED, {
+                    args: [error.message],
+                    cause: error,
+                    context: { streamDiagnostics: summary },
+                });
             }
+            throw error;
         } finally {
             const summary = diagnostics.summary();
             this.logger.debug(
@@ -432,10 +424,11 @@ export class ChatModel extends BaseModel implements IChatModel {
             this.logger.debug(`[${requestId}] 流式汇总 | ${JSON.stringify(summary)}`);
         }
 
+        chatOptions.abortSignal?.throwIfAborted();
         const duration = Date.now() - stime;
         const finalText = finalContentParts.join("");
 
-        if (!completion.earlyExit && completion.hasUnterminatedData()) {
+        if (completion.hasUnterminatedData()) {
             throw new AppError(ErrorDefinitions.LLM.REQUEST_FAILED, {
                 args: ["SSE 数据行未完整结束，响应可能被截断"],
                 context: { streamDiagnostics: diagnostics.summary() },
@@ -564,6 +557,8 @@ class StreamCompletion {
     hasTools = false;
     earlyExit = false;
 
+    constructor(private readonly onContent?: (text: string) => void) {}
+
     observe(chunk: Uint8Array): void {
         this.scan(this.decoder.decode(chunk, { stream: true }));
     }
@@ -584,15 +579,19 @@ class StreamCompletion {
             const data = line.slice(5).trim();
             if (data === "[DONE]") {
                 this.completed = true;
-                continue;
+                break;
             }
+            let choice: any;
             try {
-                const choice = JSON.parse(data)?.choices?.[0];
-                if (typeof choice?.finish_reason === "string" && choice.finish_reason.length > 0) this.completed = true;
-                if (choice?.delta?.tool_calls?.length) this.hasTools = true;
+                choice = JSON.parse(data)?.choices?.[0];
             } catch {
                 // SDK 保留原始解析错误；这里不把畸形帧当作完成信号。
+                continue;
             }
+            if (typeof choice?.finish_reason === "string" && choice.finish_reason.length > 0) this.completed = true;
+            if (choice?.delta?.tool_calls?.length) this.hasTools = true;
+            // Match the SDK's first-choice text path; validator failures must propagate.
+            else if (typeof choice?.delta?.content === "string") this.onContent?.(choice.delta.content);
         }
     }
 }
