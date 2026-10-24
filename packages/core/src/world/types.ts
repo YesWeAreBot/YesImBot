@@ -290,6 +290,7 @@ export interface RetrievedMemoryChunk {
 export interface WorldState {
     /** 触发本次心跳的直接原因 */
     triggerContext?: object;
+    backgroundTasks?: Array<import("../extension/background-tasks").TaskSnapshot>;
     channel: {
         id: string;
         name: string;

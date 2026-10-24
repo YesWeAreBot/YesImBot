@@ -13,6 +13,7 @@ import { isEmpty, stringify, truncate } from "../shared/utils";
 import { conversationChannelId } from "../shared/utils/conversation-scope";
 import type { WorldStateService } from "../world";
 import { sessionChannelType } from "../world/channel-metadata";
+import { BackgroundTools } from "./background-tools";
 import CommandExtension from "./builtin/command";
 import CoreUtilExtension from "./builtin/core-util";
 import InteractionsExtension from "./builtin/interactions";
@@ -21,7 +22,7 @@ import QManagerExtension from "./builtin/qmanager";
 import SearchExtension from "./builtin/search";
 import { extractMetaFromSchema, Failed } from "./helpers";
 import { ToolOutputStore, TOOL_OUTPUT_THRESHOLD, ToolOutputOwner } from "./tool-output-store";
-import { IExtension, Properties, ToolCallResult, ToolDefinition, ToolSchema } from "./types";
+import { IExtension, Properties, ToolCallResult, ToolDefinition, ToolSchema, ToolExecutionContext } from "./types";
 
 /** Keep JSON containers and quoted values intact before Koishi's tool-schema validation. */
 function parseCommandParams(source: string): Record<string, string> {
@@ -122,6 +123,8 @@ export class ToolService extends YesImBotService<Config> {
         return Object.freeze({ trustedToolSession: 1 as const });
     }
 
+    public readonly background?: BackgroundTools;
+
     private outputStore?: ToolOutputStore;
     private outputOwnerContext?: Context;
 
@@ -141,10 +144,16 @@ export class ToolService extends YesImBotService<Config> {
         super(ctx, config);
         this._logger = deps.logging.getLogger("[工具管理器]");
         this.promptService = deps.prompt;
+        if (config.backgroundTools?.enabled) this.background = new BackgroundTools(ctx, config.backgroundTools, deps.world, this);
+    }
+
+    public async stop() {
+        this.background?.dispose();
     }
 
     public async start() {
         this.outputOwnerContext = this.ctx;
+        this.background?.registerCommands();
         this.registerTool({
             name: "tool_output_read",
             description:
@@ -532,7 +541,8 @@ export class ToolService extends YesImBotService<Config> {
         }
     }
 
-    public async invoke(functionName: string, params: Record<string, unknown>, session?: Session): Promise<ToolCallResult> {
+    public async invoke(functionName: string, params: Record<string, unknown>, session?: Session, toolContext?: ToolExecutionContext): Promise<ToolCallResult> {
+        const scopedBackground = toolContext?.backgroundExecution || functionName.startsWith("background_task_");
         const startedAt = new Date(),
             requestId = randomUUID();
         // Fix trusted identity and clear generation before the tool can await external work.
@@ -540,7 +550,7 @@ export class ToolService extends YesImBotService<Config> {
             session && typeof this.ctx?.filter === "function" && this.deps.world?.l2_manager
                 ? ToolService.prototype.captureOutputOwner.call(this, session)
                 : undefined;
-        let result = await this.executeInvocation(functionName, params, session);
+        let result = await this.executeInvocation(functionName, params, session, toolContext);
         if (session && functionName !== "tool_output_read" && result.status === "success" && result.result !== undefined) {
             try {
                 const text = JSON.stringify(result.result, (_key, value) => {
@@ -570,13 +580,20 @@ export class ToolService extends YesImBotService<Config> {
             }
         }
         assertReplyTurn();
+        if (scopedBackground) {
+            try {
+                capture?.assertCurrent();
+            } catch {
+                return Failed({ name: "BackgroundTaskInvalidated", message: "后台任务结果已失效；请重新查询，勿重复提交已执行任务", retryable: false });
+            }
+        }
         const world = this.deps.world;
         if (session?.platform && session.channelId && world?.recordSystemEvent) {
             const channelId = conversationChannelId(session)!;
             try {
-                const admin = session.argv?.command?.name === "tool.invoke";
+                const admin = session.argv?.command?.name === "tool.invoke" || toolContext?.invocationActor === "admin";
                 const historyGeneration =
-                    result.result?.kind === "tool-output-resource" || result.metadata?.payloadError
+                    scopedBackground || result.result?.kind === "tool-output-resource" || result.metadata?.payloadError
                         ? capture?.owner.generation
                         : Number.isSafeInteger(result.result?.historyGeneration)
                           ? result.result.historyGeneration
@@ -615,6 +632,8 @@ export class ToolService extends YesImBotService<Config> {
                     ),
                 );
                 if (recorded === false && historyGeneration !== undefined) {
+                    if (scopedBackground)
+                        return Failed({ name: "BackgroundTaskInvalidated", message: "后台任务结果已失效；请重新查询，勿重复提交已执行任务", retryable: false });
                     if (result.result?.kind !== "tool-output-resource" && !result.metadata?.payloadError) return Failed("召回后历史已清除，请重新召回");
                     result = {
                         ...result,
@@ -646,6 +665,13 @@ export class ToolService extends YesImBotService<Config> {
                     },
                     metadata: { ...result.metadata, payloadError: { name: "ToolOutputError", message: error.message, retryable: false } },
                 };
+            }
+        }
+        if (scopedBackground) {
+            try {
+                capture?.assertCurrent();
+            } catch {
+                return Failed({ name: "BackgroundTaskInvalidated", message: "后台任务结果已失效；请重新查询，勿重复提交已执行任务", retryable: false });
             }
         }
         return result;
@@ -696,7 +722,12 @@ export class ToolService extends YesImBotService<Config> {
         return page;
     }
 
-    private async executeInvocation(functionName: string, params: Record<string, unknown>, session?: Session): Promise<ToolCallResult> {
+    private async executeInvocation(
+        functionName: string,
+        params: Record<string, unknown>,
+        session?: Session,
+        toolContext?: ToolExecutionContext,
+    ): Promise<ToolCallResult> {
         // 1. 获取工具，这里已经包含了 isSupported 的检查
         const tool = this.getTool(functionName, session);
         if (!tool) {
@@ -741,7 +772,9 @@ export class ToolService extends YesImBotService<Config> {
                 assertReplyTurn();
                 // 3. 使用验证和处理过后的参数执行工具
                 /* prettier-ignore */
-                lastResult = (await awaitReplyTurn(() => tool.execute({ ...validatedParams, session }))) || Failed("Tool call did not execute.");
+                const execute = () => tool.execute({ ...validatedParams, session, toolContext });
+                lastResult = (await (toolContext?.backgroundExecution ? execute() : awaitReplyTurn(execute))) || Failed("Tool call did not execute.");
+                assertReplyTurn();
                 const resultString = truncate(stringify(lastResult), 120);
 
                 if (lastResult.status === "success") {
@@ -787,7 +820,13 @@ export class ToolService extends YesImBotService<Config> {
             return Array.from(this.tools.values());
         }
         // 如果有 session，则过滤出支持的工具
-        return Array.from(this.tools.values()).filter((tool) => !tool.isSupported || tool.isSupported(session));
+        return Array.from(this.tools.values())
+            .filter((tool) => !tool.isSupported || tool.isSupported(session))
+            .map((tool) =>
+                this.background && tool.background
+                    ? { ...tool, description: tool.description + " [Supports background_task_start for independent work.]" }
+                    : tool,
+            );
     }
 
     public getExtension(name: string): IExtension | undefined {

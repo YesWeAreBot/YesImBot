@@ -57,6 +57,7 @@ export default class SearchExtension {
 
     @Tool({
         name: "fetch_webpage",
+        background: true,
         description: `获取指定网页的内容。支持动态渲染页面。
   - 将网页URL添加到url参数来获取网页内容
   - 可以获取HTML内容或纯文本内容
@@ -99,6 +100,7 @@ export default class SearchExtension {
                 return Failed("只支持HTTP和HTTPS协议");
             }
 
+            args.toolContext?.reportProgress?.("正在读取网页");
             this.ctx.logger.info(`Bot正在获取网页: ${url}`);
 
             // 决定是否使用动态加载模式
@@ -107,6 +109,7 @@ export default class SearchExtension {
             // 使用统一的Puppeteer方法获取和解析内容
             const { title, content, textContent, links } = await this._fetchAndExtractWithPuppeteer(url, useDynamicLoading, include_links ? max_links : 0);
 
+            args.toolContext?.reportProgress?.("网页已读取，正在提取正文");
             let resultContent = format === "text" ? textContent : content;
             if (!resultContent) {
                 return Failed("无法提取网页主要内容。");
@@ -253,6 +256,7 @@ export default class SearchExtension {
 
     @Tool({
         name: "web_search",
+        background: true,
         description: "搜索网络内容，获取相关信息和链接。可以多次搜索。在你搜索完之后，可以先访问具体内容",
         parameters: withInnerThoughts({
             query: Schema.string().required().description("搜索关键词或查询内容。"),
@@ -272,6 +276,7 @@ export default class SearchExtension {
 
             this.ctx.logger.info(`正在搜索: ${query}, 使用URL: ${searchUrl}`);
 
+            args.toolContext?.reportProgress?.("正在请求搜索服务");
             // 使用 Koishi 的 HTTP 服务发送请求
             const response: any = await this.ctx.http.get(searchUrl, {
                 headers: {
@@ -279,8 +284,10 @@ export default class SearchExtension {
                 },
                 responseType: "json",
                 timeout: this.config.httpTimeout,
+                signal: args.toolContext?.signal,
             });
 
+            args.toolContext?.reportProgress?.("搜索服务已返回，正在整理结果");
             // 处理响应
             const data = typeof response === "string" ? JSON.parse(response) : response;
 

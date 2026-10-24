@@ -115,6 +115,7 @@ export default class CoreUtilExtension {
 
     @Tool({
         name: "get_image_description",
+        background: true,
         description: "使用外部视觉模型获取图片描述，当你无法查看图片，或者此图片数据在上下文中丢失时使用此工具",
         parameters: withInnerThoughts({
             image_id: Schema.string().required().description("要获取的图片ID，如在 `<img id='12345'>` 中的 12345 即是其 ID"),
@@ -124,6 +125,7 @@ export default class CoreUtilExtension {
     async getImageDescription(args: Infer<{ image_id: string; question: string }>) {
         const { image_id, question, session } = args;
 
+        args.toolContext?.reportProgress?.("正在读取图片资源");
         const imageInfo = await this.assetService.getInfo(image_id);
         if (!imageInfo) {
             this.logger.warn(`✖ 图片未找到 | ID: ${image_id}`);
@@ -163,6 +165,7 @@ export default class CoreUtilExtension {
         }
 
         try {
+            args.toolContext?.reportProgress?.("正在请求视觉模型");
             const response = await withUsageScope(
                 { platform: session?.platform, botId: session?.selfId, target: session?.channelId, purpose: "图片描述" },
                 () =>

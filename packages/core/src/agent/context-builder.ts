@@ -112,11 +112,16 @@ export class PromptContextBuilder {
             ...new Set([...focus.missingMessageIds, ...(focus.explicitWorkingState?.sourceMessageIds ?? []).filter((id) => !present.has(id))]),
         ];
         const worldState: FocusedWorldState = { ...sourceWorldState, conversationFocus: focus };
+        if (this.toolService.background) worldState.backgroundTasks = this.toolService.background.snapshots(session);
+        assertContextCurrent();
 
         let triggerContext: object = {};
         switch (type) {
             case "user_message":
                 triggerContext = { isUserMessage: true, messageIds: (payload as UserMessagePayload).messageIds };
+                break;
+            case "background_task_completion":
+                triggerContext = { isBackgroundTaskCompletion: true, taskIds: payload?.taskIds, requestId: payload?.requestId, outcome: payload?.outcome };
                 break;
             case "system_event":
                 triggerContext = { isSystemEvent: true, event: payload };

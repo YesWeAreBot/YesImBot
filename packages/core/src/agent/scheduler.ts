@@ -20,6 +20,8 @@ export class StimulusScheduler {
     private readonly skippedStimulus = new Map<string, AgentStimulus<any>>();
     private readonly deferredTimers = new Map<string, NodeJS.Timeout>();
     private readonly pendingStimuli = new Map<string, AgentStimulus<any>>();
+    private readonly completionStimuli = new Map<string, AgentStimulus<any>>();
+    private readonly deferredReady = new Set<string>();
     private disposed = false;
 
     constructor(
@@ -41,7 +43,13 @@ export class StimulusScheduler {
             this.observe?.(stimulus, "cancelled", "disposed");
             return;
         }
-        const { channelCid: channelKey, type, priority } = stimulus;
+        const { channelCid: channelKey, type } = stimulus;
+
+        if (type === "background_task_completion") {
+            this.retainCompletion(stimulus);
+            this.drainCompletion(channelKey);
+            return;
+        }
 
         if (this.runningTasks.has(channelKey)) {
             this.logger.warn(`[${channelKey}] 频道正忙，将根据策略处理新刺激 [${type}]。`);
@@ -101,6 +109,10 @@ export class StimulusScheduler {
         const skipped = this.skippedStimulus.get(channelKey);
         if (pending) this.observe?.(pending, "cancelled", reason);
         if (skipped) this.observe?.(skipped, "cancelled", reason);
+        const completion = this.completionStimuli.get(channelKey);
+        if (completion) this.observe?.(completion, "cancelled", reason);
+        this.completionStimuli.delete(channelKey);
+        this.deferredReady.delete(channelKey);
         this.pendingStimuli.delete(channelKey);
         this.debouncedReplyTasks.get(channelKey)?.dispose();
         this.debouncedReplyTasks.delete(channelKey);
@@ -115,6 +127,7 @@ export class StimulusScheduler {
         if (this.disposed) return;
         if (this.runningTasks.has(channelKey)) {
             if (stimulus.type === "user_message") this.handleBusyChannel(stimulus);
+            else if (stimulus.type === "background_task_completion") this.retainCompletion(stimulus);
             return;
         }
         this.runningTasks.add(channelKey);
@@ -137,7 +150,10 @@ export class StimulusScheduler {
         } finally {
             this.runningTasks.delete(channelKey);
             this.logger.debug(`[${channelKey}] 频道锁已释放`);
-            if (!this.disposed) this.handleSkippedMessagesAfterReply(channelKey);
+            if (!this.disposed) {
+                this.handleSkippedMessagesAfterReply(channelKey);
+                this.drainCompletion(channelKey);
+            }
         }
     }
 
@@ -145,12 +161,31 @@ export class StimulusScheduler {
         this.disposed = true;
         for (const stimulus of this.pendingStimuli.values()) this.observe?.(stimulus, "cancelled", "disposed");
         for (const stimulus of this.skippedStimulus.values()) this.observe?.(stimulus, "cancelled", "disposed");
+        for (const stimulus of this.completionStimuli.values()) this.observe?.(stimulus, "cancelled", "disposed");
         this.debouncedReplyTasks.forEach((task) => task.dispose());
         this.deferredTimers.forEach((timer) => clearTimeout(timer));
         this.debouncedReplyTasks.clear();
         this.deferredTimers.clear();
         this.skippedStimulus.clear();
         this.pendingStimuli.clear();
+        this.completionStimuli.clear();
+        this.deferredReady.clear();
+    }
+
+    private retainCompletion(stimulus: AgentStimulus<any>): void {
+        const old = this.completionStimuli.get(stimulus.channelCid);
+        const limit = this.config.backgroundTools?.maxRetained ?? 128;
+        const taskIds = [...new Set([...(old?.payload?.taskIds ?? []), ...(stimulus.payload?.taskIds ?? [])])].slice(-limit);
+        this.completionStimuli.set(stimulus.channelCid, { ...stimulus, payload: { ...stimulus.payload, taskIds } });
+        this.observe?.(stimulus, "queued", "background_completion");
+    }
+
+    private drainCompletion(channelKey: string): void {
+        if (this.disposed || this.runningTasks.has(channelKey) || this.pendingStimuli.has(channelKey)) return;
+        const completion = this.completionStimuli.get(channelKey);
+        if (!completion) return;
+        this.completionStimuli.delete(channelKey);
+        void this.executeTask(channelKey, completion);
     }
 
     /** 所有用户消息都影响安静期，包括未触发回复的消息。 */
@@ -213,6 +248,12 @@ export class StimulusScheduler {
     }
 
     private handleSkippedMessagesAfterReply(channelKey: string) {
+        if (this.deferredReady.delete(channelKey) && this.skippedStimulus.has(channelKey)) {
+            const stimulus = this.skippedStimulus.get(channelKey)!;
+            this.skippedStimulus.delete(channelKey);
+            void this.executeTask(channelKey, stimulus);
+            return;
+        }
         if (this.config.newMessageStrategy === "immediate" && this.skippedStimulus.has(channelKey)) {
             const skippedStimulus = this.skippedStimulus.get(channelKey);
             this.skippedStimulus.delete(channelKey);
@@ -229,7 +270,7 @@ export class StimulusScheduler {
             this.getDebouncedTask(channelKey)(skippedStimulus!);
         } else if (this.config.newMessageStrategy === "deferred" && this.skippedStimulus.has(channelKey)) {
             // 任务完成后才启动定时器
-            this.setupDeferredTimer(channelKey);
+            if (!this.deferredTimers.has(channelKey)) this.setupDeferredTimer(channelKey);
         }
     }
 
@@ -237,6 +278,7 @@ export class StimulusScheduler {
      * 设置延迟处理定时器（策略3）
      */
     private setupDeferredTimer(channelKey: string) {
+        this.deferredReady.delete(channelKey);
         const waiting = this.skippedStimulus.get(channelKey);
         if (waiting) this.observe?.(waiting, "deferred", "busy");
         // 清除现有定时器
@@ -247,7 +289,11 @@ export class StimulusScheduler {
 
         const timer = setTimeout(() => {
             this.deferredTimers.delete(channelKey);
-            if (this.disposed || this.runningTasks.has(channelKey)) return;
+            if (this.disposed) return;
+            if (this.runningTasks.has(channelKey)) {
+                this.deferredReady.add(channelKey);
+                return;
+            }
             this.logger.debug(`[${channelKey}] 延迟处理定时器触发`);
             if (this.skippedStimulus.has(channelKey)) {
                 const stimulus = this.skippedStimulus.get(channelKey)!;

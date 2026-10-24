@@ -71,6 +71,7 @@ export class WillingnessManager {
     private lastMessageTimestamps: Map<string, number> = new Map(); // 记录每个对话的最后消息时间，用于计算热度
     private sessions = new Map<string, Session>();
     private participation = new Map<string, Required<Omit<ParticipationSnapshot, "active">>>();
+    private backgroundCredits = new Map<string, number>();
 
     private decayInterval: NodeJS.Timeout | null = null;
 
@@ -81,6 +82,7 @@ export class WillingnessManager {
 
         ctx.on("dispose", () => {
             this.stopDecayCycle();
+            this.backgroundCredits.clear();
         });
     }
 
@@ -168,6 +170,11 @@ export class WillingnessManager {
 
             const newScore = currentScore * effectiveFactor;
             this.willingnessScores.set(chatId, newScore < 0.01 ? 0 : newScore);
+            const credit = this.backgroundCredits.get(chatId);
+            if (credit !== undefined) {
+                if (newScore < 0.01) this.backgroundCredits.delete(chatId);
+                else this.backgroundCredits.set(chatId, Math.min(newScore, credit * effectiveFactor));
+            }
         }
     }
 
@@ -351,10 +358,26 @@ export class WillingnessManager {
         this.lastMessageTimestamps.delete(chatId);
         this.sessions.delete(chatId);
         this.participation.delete(chatId);
+        this.backgroundCredits.delete(chatId);
     }
 
     public getCurrentWillingness(chatId: string): number {
         return this.willingnessScores.get(chatId) || 0;
+    }
+
+    /** 后台任务只增加配置的意愿值，不重新计入原消息属性或参与加成。 */
+    public addBackgroundWillingness(session: Session, chatId: string, amount: number): { score: number; probability: number } {
+        const { maxWillingness, probabilityThreshold, probabilityAmplifier } = this._getResolvedConfig(session).lifecycle;
+        this.sessions.set(chatId, session);
+        const gain = Number.isFinite(amount) && amount > 0 ? amount : 0;
+        const before = this.getCurrentWillingness(chatId);
+        const score = Math.max(0, Math.min(maxWillingness, before + gain));
+        this.willingnessScores.set(chatId, score);
+        const credit = Math.min(score, (this.backgroundCredits.get(chatId) ?? 0) + Math.max(0, score - before));
+        if (credit > 0) this.backgroundCredits.set(chatId, credit);
+        else this.backgroundCredits.delete(chatId);
+        const probability = score <= probabilityThreshold ? 0 : Math.max(0, Math.min(1, (score - probabilityThreshold) * probabilityAmplifier));
+        return { score, probability };
     }
 
     /** 返回参与状态的副本；到期查询不会清除或刷新状态。 */
@@ -380,6 +403,15 @@ export class WillingnessManager {
         topic?: TopicWillingnessInput,
     ): { decision: boolean; probability: number; roll: number; calculation: WillingnessCalculation; scoreKey?: string } {
         const currentScoreKey = topic?.currentScoreKey ?? chatId;
+        const credit = this.backgroundCredits.get(chatId) ?? 0;
+        this.backgroundCredits.delete(chatId);
+        if (credit > 0 && currentScoreKey !== chatId) {
+            const source = this.getCurrentWillingness(chatId);
+            const available = Math.min(credit, source);
+            const { maxWillingness } = this._getResolvedConfig(session).lifecycle;
+            this.willingnessScores.set(chatId, Math.max(0, source - available));
+            this.willingnessScores.set(currentScoreKey, Math.min(maxWillingness, this.getCurrentWillingness(currentScoreKey) + available));
+        }
         this.sessions.set(currentScoreKey, session);
         // Only the message's own topic receives activity, not a different topic
         // selected later from accumulated willingness.

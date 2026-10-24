@@ -123,6 +123,7 @@ export function Tool<TParams>(metadata: ToolMetadata<TParams>) {
             parameters: metadata.parameters,
             execute: descriptor.value,
             isSupported: metadata.isSupported,
+            background: metadata.background,
         };
         target.tools.set(toolDefinition.name, toolDefinition);
     };

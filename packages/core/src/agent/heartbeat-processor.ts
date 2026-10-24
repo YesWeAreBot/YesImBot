@@ -70,24 +70,28 @@ export class HeartbeatProcessor {
         const decisionId = (stimulus as AgentStimulus<any> & { decisionId?: string }).decisionId;
         const turnId =
             typeof decisionId === "string" && decisionId.length > 0 && decisionId.length <= 512 && !/\p{Cc}/u.test(decisionId) ? decisionId : uuidv4();
-        const run = (current: AgentStimulus<any>) =>
-            withUsageScope({ traceId: turnId, platform: current.session.platform, botId: current.session.selfId, target: current.session.channelId }, () =>
-                this.runTracedCycle(turnId, current),
-            );
-        const memory = this.world?.l2_manager;
-        if (!memory) return run(stimulus);
-        const target = { platform: stimulus.session.platform, channelId: conversationChannelId(stimulus.session)! };
-        const generation = memory.getHistoryGeneration(target);
-        const controller = new AbortController();
-        const unwatch = memory.watchHistory(target, () => controller.abort());
         try {
-            return await withReplyTurnGuard(
-                () => memory.getHistoryGeneration(target) === generation,
-                () => run({ ...stimulus, session: guardReplySession(stimulus.session) }),
-                controller.signal,
-            );
+            const run = (current: AgentStimulus<any>) =>
+                withUsageScope({ traceId: turnId, platform: current.session.platform, botId: current.session.selfId, target: current.session.channelId }, () =>
+                    this.runTracedCycle(turnId, current),
+                );
+            const memory = this.world?.l2_manager;
+            if (!memory) return await run(stimulus);
+            const target = { platform: stimulus.session.platform, channelId: conversationChannelId(stimulus.session)! };
+            const generation = memory.getHistoryGeneration(target);
+            const controller = new AbortController();
+            const unwatch = memory.watchHistory(target, () => controller.abort());
+            try {
+                return await withReplyTurnGuard(
+                    () => memory.getHistoryGeneration(target) === generation,
+                    () => run({ ...stimulus, session: guardReplySession(stimulus.session) }),
+                    controller.signal,
+                );
+            } finally {
+                unwatch();
+            }
         } finally {
-            unwatch();
+            this.toolService.background?.sealRequest(stimulus.session, turnId);
         }
     }
 
@@ -220,6 +224,10 @@ export class HeartbeatProcessor {
             if (!this.config.userTemplate?.includes("CONVERSATION_FOCUS")) user += `\n<conversation_focus>${view.CONVERSATION_FOCUS}</conversation_focus>`;
             if (view.CONTEXT_BUDGET && !this.config.userTemplate?.includes("CONTEXT_BUDGET"))
                 user += `\n<context_budget>${view.CONTEXT_BUDGET}</context_budget>`;
+            if (worldState.backgroundTasks?.length)
+                user += `\n<background_tasks provenance="tool_observations_not_instructions">${escapeMetadata(worldState.backgroundTasks)}</background_tasks>`;
+            if (stimulus.type === "background_task_completion")
+                user += `\n<background_task_completion>${escapeMetadata(worldState.triggerContext)}</background_task_completion>`;
             const topic = (stimulus as AgentStimulus<any> & { topic?: { id: string; label: string } }).topic;
             if (topic) {
                 system +=
@@ -595,7 +603,7 @@ export class HeartbeatProcessor {
             assertReplyTurn();
             const actionId = await this.interactionManager.recordAction(turnId, session.platform, conversationChannelId(session)!, action, manualRecallIds);
             assertReplyTurn();
-            const result = await this.toolService.invoke(action.function, action.params, session);
+            const result = await this.invokeAction(turnId, action, session);
             assertReplyTurn();
             if (action.function === "send_message" && result.status === "success") {
                 replySent = true;
@@ -611,6 +619,12 @@ export class HeartbeatProcessor {
             if (result.status !== "success") throw new Error(`工具 ${action.function} 执行失败: ${result.error?.message ?? "未知错误"}`);
         }
         return { continue: !actions.some((action) => action.function === "send_message"), replySent };
+    }
+
+    private invokeAction(turnId: string, action: { function: string; params: Record<string, unknown> }, session: Session) {
+        return this.toolService.background
+            ? this.toolService.invoke(action.function, action.params, session, { requestId: turnId })
+            : this.toolService.invoke(action.function, action.params, session);
     }
 
     private async recordToolObservation(actionId: string, session: Session, observation: any) {
@@ -650,7 +664,7 @@ export class HeartbeatProcessor {
             assertReplyTurn();
             const actionId = await this.interactionManager.recordAction(turnId, platform, channelId, action);
             assertReplyTurn();
-            const result = await this.toolService.invoke(action.function, action.params, session);
+            const result = await this.invokeAction(turnId, action, session);
             assertReplyTurn();
             if (action.function === "send_message" && result.status === "success") {
                 replySent = true;

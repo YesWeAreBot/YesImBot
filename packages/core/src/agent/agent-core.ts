@@ -43,6 +43,7 @@ export class AgentCore extends YesImBotService<Config> {
     private readonly worldState: WorldStateService;
     private readonly modelService: ModelService;
     private readonly promptService: PromptService;
+    private readonly toolService: ToolService;
 
     // 核心组件
     private willing: WillingnessManager;
@@ -149,7 +150,7 @@ export class AgentCore extends YesImBotService<Config> {
             this.topics?.noteMessage(session, channelCid);
             this.scheduler.noteUserMessage(channelCid);
         }
-        this.cancelAssessment(channelCid, true, type === "user_message" ? "new_message" : "system_stimulus");
+        if (type !== "background_task_completion") this.cancelAssessment(channelCid, true, type === "user_message" ? "new_message" : "system_stimulus");
         const config = this.config.typesafe;
         const addressed = session?.isDirect || isBotMention(session);
         const useTypeSafe = config && config.mode !== "off" && config.evaluationModel?.providerName && config.evaluationModel.modelId;
@@ -225,6 +226,7 @@ export class AgentCore extends YesImBotService<Config> {
         this.worldState = deps.world;
         this.modelService = deps.model;
         this.promptService = deps.prompt;
+        this.toolService = deps.tool;
 
         this.modelSwitcher = this.modelService.useChatGroup(TaskType.Chat)!;
         if (!this.modelSwitcher) {
@@ -322,10 +324,12 @@ export class AgentCore extends YesImBotService<Config> {
                 const valid = () =>
                     !controller.signal.aborted &&
                     this.replyControl.valid(target, token) &&
-                    !this.worldState.isBotMuted(conversationCid(stimulus.session), target.selfId);
+                    !this.worldState.isBotMuted(conversationCid(stimulus.session), target.selfId) &&
+                    (stimulus.type !== "background_task_completion" ||
+                        this.toolService.background?.isCompletionCurrent(stimulus.session, stimulus.payload) === true);
                 try {
                     await this.replyControl.flush();
-                    if (controller.signal.aborted || !this.replyControl.valid(target, token) || !this.allowedCategories(stimulus).length) {
+                    if (!valid() || !this.allowedCategories(stimulus).length) {
                         this.recordDecision(stimulus, { stage: "cancelled", reason: "invalid_generation", success: false });
                         return;
                     }
@@ -510,6 +514,13 @@ export class AgentCore extends YesImBotService<Config> {
                 );
                 return;
             }
+        } else if (type === "background_task_completion") {
+            const completion = this.toolService?.background?.consumeCompletion(session, stimulus.payload);
+            if (!completion) return;
+            const result = this.willing.addBackgroundWillingness(session, channelCid, completion.gain);
+            const roll = completion.wake ? Math.random() : undefined;
+            decision = completion.wake && result.probability > (roll ?? 1);
+            this.recordDecision(stimulus, { stage: "calculated", decision, allowed, score: result.score, probability: result.probability, roll });
         } else {
             decision = true;
             this.recordDecision(stimulus, { stage: "calculated", decision, allowed });

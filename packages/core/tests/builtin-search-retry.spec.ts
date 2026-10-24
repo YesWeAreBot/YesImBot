@@ -39,7 +39,7 @@ async function fixture(response: (attempt: number, signal: AbortSignal) => Promi
     await ctx.start();
     expect(tools.getTool("web_search")).toBeDefined();
     const session = { platform: "test", selfId: "bot", channelId: "group", userId: "user", bot: { platform: "test" } } as Session;
-    return { invoke: () => tools.invoke("web_search", { query: "Koishi" }, session), requests, events };
+    return { invoke: (toolContext?: any) => tools.invoke("web_search", { query: "Koishi" }, session, toolContext), requests, events };
 }
 
 function waitForTimeout(signal: AbortSignal): Promise<Response> {
@@ -90,4 +90,19 @@ it("does not turn a permanent HTTP error mentioning timeout into a retryable sea
     expect(result).toMatchObject({ status: "error", error: { message: expect.stringContaining("invalid timeout parameter") } });
     expect(result.error?.retryable).not.toBe(true);
     expectReceipt(f.events, result);
+});
+
+it("forwards the background cancellation signal and reports actual search stages", async () => {
+    const controller = new AbortController(),
+        progress: string[] = [];
+    const f = await fixture(async (_attempt, signal) => {
+        expect(progress).toContain("正在请求搜索服务");
+        controller.abort(new Error("cancelled by caller"));
+        expect(signal.aborted).toBe(true);
+        throw signal.reason;
+    }, 0);
+    const result = await f.invoke({ signal: controller.signal, reportProgress: (text: string) => progress.push(text) });
+    expect(result.status).toBe("error");
+    expect(progress).toContain("正在请求搜索服务");
+    expect(f.requests).toHaveLength(1);
 });

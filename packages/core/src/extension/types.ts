@@ -38,7 +38,17 @@ export interface ExtensionMetadata {
 /**
  * 工具元数据接口，用于描述一个可供 LLM 调用的工具。
  */
+export interface ToolExecutionContext {
+    invocationActor?: "admin" | "model";
+    requestId?: string;
+    signal?: AbortSignal;
+    reportProgress?: (progress: string) => void;
+    backgroundExecution?: boolean;
+}
+
 export interface ToolMetadata<TParams> {
+    /** Explicit opt-in for independent background reads; sends and mutations remain serial. */
+    background?: boolean;
     name?: string; // 工具名称，若不提供，则使用方法名
     description: string; // 工具功能详细描述，这是给 LLM 看的关键信息
     parameters: Schema<TParams>; // 工具的参数定义，使用 Koishi 的 Schema
@@ -49,6 +59,7 @@ export interface ToolMetadata<TParams> {
  * 完整的工具定义，包含了元数据和可执行函数。
  */
 export interface ToolDefinition<TParams = any> {
+    background?: boolean;
     name: string;
     description: string;
     parameters: Schema<TParams>;
@@ -100,4 +111,4 @@ export interface IExtension<TConfig = any> extends Object {
 }
 
 // 一个辅助类型，用于推断并合并 session 到参数中
-export type Infer<T> = T & { session?: Session };
+export type Infer<T> = T & { session?: Session; toolContext?: ToolExecutionContext };
