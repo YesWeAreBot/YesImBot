@@ -81,7 +81,12 @@ export class ProviderInstance {
             return null;
         }
 
-        const finalModelConfig: ModelConfig = { ...modelConfig, providerName: this.name };
+        const finalModelConfig: ModelConfig = {
+            ...modelConfig,
+            providerName: this.name,
+            // Native LM Studio chat cannot carry client-owned tools; retain the framework's JSON-action fallback.
+            ...(this.config.type === "LM Studio" ? { disableNativeToolCalling: true } : {}),
+        };
 
         //this.logger.debug(`[获取模型] 🟢 成功 | 模型ID: ${modelId} | 能力: ${capabilityName}`);
         return new modelConstructor(this.ctx, providerCapability, finalModelConfig, this.fetch, this.logging, this.usageOwner);

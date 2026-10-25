@@ -166,8 +166,17 @@ describe("native provider requests", () => {
             [3, 4],
         ]);
     });
-    it("rejects wrong provider/native combination", () => {
-        expect(() => createNativeFetch({ ...config("gemini-native"), type: "OpenAI" }, transport(() => json({})).fetch)).toThrow(/不匹配/);
+    it("uses the provider type even when an obsolete saved protocol field disagrees", async () => {
+        const t = transport(() => json(response));
+        const f = createNativeFetch({ ...config("gemini-native"), protocol: "openai-compatible" }, t.fetch);
+        await call(f);
+        expect(t.calls[0].url).toContain(":generateContent");
+    });
+    it("keeps explicitly compatible Gemini gateways on their configured chat endpoint", async () => {
+        const t = transport(() => json({}));
+        const f = createNativeFetch({ ...config("gemini-native"), type: "OpenAI Compatible" }, t.fetch);
+        await call(f);
+        expect(t.calls[0].url).toBe("https://example.test/v1beta/chat/completions");
     });
     it("authenticates metadata without pretending input limit is total context", async () => {
         const t = transport(() => json({ models: [{ name: "models/test", inputTokenLimit: 100 }] }));

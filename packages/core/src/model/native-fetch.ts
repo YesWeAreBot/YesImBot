@@ -1,7 +1,11 @@
-import type { ProviderConfig } from "./config";
+import { getProviderBaseURL, getProviderProtocol, type ProviderConfig } from "./config";
 import { anthropicRequest, anthropicResponse, anthropicStream } from "./native/anthropic";
 import { geminiEmbeddings, geminiRequest, geminiResponse, geminiStream } from "./native/gemini";
+import { createLMStudioFetch } from "./native/lmstudio";
+import { createOllamaFetch } from "./native/ollama";
+import { createQwenFetch } from "./native/qwen";
 import { Json, nativeSSE } from "./native/shared";
+import { createWorkersFetch } from "./native/workers";
 
 function normalizedJson(value: unknown, response: Response): Response {
     const headers = new Headers({ "content-type": "application/json" });
@@ -14,16 +18,20 @@ function normalizedJson(value: unknown, response: Response): Response {
 
 /** Protocol translation is inside the existing proxy/abort and usage observation paths. */
 export function createNativeFetch(config: ProviderConfig, transport: typeof globalThis.fetch): typeof globalThis.fetch {
-    const protocol = config.protocol;
-    if (!protocol || protocol === "openai-compatible") return transport;
-    if ((protocol === "gemini-native" && config.type !== "Google Gemini") || (protocol === "anthropic-native" && config.type !== "Anthropic"))
-        throw new Error("原生接入协议与提供商类型不匹配");
-    if (protocol !== "gemini-native" && protocol !== "anthropic-native") throw new Error("未知提供商接入协议");
-    const base = new URL(
-        config.baseURL || (protocol === "gemini-native" ? "https://generativelanguage.googleapis.com/v1beta/" : "https://api.anthropic.com/v1/"),
-    );
+    const protocol = getProviderProtocol(config.type);
+    if (!protocol || protocol === "chat-completions") return transport;
+    const base = new URL(getProviderBaseURL(config));
     if (!["http:", "https:"].includes(base.protocol) || base.username || base.password) throw new Error("原生 API 地址必须为不含凭据的 HTTP(S) URL");
-    if (/\/openai\/?$/.test(base.pathname)) throw new Error("原生 API 地址不能使用 /openai 兼容端点，请填写原生版本根地址");
+    if (
+        /\/openai\/?$/.test(base.pathname) ||
+        /\/compatible-mode\//.test(base.pathname) ||
+        (["ollama-native", "lmstudio-native"].includes(protocol) && /\/v1\/?$/.test(base.pathname))
+    )
+        throw new Error("该提供商使用原生 API，请填写原生根地址；兼容端点请选择 OpenAI Compatible");
+    if (protocol === "ollama-native") return createOllamaFetch(config, transport);
+    if (protocol === "qwen-native") return createQwenFetch(config, transport);
+    if (protocol === "workers-native") return createWorkersFetch({ ...config, baseURL: base.href }, transport);
+    if (protocol === "lmstudio-native") return createLMStudioFetch(config, transport);
     base.pathname = base.pathname.replace(/\/?$/, "/");
     return (async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);

@@ -10,7 +10,6 @@ import {
     createOpenAI,
     createQwen,
     createSiliconFlow,
-    createWorkersAI,
     createZhipu,
     createCerebras,
     createDeepInfra,
@@ -28,7 +27,7 @@ import {
     createTogetherAI,
     createXAI,
 } from "../dependencies/xsai";
-import type { ProviderConfig, ProviderType } from "./config";
+import { getProviderBaseURL, type ProviderConfig, type ProviderType } from "./config";
 import type { EvaluationRequestOptions } from "./evaluation-client";
 
 // --- 接口定义 ---
@@ -50,7 +49,8 @@ export interface IProviderFactory {
 
 class OpenAIFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
-        const { apiKey, baseURL } = config;
+        const { apiKey } = config;
+        const baseURL = getProviderBaseURL(config);
         const client = createOpenAI(apiKey, baseURL);
         return {
             chat: client.chat,
@@ -65,7 +65,7 @@ class OpenAIFactory implements IProviderFactory {
 
 class OllamaFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
-        const { baseURL } = config;
+        const baseURL = getProviderBaseURL(config);
         const client = createOllama(baseURL);
         return { chat: client.chat, embed: client.embed, model: client.model };
     }
@@ -73,7 +73,8 @@ class OllamaFactory implements IProviderFactory {
 
 class AnthropicFactory implements IProviderFactory {
     public createClient(config: ProviderConfig): IProviderClient {
-        const { apiKey, baseURL = "https://api.anthropic.com/v1/" } = config;
+        const { apiKey } = config;
+        const baseURL = getProviderBaseURL(config);
         const client = createAnthropic(apiKey, baseURL);
         return { chat: client.chat, model: client.model };
     }
@@ -113,7 +114,8 @@ class AnthropicFactory implements IProviderFactory {
 
 class FireworksFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
-        const { apiKey, baseURL } = config;
+        const { apiKey } = config;
+        const baseURL = getProviderBaseURL(config);
         const client = createFireworks(apiKey, baseURL);
         return { chat: client.chat, embed: client.embed, model: client.model };
     }
@@ -121,7 +123,8 @@ class FireworksFactory implements IProviderFactory {
 
 class DeepSeekFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
-        const { apiKey, baseURL } = config;
+        const { apiKey } = config;
+        const baseURL = getProviderBaseURL(config);
         const client = createDeepSeek(apiKey, baseURL);
         return { chat: client.chat, model: client.model };
     }
@@ -129,12 +132,8 @@ class DeepSeekFactory implements IProviderFactory {
 
 class GoogleGenerativeAIFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
-        const {
-            apiKey,
-            baseURL = config.protocol === "gemini-native"
-                ? "https://generativelanguage.googleapis.com/v1beta/"
-                : "https://generativelanguage.googleapis.com/v1beta/openai/",
-        } = config;
+        const { apiKey } = config;
+        const baseURL = getProviderBaseURL(config);
         const client = createGoogleGenerativeAI(apiKey, baseURL);
         return { chat: client.chat, embed: client.embed, model: client.model };
     }
@@ -142,7 +141,7 @@ class GoogleGenerativeAIFactory implements IProviderFactory {
 
 class LMStudioFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
-        const { baseURL = "http://localhost:1234/v1/" } = config;
+        const baseURL = getProviderBaseURL(config);
         const client = createLMStudio(baseURL);
         return { chat: client.chat, embed: client.embed, model: client.model };
     }
@@ -150,7 +149,8 @@ class LMStudioFactory implements IProviderFactory {
 
 class ZhipuFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
-        const { apiKey, baseURL } = config;
+        const { apiKey } = config;
+        const baseURL = getProviderBaseURL(config);
         const client = createZhipu(apiKey, baseURL);
         return { chat: client.chat, embed: client.embed, model: client.model };
     }
@@ -158,7 +158,8 @@ class ZhipuFactory implements IProviderFactory {
 
 class SiliconFlowFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
-        const { apiKey, baseURL } = config;
+        const { apiKey } = config;
+        const baseURL = getProviderBaseURL(config);
         const client = createSiliconFlow(apiKey, baseURL);
         return {
             chat: client.chat,
@@ -172,7 +173,8 @@ class SiliconFlowFactory implements IProviderFactory {
 
 class QwenFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
-        const { apiKey, baseURL } = config;
+        const { apiKey } = config;
+        const baseURL = getProviderBaseURL(config);
         const client = createQwen(apiKey, baseURL);
         return { chat: client.chat, embed: client.embed, model: client.model };
     }
@@ -184,18 +186,16 @@ class QwenFactory implements IProviderFactory {
  */
 class WorkersAIFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
-        const { apiKey, accountId } = config;
-        if (!accountId) {
-            throw new Error("WorkersAIFactory: `accountId` is required in the provider configuration.");
-        }
-        const client = createWorkersAI(apiKey, accountId);
-        return { chat: client.chat, embed: client.embed };
+        const baseURL = getProviderBaseURL(config);
+        const options = (model: string) => ({ apiKey: config.apiKey, baseURL, model });
+        return { chat: options, embed: options };
     }
 }
 
 class CerebrasFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
-        const { apiKey, baseURL } = config;
+        const { apiKey } = config;
+        const baseURL = getProviderBaseURL(config);
         const client = createCerebras(apiKey, baseURL);
         return { chat: client.chat, model: client.model };
     }
@@ -203,7 +203,8 @@ class CerebrasFactory implements IProviderFactory {
 
 class DeepInfraFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
-        const { apiKey, baseURL } = config;
+        const { apiKey } = config;
+        const baseURL = getProviderBaseURL(config);
         const client = createDeepInfra(apiKey, baseURL);
         return { chat: client.chat, embed: client.embed, model: client.model };
     }
@@ -211,7 +212,8 @@ class DeepInfraFactory implements IProviderFactory {
 
 class FatherlessAIFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
-        const { apiKey, baseURL } = config;
+        const { apiKey } = config;
+        const baseURL = getProviderBaseURL(config);
         const client = createFatherless(apiKey, baseURL);
         return { chat: client.chat, model: client.model };
     }
@@ -219,7 +221,8 @@ class FatherlessAIFactory implements IProviderFactory {
 
 class GroqFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
-        const { apiKey, baseURL } = config;
+        const { apiKey } = config;
+        const baseURL = getProviderBaseURL(config);
         const client = createGroq(apiKey, baseURL);
         return { chat: client.chat, transcript: client.transcription, model: client.model };
     }
@@ -227,7 +230,8 @@ class GroqFactory implements IProviderFactory {
 
 class MinimaxFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
-        const { apiKey, baseURL = "https://api.minimax.cn/v1/" } = config;
+        const { apiKey } = config;
+        const baseURL = getProviderBaseURL(config);
         const client = createMinimax(apiKey, baseURL);
         return { chat: client.chat };
     }
@@ -235,7 +239,8 @@ class MinimaxFactory implements IProviderFactory {
 
 class MinimaxiFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
-        const { apiKey, baseURL = "https://api.minimax.io/v1/" } = config;
+        const { apiKey } = config;
+        const baseURL = getProviderBaseURL(config);
         const client = createMinimaxi(apiKey, baseURL);
         return { chat: client.chat };
     }
@@ -243,7 +248,8 @@ class MinimaxiFactory implements IProviderFactory {
 
 class MistralFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
-        const { apiKey, baseURL } = config;
+        const { apiKey } = config;
+        const baseURL = getProviderBaseURL(config);
         const client = createMistral(apiKey, baseURL);
         return { chat: client.chat, embed: client.embed, model: client.model };
     }
@@ -251,7 +257,8 @@ class MistralFactory implements IProviderFactory {
 
 class MoonshotFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
-        const { apiKey, baseURL } = config;
+        const { apiKey } = config;
+        const baseURL = getProviderBaseURL(config);
         const client = createMoonshot(apiKey, baseURL);
         return { chat: client.chat, model: client.model };
     }
@@ -259,7 +266,8 @@ class MoonshotFactory implements IProviderFactory {
 
 class NovitaFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
-        const { apiKey, baseURL } = config;
+        const { apiKey } = config;
+        const baseURL = getProviderBaseURL(config);
         const client = createNovita(apiKey, baseURL);
         return { chat: client.chat, model: client.model };
     }
@@ -267,7 +275,8 @@ class NovitaFactory implements IProviderFactory {
 
 class OpenRouterFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
-        const { apiKey, baseURL } = config;
+        const { apiKey } = config;
+        const baseURL = getProviderBaseURL(config);
         const client = createOpenRouter(apiKey, baseURL);
         return { chat: client.chat, model: client.model };
     }
@@ -275,7 +284,8 @@ class OpenRouterFactory implements IProviderFactory {
 
 class PerplexityFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
-        const { apiKey, baseURL } = config;
+        const { apiKey } = config;
+        const baseURL = getProviderBaseURL(config);
         const client = createPerplexity(apiKey, baseURL);
         return { chat: client.chat };
     }
@@ -283,7 +293,8 @@ class PerplexityFactory implements IProviderFactory {
 
 class StepfunFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
-        const { apiKey, baseURL } = config;
+        const { apiKey } = config;
+        const baseURL = getProviderBaseURL(config);
         const client = createStepfun(apiKey, baseURL);
         return { chat: client.chat, speech: client.speech, transcript: client.transcription, model: client.model };
     }
@@ -291,7 +302,8 @@ class StepfunFactory implements IProviderFactory {
 
 class TencentHunyuanFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
-        const { apiKey, baseURL } = config;
+        const { apiKey } = config;
+        const baseURL = getProviderBaseURL(config);
         const client = createTencentHunyuan(apiKey, baseURL);
         return { chat: client.chat, embed: client.embed };
     }
@@ -299,7 +311,8 @@ class TencentHunyuanFactory implements IProviderFactory {
 
 class TogetherAIFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
-        const { apiKey, baseURL } = config;
+        const { apiKey } = config;
+        const baseURL = getProviderBaseURL(config);
         const client = createTogetherAI(apiKey, baseURL);
         return { chat: client.chat, embed: client.embed, model: client.model };
     }
@@ -307,7 +320,8 @@ class TogetherAIFactory implements IProviderFactory {
 
 class XAIFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
-        const { apiKey, baseURL } = config;
+        const { apiKey } = config;
+        const baseURL = getProviderBaseURL(config);
         const client = createXAI(apiKey, baseURL);
         return { chat: client.chat, model: client.model };
     }

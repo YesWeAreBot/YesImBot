@@ -197,6 +197,16 @@ const NativeAnthropicModelConfigSchema = Schema.object({
         .description("生成参数"),
 }).description("单个模型配置") as Schema<ModelConfig>;
 
+// LM Studio native chat exposes server integrations, not client-owned function tools.
+const NativeLMStudioModelConfigSchema = Schema.object({
+    ...ModelConfigSchema.dict!,
+    abilities: Schema.array(Schema.union(Object.values(ModelAbility)))
+        .role("checkbox")
+        .default([ModelAbility.Chat])
+        .description("模型支持的能力"),
+    disableNativeToolCalling: Schema.boolean().default(true).hidden(),
+}).description("单个模型配置") as Schema<ModelConfig>;
+
 const PROVIDERS = {
     TypeSafe: { baseURL: "https://api.typesafe.ai/v1/", link: "https://typesafe.ai/" },
     OpenAI: { baseURL: "https://api.openai.com/v1/", link: "https://platform.openai.com/account/api-keys" },
@@ -205,15 +215,15 @@ const PROVIDERS = {
     Fireworks: { baseURL: "https://api.fireworks.ai/inference/v1/", link: "https://console.fireworks.ai/api-keys" },
     DeepSeek: { baseURL: "https://api.deepseek.com/", link: "https://platform.deepseek.com/api_keys" },
     "Google Gemini": {
-        baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+        baseURL: "https://generativelanguage.googleapis.com/v1beta/",
         link: "https://aistudio.google.com/app/apikey",
     },
-    "LM Studio": { baseURL: "http://localhost:1234/v1/", link: "https://lmstudio.ai/docs/developer/openai-compat" },
+    "LM Studio": { baseURL: "http://localhost:1234/", link: "https://lmstudio.ai/docs/developer/openai-compat" },
     "Workers AI": { baseURL: "https://api.cloudflare.com/client/v4/", link: "https://dash.cloudflare.com/?to=/:account/workers-ai" },
     Zhipu: { baseURL: "https://open.bigmodel.cn/api/paas/v4/", link: "https://open.bigmodel.cn/usercenter/apikeys" },
     "Silicon Flow": { baseURL: "https://api.siliconflow.cn/v1/", link: "https://console.siliconflow.cn/account/key" },
-    Qwen: { baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1/", link: "https://dashscope.console.aliyun.com/apiKey" },
-    Ollama: { baseURL: "http://localhost:11434/v1/", link: "https://ollama.com/" },
+    Qwen: { baseURL: "https://dashscope.aliyuncs.com/api/v1/", link: "https://dashscope.console.aliyun.com/apiKey" },
+    Ollama: { baseURL: "http://localhost:11434/", link: "https://ollama.com/" },
     // "Azure OpenAI": {
     //     baseURL: "https://<resource-name>.services.ai.azure.com/models/",
     //     link: "https://oai.azure.com/",
@@ -242,13 +252,38 @@ export type ProviderType = keyof typeof PROVIDERS;
 
 const DEFAULT_PROVIDER_TYPE: ProviderType = "OpenAI";
 
-export type ProviderProtocol = "openai-compatible" | "gemini-native" | "anthropic-native";
+export type ProviderProtocol =
+    | "chat-completions"
+    | "gemini-native"
+    | "anthropic-native"
+    | "ollama-native"
+    | "qwen-native"
+    | "workers-native"
+    | "lmstudio-native";
+
+/** Provider type owns the wire protocol. Some official vendor APIs already use Chat Completions. */
+export function getProviderProtocol(type: ProviderType): ProviderProtocol {
+    if (type === "Google Gemini") return "gemini-native";
+    if (type === "Anthropic") return "anthropic-native";
+    if (type === "Ollama") return "ollama-native";
+    if (type === "Qwen") return "qwen-native";
+    if (type === "Workers AI") return "workers-native";
+    if (type === "LM Studio") return "lmstudio-native";
+    return "chat-completions";
+}
+
+export function getProviderBaseURL(config: Pick<ProviderConfig, "type" | "baseURL" | "accountId">): string {
+    if (config.type === "Workers AI") {
+        if (!config.accountId || !/^[a-zA-Z0-9_-]+$/.test(config.accountId)) throw new Error("Workers AI 需要有效的 Cloudflare 账户 ID");
+        return `https://api.cloudflare.com/client/v4/accounts/${config.accountId}/ai/`;
+    }
+    return config.baseURL ?? PROVIDERS[config.type]?.baseURL;
+}
 
 export interface ProviderConfig {
     name: string;
     type: ProviderType;
     baseURL?: string;
-    protocol?: ProviderProtocol;
     accountId?: string;
     apiKey: string;
     proxy?: string;
@@ -264,55 +299,36 @@ export const ProviderConfigSchema: Schema<ProviderConfig> = Schema.intersect([
     }),
     Schema.union(
         PROVIDER_TYPES.map((type) => {
-            const protocols: Array<{ value: ProviderProtocol; label: string; baseURL: string }> = [
-                {
-                    value: "openai-compatible",
-                    label: type === "TypeSafe" ? "TypeSafe 评估接口" : "OpenAI 兼容（保留原有行为）",
-                    baseURL: PROVIDERS[type].baseURL,
-                },
-            ];
-            if (type === "Google Gemini")
-                protocols.push({ value: "gemini-native", label: "Gemini 原生", baseURL: "https://generativelanguage.googleapis.com/v1beta/" });
-            if (type === "Anthropic") protocols.push({ value: "anthropic-native", label: "Anthropic 原生", baseURL: "https://api.anthropic.com/v1/" });
-            return Schema.intersect([
-                Schema.object({
-                    // Only the default branch may match when the provider type is omitted.
-                    type: type === DEFAULT_PROVIDER_TYPE ? Schema.const(type) : Schema.const(type).required(),
-                    protocol: Schema.union(protocols.map(({ value, label }) => Schema.const(value).description(label)))
-                        .default("openai-compatible")
-                        .description("接入协议"),
-                    ...(type === "Workers AI"
-                        ? {
-                              accountId: Schema.string()
-                                  .pattern(/^[a-zA-Z0-9_-]+$/)
-                                  .required()
-                                  .description("Cloudflare 账户 ID"),
-                          }
-                        : {}),
-                    apiKey: Schema.string()
-                        .role("secret")
-                        .description(`提供商的 API 密钥${PROVIDERS[type].link ? ` (获取地址 - ${PROVIDERS[type].link})` : ""}`),
-                    proxy: Schema.string().description("代理地址"),
-                }),
-                Schema.union(
-                    protocols.map(({ value, baseURL }) =>
-                        Schema.object({
-                            protocol: value === "openai-compatible" ? Schema.const(value).default(value) : Schema.const(value).required(),
-                            models: Schema.array(value === "anthropic-native" ? NativeAnthropicModelConfigSchema : ModelConfigSchema)
-                                .required()
-                                .description("模型列表"),
-                            ...(type === "Workers AI"
-                                ? {}
-                                : {
-                                      baseURL: Schema.string()
-                                          .default(baseURL)
-                                          .role("link")
-                                          .description("API 地址（切换协议时请核对；保留中转地址的完整路径）"),
-                                  }),
-                        }),
-                    ),
-                ),
-            ]);
+            return Schema.object({
+                // Provider type determines the wire protocol; compatible gateways use OpenAI Compatible.
+                type: type === DEFAULT_PROVIDER_TYPE ? Schema.const(type) : Schema.const(type).required(),
+                ...(type === "Workers AI"
+                    ? {
+                          accountId: Schema.string()
+                              .pattern(/^[a-zA-Z0-9_-]+$/)
+                              .required()
+                              .description("Cloudflare 账户 ID"),
+                      }
+                    : {
+                          baseURL: Schema.string()
+                              .default(PROVIDERS[type].baseURL)
+                              .role("link")
+                              .description(
+                                  ["Google Gemini", "Anthropic", "Qwen", "Ollama", "LM Studio"].includes(type)
+                                      ? "原生 API 根地址（兼容服务请选择 OpenAI Compatible）"
+                                      : "提供商的 API 地址",
+                              ),
+                      }),
+                apiKey: Schema.string()
+                    .role("secret")
+                    .description(`提供商的 API 密钥${PROVIDERS[type].link ? ` (获取地址 - ${PROVIDERS[type].link})` : ""}`),
+                proxy: Schema.string().description("代理地址"),
+                models: Schema.array(
+                    type === "Anthropic" ? NativeAnthropicModelConfigSchema : type === "LM Studio" ? NativeLMStudioModelConfigSchema : ModelConfigSchema,
+                )
+                    .required()
+                    .description("模型列表"),
+            });
         }),
     ),
 ])
