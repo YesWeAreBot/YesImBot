@@ -6,6 +6,7 @@ import { Computed, Schema } from "koishi";
 import { SystemConfig } from "../config";
 import { PROMPTS_DIR } from "../shared/constants";
 import type { TopicConfig } from "./topics";
+import { DEFAULT_WILLINGNESS_POLICY, type WillingnessPolicyConfig } from "./willingness-policy";
 
 export const SystemBaseTemplate = readFileSync(path.resolve(PROMPTS_DIR, "memgpt_v2_chat.txt"), "utf-8");
 export const UserBaseTemplate = readFileSync(path.resolve(PROMPTS_DIR, "user_base.txt"), "utf-8");
@@ -66,6 +67,7 @@ export interface ContinuationConfig {
 
 export interface WillingnessConfig {
     continuation?: ContinuationConfig;
+    willingnessPolicy?: WillingnessPolicyConfig;
     topics?: TopicConfig;
     participation?: {
         enabled: boolean;
@@ -125,6 +127,48 @@ const WillingnessConfigSchema: Schema<WillingnessConfig> = Schema.object({
     })
         .collapse()
         .description("会话续接（模型显式登记，默认关闭；仍遵守回复控制与新消息处理策略）"),
+    willingnessPolicy: Schema.object({
+        algorithm: Schema.union([Schema.const("legacy").description("原有算法"), Schema.const("balanced").description("群聊平衡算法（实验性）")])
+            .default("legacy")
+            .description("意愿算法；默认保持原有行为"),
+        windowSeconds: Schema.number()
+            .min(1)
+            .max(86400)
+            .default(DEFAULT_WILLINGNESS_POLICY.windowSeconds)
+            .description("平衡算法：增减分额度完全回补所需时间（秒）"),
+        ordinaryGainLimit: Schema.number()
+            .min(0)
+            .max(1000000)
+            .default(DEFAULT_WILLINGNESS_POLICY.ordinaryGainLimit)
+            .description("平衡算法：普通消息增益额度，同一会话的话题共享"),
+        decisionIntervalSeconds: Schema.number()
+            .min(0)
+            .max(86400)
+            .default(DEFAULT_WILLINGNESS_POLICY.decisionIntervalSeconds)
+            .description("平衡算法：普通消息两次概率判定的最短间隔（秒），0 不限制"),
+        othersPenalty: Schema.number()
+            .min(0)
+            .max(1000000)
+            .default(DEFAULT_WILLINGNESS_POLICY.othersPenalty)
+            .description("平衡算法：明确提及或引用他人时的减分，0 关闭"),
+        negativeGainLimit: Schema.number()
+            .min(0)
+            .max(1000000)
+            .default(DEFAULT_WILLINGNESS_POLICY.negativeGainLimit)
+            .description("平衡算法：面向他人减分额度，逐渐回补，避免连续消息过度扣分"),
+        replyPenalty: Schema.number()
+            .min(0)
+            .max(1000000)
+            .default(DEFAULT_WILLINGNESS_POLICY.replyPenalty)
+            .description("平衡算法：每个成功回复回合产生的短期插话压力，0 关闭；只降低普通消息概率"),
+        replyPenaltyHalfLifeSeconds: Schema.number()
+            .min(1)
+            .max(86400)
+            .default(DEFAULT_WILLINGNESS_POLICY.replyPenaltyHalfLifeSeconds)
+            .description("平衡算法：短期插话压力半衰期（秒）"),
+    })
+        .collapse()
+        .description("意愿算法选择（切换算法不会改变忙时处理策略）"),
     topics: Schema.object({
         enabled: Schema.boolean().default(false).experimental().description("启用实验性话题意愿，默认关闭；识别可能滞后或不准确，请按实际聊天效果调整"),
         model: Schema.dynamic("modelService.selectableModels").description("话题总结模型（需具备对话能力；启用后会发送近期聊天内容）"),
