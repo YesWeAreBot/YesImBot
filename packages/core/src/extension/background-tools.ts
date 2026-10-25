@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { Context, Schema, Session } from "koishi";
 
-import type { BackgroundToolsConfig } from "../agent/config";
+import { DEFAULT_BACKGROUND_TOOLS, type BackgroundToolsConfig } from "../agent/config";
 import { guardReplySession, withReplyTurn } from "../agent/reply-turn";
 import { conversationChannelId, conversationCid } from "../shared/utils/conversation-scope";
 import type { WorldStateService } from "../world";
@@ -134,17 +134,22 @@ export class BackgroundTools {
         }
     }
 
+    private allows(toolName: string): boolean {
+        const selected = this.config.allowedTools ?? DEFAULT_BACKGROUND_TOOLS;
+        return !toolName.startsWith("background_task_") && Array.isArray(selected) && selected.includes(toolName);
+    }
+
     public start(source: Session | undefined, toolName: string, params: Record<string, unknown>, requestId?: string) {
         if (!source) throw new Error("缺少来源会话");
         const context = this.capture(source),
             session = context.session;
         context.assertCurrent();
         const definition = this.tools.getTool(toolName, session);
-        if (!definition?.background || toolName.startsWith("background_task_")) throw new Error("该工具不允许后台执行");
+        if (!definition?.background || !this.allows(toolName)) throw new Error("该工具不允许后台执行");
         const assertScope = context.assertCurrent;
         context.assertCurrent = () => {
             assertScope();
-            if (this.tools.getTool(toolName, session) !== definition) throw new Error("后台任务工具已停用或权限已撤销");
+            if (!this.allows(toolName) || this.tools.getTool(toolName, session) !== definition) throw new Error("后台任务工具已停用或权限已撤销");
         };
         const validated = structuredClone(definition.parameters(params));
         this.pruneContexts();
@@ -210,7 +215,7 @@ export class BackgroundTools {
             tasks: this.registry.list(owner, 20),
             tools: this.tools
                 .getAvailableTools(session)
-                .filter((tool) => tool.background)
+                .filter((tool) => tool.background && this.allows(tool.name))
                 .map((tool) => tool.name),
         };
     }

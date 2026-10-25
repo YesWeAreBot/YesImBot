@@ -35,6 +35,7 @@ function setup() {
         stopped: false,
         decisions,
         pendingAssessments: new Map(),
+        topicScores: new Map(),
         activeTurns: new Map(),
         willing: new WillingnessManager(ctx, config, loggingStub(logger)),
         scheduler: { noteUserMessage() {}, isBusy: () => false, schedule: (s: any) => scheduled.push(s) },
@@ -163,4 +164,111 @@ it("separates Telegram topic decisions, scheduler keys, willingness and mute che
     } finally {
         Math.random = random;
     }
+});
+
+function continuationSetup(mode = "trigger") {
+    const t = setup();
+    t.ctx.filter = () => true;
+    t.core.config.lifecycle.probabilityThreshold = 99;
+    t.core.config.continuation = { enabled: true, mode, willingnessGain: 35, maxDurationSeconds: 300 };
+    const state = {
+        unknown: false,
+        state: {
+            revision: 1,
+            topic: "",
+            openIssues: [],
+            sourceMessageIds: ["original"],
+            updatedAt: new Date().toISOString(),
+            followUp: { userIds: ["u"], expiresAt: Date.now() + 60000 },
+        },
+    };
+    t.core.worldState.getConversationState = async () => state;
+    t.core.worldState.isChannelAllowed = () => true;
+    t.core.worldState.l2_manager = { getHistoryGeneration: () => 0 };
+    return { ...t, state };
+}
+const nextTick = () => new Promise((resolve) => setTimeout(resolve, 0));
+it("admits an explicit continuation despite low willingness without an extra model request", async () => {
+    const t = continuationSetup();
+    t.core.receiveStimulus({ type: "user_message", session: t.session, payload: { messageIds: ["incoming"] } });
+    await nextTick();
+    expect(t.scheduled).toHaveLength(1);
+    expect(t.scheduled[0].continuation).toMatchObject({ revision: 1, sourceMessageIds: ["original"] });
+    expect(t.decisions.latest(t.target)?.reason).toBe("conversation_continuation");
+    expect(t.core.willing.getCurrentWillingness(t.decisions.latest(t.target)!.key)).toBe(12);
+});
+it("can only add willingness and leaves the final probability decision in place", async () => {
+    const t = continuationSetup("willingness");
+    t.core.receiveStimulus({ type: "user_message", session: t.session });
+    await nextTick();
+    expect(t.scheduled).toHaveLength(0);
+    expect(t.decisions.latest(t.target)?.calculation).toMatchObject({ before: 0, after: 47, continuationGain: 35 });
+});
+it("falls back to ordinary willingness if validated state cannot be read", async () => {
+    const t = continuationSetup();
+    t.core.worldState.getConversationState = async () => {
+        throw new Error("database failure");
+    };
+    t.core.receiveStimulus({ type: "user_message", session: t.session });
+    await nextTick();
+    expect(t.scheduled).toHaveLength(0);
+    expect(t.decisions.latest(t.target)?.calculation?.after).toBe(12);
+});
+it.each(["identity", "history", "permission", "pause", "stop", "mute"])("does not admit a pending continuation after %s changes", async (change) => {
+    const t = continuationSetup();
+    let release!: (state: unknown) => void;
+    t.core.worldState.getConversationState = () =>
+        new Promise((resolve) => {
+            release = resolve;
+        });
+    t.core.receiveStimulus({ type: "user_message", session: t.session });
+    await nextTick();
+    if (change === "identity") t.session.channelId = "other";
+    if (change === "history") t.core.worldState.l2_manager.getHistoryGeneration = () => 1;
+    if (change === "permission") t.core.worldState.isChannelAllowed = () => false;
+    if (change === "pause") await t.core.replyControl.set(t.target, ["all"], 1000);
+    if (change === "stop") t.core.stopped = true;
+    if (change === "mute") t.core.worldState.isBotMuted = () => true;
+    release(t.state);
+    await nextTick();
+    expect(t.scheduled).toHaveLength(0);
+    expect(t.core.willing.getCurrentWillingness(t.decisions.latest(t.target)!.key)).toBe(0);
+});
+
+it("does not defer busy-message admission behind continuation database reads", () => {
+    const t = continuationSetup();
+    t.core.scheduler.isBusy = () => true;
+    let reads = 0;
+    t.core.worldState.getConversationState = async () => {
+        reads++;
+        return t.state;
+    };
+    t.core.receiveStimulus({ type: "user_message", session: t.session });
+    expect(reads).toBe(0);
+    expect(t.decisions.latest(t.target)?.calculation?.after).toBe(12);
+});
+it("marks only continuation-dependent admission for expiration cancellation", async () => {
+    const t = continuationSetup();
+    t.core.config.prioritizeMentions = true;
+    t.session.elements = [{ type: "at", attrs: { id: "bot" } }];
+    t.core.receiveStimulus({ type: "user_message", session: t.session });
+    await nextTick();
+    expect(t.scheduled).toHaveLength(1);
+    expect(t.scheduled[0].continuationRequired).toBe(false);
+});
+
+it("does not revive a read admitted before a mute and immediate unmute", async () => {
+    const t = continuationSetup();
+    let release!: (state: unknown) => void;
+    t.core.worldState.getConversationState = () =>
+        new Promise((resolve) => {
+            release = resolve;
+        });
+    t.core.receiveStimulus({ type: "user_message", session: t.session });
+    await nextTick();
+    t.core.resetWillingness(t.decisions.latest(t.target)!.key);
+    release(t.state);
+    await nextTick();
+    expect(t.scheduled).toHaveLength(0);
+    expect(t.decisions.latest(t.target)?.stage).toBe("cancelled");
 });

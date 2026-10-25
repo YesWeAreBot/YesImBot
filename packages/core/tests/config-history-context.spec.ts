@@ -6,6 +6,7 @@ import { test, vi } from "vitest";
 import { AgentBehaviorConfigSchema } from "../src/agent/config";
 import { TopicManager } from "../src/agent/topics";
 import { ModelConfigSchema } from "../src/model/config";
+import { parseContextLimit } from "../src/model/context-limit";
 import { loggingStub } from "./helpers/yesimbot";
 
 test("context settings expose one collapsible section", () => {
@@ -13,18 +14,21 @@ test("context settings expose one collapsible section", () => {
     assert.equal(context.meta.collapse, true);
 });
 
-test("custom context settings expose a primitive input", () => {
+test("custom context settings expose a native capacity table", () => {
     const context = ModelConfigSchema.dict!.contextLimit;
     const branch = context.list![1].list!.find((item) => item.dict?.mode.value === "custom")!;
-    assert.equal(branch.dict!.value.type, "string");
+    assert.equal(branch.dict!.value.type, "union");
     assert.equal(branch.dict!.value.meta.required, true);
-    assert.equal(branch.dict!.value.meta.role, "yib-context-capacity");
+    assert.equal(branch.dict!.value.list![0].meta.role, "table");
 });
 
 test("context schema preserves custom values and validates the declared capacity", () => {
     assert.equal(ModelConfigSchema({ modelId: "m" }).contextLimit?.mode, "unset");
     for (const value of ["131072.5", "128K", "1M", "1m", " .5 k "]) {
-        assert.equal(ModelConfigSchema({ modelId: "m", contextLimit: { mode: "custom", value } }).contextLimit?.value, value);
+        assert.equal(
+            parseContextLimit(ModelConfigSchema({ modelId: "m", contextLimit: { mode: "custom", value } }).contextLimit!.value!),
+            parseContextLimit(value),
+        );
     }
     for (const value of ["0", "-1", "NaN", "Infinity", "1G", "9007199254740992", "1".repeat(4097)]) {
         assert.throws(() => ModelConfigSchema({ modelId: "m", contextLimit: { mode: "custom", value } }));
@@ -37,7 +41,7 @@ test("context schema preserves custom values and validates the declared capacity
 
 test("custom capacities validate after console schema serialization", () => {
     const consoleSchema = new Schema(JSON.parse(JSON.stringify(ModelConfigSchema)));
-    assert.equal(consoleSchema({ modelId: "m", contextLimit: { mode: "custom", value: "1M" } }).contextLimit?.value, "1M");
+    assert.equal(parseContextLimit(consoleSchema({ modelId: "m", contextLimit: { mode: "custom", value: "1M" } }).contextLimit.value), 1000000);
     for (const value of ["0", "1G", "9007199254740992"]) {
         assert.throws(() => consoleSchema({ modelId: "m", contextLimit: { mode: "custom", value } }));
     }
