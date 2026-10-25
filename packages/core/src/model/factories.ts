@@ -73,7 +73,7 @@ class OllamaFactory implements IProviderFactory {
 
 class AnthropicFactory implements IProviderFactory {
     public createClient(config: ProviderConfig): IProviderClient {
-        const { apiKey, baseURL } = config;
+        const { apiKey, baseURL = "https://api.anthropic.com/v1/" } = config;
         const client = createAnthropic(apiKey, baseURL);
         return { chat: client.chat, model: client.model };
     }
@@ -129,7 +129,12 @@ class DeepSeekFactory implements IProviderFactory {
 
 class GoogleGenerativeAIFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
-        const { apiKey, baseURL } = config;
+        const {
+            apiKey,
+            baseURL = config.protocol === "gemini-native"
+                ? "https://generativelanguage.googleapis.com/v1beta/"
+                : "https://generativelanguage.googleapis.com/v1beta/openai/",
+        } = config;
         const client = createGoogleGenerativeAI(apiKey, baseURL);
         return { chat: client.chat, embed: client.embed, model: client.model };
     }
@@ -137,7 +142,7 @@ class GoogleGenerativeAIFactory implements IProviderFactory {
 
 class LMStudioFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
-        const { baseURL } = config;
+        const { baseURL = "http://localhost:1234/v1/" } = config;
         const client = createLMStudio(baseURL);
         return { chat: client.chat, embed: client.embed, model: client.model };
     }
@@ -179,7 +184,7 @@ class QwenFactory implements IProviderFactory {
  */
 class WorkersAIFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
-        const { apiKey, accountId } = config as ProviderConfig & { accountId: string };
+        const { apiKey, accountId } = config;
         if (!accountId) {
             throw new Error("WorkersAIFactory: `accountId` is required in the provider configuration.");
         }
@@ -222,7 +227,7 @@ class GroqFactory implements IProviderFactory {
 
 class MinimaxFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
-        const { apiKey, baseURL } = config;
+        const { apiKey, baseURL = "https://api.minimax.cn/v1/" } = config;
         const client = createMinimax(apiKey, baseURL);
         return { chat: client.chat };
     }
@@ -230,7 +235,7 @@ class MinimaxFactory implements IProviderFactory {
 
 class MinimaxiFactory implements IProviderFactory {
     createClient(config: ProviderConfig): IProviderClient {
-        const { apiKey, baseURL } = config;
+        const { apiKey, baseURL = "https://api.minimax.io/v1/" } = config;
         const client = createMinimaxi(apiKey, baseURL);
         return { chat: client.chat };
     }
@@ -340,6 +345,7 @@ class FactoryRegistry {
         // this.register("Azure OpenAI", new AzureOpenAIFactory());
         this.register("Cerebras", new CerebrasFactory());
         this.register("DeepInfra", new DeepInfraFactory());
+        this.register("Featherless AI", new FatherlessAIFactory());
         this.register("Fatherless AI", new FatherlessAIFactory());
         this.register("Groq", new GroqFactory());
         this.register("Minimax", new MinimaxFactory());

@@ -185,6 +185,18 @@ export const ModelConfigSchema: Schema<ModelConfig> = Schema.object({
         .description("断路器策略"),
 }).description("单个模型配置");
 
+// Anthropic models have differing sampling constraints; leave sampling unset unless explicitly configured.
+const NativeAnthropicModelConfigSchema = Schema.object({
+    ...ModelConfigSchema.dict!,
+    parameters: Schema.object({
+        ...ModelConfigSchema.dict!.parameters.dict!,
+        temperature: Schema.number().description("采样温度（可选，请遵循模型限制）"),
+        topP: Schema.number().description("核采样概率（可选，请遵循模型限制）"),
+    })
+        .collapse()
+        .description("生成参数"),
+}).description("单个模型配置") as Schema<ModelConfig>;
+
 const PROVIDERS = {
     TypeSafe: { baseURL: "https://api.typesafe.ai/v1/", link: "https://typesafe.ai/" },
     OpenAI: { baseURL: "https://api.openai.com/v1/", link: "https://platform.openai.com/account/api-keys" },
@@ -196,7 +208,7 @@ const PROVIDERS = {
         baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
         link: "https://aistudio.google.com/app/apikey",
     },
-    "LM Studio": { baseURL: "http://localhost:5000/v1/", link: "https://lmstudio.ai/docs/app/api/endpoints/openai" },
+    "LM Studio": { baseURL: "http://localhost:1234/v1/", link: "https://lmstudio.ai/docs/developer/openai-compat" },
     "Workers AI": { baseURL: "https://api.cloudflare.com/client/v4/", link: "https://dash.cloudflare.com/?to=/:account/workers-ai" },
     Zhipu: { baseURL: "https://open.bigmodel.cn/api/paas/v4/", link: "https://open.bigmodel.cn/usercenter/apikeys" },
     "Silicon Flow": { baseURL: "https://api.siliconflow.cn/v1/", link: "https://console.siliconflow.cn/account/key" },
@@ -208,17 +220,18 @@ const PROVIDERS = {
     // },
     Cerebras: { baseURL: "https://api.cerebras.ai/v1/", link: "https://inference-docs.cerebras.ai/api-reference/chat-completions" },
     DeepInfra: { baseURL: "https://api.deepinfra.com/v1/openai/", link: "https://deepinfra.com/dash/api_keys" },
+    "Featherless AI": { baseURL: "https://api.featherless.ai/v1/", link: "https://featherless.ai/login" },
     "Fatherless AI": { baseURL: "https://api.featherless.ai/v1/", link: "https://featherless.ai/login" },
     Groq: { baseURL: "https://api.groq.com/openai/v1/", link: "https://console.groq.com/keys" },
-    Minimax: { baseURL: "https://api.minimax.chat/v1/", link: "https://platform.minimaxi.com/api-key" },
-    "Minimax (International)": { baseURL: "https://api.minimaxi.chat/v1/", link: "https://www.minimax.io/user-center/api-keys" },
+    Minimax: { baseURL: "https://api.minimax.cn/v1/", link: "https://platform.minimaxi.com/api-key" },
+    "Minimax (International)": { baseURL: "https://api.minimax.io/v1/", link: "https://platform.minimax.io/console/access" },
     Mistral: { baseURL: "https://api.mistral.ai/v1/", link: "https://console.mistral.ai/api-keys/" },
     Moonshot: { baseURL: "https://api.moonshot.cn/v1/", link: "https://platform.moonshot.cn/console/api-keys" },
     Novita: { baseURL: "https://api.novita.ai/v3/openai/", link: "https://novita.ai/get-started" },
     OpenRouter: { baseURL: "https://openrouter.ai/api/v1/", link: "https://openrouter.ai/keys" },
     Perplexity: { baseURL: "https://api.perplexity.ai/", link: "https://www.perplexity.ai/settings/api" },
     Stepfun: { baseURL: "https://api.stepfun.com/v1/", link: "https://platform.stepfun.com/my-keys" },
-    "Tencent Hunyuan": { baseURL: "https://api.hunyuan.cloud.tencent.com/v1/", link: "https://console.cloud.tencent.com/cam/capi" },
+    "Tencent Hunyuan": { baseURL: "https://api.hunyuan.cloud.tencent.com/v1/", link: "https://console.cloud.tencent.com/hunyuan/start" },
     "Together AI": { baseURL: "https://api.together.xyz/v1/", link: "https://api.together.ai/settings/api-keys" },
     "XAI (Grok)": { baseURL: "https://api.x.ai/v1/", link: "https://docs.x.ai/docs/overview" },
 } as const;
@@ -229,10 +242,14 @@ export type ProviderType = keyof typeof PROVIDERS;
 
 const DEFAULT_PROVIDER_TYPE: ProviderType = "OpenAI";
 
+export type ProviderProtocol = "openai-compatible" | "gemini-native" | "anthropic-native";
+
 export interface ProviderConfig {
     name: string;
     type: ProviderType;
     baseURL?: string;
+    protocol?: ProviderProtocol;
+    accountId?: string;
     apiKey: string;
     proxy?: string;
     models: ModelConfig[];
@@ -241,20 +258,61 @@ export interface ProviderConfig {
 export const ProviderConfigSchema: Schema<ProviderConfig> = Schema.intersect([
     Schema.object({
         name: Schema.string().required().description("提供商名称"),
-        type: Schema.union(PROVIDER_TYPES).default(DEFAULT_PROVIDER_TYPE).description("提供商类型"),
+        type: Schema.union(PROVIDER_TYPES.map((type) => Schema.const(type).description(type === "Fatherless AI" ? "Featherless AI（旧配置名称）" : type)))
+            .default(DEFAULT_PROVIDER_TYPE)
+            .description("提供商类型"),
     }),
     Schema.union(
         PROVIDER_TYPES.map((type) => {
-            return Schema.object({
-                // Only the default branch may match when the provider type is omitted.
-                type: type === DEFAULT_PROVIDER_TYPE ? Schema.const(type) : Schema.const(type).required(),
-                baseURL: Schema.string().default(PROVIDERS[type].baseURL).role("link").description(`提供商的 API 地址`),
-                apiKey: Schema.string()
-                    .role("secret")
-                    .description(`提供商的 API 密钥${PROVIDERS[type].link ? ` (获取地址 - ${PROVIDERS[type].link})` : ""}`),
-                proxy: Schema.string().description("代理地址"),
-                models: Schema.array(ModelConfigSchema).required().description("模型列表"),
-            });
+            const protocols: Array<{ value: ProviderProtocol; label: string; baseURL: string }> = [
+                {
+                    value: "openai-compatible",
+                    label: type === "TypeSafe" ? "TypeSafe 评估接口" : "OpenAI 兼容（保留原有行为）",
+                    baseURL: PROVIDERS[type].baseURL,
+                },
+            ];
+            if (type === "Google Gemini")
+                protocols.push({ value: "gemini-native", label: "Gemini 原生", baseURL: "https://generativelanguage.googleapis.com/v1beta/" });
+            if (type === "Anthropic") protocols.push({ value: "anthropic-native", label: "Anthropic 原生", baseURL: "https://api.anthropic.com/v1/" });
+            return Schema.intersect([
+                Schema.object({
+                    // Only the default branch may match when the provider type is omitted.
+                    type: type === DEFAULT_PROVIDER_TYPE ? Schema.const(type) : Schema.const(type).required(),
+                    protocol: Schema.union(protocols.map(({ value, label }) => Schema.const(value).description(label)))
+                        .default("openai-compatible")
+                        .description("接入协议"),
+                    ...(type === "Workers AI"
+                        ? {
+                              accountId: Schema.string()
+                                  .pattern(/^[a-zA-Z0-9_-]+$/)
+                                  .required()
+                                  .description("Cloudflare 账户 ID"),
+                          }
+                        : {}),
+                    apiKey: Schema.string()
+                        .role("secret")
+                        .description(`提供商的 API 密钥${PROVIDERS[type].link ? ` (获取地址 - ${PROVIDERS[type].link})` : ""}`),
+                    proxy: Schema.string().description("代理地址"),
+                }),
+                Schema.union(
+                    protocols.map(({ value, baseURL }) =>
+                        Schema.object({
+                            protocol: value === "openai-compatible" ? Schema.const(value).default(value) : Schema.const(value).required(),
+                            models: Schema.array(value === "anthropic-native" ? NativeAnthropicModelConfigSchema : ModelConfigSchema)
+                                .required()
+                                .description("模型列表"),
+                            ...(type === "Workers AI"
+                                ? {}
+                                : {
+                                      baseURL: Schema.string()
+                                          .default(baseURL)
+                                          .role("link")
+                                          .description("API 地址（切换协议时请核对；保留中转地址的完整路径）"),
+                                  }),
+                        }),
+                    ),
+                ),
+            ]);
         }),
     ),
 ])

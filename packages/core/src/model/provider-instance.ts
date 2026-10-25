@@ -10,6 +10,7 @@ import { ContextLimitResult, contextMetadataURL, parseContextLimit, readContextL
 import { EmbedModel, IEmbedModel } from "./embed-model";
 import { EvaluationModel } from "./evaluation-model";
 import { IProviderClient } from "./factories";
+import { createNativeFetch } from "./native-fetch";
 import type { UsageOwner } from "./usage-owner";
 
 export class ProviderInstance {
@@ -41,6 +42,8 @@ export class ProviderInstance {
         } else {
             this.fetch = ufetch as unknown as typeof globalThis.fetch;
         }
+
+        this.fetch = createNativeFetch(config, this.fetch);
 
         // this.logger.info(`[初始化] 🔌 提供商实例已创建`);
     }
