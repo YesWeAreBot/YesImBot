@@ -22,12 +22,6 @@ export function createNativeFetch(config: ProviderConfig, transport: typeof glob
     if (!protocol || protocol === "chat-completions") return transport;
     const base = new URL(getProviderBaseURL(config));
     if (!["http:", "https:"].includes(base.protocol) || base.username || base.password) throw new Error("原生 API 地址必须为不含凭据的 HTTP(S) URL");
-    if (
-        /\/openai\/?$/.test(base.pathname) ||
-        /\/compatible-mode\//.test(base.pathname) ||
-        (["ollama-native", "lmstudio-native"].includes(protocol) && /\/v1\/?$/.test(base.pathname))
-    )
-        throw new Error("该提供商使用原生 API，请填写原生根地址；兼容端点请选择 OpenAI Compatible");
     if (protocol === "ollama-native") return createOllamaFetch(config, transport);
     if (protocol === "qwen-native") return createQwenFetch(config, transport);
     if (protocol === "workers-native") return createWorkersFetch({ ...config, baseURL: base.href }, transport);

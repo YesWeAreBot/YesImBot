@@ -241,7 +241,6 @@ function stream(response: Response, selected: unknown): Response {
 export function createQwenFetch(config: ProviderConfig, transport: typeof globalThis.fetch): typeof globalThis.fetch {
     const base = new URL(config.baseURL || "https://dashscope.aliyuncs.com/api/v1/");
     if (!["http:", "https:"].includes(base.protocol) || base.username || base.password) throw new Error("Qwen API 根地址无效");
-    if (/\/compatible-mode\//.test(base.pathname)) throw new Error("Qwen 使用原生 API；兼容端点请选择 OpenAI Compatible");
     base.pathname = base.pathname.replace(/\/?$/, "/");
     return (async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);

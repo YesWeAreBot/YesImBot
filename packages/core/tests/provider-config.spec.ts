@@ -96,14 +96,16 @@ describe("provider configuration", () => {
             expect(sent?.pathname).toBe(path);
         }
     });
-    it("rejects stale compatibility roots locally and directs users to the generic compatible provider", () => {
+    it("does not preflight or rewrite configured compatibility paths", () => {
         for (const [type, baseURL] of [
             ["Google Gemini", "https://generativelanguage.googleapis.com/v1beta/openai/"],
             ["Qwen", "https://dashscope.aliyuncs.com/compatible-mode/v1/"],
             ["Ollama", "http://localhost:11434/v1/"],
             ["LM Studio", "http://localhost:1234/v1/"],
         ]) {
-            expect(() => createNativeFetch(config(type, { baseURL }), fetch)).toThrow(/OpenAI Compatible/);
+            const value = config(type, { baseURL });
+            expect(() => createNativeFetch(value, fetch)).not.toThrow();
+            expect(value.baseURL).toBe(baseURL);
             expect(createNativeFetch(config("OpenAI Compatible", { baseURL }), fetch)).toBe(fetch);
         }
     });
