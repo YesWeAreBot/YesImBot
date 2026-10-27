@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { withReplyTurn } from "../src/agent/reply-turn";
 import CoreUtilExtension from "../src/extension/builtin/core-util";
+import { MessageDeliveryError } from "../src/shared/message-delivery";
 
 function setup(send: (...args: any[]) => Promise<string[]> = async () => ["sent"]) {
     const events: any[] = [];
@@ -99,6 +100,51 @@ describe("send_message delivery", () => {
         expect(events).toEqual([]);
     });
 
+    it("retains HTTP status and QQ error details without serializing request credentials", async () => {
+        const error = Object.assign(new Error("request failed"), {
+            code: "ERR_BAD_RESPONSE",
+            response: { status: 400, data: { code: 40054005, message: "duplicate sequence", trace_id: "qq-trace" }, headers: { authorization: "secret" } },
+            config: { headers: { Authorization: "secret" } },
+        });
+        const { tool, session } = setup(async () => {
+            throw error;
+        });
+        const result = await tool.sendMessage({ session, message: "hello" } as any);
+        expect(result.error?.message).toContain("40054005");
+        expect(result.error?.message).toContain("duplicate sequence");
+        expect(result.error?.message).toContain("400");
+        expect(result.error?.message).toContain("qq-trace");
+        expect(result.error?.message).not.toContain("secret");
+    });
+
+    it("does not accept empty message IDs as confirmed delivery", async () => {
+        const { tool, session, events } = setup(async () => [""]);
+        expect((await tool.sendMessage({ session, message: "hello" } as any)).status).toBe("error");
+        expect(events).toEqual([]);
+    });
+
+    it("records encoder-confirmed messages even when the same send rejects", async () => {
+        const { tool, session, events } = setup(async () => {
+            throw new MessageDeliveryError(new AggregateError([new Error("image refused")]), [{ id: "text-sent", content: "text only" }]);
+        });
+        const result = await tool.sendMessage({ session, message: 'text only<img src="file:///image.png"/>' } as any);
+        expect(result.status).toBe("error");
+        expect(result.error?.message).toContain("image refused");
+        expect(result.error?.retryable).toBe(false);
+        expect(result.metadata?.delivery.messageIds).toEqual(["text-sent"]);
+        expect(events).toHaveLength(1);
+        expect(events[0][1].event.message).toMatchObject({ id: "text-sent", content: "text only" });
+    });
+
+    it("does not record the full attempted body when a partial encoder receipt has no content", async () => {
+        const { tool, session, events } = setup(async () => {
+            throw new MessageDeliveryError(new Error("image refused"), [{ id: "text-sent" }]);
+        });
+        const result = await tool.sendMessage({ session, message: 'text<img src="file:///not-sent.png"/>' } as any);
+        expect(result.metadata?.delivery.messageIds).toEqual(["text-sent"]);
+        expect(events[0][1].event.message.content).toBe("");
+    });
+
     it("retains nested errors and ordinary errors", async () => {
         const nested = Object.assign(new Error("aggregate"), {
             errors: [Object.assign(new Error(""), { errors: [new Error("inner reason")] }), new Error("second reason")],
@@ -148,6 +194,9 @@ describe("send_message delivery", () => {
         expect(result.status).toBe("error");
         expect(result.error?.message).toContain("later paragraph refused");
         expect(attempted).toEqual(["first", "second"]);
+        expect(result.metadata?.delivery).toMatchObject({ messageIds: ["first-sent"], sentMessages: 1, totalMessages: 3 });
+        expect(result.error?.retryable).toBe(false);
+        expect(result.error?.message).toContain("已完整发送 1/3 段");
         expect(events.length).toBe(1);
         expect(events[0][1].event.message.id).toBe("first-sent");
     });
