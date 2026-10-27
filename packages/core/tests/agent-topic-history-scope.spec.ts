@@ -123,6 +123,7 @@ it("binds heartbeat clear watches and all interaction writes to canonical topic 
                 return { status: "success" };
             },
         },
+        contextBuilder: { commitMultimodalUsage() {} },
         _prepareLlmRequest: async () => ({ messages: [], manualRecallIds: [] }),
     });
     for (const guildId of ["-10001", "-10002"]) {

@@ -323,6 +323,7 @@ export class HeartbeatProcessor {
         });
 
         assertReplyTurn();
+        this.contextBuilder.commitMultimodalUsage?.(messages);
         const prompt_tokens = llmRawResponse.usage?.prompt_tokens || `~${estimateTokensByRegex(messages.map((m) => m.content).join())}`;
         const completion_tokens = llmRawResponse.usage?.completion_tokens || `~${estimateTokensByRegex(llmRawResponse.text ?? "")}`;
         this.logger.info(`💰 Token 消耗 | 输入: ${prompt_tokens} | 输出: ${completion_tokens}`);
@@ -465,6 +466,7 @@ export class HeartbeatProcessor {
 
         // 模型重试和切换结束后，以最终响应为唯一动作来源。
         assertReplyTurn();
+        this.contextBuilder.commitMultimodalUsage?.(messages);
         const response = this.parseAndValidateResponse(llmRawResponse, conversationCid(session));
         if (!response) return null;
         await this.interactionManager.recordThought(turnId, platform, channelId, response.thoughts, manualRecallIds);
@@ -573,6 +575,7 @@ export class HeartbeatProcessor {
             abortSignal: replyTurnSignal(),
         });
         assertReplyTurn();
+        this.contextBuilder.commitMultimodalUsage?.(messages);
         if (!response.toolCalls?.length) {
             const legacy = this.parseAndValidateResponse(response, conversationCid(session));
             if (!legacy) throw new Error("模型没有返回有效工具调用");

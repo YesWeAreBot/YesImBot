@@ -296,7 +296,9 @@ export const ModelServiceConfigSchema: Schema<ModelServiceConfig> = Schema.objec
         })
             .collapse()
             .description("模型组"),
-    ).description("模型组，用于故障转移或分类。修改提供商或模型后，先启动/重载插件以更新可选模型"),
+    )
+        .role("yib-model-groups")
+        .description("模型组，用于故障转移或分类。修改提供商或模型后，先启动/重载插件以更新可选模型"),
     task: Schema.object({
         [TaskType.Chat]: Schema.dynamic("modelService.availableGroups").description("聊天任务使用的模型组"),
         [TaskType.Embedding]: Schema.dynamic("modelService.availableGroups").description("语义记忆生成文本嵌入（Embedding）时使用的模型组"),

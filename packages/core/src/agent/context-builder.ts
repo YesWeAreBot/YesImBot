@@ -19,6 +19,7 @@ interface ImageCandidate {
     id: string;
     timestamp: number;
     priority: number;
+    sourceId: string;
 }
 
 /**
@@ -33,6 +34,24 @@ export class PromptContextBuilder {
     private readonly worldStateService: WorldStateService;
     private readonly modelSwitcher: ChatModelSwitcher;
     private imageLifecycleTracker = new Map<string, number>();
+    private pendingImageUsage = new WeakMap<object, string[]>();
+
+    /** Count an image once only after the model request succeeds. Failed requests retain their allowance. */
+    public commitMultimodalUsage(messages: Array<{ content?: unknown }>): void {
+        for (const message of messages) {
+            if (!message.content || typeof message.content !== "object") continue;
+            const keys = this.pendingImageUsage.get(message.content);
+            if (!keys) continue;
+            this.pendingImageUsage.delete(message.content);
+            for (const key of keys) {
+                const count = this.imageLifecycleTracker.get(key) ?? 0;
+                this.imageLifecycleTracker.delete(key);
+                this.imageLifecycleTracker.set(key, Math.min(count + 1, Math.max(0, this.config.imageLifecycleCount)));
+            }
+        }
+        // Retain a bounded recent working set rather than every image seen since startup.
+        while (this.imageLifecycleTracker.size > 4096) this.imageLifecycleTracker.delete(this.imageLifecycleTracker.keys().next().value!);
+    }
 
     constructor(
         private readonly ctx: Context,
@@ -234,7 +253,13 @@ export class PromptContextBuilder {
         const multiModalData = await this.buildMultimodalImages(worldState);
         if (multiModalData.images.length > 0) {
             this.logger.debug(`上下文包含 ${multiModalData.images.length / 2} 张图片，将构建多模态消息。`);
-            return [{ type: "text", text: this.config.multiModalSystemTemplate }, ...multiModalData.images, { type: "text", text: userPromptText }];
+            const content = [
+                { type: "text" as const, text: this.config.multiModalSystemTemplate },
+                ...multiModalData.images,
+                { type: "text" as const, text: userPromptText },
+            ];
+            this.pendingImageUsage.set(content, multiModalData.usageKeys);
+            return content;
         }
 
         return userPromptText;
@@ -246,7 +271,7 @@ export class PromptContextBuilder {
      * @param worldState 当前的世界状态
      * @returns 包含筛选后的图片内容的对象
      */
-    private async buildMultimodalImages(worldState: WorldState): Promise<{ images: Array<ImagePart | TextPart> }> {
+    private async buildMultimodalImages(worldState: WorldState): Promise<{ images: Array<ImagePart | TextPart>; usageKeys: string[] }> {
         // 1. 将所有消息扁平化并建立索引
         const allMessages = [...(worldState.l1_working_memory.processed_events || []), ...(worldState.l1_working_memory.new_events || [])].filter(
             (item): item is { type: "message" } & ContextualMessage => item.type === "message",
@@ -266,6 +291,7 @@ export class PromptContextBuilder {
 
             return imageIds.map((id) => ({
                 id,
+                sourceId: msg.id,
                 timestamp: msg.timestamp.getTime(),
                 priority: isQuotedImage ? 1 : 0, // 1 for quoted, 0 for regular
             }));
@@ -287,24 +313,34 @@ export class PromptContextBuilder {
 
         // 4. 根据生命周期和数量上限选择最终图片
         const finalImageIds = new Set<string>();
+        const usageKeysById = new Map<string, string>();
         for (const candidate of sortedUniqueCandidates) {
             if (finalImageIds.size >= this.config.maxImagesInContext) break;
 
-            const usageCount = this.imageLifecycleTracker.get(candidate.id) || 0;
-            if (usageCount < this.config.imageLifecycleCount) {
+            const key = JSON.stringify([
+                worldState.channel?.platform,
+                worldState.self?.id,
+                worldState.channel?.type,
+                worldState.channel?.id,
+                candidate.sourceId,
+                candidate.id,
+            ]);
+            const usageCount = this.imageLifecycleTracker.get(key) || 0;
+            if (candidate.priority > 0 || usageCount < this.config.imageLifecycleCount) {
                 finalImageIds.add(candidate.id);
-                this.imageLifecycleTracker.set(candidate.id, usageCount + 1);
+                usageKeysById.set(candidate.id, key);
             }
         }
 
         // 5. 获取图片数据并格式化输出
         if (finalImageIds.size === 0) {
-            return { images: [] };
+            return { images: [], usageKeys: [] };
         }
 
         const imageDataResults = await Promise.all(Array.from(finalImageIds).map((id) => this.assetService.getInfo(id)));
 
         const finalImages: Array<ImagePart | TextPart> = [];
+        const usageKeys: string[] = [];
         const allowedImageTypes = new Set(this.config.allowedImageTypes);
 
         for (const result of imageDataResults) {
@@ -313,6 +349,7 @@ export class PromptContextBuilder {
                     format: "data-url",
                     image: { process: true, format: "jpeg" },
                 });
+                usageKeys.push(usageKeysById.get(result.id)!);
                 // 为LLM提供更明确的图片标识
                 finalImages.push({ type: "text", text: `The following is an image with ID #${result.id}:` });
                 finalImages.push({
@@ -322,6 +359,6 @@ export class PromptContextBuilder {
             }
         }
 
-        return { images: finalImages };
+        return { images: finalImages, usageKeys };
     }
 }

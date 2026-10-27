@@ -69,3 +69,39 @@
 .yib-config-subsection > .yib-config-section-body {
     padding: 4px 12px 12px;
 }
+
+.yib-model-group-row {
+    border: 1px solid var(--k-color-divider);
+    border-radius: 4px;
+    padding: 12px;
+    margin-bottom: 12px;
+}
+.yib-model-group-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.yib-model-group-actions > span {
+    flex: 1;
+    min-width: 8rem;
+}
+.yib-model-groups button {
+    color: var(--k-text-normal);
+    background: var(--k-card-bg);
+    border: 1px solid var(--k-color-divider);
+    border-radius: 4px;
+    padding: 6px 10px;
+    cursor: pointer;
+}
+.yib-model-groups button:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+.yib-model-groups button:focus-visible {
+    outline: 2px solid var(--k-color-primary);
+}
+.yib-model-group-note {
+    color: var(--k-text-light);
+}

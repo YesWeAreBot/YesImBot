@@ -8,7 +8,7 @@ import apply, { ConfigSection } from "../client";
 it("registers top-level sections and nested subsections independently", () => {
     const extensions: any[] = [];
     apply({ extendSchema: (extension: unknown) => extensions.push(extension) });
-    expect(extensions.map(({ type, role }) => `${type}:${role}`)).toEqual([
+    expect(extensions.filter(({ role }) => role !== "yib-model-groups").map(({ type, role }) => `${type}:${role}`)).toEqual([
         "object:yib-section",
         "intersect:yib-section",
         "object:yib-subsection",
@@ -35,4 +35,10 @@ it.each([false, true])("renders a subsection without a duplicate top-level headi
     expect(html).toContain(`aria-expanded="${!collapsed}"`);
     // Folding keeps the native schema mounted and forwards the same data path.
     expect(html).toContain("<input");
+});
+
+it("registers a model group list with visible deletion controls", () => {
+    const extensions: any[] = [];
+    apply({ extendSchema: (extension: unknown) => extensions.push(extension) });
+    expect(extensions.some(({ type, role }) => type === "array" && role === "yib-model-groups")).toBe(true);
 });

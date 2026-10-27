@@ -1,6 +1,7 @@
 import { computed, defineComponent, h, ref, resolveComponent } from "vue";
 
 import "./section.css";
+import { ModelGroups } from "./model-groups";
 
 let nextSectionId = 0;
 
@@ -49,6 +50,7 @@ export const ConfigSection = defineComponent({
 });
 
 export default function apply(ctx) {
+    ctx.extendSchema({ type: "array", role: "yib-model-groups", component: ModelGroups });
     for (const role of ["yib-section", "yib-subsection"]) {
         for (const type of ["object", "intersect"]) ctx.extendSchema({ type, role, component: ConfigSection });
     }
