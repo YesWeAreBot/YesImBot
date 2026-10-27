@@ -1,6 +1,6 @@
 import { Schema } from "koishi";
 
-import { ContextLimitConfig, parseContextLimit } from "./context-limit";
+import { ContextCapacityRow, ContextLimitConfig, contextCapacityRows, parseContextLimit } from "./context-limit";
 
 /** 模型切换策略 */
 export enum ModelSwitchingStrategy {
@@ -95,6 +95,12 @@ export interface ModelConfig {
     circuitBreakerPolicy?: CircuitBreakerPolicy;
 }
 
+// A fresh table row keeps its amount empty until the user supplies a valid capacity.
+const contextCapacityRowSchema: Schema<ContextCapacityRow> = Schema.object({
+    amount: Schema.number().min(0).required().description("数值"),
+    unit: Schema.union(["token", "K", "M"]).default("K").description("单位"),
+});
+
 export const ModelConfigSchema: Schema<ModelConfig> = Schema.object({
     modelId: Schema.string().required().description("模型ID"),
     abilities: Schema.array(
@@ -126,15 +132,20 @@ export const ModelConfigSchema: Schema<ModelConfig> = Schema.object({
             Schema.object({ mode: Schema.const("unset").default("unset") }),
             Schema.object({
                 mode: Schema.const("custom").required(),
-                value: Schema.string()
-                    .pattern(/^\s*(\d+(?:\.\d+)?|\.\d+)\s*([km]?)\s*$/i)
-                    .role("yib-context-capacity")
+                value: Schema.union([
+                    Schema.array(contextCapacityRowSchema)
+                        .min(1)
+                        .max(1)
+                        .role("table")
+                        .default([{ unit: "K" }]),
+                    Schema.transform(Schema.string(), contextCapacityRows, true),
+                ])
                     .required()
-                    .description("上下文容量（数值与单位）"),
+                    .description("上下文容量（1K = 1000 token；1M = 1000000 token）"),
             }),
             Schema.object({ mode: Schema.const("auto").required() }),
         ]),
-        // Keep validation separate from the primitive input: the console cannot render transform fields.
+        // Keep capacity validation separate from the visible table fields.
         Schema.transform(Schema.any<ContextLimitConfig>(), parseContextLimit).hidden(),
     ])
         .collapse()

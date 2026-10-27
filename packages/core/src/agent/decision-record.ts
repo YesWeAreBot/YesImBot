@@ -4,6 +4,7 @@ import { replyKey, ReplyTarget } from "./reply-control";
 
 /** 实际参与本条消息计算的值；不包含消息正文或模型配置中的凭据。 */
 export interface WillingnessCalculation {
+    policy?: import("./willingness-policy").BalancedTrace;
     gains?: { text: number; at: number; quote: number; direct: number };
     before: number;
     after: number;
@@ -14,14 +15,16 @@ export interface WillingnessCalculation {
     assessmentMultiplier: number;
     participationMultiplier: number;
     effectiveGain: number;
+    continuationGain?: number;
     maxWillingness: number;
     threshold: number;
     amplifier: number;
     probability: number;
-    roll: number;
+    roll?: number;
 }
 
 export interface DecisionRecord {
+    scoreKey?: string;
     version: 1;
     id: string;
     messageId?: string;
@@ -34,6 +37,7 @@ export interface DecisionRecord {
     reason?: string;
     decision?: boolean;
     forcedReply?: boolean;
+    continuation?: import("./continuation").ContinuationMatch;
     calculation?: WillingnessCalculation;
     allowed?: string[];
     assessment?: {
@@ -133,6 +137,8 @@ const reasons: Record<string, string> = {
     permission_denied: "会话未获许可",
     muted: "机器人被禁言",
     forced_reply_by_mention: "明确 @ 机器人，优先回复",
+    conversation_continuation: "命中模型登记的等待，进入模型回合",
+    continuation_expired: "会话等待已到期或被替换",
     mention_priority: "明确 @ 消息优先排队",
     mention_pending: "合并到待回复的 @ 消息",
     probability_roll: "随机判定",
@@ -168,6 +174,7 @@ export function formatDecision(record: DecisionRecord | undefined, state: Decisi
         `状态：${stages[record.stage] || record.stage}${record.reason ? `；原因：${reasons[record.reason] || record.reason}` : ""}`,
     );
     if (record.messageId) lines.push(`来源消息：${record.messageId}`);
+    if (record.scoreKey) lines.push(`计分键：${record.scoreKey}`);
     const c = record.calculation;
     if (c) {
         if (c.gains) lines.push(`增益来源：文本 ${c.gains.text}；@ ${c.gains.at}；引用 ${c.gains.quote}；私聊 ${c.gains.direct}`);
@@ -175,6 +182,14 @@ export function formatDecision(record: DecisionRecord | undefined, state: Decisi
             `意愿：${c.before.toFixed(2)} → ${c.after.toFixed(2)}；增益：${c.effectiveGain.toFixed(2)}；阈值：${c.threshold}`,
             `基础分：${c.baseScore}；兴趣乘数：${c.interestMultiplier}；边际乘数：${c.marginalMultiplier.toFixed(3)}；动态乘数：${c.dynamicMultiplier.toFixed(3)}`,
             `语义乘数：${c.assessmentMultiplier.toFixed(3)}；参与乘数：${c.participationMultiplier.toFixed(3)}`,
+        );
+    }
+    if (c?.policy) {
+        const p = c.policy;
+        const gates = { none: "无", opportunity_interval: "普通消息判定间隔", recent_reply_pressure: "近期回复压力" };
+        lines.push(
+            `算法：群聊平衡；时间衰减：${p.decay.toFixed(2)}；增加：${p.positiveGain.toFixed(2)}；减少：${p.negativeGain.toFixed(2)}；限流增益：${p.limitedGain.toFixed(2)}`,
+            `近期回复压力：${p.fatiguePenalty.toFixed(2)}；节流原因：${gates[p.gate]}`,
         );
     }
     if (record.probability !== undefined || record.roll !== undefined)
@@ -188,6 +203,10 @@ export function formatDecision(record: DecisionRecord | undefined, state: Decisi
         lines.push(`语义评分：面向机器人 ${a.addressed}；兴趣匹配 ${a.interested}；面向他人 ${a.others}`);
     }
     if (record.forcedReply) lines.push("明确 @ 优先回复：不依赖随机判定，仍遵守回复控制。");
+    if (record.continuation)
+        lines.push(
+            `会话续接：${record.continuation.mode === "trigger" ? "进入模型回合" : "增加意愿"}；工作状态版本 ${record.continuation.revision}；有效至 ${new Date(record.continuation.expiresAt).toISOString()}`,
+        );
     if (record.success !== undefined) lines.push(`成功发送回复：${record.success ? "是" : "否"}`);
     return lines.join("\n");
 }

@@ -13,7 +13,7 @@ it("allows authority-3 cancellation while keeping ordinary members behind the co
     const fork = ctx.plugin((pluginMock as any).default ?? pluginMock);
     let release!: () => void;
     const external = new Promise<void>((resolve) => (release = resolve));
-    const config = Config({ backgroundTools: { enabled: true } });
+    const config = Config({ backgroundTools: { enabled: true, allowedTools: ["lookup"] } });
     const tools = new ToolService(ctx, config, {
         logging: loggingStub(),
         world: {

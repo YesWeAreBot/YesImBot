@@ -305,3 +305,64 @@ describe("exclusion", () => {
         expect((await restored.list()).map((entry) => entry.id)).toStrictEqual(["before-crash"]);
     });
 });
+
+it("retains only approved balanced trace fields across persistence", async (t) => {
+    const dir = await temporary(t);
+    const journal = new DecisionJournal(dir, journalOptions);
+    t.onTestFinished(() => journal.close());
+    await journal.append(
+        record("balanced", {
+            decision: false,
+            calculation: {
+                before: 80,
+                after: 68,
+                baseScore: 12,
+                interestMultiplier: 1,
+                marginalMultiplier: 1,
+                dynamicMultiplier: 1,
+                assessmentMultiplier: 1,
+                participationMultiplier: 1,
+                effectiveGain: -12,
+                maxWillingness: 100,
+                threshold: 55,
+                amplifier: 0.04,
+                probability: 0,
+                policy: {
+                    version: "balanced-v1",
+                    invited: false,
+                    addressesOthers: true,
+                    preview: false,
+                    decay: 0,
+                    positiveGain: 0,
+                    negativeGain: 12,
+                    fatiguePenalty: 0,
+                    requestedGain: 12,
+                    limitedGain: 0,
+                    ordinaryGainRemaining: 24,
+                    negativeGainRemaining: 12,
+                    rawProbability: 0.52,
+                    gate: "opportunity_interval",
+                    content: "private text",
+                },
+            },
+        }),
+    );
+    await journal.close();
+    const log = warnings();
+    const restored = new DecisionJournal(dir, journalOptions, log.warn);
+    t.onTestFinished(() => restored.close());
+    const trace = (await restored.list({}))[0].calculation?.policy;
+    expect(trace).toMatchObject({ version: "balanced-v1", negativeGain: 12, gate: "opportunity_interval" });
+    expect(trace).not.toHaveProperty("content");
+    expect(log.collected).toEqual([]);
+});
+it("persists the actual score key independently of the conversation key", async (t) => {
+    const dir = await temporary(t);
+    const journal = new DecisionJournal(dir, journalOptions);
+    t.onTestFinished(() => journal.close());
+    await journal.append(record("score-scope", { scoreKey: '["channel","topic","a"]' }));
+    await journal.close();
+    const restored = new DecisionJournal(dir, journalOptions);
+    t.onTestFinished(() => restored.close());
+    expect((await restored.list({}))[0].scoreKey).toBe('["channel","topic","a"]');
+});

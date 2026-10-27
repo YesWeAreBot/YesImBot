@@ -6,6 +6,7 @@ import { conversationCid } from "../shared/utils/conversation-scope";
 import { WillingnessConfig } from "./config";
 import type { WillingnessCalculation } from "./decision-record";
 import type { ReplyCategory } from "./reply-control";
+import { BalancedWillingnessPolicy, nonnegative, resolveWillingnessPolicy } from "./willingness-policy";
 
 export interface MessageContext {
     chatId: string;
@@ -17,6 +18,10 @@ export interface MessageContext {
     isQuote: boolean;
     isDirect: boolean;
     allowedCategories?: ReplyCategory[];
+    continuationGain?: number;
+    preview?: boolean;
+    priorDecay?: number;
+    deferWithdrawal?: boolean;
 }
 
 export interface TopicWillingnessInput {
@@ -73,9 +78,15 @@ export class WillingnessManager {
     private participation = new Map<string, Required<Omit<ParticipationSnapshot, "active">>>();
     private backgroundCredits = new Map<string, number>();
 
+    private balanced = new BalancedWillingnessPolicy();
+    private balancedUpdatedAt = new Map<string, number>();
+    private readonly now: () => number;
+    private readonly random: () => number;
     private decayInterval: NodeJS.Timeout | null = null;
 
-    constructor(ctx: Context, config: Config, logging: LoggerService) {
+    constructor(ctx: Context, config: Config, logging: LoggerService, runtime?: { now?: () => number; random?: () => number }) {
+        this.now = runtime?.now ?? (() => Date.now());
+        this.random = runtime?.random ?? (() => Math.random());
         this.ctx = ctx;
         this.baseConfig = config;
         this.logger = logging.getLogger("[意愿管理器]");
@@ -83,6 +94,8 @@ export class WillingnessManager {
         ctx.on("dispose", () => {
             this.stopDecayCycle();
             this.backgroundCredits.clear();
+            this.balanced.clear();
+            this.balancedUpdatedAt.clear();
         });
     }
 
@@ -135,11 +148,15 @@ export class WillingnessManager {
     }
 
     private _decay(): void {
-        const now = Date.now();
+        const now = this.now();
         for (const chatId of this.willingnessScores.keys()) {
             const session = this.sessions.get(chatId);
             if (!session) continue;
 
+            if (this.baseConfig.willingnessPolicy?.algorithm === "balanced") {
+                this.decayBalanced(session, chatId, now);
+                continue;
+            }
             const config = this._getResolvedConfig(session);
             const { decayHalfLifeSeconds, probabilityThreshold } = config.lifecycle;
 
@@ -234,7 +251,7 @@ export class WillingnessManager {
         if (!invited && !(context.isDirect && allowed("direct")) && !(sameParticipant && allowed("text"))) return 1;
 
         const duration = state.expiresAt! - state.lastReplyAt!;
-        const remainingRatio = Math.max(0, Math.min(1, (state.expiresAt! - Date.now()) / duration));
+        const remainingRatio = Math.max(0, Math.min(1, (state.expiresAt! - this.now()) / duration));
         const configuredInfluence = this.baseConfig.participation?.influence ?? 0.5;
         const influence = Number.isFinite(configuredInfluence) ? Math.max(0, Math.min(1, configuredInfluence)) : 0.5;
         return 1 + influence * remainingRatio;
@@ -251,6 +268,7 @@ export class WillingnessManager {
         assessmentMultiplier = 1,
         capture?: (calculation: Omit<WillingnessCalculation, "roll">) => void,
     ): number {
+        if (this.baseConfig.willingnessPolicy?.algorithm === "balanced") return this.calculateBalanced(session, context, assessmentMultiplier, capture);
         const { chatId } = context;
         const config = this._getResolvedConfig(session);
         const { lifecycle } = config;
@@ -265,7 +283,8 @@ export class WillingnessManager {
 
         // --- 非线性增益 ---
         const gainMultiplier = getDynamicGainMultiplier(currentWillingness, resolvedMaxWillingness);
-        const effectiveGain = details.gain * gainMultiplier * assessmentMultiplier;
+        const continuationGain = Number.isFinite(context.continuationGain) ? Math.max(0, context.continuationGain!) : 0;
+        const effectiveGain = details.gain * gainMultiplier * assessmentMultiplier + continuationGain;
 
         currentWillingness += effectiveGain;
         // -------------------------
@@ -289,12 +308,97 @@ export class WillingnessManager {
             assessmentMultiplier,
             participationMultiplier: details.participationMultiplier,
             effectiveGain,
+            ...(continuationGain ? { continuationGain } : {}),
             maxWillingness: resolvedMaxWillingness,
             threshold: resolvedProbabilityThreshold,
             amplifier: resolvedProbabilityAmplifier,
             probability,
         });
         return probability;
+    }
+
+    private decayBalanced(session: Session, key: string, now: number): { before: number; score: number; decay: number } {
+        const before = nonnegative(this.willingnessScores.get(key) ?? 0);
+        const halfLife = this._getResolvedConfig(session).lifecycle.decayHalfLifeSeconds;
+        const previous = this.balancedUpdatedAt.get(key) ?? now;
+        const factor = 0.5 ** (Math.max(0, now - previous) / (Math.max(1, nonnegative(halfLife)) * 1000));
+        const score = before * factor;
+        this.willingnessScores.set(key, score);
+        this.balancedUpdatedAt.set(key, Math.max(previous, now));
+        const credit = this.backgroundCredits.get(key);
+        if (credit !== undefined) this.backgroundCredits.set(key, Math.min(score, credit * factor));
+        return { before, score, decay: before - score };
+    }
+
+    private calculateBalanced(
+        session: Session,
+        context: MessageContext,
+        assessmentMultiplier: number,
+        capture?: (calculation: Omit<WillingnessCalculation, "roll">) => void,
+    ): number {
+        const policy = resolveWillingnessPolicy(this.baseConfig.willingnessPolicy);
+        const config = this._getResolvedConfig(session);
+        const allowed = (category: ReplyCategory) => !context.allowedCategories || context.allowedCategories.includes(category);
+        const self = session.selfId || session.bot?.selfId;
+        const atSelf = !!session.stripped?.atSelf || (!!self && !!session.elements?.some((e) => e.type === "at" && e.attrs.id === self));
+        const quoteSelf = !!self && session.quote?.user?.id === self;
+        const invited = (atSelf && allowed("at")) || (quoteSelf && allowed("quote")) || (!!session.isDirect && allowed("direct"));
+        const addressesOthers =
+            !invited &&
+            !session.isDirect &&
+            ((allowed("at") && !!session.elements?.some((e) => e.type === "at" && !!e.attrs.id && e.attrs.id !== self)) ||
+                (allowed("quote") && !!session.quote?.user?.id && session.quote.user.id !== self));
+        const gains = {
+            text: allowed("text") ? nonnegative(config.base.text) : 0,
+            at: atSelf && allowed("at") ? nonnegative(config.attribute.atMention) : 0,
+            quote: quoteSelf && allowed("quote") ? nonnegative(config.attribute.isQuote) : 0,
+            direct: session.isDirect && allowed("direct") ? nonnegative(config.attribute.isDirectMessage) : 0,
+        };
+        const baseScore = gains.text + gains.at + gains.quote + gains.direct;
+        const interestMultiplier = nonnegative(
+            config.interest.keywords.some((word) => word && context.content.includes(word))
+                ? config.interest.keywordMultiplier
+                : config.interest.defaultMultiplier,
+        );
+        const participationMultiplier = this.getParticipationMultiplier(session, context);
+        const requestedGain = baseScore * interestMultiplier * participationMultiplier * nonnegative(assessmentMultiplier);
+        const now = this.now();
+        const decayed = this.decayBalanced(session, context.chatId, now);
+        const { maxWillingness, probabilityThreshold, probabilityAmplifier } = config.lifecycle;
+        const continuationGain = context.preview ? 0 : nonnegative(context.continuationGain ?? 0);
+        const result = this.balanced.update(context.participationId ?? context.chatId, policy, {
+            now,
+            score: decayed.score + continuationGain,
+            decay: decayed.decay + (context.priorDecay ?? 0),
+            max: nonnegative(maxWillingness),
+            requestedGain,
+            invited,
+            addressesOthers,
+            preview: context.preview,
+            deferWithdrawal: context.deferWithdrawal,
+            threshold: probabilityThreshold,
+            amplifier: probabilityAmplifier,
+        });
+        this.willingnessScores.set(context.chatId, result.after);
+        capture?.({
+            before: decayed.before + (context.priorDecay ?? 0),
+            after: result.after,
+            gains,
+            baseScore,
+            interestMultiplier,
+            participationMultiplier,
+            marginalMultiplier: 1,
+            dynamicMultiplier: 1,
+            assessmentMultiplier,
+            effectiveGain: result.trace.positiveGain - result.trace.negativeGain + continuationGain,
+            ...(continuationGain ? { continuationGain } : {}),
+            maxWillingness: nonnegative(maxWillingness),
+            threshold: probabilityThreshold,
+            amplifier: probabilityAmplifier,
+            probability: result.probability,
+            policy: result.trace,
+        });
+        return result.probability;
     }
 
     /**
@@ -318,6 +422,10 @@ export class WillingnessManager {
         const { replyCost, maxWillingness } = config.lifecycle;
 
         const resolvedReplyCost = session.resolve(replyCost);
+        if (this.baseConfig.willingnessPolicy?.algorithm === "balanced") {
+            this.decayBalanced(session, chatId, this.now());
+            this.balanced.replied(participationId, resolveWillingnessPolicy(this.baseConfig.willingnessPolicy), this.now());
+        }
 
         // 策略1：直接大幅降低意愿值
         // 这种做法模拟了"我说完这个话题了"
@@ -328,7 +436,7 @@ export class WillingnessManager {
         if (this.baseConfig.participation?.enabled) {
             const durationSeconds = this.baseConfig.participation.durationSeconds ?? 60;
             if (Number.isFinite(durationSeconds) && durationSeconds >= 1 && durationSeconds <= 86400) {
-                const now = Date.now();
+                const now = this.now();
                 this.participation.set(participationId, {
                     lastReplyAt: now,
                     expiresAt: now + durationSeconds * 1000,
@@ -359,6 +467,8 @@ export class WillingnessManager {
         this.sessions.delete(chatId);
         this.participation.delete(chatId);
         this.backgroundCredits.delete(chatId);
+        this.balancedUpdatedAt.delete(chatId);
+        this.balanced.reset(chatId);
     }
 
     public getCurrentWillingness(chatId: string): number {
@@ -370,6 +480,7 @@ export class WillingnessManager {
         const { maxWillingness, probabilityThreshold, probabilityAmplifier } = this._getResolvedConfig(session).lifecycle;
         this.sessions.set(chatId, session);
         const gain = Number.isFinite(amount) && amount > 0 ? amount : 0;
+        if (this.baseConfig.willingnessPolicy?.algorithm === "balanced") this.decayBalanced(session, chatId, this.now());
         const before = this.getCurrentWillingness(chatId);
         const score = Math.max(0, Math.min(maxWillingness, before + gain));
         this.willingnessScores.set(chatId, score);
@@ -381,7 +492,7 @@ export class WillingnessManager {
     }
 
     /** 返回参与状态的副本；到期查询不会清除或刷新状态。 */
-    public getParticipation(chatId: string, now = Date.now()): ParticipationSnapshot {
+    public getParticipation(chatId: string, now = this.now()): ParticipationSnapshot {
         const state = this.participation.get(chatId);
         if (!state) return { active: false };
         return {
@@ -401,8 +512,15 @@ export class WillingnessManager {
         allowedCategories?: ReplyCategory[],
         assessmentMultiplier = 1,
         topic?: TopicWillingnessInput,
-    ): { decision: boolean; probability: number; roll: number; calculation: WillingnessCalculation; scoreKey?: string } {
+        continuationGain = 0,
+    ): { decision: boolean; probability: number; roll?: number; calculation: WillingnessCalculation; scoreKey?: string } {
         const currentScoreKey = topic?.currentScoreKey ?? chatId;
+        const priorDecay = new Map<string, number>();
+        if (this.baseConfig.willingnessPolicy?.algorithm === "balanced") {
+            const now = this.now();
+            for (const key of new Set([chatId, currentScoreKey, ...(topic?.candidates.map((candidate) => candidate.scoreKey) ?? [])]))
+                if (this.willingnessScores.has(key)) priorDecay.set(key, this.decayBalanced(session, key, now).decay);
+        }
         const credit = this.backgroundCredits.get(chatId) ?? 0;
         this.backgroundCredits.delete(chatId);
         if (credit > 0 && currentScoreKey !== chatId) {
@@ -415,11 +533,14 @@ export class WillingnessManager {
         this.sessions.set(currentScoreKey, session);
         // Only the message's own topic receives activity, not a different topic
         // selected later from accumulated willingness.
-        this.lastMessageTimestamps.set(currentScoreKey, Date.now());
+        this.lastMessageTimestamps.set(currentScoreKey, this.now());
 
         const context: MessageContext = {
             chatId: currentScoreKey,
-            participationId: topic ? chatId : undefined,
+            continuationGain,
+            priorDecay: priorDecay.get(currentScoreKey),
+            deferWithdrawal: !!topic,
+            participationId: topic || this.baseConfig.willingnessPolicy?.algorithm === "balanced" ? chatId : undefined,
             allowedCategories,
             content: session.content ?? "",
             isMentioned: allowedCategories
@@ -454,14 +575,44 @@ export class WillingnessManager {
             }
             if (scoreKey !== currentScoreKey) {
                 this.sessions.set(scoreKey, session);
-                probability = this.calculateReplyProbability(session, { ...context, chatId: scoreKey }, 0, (value) => {
-                    calculation = value;
-                });
+                probability = this.calculateReplyProbability(
+                    session,
+                    { ...context, chatId: scoreKey, priorDecay: priorDecay.get(scoreKey), preview: true, continuationGain: 0 },
+                    0,
+                    (value) => {
+                        calculation = value;
+                    },
+                );
             }
         }
 
-        const roll = Math.random();
-        const decision = roll < probability;
+        // Other-directed withdrawal follows the selected topic and consumes its shared budget once.
+        if (topic && calculation?.policy?.addressesOthers) {
+            probability = this.calculateReplyProbability(
+                session,
+                { ...context, chatId: scoreKey, priorDecay: priorDecay.get(scoreKey), deferWithdrawal: false, continuationGain: 0 },
+                assessmentMultiplier * topic.multiplier,
+                (value) => {
+                    calculation = value;
+                },
+            );
+        }
+        if (calculation?.policy) {
+            const allowed = this.balanced.opportunity(
+                chatId,
+                resolveWillingnessPolicy(this.baseConfig.willingnessPolicy),
+                probability,
+                calculation.policy.invited,
+                this.now(),
+            );
+            if (!allowed) {
+                probability = 0;
+                calculation.policy.gate = "opportunity_interval";
+            }
+            calculation.probability = probability;
+        }
+        const roll = calculation?.policy && probability <= 0 ? undefined : this.random();
+        const decision = roll !== undefined && roll < probability;
 
         return { decision, probability, roll, calculation: { ...calculation, roll } as WillingnessCalculation, ...(topic ? { scoreKey } : {}) };
     }

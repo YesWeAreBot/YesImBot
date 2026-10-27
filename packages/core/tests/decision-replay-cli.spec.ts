@@ -172,3 +172,76 @@ describe("offline replay", () => {
         expect(event.recomputed.probability).toBe(precise.probability);
     });
 });
+
+it("replays balanced decay, penalties and gated records without a random draw", async (t) => {
+    const dir = await temporary(t),
+        filename = path.join(dir, "balanced.jsonl");
+    const policy = { version: "balanced-v1", decay: 10, requestedGain: 12, positiveGain: 2, negativeGain: 0, fatiguePenalty: 5, gate: "none" };
+    const balanced = { ...calculation, before: 80, after: 72, effectiveGain: 2, threshold: 55, amplifier: 0.04, probability: 0.48, policy };
+    await writeLog(filename, [
+        record("balanced", { calculation: balanced }),
+        record("gated", {
+            decision: false,
+            calculation: { ...balanced, probability: 0, roll: undefined, policy: { ...policy, gate: "opportunity_interval" } },
+        }),
+    ]);
+    const result = replay(filename);
+    assertCleanExit(result);
+    const lines = parseJsonl(result.stdout);
+    expect(lines.filter((line) => line.status === "replayed").map((line) => line.matches)).toEqual([true, true]);
+    expect(lines.at(-1)!.summary.mismatches).toBe(0);
+});
+
+it("deduplicates balanced gated snapshots and leaves positive scenarios without a roll undecided", async (t) => {
+    const dir = await temporary(t),
+        filename = path.join(dir, "gated.jsonl");
+    const balanced = {
+        ...calculation,
+        before: 50,
+        after: 50,
+        effectiveGain: 0,
+        threshold: 55,
+        amplifier: 0.04,
+        probability: 0,
+        roll: undefined,
+        policy: { version: "balanced-v1", decay: 0, requestedGain: 12, positiveGain: 0, negativeGain: 0, fatiguePenalty: 0, gate: "none" },
+    };
+    await writeLog(filename, [
+        record("same", { stage: "completed", decision: false, calculation: balanced }),
+        record("same", { stage: "calculated", decision: false, calculation: balanced }),
+    ]);
+    const result = replay(filename, ["--threshold", "10"]);
+    assertCleanExit(result);
+    const lines = parseJsonl(result.stdout);
+    expect(lines.at(-1)!.summary).toMatchObject({ replayed: 1, duplicateCalculations: 1, mismatches: 0 });
+    const event = lines.find((line) => line.status === "replayed")!;
+    expect(event.scenario.probability).toBe(1);
+    expect(event.scenario).not.toHaveProperty("decision");
+});
+it("replays explicit continuation bonuses with either algorithm", async (t) => {
+    const dir = await temporary(t),
+        filename = path.join(dir, "continuation.jsonl");
+    await writeLog(filename, [
+        record("legacy-bonus", { calculation: { ...calculation, continuationGain: 5, effectiveGain: 17, after: 27, probability: 0.7 } }),
+        record("balanced-bonus", {
+            calculation: {
+                ...calculation,
+                before: 80,
+                after: 77,
+                effectiveGain: 7,
+                continuationGain: 5,
+                threshold: 55,
+                amplifier: 0.04,
+                probability: 0.68,
+                policy: { version: "balanced-v1", decay: 10, requestedGain: 12, positiveGain: 2, negativeGain: 0, fatiguePenalty: 5, gate: "none" },
+            },
+        }),
+    ]);
+    const result = replay(filename);
+    assertCleanExit(result);
+    expect(
+        parseJsonl(result.stdout)
+            .filter((line) => line.status === "replayed")
+            .map((line) => line.matches),
+    ).toEqual([true, true]);
+});

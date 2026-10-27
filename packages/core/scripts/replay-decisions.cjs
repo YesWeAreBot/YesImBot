@@ -62,6 +62,13 @@ const fields = [
 const finite = (value) => typeof value === "number" && Number.isFinite(value);
 const identifier = (value) => typeof value === "string" && value.length > 0 && value.length <= 512 && !/[\x00-\x1f\x7f]/.test(value);
 const object = (value) => value && typeof value === "object" && !Array.isArray(value);
+const missingFields = (calculation) =>
+    fields.filter(
+        (field) =>
+            !object(calculation) ||
+            (!(field === "roll" && calculation.policy?.version === "balanced-v1" && calculation.probability === 0 && calculation.roll === undefined) &&
+                !finite(calculation[field])),
+    );
 const usage = "Usage: node scripts/replay-decisions.cjs <file> [--key KEY] [--from ISO] [--to ISO] [--threshold NUMBER] [--amplifier NUMBER]";
 
 function parseOptions(args) {
@@ -122,8 +129,26 @@ async function* lines(filename) {
 }
 
 function recompute(calculation, threshold = calculation.threshold, amplifier = calculation.amplifier) {
+    if (calculation.policy?.version === "balanced-v1") {
+        const p = calculation.policy;
+        const effectiveGain = p.positiveGain - p.negativeGain + (finite(calculation.continuationGain) ? Math.max(0, calculation.continuationGain) : 0);
+        const after = Math.max(0, Math.min(calculation.maxWillingness, calculation.before - p.decay + effectiveGain));
+        const probability = p.gate === "opportunity_interval" ? 0 : Math.max(0, Math.min(1, (Math.max(0, after - p.fatiguePenalty) - threshold) * amplifier));
+        return {
+            rawGain: p.requestedGain,
+            effectiveGain,
+            after,
+            threshold,
+            amplifier,
+            probability,
+            roll: calculation.roll,
+            decision: probability === 0 ? false : finite(calculation.roll) ? calculation.roll < probability : undefined,
+        };
+    }
     const rawGain = calculation.baseScore * calculation.interestMultiplier * calculation.participationMultiplier * calculation.marginalMultiplier;
-    const effectiveGain = rawGain * calculation.dynamicMultiplier * calculation.assessmentMultiplier;
+    const effectiveGain =
+        rawGain * calculation.dynamicMultiplier * calculation.assessmentMultiplier +
+        (finite(calculation.continuationGain) ? Math.max(0, calculation.continuationGain) : 0);
     const after = Math.min(calculation.before + effectiveGain, calculation.maxWillingness);
     const probability = after > threshold ? Math.max(0, Math.min(1, (after - threshold) * amplifier)) : 0;
     return {
@@ -170,7 +195,7 @@ async function replay(options) {
             (options.to !== undefined && record.time > options.to)
         )
             continue;
-        if (!object(record.calculation) || fields.some((field) => !finite(record.calculation[field])) || typeof record.decision !== "boolean") continue;
+        if (!object(record.calculation) || missingFields(record.calculation).length || typeof record.decision !== "boolean") continue;
         if (!preferred.has(record.id)) {
             if (preferred.size >= 100000) throw Object.assign(new Error(), { code: "REPLAY_INDEX_LIMIT" });
             preferred.set(record.id, { calculated: false, replayed: false });
@@ -245,7 +270,7 @@ async function replay(options) {
         if (reasons.has(record.reason)) event.reason = record.reason;
         if (typeof record.decision === "boolean") event.recordedDecision = record.decision;
         const calculation = record.calculation;
-        const missing = fields.filter((field) => !object(calculation) || !finite(calculation[field]));
+        const missing = missingFields(calculation);
         if (missing.length || typeof record.decision !== "boolean") {
             summary.missingCalculation++;
             event.status = !object(calculation) ? "no_calculation" : "missing_calculation_data";
@@ -257,6 +282,19 @@ async function replay(options) {
         if (selection?.replayed || (selection?.calculated && record.stage !== "calculated")) {
             summary.duplicateCalculations++;
             event.status = "duplicate_calculation";
+            await output(event);
+            continue;
+        }
+        const p = calculation.policy;
+        if (
+            p !== undefined &&
+            (!object(p) ||
+                p.version !== "balanced-v1" ||
+                !["decay", "requestedGain", "positiveGain", "negativeGain", "fatiguePenalty"].every((key) => finite(p[key]) && p[key] >= 0) ||
+                !["none", "opportunity_interval", "recent_reply_pressure"].includes(p.gate))
+        ) {
+            summary.corrupt++;
+            event.status = "invalid_calculation_data";
             await output(event);
             continue;
         }
