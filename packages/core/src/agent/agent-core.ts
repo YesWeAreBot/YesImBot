@@ -374,7 +374,7 @@ export class AgentCore extends YesImBotService<Config> {
                     const willingnessAfterReply = this.willing.getCurrentWillingness(scoreKey);
 
                     /* prettier-ignore */
-                    this.logger.debug(`[${channelCid}] 已发送回复，意愿值已更新: ${willingnessBeforeReply.toFixed(2)} -> ${willingnessAfterReply.toFixed(2)}`);
+                    this.logger.debug(`[${channelCid}] 回复成功，意愿值已更新 | 计分键: ${scoreKey} | ${willingnessBeforeReply.toFixed(2)} -> ${willingnessAfterReply.toFixed(2)}`);
                 }
                 const completed = valid();
                 this.recordDecision(stimulus, {
