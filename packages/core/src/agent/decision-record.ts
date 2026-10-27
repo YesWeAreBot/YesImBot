@@ -24,6 +24,7 @@ export interface WillingnessCalculation {
 }
 
 export interface DecisionRecord {
+    scoreKey?: string;
     version: 1;
     id: string;
     messageId?: string;
@@ -173,6 +174,7 @@ export function formatDecision(record: DecisionRecord | undefined, state: Decisi
         `状态：${stages[record.stage] || record.stage}${record.reason ? `；原因：${reasons[record.reason] || record.reason}` : ""}`,
     );
     if (record.messageId) lines.push(`来源消息：${record.messageId}`);
+    if (record.scoreKey) lines.push(`计分键：${record.scoreKey}`);
     const c = record.calculation;
     if (c) {
         if (c.gains) lines.push(`增益来源：文本 ${c.gains.text}；@ ${c.gains.at}；引用 ${c.gains.quote}；私聊 ${c.gains.direct}`);

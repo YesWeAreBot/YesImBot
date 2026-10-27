@@ -272,3 +272,68 @@ it("does not revive a read admitted before a mute and immediate unmute", async (
     expect(t.scheduled).toHaveLength(0);
     expect(t.decisions.latest(t.target)?.stage).toBe("cancelled");
 });
+
+it.each(["legacy", "balanced"])("retains topic willingness across mentions and failed assessment in %s", async (algorithm) => {
+    const t = setup();
+    t.core.config.willingnessPolicy = { algorithm };
+    t.core.willing.now = () => 1000000;
+    t.core.config.topics = { enabled: true, model: { providerName: "test", modelId: "test" } };
+    const topic = { id: "a", label: "A", scoreKey: "topic-A", share: 1, interest: 0.5, multiplier: 1 };
+    t.core.topics = {
+        noteMessage() {},
+        getCurrent: () => undefined,
+        getTopics: () => [topic],
+        getFocus: () => topic,
+        chooseFocus: () => topic,
+        assess: async () => undefined,
+    };
+    t.core.willing.addBackgroundWillingness(t.session, topic.scoreKey, 80);
+    t.core.willing.handlePostReply(t.session, topic.scoreKey);
+    t.core.receiveStimulus({ type: "user_message", session: t.session });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(t.decisions.latest(t.target)?.calculation?.before).toBe(45);
+    const remaining = t.core.willing.getCurrentWillingness(topic.scoreKey);
+    t.session.elements = [{ type: "at", attrs: { id: "bot" } }];
+    t.session.stripped = { atSelf: true };
+    t.core.receiveStimulus({ type: "user_message", session: t.session });
+    expect(t.decisions.latest(t.target)?.calculation?.before).toBe(remaining);
+    expect(t.scheduled.at(-1).scoringTopic.scoreKey).toBe(topic.scoreKey);
+    expect(t.decisions.latest(t.target)?.scoreKey).toBe(topic.scoreKey);
+});
+it("keeps continuation source context separate while retaining topic score", async () => {
+    const t = continuationSetup("willingness");
+    t.core.config.lifecycle.probabilityThreshold = 10;
+    t.core.config.topics = { enabled: true, model: { providerName: "test", modelId: "test" } };
+    const topic = { id: "a", label: "A", scoreKey: "topic-A", share: 1, interest: 0.5, multiplier: 1 };
+    t.core.topics = {
+        noteMessage() {},
+        getCurrent: () => topic,
+        getTopics: () => [topic],
+        getFocus: () => topic,
+        chooseFocus: () => topic,
+        assess: async () => topic,
+    };
+    t.core.willing.addBackgroundWillingness(t.session, topic.scoreKey, 45);
+    t.core.receiveStimulus({ type: "user_message", session: t.session });
+    await nextTick();
+    expect(t.decisions.latest(t.target)?.calculation?.before).toBe(45);
+    expect(t.scheduled[0].topic).toBeUndefined();
+    expect(t.scheduled[0].scoringTopic.scoreKey).toBe(topic.scoreKey);
+});
+it("fallback preserves unrelated topic scores and disabled topics use the ordinary pool", () => {
+    const t = setup();
+    t.core.config.topics = { enabled: true, model: { providerName: "test", modelId: "test" } };
+    const topics = ["a", "b"].map((id) => ({ id, label: id, scoreKey: "topic-" + id, share: 0.5, interest: 0.5, multiplier: 1 }));
+    t.core.topics = { noteMessage() {}, getCurrent: () => undefined, getTopics: () => topics, getFocus: () => topics[0], chooseFocus() {} };
+    const key = JSON.stringify(["qq", "bot", "g"]);
+    t.core.topicScores.set(key, new Set(topics.map((topic) => topic.scoreKey)));
+    for (const topic of topics) t.core.willing.addBackgroundWillingness(t.session, topic.scoreKey, 45);
+    t.session.stripped = { atSelf: true };
+    t.core.receiveStimulus({ type: "user_message", session: t.session });
+    expect(t.core.willing.getCurrentWillingness("topic-b")).toBe(45);
+    expect(t.decisions.latest(t.target)?.scoreKey).toBe("topic-a");
+    t.core.config.topics.enabled = false;
+    t.core.receiveStimulus({ type: "user_message", session: t.session });
+    expect(t.decisions.latest(t.target)?.scoreKey).toBe(key);
+    expect(t.decisions.latest(t.target)?.calculation?.before).toBe(0);
+});

@@ -105,6 +105,7 @@ export function sanitizeDecisionRecord(value: unknown): DecisionRecord | undefin
         stimulusType: stimuli.has(value.stimulusType) ? value.stimulusType : "unknown",
         startedAt: finite(value.startedAt) ? value.startedAt : value.time,
     };
+    if (identifier(value.scoreKey)) result.scoreKey = value.scoreKey;
     if (identifier(value.messageId)) result.messageId = value.messageId;
     if (typeof value.reason === "string" && reasons.has(value.reason)) result.reason = value.reason;
     for (const field of ["decision", "success", "forcedReply"] as const) if (typeof value[field] === "boolean") result[field] = value[field];

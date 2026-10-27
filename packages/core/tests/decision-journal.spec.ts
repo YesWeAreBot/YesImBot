@@ -356,3 +356,13 @@ it("retains only approved balanced trace fields across persistence", async (t) =
     expect(trace).not.toHaveProperty("content");
     expect(log.collected).toEqual([]);
 });
+it("persists the actual score key independently of the conversation key", async (t) => {
+    const dir = await temporary(t);
+    const journal = new DecisionJournal(dir, journalOptions);
+    t.onTestFinished(() => journal.close());
+    await journal.append(record("score-scope", { scoreKey: '["channel","topic","a"]' }));
+    await journal.close();
+    const restored = new DecisionJournal(dir, journalOptions);
+    t.onTestFinished(() => restored.close());
+    expect((await restored.list({}))[0].scoreKey).toBe('["channel","topic","a"]');
+});
