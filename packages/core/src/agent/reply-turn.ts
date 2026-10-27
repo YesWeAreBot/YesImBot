@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 
 import type { Bot, Session } from "koishi";
 
+import { MessageDeliveryError } from "../shared/message-delivery";
 import type { ReplyTarget } from "./reply-control";
 
 type ReplyTurn = { valid: () => boolean; signal?: AbortSignal; canSend?: (target: ReplyTarget) => boolean };
@@ -121,7 +122,15 @@ async function withGuardedEncoder<T>(
                     // 普通发送在自己的编码器中移除父异步链的旧保护。
                     if (guarded) scope.set(bot, () => check(encoder.channelId, encoder.session?.guildId));
                     else scope.delete(bot);
-                    return outboundScopes.run(scope, () => method.apply(encoder, args));
+                    const result = outboundScopes.run(scope, () => method.apply(encoder, args));
+                    if (guarded && key === "send") {
+                        return Promise.resolve(result).catch((error) => {
+                            const deliveryError = new MessageDeliveryError(error, Array.isArray(encoder.results) ? encoder.results : []);
+                            if (deliveryError.messages.length) throw deliveryError;
+                            throw error;
+                        });
+                    }
+                    return result;
                 };
             }
             return encoder;

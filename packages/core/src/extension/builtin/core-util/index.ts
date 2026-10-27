@@ -7,7 +7,12 @@ import { Failed, Success } from "../../../extension/helpers";
 import { Infer } from "../../../extension/types";
 import { IChatModel, ModelDescriptor } from "../../../model";
 import { withUsageScope } from "../../../model/usage";
+import { MessageDeliveryError } from "../../../shared/message-delivery";
 import { isEmpty, parseConversationChannelId } from "../../../shared/utils";
+
+function sendErrorScalar(key: string, value: unknown): string {
+    return (typeof value === "string" || typeof value === "number") && String(value).trim() ? `${key}=${String(value).slice(0, 512)}` : "";
+}
 
 interface CoreUtilConfig {
     typing: {
@@ -101,15 +106,23 @@ export default class CoreUtilExtension {
             return Failed("消息内容为空");
         }
 
+        const delivery = { messageIds: [] as string[], sentMessages: 0, totalMessages: messages.length };
         try {
             const { bot, channelId, channel, userId, guild } = await this.determineTarget(session, target, self_id, target_type, guild_id);
 
-            await this.sendMessagesWithHumanLikeDelay(messages, bot, channelId, session, channel, userId, guild);
+            await this.sendMessagesWithHumanLikeDelay(messages, bot, channelId, session, channel, userId, guild, delivery);
 
-            return Success();
+            return Success(undefined, { delivery });
         } catch (error) {
-            //this.logger.error(error);
-            return Failed(`发送消息失败。错误: ${this.getSendErrorMessage(error) || "未知发送错误"}`);
+            const partial = delivery.messageIds.length > 0;
+            return Failed(
+                {
+                    name: partial ? "PartialDeliveryError" : "ToolError",
+                    message: `${partial ? `消息未全部发送：已完整发送 ${delivery.sentMessages}/${delivery.totalMessages} 段（确认 ${delivery.messageIds.length} 条消息），请勿重复发送已送达内容` : "发送消息失败"}。错误: ${this.getSendErrorMessage(error) || "未知发送错误"}`,
+                    retryable: false,
+                },
+                { delivery },
+            );
         }
     }
 
@@ -308,11 +321,17 @@ export default class CoreUtilExtension {
         if (typeof error === "string") return error;
         if (!error || typeof error !== "object" || seen.has(error)) return "";
         seen.add(error);
-        const details = error as { message?: string; errors?: unknown[]; cause?: unknown };
+        const details = error as { message?: string; errors?: unknown[]; cause?: unknown; code?: unknown; response?: { status?: unknown; data?: unknown } };
+        // Only expose diagnostic fields, never serialize request config or headers.
+        const data = details.response?.data;
+        const api = data && typeof data === "object" ? (data as Record<string, unknown>) : undefined;
         const messages = [
             ...(Array.isArray(details.errors) ? details.errors.map((inner) => this.getSendErrorMessage(inner, seen)) : []),
             this.getSendErrorMessage(details.cause, seen),
             typeof details.message === "string" ? details.message : "",
+            sendErrorScalar("code", details.code),
+            sendErrorScalar("HTTP", details.response?.status),
+            ...["code", "message", "msg", "trace_id"].map((key) => sendErrorScalar(key, api?.[key])),
         ].filter(Boolean);
         return [...new Set(messages)].join("; ");
     }
@@ -332,6 +351,7 @@ export default class CoreUtilExtension {
         channel?: Universal.Channel,
         userId?: string,
         guild?: Universal.Guild,
+        delivery = { messageIds: [] as string[], sentMessages: 0, totalMessages: messages.length },
     ): Promise<void> {
         const sameSession =
             bot === originalSession.bot &&
@@ -379,21 +399,33 @@ export default class CoreUtilExtension {
             });
 
             // --- 发送消息 ---
-            const messageIds = sameSession
-                ? await bot.sendMessage(channelId, content, originalSession.event.referrer, { session: originalSession })
-                : routingSession
-                  ? await bot.sendMessage(channelId, content, undefined, { session: routingSession })
-                  : await bot.sendMessage(channelId, content);
-            if (!messageIds?.length) {
+            let messageIds: string[];
+            let partialError: MessageDeliveryError | undefined;
+            try {
+                messageIds = sameSession
+                    ? await bot.sendMessage(channelId, content, originalSession.event.referrer, { session: originalSession })
+                    : routingSession
+                      ? await bot.sendMessage(channelId, content, undefined, { session: routingSession })
+                      : await bot.sendMessage(channelId, content);
+            } catch (error) {
+                if (!(error instanceof MessageDeliveryError)) throw error;
+                partialError = error;
+                messageIds = error.messages.map((message) => message.id);
+            }
+            const confirmedIds = [...new Set((Array.isArray(messageIds) ? messageIds : []).filter((id) => typeof id === "string" && id.trim()))];
+            if (!confirmedIds.length) {
+                if (partialError) throw partialError;
                 throw new Error("适配器未返回消息 ID，无法确认发送结果");
             }
+            for (const id of confirmedIds) if (!delivery.messageIds.includes(id)) delivery.messageIds.push(id);
+            if (!partialError) delivery.sentMessages++;
 
-            // --- 发送后处理 ---
-            if (messageIds && messageIds.length > 0) {
-                for (const messageId of new Set(messageIds)) {
-                    await this.emitAfterSendEvent(bot, channelId, quoted, messageId, originalSession, channel, guild);
-                }
+            // Preserve confirmed external effects even if a later encoder request failed.
+            for (const messageId of confirmedIds) {
+                const sentContent = partialError ? (partialError.messages.find((message) => message.id === messageId)?.content ?? "") : quoted;
+                await this.emitAfterSendEvent(bot, channelId, sentContent, messageId, originalSession, channel, guild);
             }
+            if (partialError) throw partialError;
 
             // 如果还有下一条消息，增加一个“段落间隔”延迟
             if (i < messages.length - 1) {
