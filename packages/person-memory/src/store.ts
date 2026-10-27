@@ -1,10 +1,16 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import type { Context } from "koishi";
-import { conversationChannelId } from "koishi-plugin-yesimbot";
+import { AppError, ErrorDefinitions, conversationChannelId } from "koishi-plugin-yesimbot";
 
 import { applyClaimChanges, projectClaims, retireClaims, claimEvidence as allClaimEvidence, type Claim, type ClaimChange } from "./claims";
 import { validateProfileDocument, renderProfileDocument, type ProfileDocument } from "./profile";
+
+/** Keep version guards usable with cores predating the typed person error catalog. */
+function versionConflict(message: string): Error {
+    const definition = ErrorDefinitions.PERSON_MEMORY?.VERSION_CONFLICT;
+    return definition ? new AppError(definition, { args: [message] }) : new Error(message);
+}
 
 export type Mode = "off" | "review" | "auto";
 export interface SceneInput {
@@ -831,7 +837,7 @@ export class PersonStore {
                 if (p.locked) throw new Error("画像已被管理员锁定");
                 if (p.claims?.length) throw new Error("已有主张记录，请使用主张修订而非整篇覆写");
                 if (expected && (p.id !== expected.personId || p.revision !== expected.personRevision || a.revision !== expected.accountRevision))
-                    throw new Error("总结期间发生人工修改或身份变更，候选已过期");
+                    throw versionConflict("总结期间发生人工修改或身份变更，候选已过期");
                 const ids = new Set(messageIds);
                 const sources =
                     typeof input === "string"
@@ -904,7 +910,7 @@ export class PersonStore {
                     p = state.people[a.personId];
                 if (p.locked) throw new Error("画像已被管理员锁定");
                 if (!expected || p.id !== expected.personId || p.revision !== expected.personRevision || a.revision !== expected.accountRevision)
-                    throw new Error("身份或画像版本已变化");
+                    throw versionConflict("身份或画像版本已变化");
                 const sources = await this.currentProfileSources(scope, state, userId, 0);
                 const evidence = claimChanges.map((change) => {
                     if (!Array.isArray(change.messageIds) || change.messageIds.length > 10 || (change.action !== "retire" && !change.messageIds.length))

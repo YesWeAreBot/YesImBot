@@ -136,7 +136,13 @@ export interface Dependencies {
     };
 }
 const Success = (result: unknown) => ({ status: "success", result });
-const Failed = (error: unknown) => ({ status: "error", error: { name: "PersonMemoryError", message: error instanceof Error ? error.message : String(error) } });
+const Failed = (error: unknown) => ({
+    status: "error",
+    error:
+        typeof core.isAppError === "function" && typeof core.toToolError === "function" && core.isAppError(error)
+            ? core.toToolError(error)
+            : { name: "PersonMemoryError", message: error instanceof Error ? error.message : String(error) },
+});
 const key = (session: Session) => sceneKey(session as unknown as SceneInput);
 function profileView(p: Person) {
     return {

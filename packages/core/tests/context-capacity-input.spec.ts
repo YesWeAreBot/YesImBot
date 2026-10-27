@@ -60,3 +60,15 @@ it("offers an editable initial row without accepting a missing custom capacity",
     expect(() => ModelConfigSchema({ modelId: "m", contextLimit: { mode: "custom" } })).toThrow(/./);
     expect(() => ModelConfigSchema({ modelId: "m", contextLimit: { mode: "custom", value: [{ unit: "K" }] } })).toThrow(/./);
 });
+
+it("keeps the capacity title on its outer fold without inheriting it into native inner headers", () => {
+    const schema = new Schema(JSON.parse(JSON.stringify(ModelConfigSchema))).dict!.contextLimit;
+    expect(schema.meta.description).toContain("上下文容量");
+    expect(schema.meta.collapse).toBe(true);
+    for (const child of schema.list!.filter((item) => !item.meta.hidden)) {
+        // Native intersect merges parent metadata into children rendered without a fold.
+        const renderedMeta = { ...schema.meta, ...child.meta };
+        expect(renderedMeta.description).toBe("");
+    }
+    expect(capacityTable()?.inner?.dict?.amount.type).toBe("number");
+});

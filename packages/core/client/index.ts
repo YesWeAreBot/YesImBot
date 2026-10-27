@@ -19,8 +19,8 @@ export const ConfigSection = defineComponent({
             return { ...props.schema, meta };
         });
         return () =>
-            h("section", { ...attrs, class: ["yib-config-section", attrs.class] }, [
-                h("h2", { class: "yib-config-section-heading" }, [
+            h("section", { ...attrs, class: ["yib-config-section", props.schema.meta.role === "yib-subsection" && "yib-config-subsection", attrs.class] }, [
+                h(props.schema.meta.role === "yib-subsection" ? "h3" : "h2", { class: "yib-config-section-heading" }, [
                     h(
                         "button",
                         {
@@ -49,7 +49,7 @@ export const ConfigSection = defineComponent({
 });
 
 export default function apply(ctx) {
-    for (const type of ["object", "intersect"]) {
-        ctx.extendSchema({ type, role: "yib-section", component: ConfigSection });
+    for (const role of ["yib-section", "yib-subsection"]) {
+        for (const type of ["object", "intersect"]) ctx.extendSchema({ type, role, component: ConfigSection });
     }
 }

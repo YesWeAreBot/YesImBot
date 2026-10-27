@@ -1,9 +1,10 @@
 import { Logger, Schema } from "koishi";
 import { v4 as uuidv4 } from "uuid";
 
+import type { ToolError } from "../../extension/types";
 import { sanitizeDiagnostic, redactDiagnosticText } from "../../shared/diagnostic-sanitizer";
 import { truncate } from "../../shared/utils";
-import { ErrorDefinitions } from "./definitions";
+import { ErrorDefinitions, type ErrorCategory } from "./definitions";
 import { diagnosticId, diagnosticCode, summarizeContext, summarizeError } from "./report-summary";
 
 // --- 错误上报模块 ---
@@ -120,7 +121,7 @@ export class ErrorReporter {
     }
 
     private formatErrorDump(context: ReportContext): string {
-        const error = context.error instanceof AppError ? context.error : new AppError(ErrorDefinitions.SYSTEM.UNKNOWN, { cause: context.error });
+        const error = normalizeAppError(context.error);
         // Credential filtering includes nested Error fields and additionalInfo before
         // applying the stricter outbound content policy. Neither step mutates inputs.
         const detailed = !!this.config.includeSensitiveInfo;
@@ -178,16 +179,20 @@ export function initializeErrorReporter(
     globalErrorReporter = new ErrorReporter(config, logger, saveLocal, knownSecrets);
 }
 
-type ErrorDomains = keyof typeof ErrorDefinitions;
-
-export type ErrorDefinitionValue = {
-    [K in ErrorDomains]: (typeof ErrorDefinitions)[K][keyof (typeof ErrorDefinitions)[K]];
-}[ErrorDomains];
+export interface ErrorDefinitionValue {
+    code: string;
+    message: string | ((...args: any[]) => string);
+    suggestion: string | ((...args: any[]) => string);
+    category?: ErrorCategory;
+    retryable?: boolean;
+}
 
 export class AppError extends Error {
     public readonly code: string;
     public readonly suggestion: string;
     public readonly errorId: string;
+    public readonly category: ErrorCategory;
+    public readonly retryable: boolean;
 
     public context?: Record<string, any>;
 
@@ -195,7 +200,8 @@ export class AppError extends Error {
         definition: ErrorDefinitionValue,
         options?: {
             context?: Record<string, any>;
-            cause?: Error;
+            cause?: unknown;
+            errorId?: string;
             args?: any[];
         },
     ) {
@@ -220,7 +226,9 @@ export class AppError extends Error {
         this.code = definition.code;
         this.suggestion = suggestion;
         this.context = options?.context;
-        this.errorId = uuidv4();
+        this.errorId = options?.errorId ?? uuidv4();
+        this.category = definition.category ?? "internal";
+        this.retryable = definition.retryable ?? false;
 
         Object.setPrototypeOf(this, AppError.prototype);
     }
@@ -239,20 +247,7 @@ export class AppError extends Error {
  * @returns 返回生成的唯一错误 ID
  */
 export function handleError(logger: Logger, error: unknown, contextDescription: string): string {
-    let appError: AppError;
-
-    // 步骤 1: 确保错误是 AppError 类型
-    // 如果捕获到的不是 AppError，则将其包装成一个通用的系统未知错误，以便统一处理
-    if (error instanceof AppError) {
-        appError = error;
-    } else {
-        // 保留原始错误信息作为排查线索
-        const cause = error instanceof Error ? error : undefined;
-        appError = new AppError(ErrorDefinitions.SYSTEM.UNKNOWN, {
-            cause,
-            context: { capturedValue: error },
-        });
-    }
+    const appError = normalizeAppError(error);
 
     const { errorId, message, suggestion, context, stack } = appError;
 
@@ -301,3 +296,66 @@ export function handleError(logger: Logger, error: unknown, contextDescription: 
 }
 
 export * from "./definitions";
+
+const errorCatalog = new Map<string, ErrorDefinitionValue>(
+    Object.values(ErrorDefinitions).flatMap((domain) => Object.values(domain).map((definition) => [definition.code, definition] as const)),
+);
+const boundedText = (value: unknown, limit: number): value is string => typeof value === "string" && value.length > 0 && value.length <= limit;
+
+/** The validated fields available across package copies or serialized transport. */
+export interface AppErrorEnvelope {
+    name: "AppError";
+    code: string;
+    message: string;
+    suggestion: string;
+    errorId: string;
+    category?: ErrorCategory;
+    retryable?: boolean;
+}
+
+/** Validates a transported/duplicate-package AppError envelope, never a bare code. */
+export function isAppError(value: unknown): value is AppError | AppErrorEnvelope {
+    if (value instanceof AppError) return true;
+    if (!value || typeof value !== "object") return false;
+    const error = value as Record<string, unknown>;
+    const definition = typeof error.code === "string" ? errorCatalog.get(error.code) : undefined;
+    return (
+        !!definition &&
+        error.name === "AppError" &&
+        boundedText(error.message, 4096) &&
+        boundedText(error.suggestion, 4096) &&
+        typeof error.errorId === "string" &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(error.errorId) &&
+        (error.category === undefined || error.category === definition.category) &&
+        (error.retryable === undefined || error.retryable === ("retryable" in definition ? definition.retryable : false))
+    );
+}
+
+/** Internal normalization retains the original thrown value as cause. */
+export function normalizeAppError(error: unknown): AppError {
+    if (isAppError(error)) {
+        if (error instanceof AppError) return error;
+        return new AppError(errorCatalog.get(error.code)!, { errorId: error.errorId, cause: error });
+    }
+    return new AppError(ErrorDefinitions.SYSTEM.UNKNOWN, { cause: error });
+}
+
+/** Public allowlist projection. Dynamic diagnostic arguments never cross this boundary. */
+export function fromAppError(error: AppError): ToolError {
+    const normalized = normalizeAppError(error);
+    const definition = errorCatalog.get(normalized.code) ?? ErrorDefinitions.SYSTEM.UNKNOWN;
+    return {
+        name: "AppError",
+        code: definition.code,
+        message: typeof definition.message === "string" ? definition.message : `操作失败（${definition.code}）`,
+        suggestion: typeof definition.suggestion === "string" ? definition.suggestion : "请检查配置与日志后重试",
+        errorId: normalized.errorId,
+        category: definition.category,
+        retryable: "retryable" in definition ? definition.retryable : false,
+    };
+}
+
+/** Normalize a thrown value; explicit legacy ToolError results continue through Failed unchanged. */
+export function toToolError(error: unknown): ToolError {
+    return fromAppError(normalizeAppError(error));
+}

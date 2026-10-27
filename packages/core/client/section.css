@@ -55,3 +55,17 @@
         margin-left: 2px;
     }
 }
+
+.yib-config-subsection {
+    margin: 10px 0;
+    border-radius: 4px;
+}
+.yib-config-subsection > .yib-config-section-heading {
+    font-size: 0.9rem;
+}
+.yib-config-subsection > .yib-config-section-heading > button {
+    padding: 10px 12px;
+}
+.yib-config-subsection > .yib-config-section-body {
+    padding: 4px 12px 12px;
+}

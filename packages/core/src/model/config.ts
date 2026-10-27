@@ -127,7 +127,7 @@ export const ModelConfigSchema: Schema<ModelConfig> = Schema.object({
             ])
                 .default("unset")
                 .description("最大上下文"),
-        }),
+        }).description(""),
         Schema.union([
             Schema.object({ mode: Schema.const("unset").default("unset") }),
             Schema.object({
@@ -144,7 +144,7 @@ export const ModelConfigSchema: Schema<ModelConfig> = Schema.object({
                     .description("上下文容量（1K = 1000 token；1M = 1000000 token）"),
             }),
             Schema.object({ mode: Schema.const("auto").required() }),
-        ]),
+        ]).description(""),
         // Keep capacity validation separate from the visible table fields.
         Schema.transform(Schema.any<ContextLimitConfig>(), parseContextLimit).hidden(),
     ])
