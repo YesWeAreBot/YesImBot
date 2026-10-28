@@ -74,7 +74,8 @@ function take(keys: ReadonlyArray<keyof Config>): Schema {
         dict[key] = key === "advanced" ? field.description("工具执行限制") : field;
         fields.delete(key);
     }
-    return Schema.object(dict);
+    // Native intersect rendering inherits descriptions unless the child explicitly clears them.
+    return Schema.object(dict).description("");
 }
 
 function subgroup(title: string, keys: ReadonlyArray<keyof Config>): Schema {
