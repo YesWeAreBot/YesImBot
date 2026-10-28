@@ -151,7 +151,7 @@ export class AssetService extends YesImBotService<Config> {
      * @param options - 内部选项，如预设的ID
      * @returns 资源的唯一 ID
      */
-    async create(source: string | Buffer, metadata: AssetMetadata = {}, options: { id?: string; signal?: AbortSignal } = {}): Promise<string> {
+    async create(source: string | Buffer | FileResponse, metadata: AssetMetadata = {}, options: { id?: string; signal?: AbortSignal } = {}): Promise<string> {
         const prepared = await this._prepareAsset(source, metadata, options);
         const id = await prepared.persisted;
         options.signal?.throwIfAborted();
@@ -159,7 +159,11 @@ export class AssetService extends YesImBotService<Config> {
     }
 
     /** Reserve a canonical ID before publishing it, including concurrent callers. */
-    private async _prepareAsset(source: string | Buffer, metadata: AssetMetadata, options: { id?: string; signal?: AbortSignal } = {}): Promise<PreparedAsset> {
+    private async _prepareAsset(
+        source: string | Buffer | FileResponse,
+        metadata: AssetMetadata,
+        options: { id?: string; signal?: AbortSignal } = {},
+    ): Promise<PreparedAsset> {
         const { signal } = options;
         signal?.throwIfAborted();
         // A cancellable writer only owns freshly generated IDs for rollback.
@@ -408,7 +412,7 @@ export class AssetService extends YesImBotService<Config> {
         }
 
         try {
-            let source: string | Buffer = originalUrl;
+            let source: string | Buffer | FileResponse = originalUrl;
             if (options.session?.platform === "slack") {
                 const url = new URL(originalUrl);
                 if (
@@ -421,13 +425,15 @@ export class AssetService extends YesImBotService<Config> {
                 ) {
                     const token = (options.session.bot.config as { botToken?: string }).botToken;
                     if (!token) throw new Error("Slack 私有附件缺少当前机器人鉴权");
-                    const response = await this.ctx.http.get(originalUrl, {
+                    const response = await this.ctx.http(originalUrl, {
                         responseType: "arraybuffer",
                         headers: { Authorization: `Bearer ${token}` },
                         redirect: "error",
                         timeout: this.config.downloadTimeout,
                     });
-                    source = Buffer.from(response);
+                    const data = Buffer.from(response.data);
+                    const type = response.headers.get("content-type")?.split(";")[0].trim().toLowerCase();
+                    source = { data, type: type || getMimeType(data) };
                     // Private downloads cannot be recovered later without their originating authorization.
                     delete metadata.src;
                 }
@@ -447,7 +453,7 @@ export class AssetService extends YesImBotService<Config> {
         }
     }
 
-    private async _getSourceBuffer(source: string | Buffer): Promise<FileResponse> {
+    private async _getSourceBuffer(source: string | Buffer | FileResponse): Promise<FileResponse> {
         const result = await this._loadSourceBuffer(source);
         if (result.data.length > this.maxFileSizeBytes) {
             throw new Error(`文件大小 (${formatSize(result.data.length)}) 超出限制 (${formatSize(this.maxFileSizeBytes)})`);
@@ -455,7 +461,7 @@ export class AssetService extends YesImBotService<Config> {
         return result;
     }
 
-    private async _loadSourceBuffer(source: string | Buffer): Promise<FileResponse> {
+    private async _loadSourceBuffer(source: string | Buffer | FileResponse): Promise<FileResponse> {
         if (Buffer.isBuffer(source)) {
             const mime = getMimeType(source);
             return {
@@ -463,6 +469,7 @@ export class AssetService extends YesImBotService<Config> {
                 data: source,
             };
         }
+        if (typeof source !== "string") return source;
         if (source.startsWith("data:")) {
             const match = source.match(/^data:.+;base64,(.*)$/);
             if (!match) throw new Error("无效的 data: URL 格式");

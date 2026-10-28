@@ -190,7 +190,7 @@ export class StimulusScheduler {
 
     /** 所有用户消息都影响安静期，包括未触发回复的消息。 */
     public noteUserMessage(channelKey: string): void {
-        if (!this.disposed && this.deferredTimers.has(channelKey)) {
+        if (!this.disposed && (this.deferredTimers.has(channelKey) || this.deferredReady.has(channelKey))) {
             this.setupDeferredTimer(channelKey);
         }
     }

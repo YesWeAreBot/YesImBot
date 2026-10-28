@@ -158,17 +158,18 @@ it("downloads Slack private attachments with the originating bot token without p
     const f = await fixture();
     const token = "xoxb-fixture-private-token";
     const source = "https://files.slack.com/files-pri/T-team-F-file/private.txt";
-    const download = vi.spyOn(f.ctx.http, "get").mockImplementation(async (_url: any, options: any) => {
-        if (options?.headers?.Authorization !== `Bearer ${token}`) throw new Error("authorization required");
-        return Buffer.from("private body");
+    const download = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, options) => {
+        if (new Headers(options?.headers).get("authorization") !== `Bearer ${token}`) throw new Error("authorization required");
+        return new Response("private body", { headers: { "content-type": "text/plain" } });
     });
+    onTestFinished(() => download.mockRestore());
     const original = h("file", { src: source, id: "F-file" });
     const session = { platform: "slack", bot: { config: { botToken: token } } } as any;
     const parsed = h.parse(await f.assets.transform([original], { session } as any))[0];
     expect(parsed.attrs.id).not.toBe("F-file");
     expect(parsed.attrs.src).toBeUndefined();
     expect(await f.assets.read(parsed.attrs.id)).toEqual(Buffer.from("private body"));
-    expect(download).toHaveBeenCalledWith(source, expect.objectContaining({ redirect: "error", headers: { Authorization: `Bearer ${token}` } }));
+    expect(download).toHaveBeenCalledWith(new URL(source), expect.objectContaining({ redirect: "error" }));
     const stored = JSON.stringify(await f.ctx.database.get(TableName.Assets, {}));
     expect(stored).not.toContain(token);
     expect(stored).not.toContain(source);
@@ -189,3 +190,36 @@ it.each(["https://files.slack.com.evil.invalid/files-pri/file", "http://files.sl
         expect(JSON.stringify(seen)).not.toContain("private-fixture");
     },
 );
+
+for (const method of ["transform", "transformAsync"] as const) {
+    it(`retains Slack SVG response MIME through ${method} and encoding`, async () => {
+        const f = await fixture();
+        const source = "https://files.slack.com/files-pri/T-team-F-file/image.svg";
+        const body = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>';
+        const download = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+            new Response(body, {
+                headers: { "content-type": "image/svg+xml; charset=utf-8" },
+            }),
+        );
+        onTestFinished(() => download.mockRestore());
+        const result = await f.assets[method]([h.image(source, { id: "F-svg" })], {
+            session: { platform: "slack", bot: { config: { botToken: "xoxb-svg" } } } as any,
+        });
+        const element = h.parse(result)[0];
+        // Join the background writer without another HTTP download.
+        await f.assets.create(Buffer.from(body));
+        expect(await f.assets.getInfo(element.attrs.id)).toMatchObject({ mime: "image/svg+xml" });
+        const encoded = (await f.assets.encode(result))[0];
+        expect(encoded.type).toBe("img");
+        expect(encoded.attrs.src).toBe(`data:image/svg+xml;base64,${Buffer.from(body).toString("base64")}`);
+        expect(download).toHaveBeenCalledTimes(1);
+        const [url, init] = download.mock.calls[0];
+        expect(String(url)).toBe(source);
+        expect(init?.redirect).toBe("error");
+        expect(new Headers(init?.headers).get("authorization")).toBe("Bearer xoxb-svg");
+        expect(JSON.stringify(await f.ctx.database.get(TableName.Assets, {}))).not.toMatch(/xoxb-svg|files.slack.com/);
+        await unlink(path.join(f.config.storagePath, element.attrs.id));
+        await expect(f.assets.read(element.attrs.id)).rejects.toMatchObject({ code: "ENOENT" });
+        expect(download).toHaveBeenCalledTimes(1);
+    });
+}
