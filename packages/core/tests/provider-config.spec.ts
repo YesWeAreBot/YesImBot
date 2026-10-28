@@ -96,19 +96,60 @@ describe("provider configuration", () => {
             expect(sent?.pathname).toBe(path);
         }
     });
-    it("does not preflight or rewrite configured compatibility paths", () => {
-        for (const [type, baseURL] of [
-            ["Google Gemini", "https://generativelanguage.googleapis.com/v1beta/openai/"],
-            ["Qwen", "https://dashscope.aliyuncs.com/compatible-mode/v1/"],
-            ["Ollama", "http://localhost:11434/v1/"],
-            ["LM Studio", "http://localhost:1234/v1/"],
-        ]) {
+    it.each([
+        [
+            "Google Gemini",
+            "https://generativelanguage.googleapis.com/v1beta/openai/",
+            "https://generativelanguage.googleapis.com/v1beta/models/test:generateContent",
+        ],
+        ["Qwen", "https://dashscope.aliyuncs.com/compatible-mode/v1/", "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation"],
+        ["Ollama", "http://localhost:11434/v1/", "http://localhost:11434/api/chat"],
+    ])("migrates saved %s official compatibility roots before sending native requests", async (type, oldRoot, expected) => {
+        for (const baseURL of [oldRoot, oldRoot.slice(0, -1)]) {
             const value = config(type, { baseURL });
-            expect(() => createNativeFetch(value, fetch)).not.toThrow();
-            expect(value.baseURL).toBe(baseURL);
-            expect(createNativeFetch(config("OpenAI Compatible", { baseURL }), fetch)).toBe(fetch);
+            const options = ProviderFactoryRegistry.get(value.type)!.createClient(value).chat!("test");
+            let sent: string | undefined;
+            const transport = (async (url: RequestInfo | URL) => {
+                sent = String(url);
+                return new Response("test rejection", { status: 429 });
+            }) as typeof fetch;
+            await createNativeFetch(value, transport)(new URL("chat/completions", options.baseURL), {
+                method: "POST",
+                body: JSON.stringify({ model: "test", messages: [{ role: "user", content: "hi" }] }),
+            });
+            expect(sent).toBe(expected);
+            expect(config(type, { baseURL: value.baseURL }).baseURL).toBe(value.baseURL);
         }
     });
+    it.each([
+        ["Google Gemini", "https://generativelanguage.googleapis.com/v1beta/"],
+        ["Qwen", "https://dashscope.aliyuncs.com/api/v1/"],
+        ["Ollama", "http://localhost:11434/"],
+        ["Google Gemini", "https://gateway.example/v1beta/openai/"],
+        ["Qwen", "https://gateway.example/compatible-mode/v1/"],
+        ["Ollama", "http://custom-host:11434/v1/"],
+        ["Google Gemini", "https://generativelanguage.googleapis.com/custom/v1beta/openai/"],
+        ["Qwen", "https://dashscope.aliyuncs.com/compatible-mode/v1/?custom=1"],
+        ["Ollama", "http://localhost:11434/custom/v1/"],
+        ["LM Studio", "http://localhost:1234/v1/"],
+    ])("preserves explicit native or custom %s roots: %s", (type, baseURL) => {
+        expect(config(type, { baseURL }).baseURL).toBe(baseURL);
+    });
+    it.each(["https://generativelanguage.googleapis.com/v1beta/openai/", "https://dashscope.aliyuncs.com/compatible-mode/v1/", "http://localhost:11434/v1/"])(
+        "preserves explicit OpenAI Compatible routing at %s",
+        async (baseURL) => {
+            const value = config("OpenAI Compatible", { baseURL });
+            expect(value.baseURL).toBe(baseURL);
+            const options = ProviderFactoryRegistry.get(value.type)!.createClient(value).chat!("test");
+            let sent: string | undefined;
+            const transport = (async (url: RequestInfo | URL) => {
+                sent = String(url);
+                return new Response("test rejection", { status: 429 });
+            }) as typeof fetch;
+            await createNativeFetch(value, transport)(new URL("chat/completions", options.baseURL), { method: "POST" });
+            expect(sent).toBe(`${baseURL}chat/completions`);
+        },
+    );
     it("has a factory for every visible provider preset", () => {
         for (const type of PROVIDER_TYPES) expect(ProviderFactoryRegistry.get(type)).toBeDefined();
     });

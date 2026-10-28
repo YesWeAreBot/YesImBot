@@ -1,3 +1,4 @@
+import { Bot, Context, MessageEncoder, h } from "koishi";
 import { describe, expect, it } from "vitest";
 
 import { withReplyTurn } from "../src/agent/reply-turn";
@@ -361,4 +362,38 @@ it("preserves the direct destination category when resolving a private tool targ
         (target) => target.isDirect === true,
     );
     expect(result.status).toBe("success");
+});
+
+for (const guarded of [false, true]) {
+    it(`records successful encoder split content with reply guard ${guarded}`, async () => {
+        const ctx = new Context();
+        class Encoder extends MessageEncoder {
+            async visit() {
+                this.results.push({ id: "text", content: "hello" }, { id: "image", elements: [h.image("https://test.invalid/a.png")] });
+            }
+            async flush() {}
+        }
+        class SendingBot extends Bot {
+            static MessageEncoder = Encoder;
+        }
+        const bot = new SendingBot(ctx, {} as any, "slack");
+        bot.user = { id: "bot" };
+        const f = setup();
+        f.ctx.bots = [bot];
+        const session = bot.session({ channel: { id: "C", type: 0 }, message: { id: "source" } });
+        const send = () => f.tool.sendMessage({ session, message: "hello" } as any);
+        const result = guarded ? await withReplyTurn(() => true, send) : await send();
+        expect(result.status).toBe("success");
+        expect(f.events.map((event) => event[1].event.message)).toMatchObject([
+            { id: "text", content: "hello" },
+            { id: "image", content: '<img src="https://test.invalid/a.png"/>' },
+        ]);
+        await ctx.stop();
+    });
+}
+
+it("leaves split receipt content unknown when an adapter returns only IDs", async () => {
+    const f = setup(async () => ["text", "image"]);
+    expect((await f.tool.sendMessage({ session: f.session, message: 'hello<img src="https://test.invalid/a.png"/>' } as any)).status).toBe("success");
+    expect(f.events.map((event) => event[1].event.message.content)).toEqual(["", ""]);
 });

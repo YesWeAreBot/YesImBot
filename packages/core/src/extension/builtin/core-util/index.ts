@@ -1,13 +1,13 @@
 import { Bot, Context, h, Logger, Schema, Session, sleep, Universal } from "koishi";
 
-import { assertReplyDestination, guardReplyBot, replyTurnSignal } from "../../../agent/reply-turn";
+import { assertReplyDestination, guardReplyBot, replyTurnSignal, sendMessageWithReceipts } from "../../../agent/reply-turn";
 import { AssetService } from "../../../asset";
 import { Extension, Tool, withInnerThoughts } from "../../../extension/decorators";
 import { Failed, Success } from "../../../extension/helpers";
 import { Infer } from "../../../extension/types";
 import { IChatModel, ModelDescriptor } from "../../../model";
 import { withUsageScope } from "../../../model/usage";
-import { MessageDeliveryError } from "../../../shared/message-delivery";
+import { MessageDeliveryError, type ConfirmedMessage } from "../../../shared/message-delivery";
 import { isEmpty, parseConversationChannelId } from "../../../shared/utils";
 
 function sendErrorScalar(key: string, value: unknown): string {
@@ -400,13 +400,18 @@ export default class CoreUtilExtension {
 
             // --- 发送消息 ---
             let messageIds: string[];
+            let receipts: ConfirmedMessage[] | undefined;
             let partialError: MessageDeliveryError | undefined;
             try {
-                messageIds = sameSession
-                    ? await bot.sendMessage(channelId, content, originalSession.event.referrer, { session: originalSession })
-                    : routingSession
-                      ? await bot.sendMessage(channelId, content, undefined, { session: routingSession })
-                      : await bot.sendMessage(channelId, content);
+                const sent = await sendMessageWithReceipts(
+                    bot,
+                    channelId,
+                    content,
+                    sameSession ? originalSession.event.referrer : undefined,
+                    sameSession ? { session: originalSession } : routingSession ? { session: routingSession } : undefined,
+                );
+                messageIds = sent.ids;
+                receipts = sent.messages;
             } catch (error) {
                 if (!(error instanceof MessageDeliveryError)) throw error;
                 partialError = error;
@@ -422,7 +427,12 @@ export default class CoreUtilExtension {
 
             // Preserve confirmed external effects even if a later encoder request failed.
             for (const messageId of confirmedIds) {
-                const sentContent = partialError ? (partialError.messages.find((message) => message.id === messageId)?.content ?? "") : quoted;
+                const confirmed = partialError?.messages ?? receipts;
+                const sentContent = confirmed
+                    ? (confirmed.find((message) => message.id === messageId)?.content ?? "")
+                    : confirmedIds.length === 1
+                      ? quoted
+                      : "";
                 await this.emitAfterSendEvent(bot, channelId, sentContent, messageId, originalSession, channel, guild);
             }
             if (partialError) throw partialError;

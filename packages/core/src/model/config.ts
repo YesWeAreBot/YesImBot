@@ -290,7 +290,22 @@ export interface ProviderConfig {
     models: ModelConfig[];
 }
 
+// Only migrate former official defaults; custom gateways must retain their configured roots.
+const LEGACY_OFFICIAL_ROOTS: Partial<Record<ProviderType, string>> = {
+    "Google Gemini": "https://generativelanguage.googleapis.com/v1beta/openai/",
+    Qwen: "https://dashscope.aliyuncs.com/compatible-mode/v1/",
+    Ollama: "http://localhost:11434/v1/",
+};
+
 export const ProviderConfigSchema: Schema<ProviderConfig> = Schema.intersect([
+    // Adapt saved defaults before resolving the visible fields; keep their console schema unchanged.
+    Schema.transform(Schema.any<ProviderConfig>(), (config) => {
+        const legacyRoot = LEGACY_OFFICIAL_ROOTS[config?.type];
+        if (legacyRoot && typeof config.baseURL === "string" && config.baseURL.replace(/\/?$/, "/") === legacyRoot) {
+            config.baseURL = PROVIDERS[config.type].baseURL;
+        }
+        return {};
+    }).hidden(),
     Schema.object({
         name: Schema.string().required().description("提供商名称"),
         type: Schema.union(PROVIDER_TYPES.map((type) => Schema.const(type).description(type === "Fatherless AI" ? "Featherless AI（旧配置名称）" : type)))

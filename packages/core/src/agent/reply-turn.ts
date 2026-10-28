@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 
 import type { Bot, Session } from "koishi";
 
-import { MessageDeliveryError } from "../shared/message-delivery";
+import { MessageDeliveryError, confirmedMessages, messageReceiptSink, type ConfirmedMessage } from "../shared/message-delivery";
 import type { ReplyTarget } from "./reply-control";
 
 type ReplyTurn = { valid: () => boolean; signal?: AbortSignal; canSend?: (target: ReplyTarget) => boolean };
@@ -108,9 +108,14 @@ async function withGuardedEncoder<T>(
             // 同 bot、频道和异步链上的普通发送/新 turn 也必须有本次调用的令牌。
             const guarded = args[3]?.[encoderSendToken] === token && String(args[1]) === String(channelId);
             const encoderOptions = { ...args[3] };
-            if (guarded) delete encoderOptions[encoderSendToken];
+            if (guarded) {
+                delete encoderOptions[encoderSendToken];
+                delete encoderOptions[messageReceiptSink];
+            }
+            const receiptSink = guarded ? args[3]?.[messageReceiptSink] : undefined;
             const encoderArgs = [...args];
-            encoderArgs[0] = bot;
+            // OneBot enforces destination checks through its bot receiver.
+            encoderArgs[0] = guardedBots.has(args[0]) ? args[0] : bot;
             if (guarded) encoderArgs[3] = encoderOptions;
             const encoder = Reflect.construct(target, encoderArgs);
             for (const key of ["send", "prepare", "render", "visit", "flush"] as const) {
@@ -124,11 +129,16 @@ async function withGuardedEncoder<T>(
                     else scope.delete(bot);
                     const result = outboundScopes.run(scope, () => method.apply(encoder, args));
                     if (guarded && key === "send") {
-                        return Promise.resolve(result).catch((error) => {
-                            const deliveryError = new MessageDeliveryError(error, Array.isArray(encoder.results) ? encoder.results : []);
-                            if (deliveryError.messages.length) throw deliveryError;
-                            throw error;
-                        });
+                        return Promise.resolve(result)
+                            .then((value) => {
+                                receiptSink?.(Array.isArray(encoder.results) ? encoder.results : []);
+                                return value;
+                            })
+                            .catch((error) => {
+                                const deliveryError = new MessageDeliveryError(error, Array.isArray(encoder.results) ? encoder.results : []);
+                                if (deliveryError.messages.length) throw deliveryError;
+                                throw error;
+                            });
                     }
                     return result;
                 };
@@ -169,6 +179,31 @@ async function withGuardedEncoder<T>(
             activeEncoders.delete(bot);
         }
     }
+}
+/** Capture adapter-confirmed content while preserving the guarded bot's send path. */
+export async function sendMessageWithReceipts(bot: Bot, channelId: string, content: Parameters<Bot["sendMessage"]>[1], referrer?: any, options?: any) {
+    let raw = bot;
+    while (guardedBots.has(raw)) raw = guardedBots.get(raw)!.bot;
+    let messages: ConfirmedMessage[] | undefined;
+    const sendOptions = {
+        ...options,
+        [messageReceiptSink]: (receipts: ConfirmedMessage[]) => {
+            messages = confirmedMessages(receipts);
+        },
+    };
+    // Adapters without encoders retain their exact calling convention.
+    if (!(raw.constructor as typeof Bot).MessageEncoder) {
+        const ids = await bot.sendMessage(channelId, content, referrer, options);
+        return { ids, messages };
+    }
+    const ids = await withGuardedEncoder(
+        raw,
+        channelId,
+        sendOptions,
+        () => {},
+        (scopedOptions) => bot.sendMessage(channelId, content, referrer, scopedOptions),
+    );
+    return { ids, messages };
 }
 export function isReplyTurnCancelled(): boolean {
     const turn = turns.getStore();
