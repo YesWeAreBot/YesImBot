@@ -31,6 +31,7 @@ async function fixture(enabled = true) {
     const config: any = {
         backgroundTools: {
             enabled,
+            allowedTools: ["read_slow"],
             completion: "next_cycle",
             settlement: "request",
             willingness: { succeeded: 2, failed: 0, cancelled: 0 },
@@ -317,4 +318,88 @@ it("retains administrator attribution for a manually submitted background tool",
     await f.tools.invoke("background_task_start", { tool: "read_slow", params: {} }, f.session);
     await drain();
     expect(f.receipts.find((receipt) => receipt.payload.operation === "read_slow").payload.actor).toBe("admin:telegram:u");
+});
+
+it("blocks unselected background tools without changing direct calls", async () => {
+    const f = await fixture();
+    let calls = 0;
+    add(f, async () => {
+        calls++;
+        return { status: "success", result: "done" };
+    });
+    f.config.backgroundTools.allowedTools = [];
+    expect((f.tools.background!.query(f.session) as any).tools).toEqual([]);
+    expect(() => f.tools.background!.start(f.session, "read_slow", {})).toThrow("该工具不允许后台执行");
+    expect(calls).toBe(0);
+    expect((await f.tools.invoke("read_slow", {}, f.session)).status).toBe("success");
+    expect(calls).toBe(1);
+});
+it("does not let selection authorize a tool without background support", async () => {
+    const f = await fixture();
+    add(f, async () => ({ status: "success" }), false);
+    expect((f.tools.background!.query(f.session) as any).tools).toEqual([]);
+    expect(() => f.tools.background!.start(f.session, "read_slow", {})).toThrow("该工具不允许后台执行");
+});
+it("invalidates a running task result when its background permission is revoked", async () => {
+    const f = await fixture(),
+        d = deferred();
+    add(f, async () => {
+        await d.promise;
+        return { status: "success", result: "stale" };
+    });
+    const task = f.tools.background!.start(f.session, "read_slow", {});
+    await drain();
+    f.config.backgroundTools.allowedTools = [];
+    d.resolve();
+    await drain();
+    expect(f.completions).toEqual([]);
+    expect(() => f.tools.background!.query(f.session, task.id)).toThrow("Background task not found");
+});
+it("refreshes selectable tools on registration, replacement and disposal", async () => {
+    const f = await fixture(false);
+    const definition = {
+        name: "extra_read",
+        description: "Extra read",
+        background: true,
+        parameters: Schema.object({}),
+        execute: async () => ({ status: "success" as const }),
+    };
+    const removeOld = f.tools.registerTool(definition);
+    const names = () => f.tools.ctx.schema.get("toolService.backgroundEligibleTools")?.inner?.list?.map((choice: any) => choice.value) ?? [];
+    expect(names()).toContain("extra_read");
+    const rendered = f.tools.ctx.schema.get("toolService.backgroundEligibleTools");
+    expect(rendered.type).toBe("array");
+    expect(rendered.meta.role).toBe("checkbox");
+    expect(rendered.meta.default).toEqual(["web_search", "fetch_webpage", "get_image_description"]);
+    f.tools.registerTool({ ...definition, background: false });
+    expect(names()).not.toContain("extra_read");
+    const removeNew = f.tools.registerTool({ ...definition });
+    removeOld();
+    expect(names()).toContain("extra_read");
+    removeNew();
+    expect(names()).not.toContain("extra_read");
+});
+
+it("keeps other instances' tool choices when a shared schema owner stops", async () => {
+    const f = await fixture(false);
+    let other!: ToolService;
+    const fork = f.tools.ctx.plugin((scope) => {
+        other = new ToolService(scope, { backgroundTools: { enabled: false } } as any, { logging: loggingStub() } as any);
+        scope.on("dispose", () => other.stop());
+    });
+    onTestFinished(() => fork.dispose());
+    add(f, async () => ({ status: "success" }));
+    other.registerTool({
+        name: "other_read",
+        description: "Other read",
+        background: true,
+        parameters: Schema.object({}),
+        execute: async () => ({ status: "success" }),
+    });
+    const names = () => f.tools.ctx.schema.get("toolService.backgroundEligibleTools").inner!.list!.map((choice) => choice.value);
+    expect(names()).toContain("other_read");
+    expect(names()).toContain("read_slow");
+    await fork.dispose();
+    expect(names()).not.toContain("other_read");
+    expect(names()).toContain("read_slow");
 });

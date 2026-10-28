@@ -331,3 +331,88 @@ it("targeted clear preserves legacy notes in other channels until global migrati
     await restarted.l2_manager.clearHistory({ type: "all" }, async () => {});
     expect(await f.app.database.get("worldstate.conversation_state", {})).toEqual([]);
 });
+
+it("persists model-authored follow-up with fixed expiration and original-source validation", async () => {
+    const f = await fixture();
+    await f.add(source("a"));
+    const before = Date.now();
+    const result = await f.world.updateConversationState(f.session(), {
+        ...update,
+        topic: "",
+        openIssues: [],
+        followUp: { userIds: ["alice"], durationSeconds: 60 },
+    });
+    expect(result.unknown).toBe(false);
+    expect(result.state.followUp.userIds).toEqual(["alice"]);
+    expect(result.state.followUp.expiresAt).toBeGreaterThanOrEqual(before + 60_000);
+    expect(result.state.followUp.expiresAt).toBeLessThanOrEqual(Date.now() + 60_000);
+    expect(await f.restart().getConversationState(f.session())).toEqual(result);
+    await f.app.database.set(TableName.Messages, { ...target, id: "a" }, { content: "changed" });
+    expect(await f.world.getConversationState(f.session())).toMatchObject({ unknown: true });
+});
+
+it("rejects follow-up without sources or valid bounded recipients/duration", async () => {
+    const f = await fixture();
+    await f.add(source("a"));
+    const invalid = [
+        { userIds: [], durationSeconds: 60 },
+        { userIds: ["alice", "alice"], durationSeconds: 60 },
+        { userIds: [""], durationSeconds: 60 },
+        { userIds: ["alice"], durationSeconds: 0 },
+        { userIds: ["alice"], durationSeconds: Infinity },
+        { userIds: ["alice"], durationSeconds: 86401 },
+    ];
+    for (const followUp of invalid) await expect(f.world.updateConversationState(f.session(), { ...update, followUp })).rejects.toThrow(/等待/);
+    await expect(
+        f.world.updateConversationState(f.session(), {
+            ...update,
+            topic: "",
+            openIssues: [],
+            sourceMessageIds: [],
+            followUp: { userIds: ["alice"], durationSeconds: 60 },
+        }),
+    ).rejects.toThrow(/来源/);
+});
+
+it("returns original sources only when requested, without exposing fingerprints or storing source copies", async () => {
+    const f = await fixture();
+    await f.add(source("a"));
+    await f.world.updateConversationState(f.session(), update);
+    const ordinary = await f.world.getConversationState(f.session());
+    expect(ordinary).not.toHaveProperty("sourceMessages");
+    const projected = await f.world.getConversationState(f.session(), { includeSources: true });
+    expect(projected.sourceMessages).toMatchObject([{ id: "a", content: "a", sender: { id: "alice" } }]);
+    expect(projected.state).not.toHaveProperty("sourceFingerprints");
+    expect(await f.restart().getConversationState(f.session())).not.toHaveProperty("sourceMessages");
+});
+
+it("respects the administrator's continuation switch and duration ceiling", async () => {
+    const f = await fixture();
+    await f.add(source("a"));
+    f.world.config.continuation = { enabled: false, maxDurationSeconds: 30 };
+    const waiting = { ...update, followUp: { userIds: ["alice"], durationSeconds: 60 } };
+    expect(() => f.world.updateConversationState(f.session(), waiting)).toThrow(/未启用/);
+    f.world.config.continuation.enabled = true;
+    expect(() => f.world.updateConversationState(f.session(), waiting)).toThrow(/上限/);
+});
+
+it("expires follow-up-only projections without renewing their fixed deadline", async () => {
+    const { vi } = await import("vitest");
+    const f = await fixture();
+    await f.add(source("a"));
+    await f.world.updateConversationState(f.session(), {
+        ...update,
+        topic: "",
+        openIssues: [],
+        followUp: { userIds: ["alice"], durationSeconds: 1 },
+    });
+    vi.spyOn(Date, "now").mockReturnValue(Date.now() + 2000);
+    try {
+        const result = await f.world.getConversationState(f.session(), { includeSources: true });
+        expect(result.unknown).toBe(true);
+        expect(result.state.followUp).toBeUndefined();
+        expect(result.state.revision).toBe(1);
+    } finally {
+        vi.restoreAllMocks();
+    }
+});
