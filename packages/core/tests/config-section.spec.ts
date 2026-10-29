@@ -1,19 +1,20 @@
 import { renderToString } from "@vue/server-renderer";
 import { Schema } from "koishi";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
+
+vi.mock("@koishijs/client", async () => ({ store: { schema: {} }, Schema: (await import("koishi")).Schema }));
 import { createSSRApp, defineComponent, h } from "vue";
 
 import apply, { ConfigSection } from "../client";
 
 it("registers top-level sections and nested subsections independently", () => {
     const extensions: any[] = [];
-    apply({ extendSchema: (extension: unknown) => extensions.push(extension) });
-    expect(extensions.filter(({ role }) => role !== "yib-model-groups").map(({ type, role }) => `${type}:${role}`)).toEqual([
-        "object:yib-section",
-        "intersect:yib-section",
-        "object:yib-subsection",
-        "intersect:yib-subsection",
-    ]);
+    apply({ schema: (extension: unknown) => extensions.push(extension) });
+    expect(
+        extensions
+            .filter(({ role }) => role !== "yib-model-groups" && role !== "yib-dynamic" && role !== "yib-entry")
+            .map(({ type, role }) => `${type}:${role}`),
+    ).toEqual(["object:yib-section", "intersect:yib-section", "object:yib-subsection", "intersect:yib-subsection"]);
 });
 
 it.each([false, true])("renders a subsection without a duplicate top-level heading (folded=%s)", async (collapsed) => {
@@ -39,6 +40,6 @@ it.each([false, true])("renders a subsection without a duplicate top-level headi
 
 it("registers a model group list with visible deletion controls", () => {
     const extensions: any[] = [];
-    apply({ extendSchema: (extension: unknown) => extensions.push(extension) });
+    apply({ schema: (extension: unknown) => extensions.push(extension) });
     expect(extensions.some(({ type, role }) => type === "array" && role === "yib-model-groups")).toBe(true);
 });

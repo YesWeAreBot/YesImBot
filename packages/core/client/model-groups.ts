@@ -1,5 +1,7 @@
 import { defineComponent, h, ref, resolveComponent, watch } from "vue";
 
+import { invalidConfig } from "./validation";
+
 const copy = (value: unknown): any[] => JSON.parse(JSON.stringify(value ?? []));
 
 export const ModelGroups = defineComponent({
@@ -39,49 +41,57 @@ export const ModelGroups = defineComponent({
                     rows.value.length ? "删除正在使用的模型组后，请检查任务分配。" : "尚无模型组。启动或重载插件时会自动创建默认模型组。",
                 ),
                 ...rows.value.map((row, index) =>
-                    h("div", { class: "yib-model-group-row", key: index }, [
-                        h("div", { class: "yib-model-group-actions" }, [
-                            h("span", row?.name || `模型组 ${index + 1}`),
-                            h(
-                                "button",
-                                {
-                                    type: "button",
-                                    disabled: props.disabled || index === 0,
-                                    "aria-label": `上移模型组 ${index + 1}`,
-                                    onClick: () => move(index, -1),
+                    h(
+                        "div",
+                        {
+                            class: ["yib-model-group-row", { invalid: invalidConfig(props.schema.inner, row) }],
+                            "aria-invalid": invalidConfig(props.schema.inner, row),
+                            key: index,
+                        },
+                        [
+                            h("div", { class: "yib-model-group-actions" }, [
+                                h("span", row?.name || `模型组 ${index + 1}`),
+                                h(
+                                    "button",
+                                    {
+                                        type: "button",
+                                        disabled: props.disabled || index === 0,
+                                        "aria-label": `上移模型组 ${index + 1}`,
+                                        onClick: () => move(index, -1),
+                                    },
+                                    "上移",
+                                ),
+                                h(
+                                    "button",
+                                    {
+                                        type: "button",
+                                        disabled: props.disabled || index === rows.value.length - 1,
+                                        "aria-label": `下移模型组 ${index + 1}`,
+                                        onClick: () => move(index, 1),
+                                    },
+                                    "下移",
+                                ),
+                                h(
+                                    "button",
+                                    { type: "button", disabled: props.disabled, "aria-label": `删除模型组 ${index + 1}`, onClick: () => remove(index) },
+                                    "删除模型组",
+                                ),
+                            ]),
+                            h(resolveComponent("k-schema"), {
+                                schema: props.schema.inner,
+                                modelValue: row,
+                                initial: props.initial?.[index],
+                                disabled: props.disabled,
+                                prefix: `${(props.prefix ?? "modelGroups.").replace(/\.$/, "")}[${index}].`,
+                                extra: { foldable: true },
+                                "onUpdate:modelValue": (value) => {
+                                    if (props.disabled) return;
+                                    rows.value[index] = value;
+                                    update();
                                 },
-                                "上移",
-                            ),
-                            h(
-                                "button",
-                                {
-                                    type: "button",
-                                    disabled: props.disabled || index === rows.value.length - 1,
-                                    "aria-label": `下移模型组 ${index + 1}`,
-                                    onClick: () => move(index, 1),
-                                },
-                                "下移",
-                            ),
-                            h(
-                                "button",
-                                { type: "button", disabled: props.disabled, "aria-label": `删除模型组 ${index + 1}`, onClick: () => remove(index) },
-                                "删除模型组",
-                            ),
-                        ]),
-                        h(resolveComponent("k-schema"), {
-                            schema: props.schema.inner,
-                            modelValue: row,
-                            initial: props.initial?.[index],
-                            disabled: props.disabled,
-                            prefix: `${(props.prefix ?? "modelGroups.").replace(/\.$/, "")}[${index}].`,
-                            extra: { foldable: true },
-                            "onUpdate:modelValue": (value) => {
-                                if (props.disabled) return;
-                                rows.value[index] = value;
-                                update();
-                            },
-                        }),
-                    ]),
+                            }),
+                        ],
+                    ),
                 ),
                 h(
                     "button",

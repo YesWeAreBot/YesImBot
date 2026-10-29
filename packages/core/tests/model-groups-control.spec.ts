@@ -1,5 +1,6 @@
 import { Schema } from "koishi";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
+vi.mock("@koishijs/client", async () => ({ Schema: (await import("koishi")).Schema }));
 import { createRenderer, defineComponent, h, nextTick, ref } from "vue";
 
 import { ModelGroups } from "../client/model-groups";

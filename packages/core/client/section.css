@@ -105,3 +105,31 @@
 .yib-model-group-note {
     color: var(--k-text-light);
 }
+
+.yib-config-section.invalid {
+    border-color: var(--el-color-danger);
+}
+.yib-config-section.invalid > .yib-config-section-heading > button {
+    color: var(--el-color-danger);
+}
+.yib-config-section-error {
+    font-size: 0.85rem;
+    margin-left: auto;
+}
+.yib-config-entry.invalid {
+    border-left: 2px solid var(--el-color-danger);
+}
+.yib-config-entry.invalid > .k-schema-item > .k-schema-main > .k-schema-left > h3,
+.yib-config-entry-error {
+    color: var(--el-color-danger);
+}
+.yib-config-entry-error {
+    padding: 0 1rem;
+    font-size: 0.85rem;
+}
+.yib-model-group-row.invalid {
+    border-color: var(--el-color-danger);
+}
+.yib-model-group-row.invalid > .yib-model-group-actions > span {
+    color: var(--el-color-danger);
+}
