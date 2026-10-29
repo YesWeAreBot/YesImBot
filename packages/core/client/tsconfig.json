@@ -15,7 +15,7 @@
     "moduleResolution": "node",
     "ignoreDeprecations": "6.0",
     "strictBindCallApply": true,
-    // index.ts 是 JS 风格的渲染函数组件，ctx.schema 又是运行时 mixin、上游无类型声明。
+    // index.ts 是 JS 风格的渲染函数组件，ctx.extendSchema 又是运行时 mixin、上游无类型声明。
     "noImplicitAny": false,
     "types": ["@koishijs/client/global"]
   },

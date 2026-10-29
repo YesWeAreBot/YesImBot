@@ -56,20 +56,6 @@
     }
 }
 
-.yib-config-subsection {
-    margin: 10px 0;
-    border-radius: 4px;
-}
-.yib-config-subsection > .yib-config-section-heading {
-    font-size: 0.9rem;
-}
-.yib-config-subsection > .yib-config-section-heading > button {
-    padding: 10px 12px;
-}
-.yib-config-subsection > .yib-config-section-body {
-    padding: 4px 12px 12px;
-}
-
 .yib-model-group-row {
     border: 1px solid var(--k-color-divider);
     border-radius: 4px;
@@ -104,32 +90,4 @@
 }
 .yib-model-group-note {
     color: var(--k-text-light);
-}
-
-.yib-config-section.invalid {
-    border-color: var(--el-color-danger);
-}
-.yib-config-section.invalid > .yib-config-section-heading > button {
-    color: var(--el-color-danger);
-}
-.yib-config-section-error {
-    font-size: 0.85rem;
-    margin-left: auto;
-}
-.yib-config-entry.invalid {
-    border-left: 2px solid var(--el-color-danger);
-}
-.yib-config-entry.invalid > .k-schema-item > .k-schema-main > .k-schema-left > h3,
-.yib-config-entry-error {
-    color: var(--el-color-danger);
-}
-.yib-config-entry-error {
-    padding: 0 1rem;
-    font-size: 0.85rem;
-}
-.yib-model-group-row.invalid {
-    border-color: var(--el-color-danger);
-}
-.yib-model-group-row.invalid > .yib-model-group-actions > span {
-    color: var(--el-color-danger);
 }

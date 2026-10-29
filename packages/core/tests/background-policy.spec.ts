@@ -263,7 +263,7 @@ it("exposes ordinary numeric willingness inputs in the serialized configuration"
         expect({ type: fields?.[name]?.type, meta: fields?.[name]?.meta }).toMatchObject({ type: "number", meta: { default: 0, min: 0, max: 1000000 } });
     }
     expect({ type: background.dict.allowedTools?.type, meta: background.dict.allowedTools?.meta }).toMatchObject({
-        type: "array",
-        meta: { role: "yib-dynamic", extra: { name: "toolService.backgroundEligibleTools" } },
+        type: "any",
+        meta: { role: "dynamic", extra: { name: "toolService.backgroundEligibleTools" } },
     });
 });

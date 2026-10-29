@@ -1,7 +1,5 @@
 import { Schema } from "koishi";
 
-import { extensionSelector } from "../shared/config-selectors";
-
 export interface ToolServiceConfig {
     extra?: Record<string, { enabled?: boolean; [key: string]: any }>;
     /** 高级选项 */
@@ -13,7 +11,7 @@ export interface ToolServiceConfig {
 }
 
 export const ToolServiceConfigSchema = Schema.object({
-    extra: extensionSelector().default({}),
+    extra: Schema.dynamic("toolService.availableExtensions").default({}),
 
     advanced: Schema.object({
         maxRetry: Schema.number().default(3).description("最大重试次数"),
