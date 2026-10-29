@@ -1,5 +1,6 @@
 import { Schema } from "koishi";
 
+import { modelSelector, groupSelector } from "../shared/config-selectors";
 import { ContextCapacityRow, ContextLimitConfig, contextCapacityRows, parseContextLimit } from "./context-limit";
 
 /** 模型切换策略 */
@@ -270,7 +271,8 @@ export const ProviderConfigSchema: Schema<ProviderConfig> = Schema.intersect([
     ),
 ])
     .collapse()
-    .description("提供商配置");
+    .description("提供商配置")
+    .role("yib-entry");
 
 export interface ModelServiceConfig {
     providers: ProviderConfig[];
@@ -292,13 +294,17 @@ export const ModelServiceConfigSchema: Schema<ModelServiceConfig> = Schema.objec
             ])
                 .default(ModelSwitchingStrategy.Failover)
                 .description("模型切换策略"),
-            models: Schema.array(Schema.dynamic("modelService.selectableModels")).required().description("此模型组包含的模型"),
+            models: Schema.array(modelSelector("modelService.selectableModels", true)).required().description("此模型组包含的模型"),
         })
             .collapse()
-            .description("模型组"),
+            .description("模型组")
+            .role("yib-entry"),
     ).description("模型组，用于故障转移或分类。修改提供商或模型后，先启动/重载插件以更新可选模型"),
     task: Schema.object({
-        [TaskType.Chat]: Schema.dynamic("modelService.availableGroups").description("聊天任务使用的模型组"),
-        [TaskType.Embedding]: Schema.dynamic("modelService.availableGroups").description("语义记忆生成文本嵌入（Embedding）时使用的模型组"),
+        [TaskType.Chat]: groupSelector().description("聊天任务使用的模型组"),
+        [TaskType.Embedding]: groupSelector().description("语义记忆生成文本嵌入（Embedding）时使用的模型组"),
     }).description("任务与模型组映射"),
 });
+
+// Provider arrays retain this shared schema reference.
+ModelConfigSchema.meta.role = "yib-entry";

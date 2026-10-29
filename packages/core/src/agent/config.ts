@@ -4,6 +4,7 @@ import path from "path";
 import { Computed, Schema } from "koishi";
 
 import { SystemConfig } from "../config";
+import { modelSelector, backgroundToolSelector } from "../shared/config-selectors";
 import { PROMPTS_DIR } from "../shared/constants";
 import type { TopicConfig } from "./topics";
 import { DEFAULT_WILLINGNESS_POLICY, type WillingnessPolicyConfig } from "./willingness-policy";
@@ -171,7 +172,7 @@ const WillingnessConfigSchema: Schema<WillingnessConfig> = Schema.object({
         .description("意愿算法选择（切换算法不会改变忙时处理策略）"),
     topics: Schema.object({
         enabled: Schema.boolean().default(false).experimental().description("启用实验性话题意愿，默认关闭；识别可能滞后或不准确，请按实际聊天效果调整"),
-        model: Schema.dynamic("modelService.selectableModels").description("话题总结模型（需具备对话能力；启用后会发送近期聊天内容）"),
+        model: modelSelector("modelService.selectableModels").description("话题总结模型（需具备对话能力；启用后会发送近期聊天内容）"),
         minIntervalMs: Schema.number().min(1000).max(3600000).default(30000).description("两次话题分析的最短间隔（毫秒）"),
         messagesPerAnalysis: Schema.natural().min(1).max(100).default(6).description("再次分析前至少收到的新消息数"),
         historyLimit: Schema.natural().min(1).default(20).description("分析时参考的近期消息数"),
@@ -199,7 +200,7 @@ const WillingnessConfigSchema: Schema<WillingnessConfig> = Schema.object({
         .description("对话参与保持（不强制回复，沿用回复控制规则）"),
     typesafe: Schema.object({
         mode: Schema.union(["off", "observe", "adjust"]).default("off").description("TypeSafe 接话判断：关闭 / 仅记录 / 调整意愿"),
-        evaluationModel: Schema.dynamic("modelService.evaluationModels").description("判断模型，请在模型服务中配置 TypeSafe 提供商和评估能力"),
+        evaluationModel: modelSelector("modelService.evaluationModels").description("判断模型，请在模型服务中配置 TypeSafe 提供商和评估能力"),
         timeoutMs: Schema.number().min(100).max(30000).default(3000).description("判断超时（毫秒），失败后沿用原意愿"),
         historyLimit: Schema.natural().default(8).description("判断时参考的近期消息数"),
         interests: Schema.string().role("textarea").default("").description("角色兴趣，留空使用高兴趣关键词"),
@@ -322,7 +323,7 @@ export const AgentBehaviorConfigSchema: Schema<AgentBehaviorConfig> = Schema.int
     Schema.object({
         backgroundTools: Schema.object({
             enabled: Schema.boolean().default(false).description("允许模型提交支持后台执行的工具任务"),
-            allowedTools: Schema.dynamic("toolService.backgroundEligibleTools")
+            allowedTools: backgroundToolSelector()
                 .default([...DEFAULT_BACKGROUND_TOOLS])
                 .description("允许后台执行的工具（取消勾选不影响普通调用）"),
             completion: Schema.union([
