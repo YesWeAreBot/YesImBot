@@ -290,19 +290,18 @@ export interface ProviderConfig {
     models: ModelConfig[];
 }
 
-// Only migrate former official defaults; custom gateways must retain their configured roots.
-const LEGACY_OFFICIAL_ROOTS: Partial<Record<ProviderType, string>> = {
-    "Google Gemini": "https://generativelanguage.googleapis.com/v1beta/openai/",
-    Qwen: "https://dashscope.aliyuncs.com/compatible-mode/v1/",
-    Ollama: "http://localhost:11434/v1/",
-};
-
 export const ProviderConfigSchema: Schema<ProviderConfig> = Schema.intersect([
     // Adapt saved defaults before resolving the visible fields; keep their console schema unchanged.
     Schema.transform(Schema.any<ProviderConfig>(), (config) => {
-        const legacyRoot = LEGACY_OFFICIAL_ROOTS[config?.type];
-        if (legacyRoot && typeof config.baseURL === "string" && config.baseURL.replace(/\/?$/, "/") === legacyRoot) {
-            config.baseURL = PROVIDERS[config.type].baseURL;
+        // Console validation reconstructs this callback without module scope.
+        const roots: Record<string, [string, string]> = {
+            "Google Gemini": ["https://generativelanguage.googleapis.com/v1beta/openai/", "https://generativelanguage.googleapis.com/v1beta/"],
+            Qwen: ["https://dashscope.aliyuncs.com/compatible-mode/v1/", "https://dashscope.aliyuncs.com/api/v1/"],
+            Ollama: ["http://localhost:11434/v1/", "http://localhost:11434/"],
+        };
+        const migration = roots[config?.type];
+        if (migration && typeof config.baseURL === "string" && config.baseURL.replace(/\/?$/, "/") === migration[0]) {
+            config.baseURL = migration[1];
         }
         return {};
     }).hidden(),
