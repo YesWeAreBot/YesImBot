@@ -154,9 +154,3 @@ describe("provider configuration", () => {
         for (const type of PROVIDER_TYPES) expect(ProviderFactoryRegistry.get(type)).toBeDefined();
     });
 });
-
-it.each(["Anthropic", "LM Studio"])("keeps the %s model card attached to configuration validation", (type) => {
-    const union = ProviderConfigSchema.list!.find((item) => item.type === "union")!;
-    const branch = union.list!.find((item) => item.dict?.type.value === type)!;
-    expect(branch.dict!.models.inner!.meta.role).toBe("yib-entry");
-});

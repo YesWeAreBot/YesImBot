@@ -195,9 +195,7 @@ const NativeAnthropicModelConfigSchema = Schema.object({
     })
         .collapse()
         .description("生成参数"),
-})
-    .description("单个模型配置")
-    .role("yib-entry") as Schema<ModelConfig>;
+}).description("单个模型配置") as Schema<ModelConfig>;
 
 // LM Studio native chat exposes server integrations, not client-owned function tools.
 const NativeLMStudioModelConfigSchema = Schema.object({
@@ -207,9 +205,7 @@ const NativeLMStudioModelConfigSchema = Schema.object({
         .default([ModelAbility.Chat])
         .description("模型支持的能力"),
     disableNativeToolCalling: Schema.boolean().default(true).hidden(),
-})
-    .description("单个模型配置")
-    .role("yib-entry") as Schema<ModelConfig>;
+}).description("单个模型配置") as Schema<ModelConfig>;
 
 const PROVIDERS = {
     TypeSafe: { baseURL: "https://api.typesafe.ai/v1/", link: "https://typesafe.ai/" },
