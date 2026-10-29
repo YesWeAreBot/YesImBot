@@ -1,3 +1,18 @@
+/** Coarse public classification; it does not authorize retries. */
+export type ErrorCategory =
+    | "invalid_input"
+    | "configuration"
+    | "permission_denied"
+    | "not_found"
+    | "conflict"
+    | "source_invalid"
+    | "cancelled"
+    | "timeout"
+    | "rate_limited"
+    | "upstream_failure"
+    | "internal"
+    | "outcome_unknown";
+
 /**
  * @description 应用程序的统一错误定义
  * 每个定义都包含 code (错误码)、message (错误信息) 和给用户的 suggestion (建议)
@@ -8,48 +23,56 @@ export const ErrorDefinitions = {
     LLM: {
         BAD_REQUEST: {
             code: "LLM.BAD_REQUEST",
+            category: "invalid_input",
             message: "LLM API 请求因格式错误而失败",
             suggestion: "请检查您的请求参数，确保它们符合 API 的要求并已正确格式化",
         },
 
         INVALID_API_KEY: {
             code: "LLM.INVALID_API_KEY",
+            category: "configuration",
             message: "提供了无效的 LLM API 密钥",
             suggestion: "请仔细检查您的 API 密钥，确保其在插件配置中已正确设置。如果您使用的是云服务，请确保您有权访问指定的模型",
         },
 
         RATE_LIMIT_EXCEEDED: {
             code: "LLM.RATE_LIMIT_EXCEEDED",
+            category: "rate_limited",
             message: "LLM API 的请求频率超限",
             suggestion: "请稍等片刻再发起请求。如果您使用的是云服务，请考虑升级您的套餐或将请求分散在更长的时间段内",
         },
 
         PROVIDER_ERROR: {
             code: "LLM.PROVIDER_ERROR",
+            category: "upstream_failure",
             message: "LLM 服务提供商内部发生错误",
             suggestion: "请检查服务商的文档以确保其设置正确。如果问题仍然存在，请考虑报告此问题",
         },
 
         REQUEST_FAILED: {
             code: "LLM.REQUEST_FAILED",
+            category: "upstream_failure",
             message: (details: string) => `LLM API 请求失败：${details}`,
             suggestion: "请检查您的网络、API 密钥以及模型提供商的状态页面。这可能是由于频率限制、密钥无效或暂时的服务中断所致",
         },
 
         OUTPUT_PARSING_FAILED: {
             code: "LLM.OUTPUT_PARSING_FAILED",
+            category: "upstream_failure",
             message: "解析 LLM 响应失败，输出不是有效的 JSON 格式",
             suggestion: "这通常是暂时的模型问题，请重试。如果问题持续存在，可能是模型不稳定或系统提示词需要调整以确保生成有效的 JSON",
         },
 
         OUTPUT_EMPTY_CONTENT: {
             code: "LLM.OUTPUT_EMPTY_CONTENT",
+            category: "upstream_failure",
             message: "LLM 响应为空",
             suggestion: "这可能是上游API故障导致，建议联系API提供商检查服务状态",
         },
 
         TIMEOUT: {
             code: "LLM.TIMEOUT",
+            category: "timeout",
             message: (duration?: number) =>
                 typeof duration === "number" && Number.isFinite(duration) && duration > 0
                     ? `对 LLM 的请求在 ${duration} 秒后超时`
@@ -61,21 +84,25 @@ export const ErrorDefinitions = {
     CONFIG: {
         MISSING: {
             code: "CONFIG.MISSING",
+            category: "configuration",
             message: (service: string, component: string) => `服务 '${service}' 中缺少 '${component}' 的配置`,
             suggestion: (component: string) => `请确保在插件设置中已正确配置 '${component}'`,
         },
         MISSING_MODEL_GROUP: {
             code: "CONFIG.MISSING_MODEL_GROUP",
+            category: "configuration",
             message: "未给 '聊天 (Chat)' 任务类型配置任何模型组",
             suggestion: "代理需要一个聊天模型才能运作。请前往“模型服务”设置，并为 '聊天' 任务类型至少配置一个模型",
         },
         INVALID: {
             code: "CONFIG.INVALID",
+            category: "configuration",
             message: (details: string) => `发现无效配置：${details}`,
             suggestion: "请检查插件配置并更正指定的字段。有关有效值，请参阅文档",
         },
         PROVIDER_INIT_FAILED: {
             code: "CONFIG.PROVIDER_INIT_FAILED",
+            category: "configuration",
             message: (providerId: string) => `初始化提供商失败：${providerId}`,
             suggestion: "请确保提供商的配置（如 API 密钥和基础 URL）正确无误，并检查日志中是否有相关的错误信息",
         },
@@ -84,6 +111,7 @@ export const ErrorDefinitions = {
     TASK: {
         EXECUTION_FAILED: {
             code: "TASK.EXECUTION_FAILED",
+            category: "internal",
             message: "执行计划任务时发生错误",
             suggestion: "这表明代理的处理周期内存在内部错误。请检查详细日志以获取更多信息",
         },
@@ -92,14 +120,25 @@ export const ErrorDefinitions = {
     WILLINGNESS: {
         CALCULATION_FAILED: {
             code: "WILLINGNESS.CALCULATION_FAILED",
+            category: "internal",
             message: "意愿计算失败",
             suggestion: "在决定是否回复时发生内部错误。请检查日志以获取更多详情",
+        },
+    },
+    PERSON_MEMORY: {
+        VERSION_CONFLICT: {
+            code: "PERSON_MEMORY.VERSION_CONFLICT",
+            category: "conflict",
+            retryable: false,
+            message: (details = "身份或画像版本已变化") => details,
+            suggestion: "请重新读取人物及账号关联版本，核对后重新提交候选",
         },
     },
     // --- 系统未知错误 ---
     SYSTEM: {
         UNKNOWN: {
             code: "SYSTEM.UNKNOWN",
+            category: "internal",
             message: "发生未知错误",
             suggestion: "捕获到意外错误。请检查日志并考虑报告此问题",
         },
@@ -108,26 +147,31 @@ export const ErrorDefinitions = {
     MODEL: {
         UNAVAILABLE: {
             code: "MODEL.UNAVAILABLE",
+            category: "configuration",
             message: (modelId: string) => `无法找到或加载请求的模型 '${modelId}'`,
             suggestion: "请验证模型 ID 是否正确，以及对应的提供商是否已启用并正确配置",
         },
         GROUP_INIT_FAILED: {
             code: "MODEL.GROUP_INIT_FAILED",
+            category: "configuration",
             message: (groupName: string) => `模型组 '${groupName}' 初始化失败，因为它不包含任何可用的模型`,
             suggestion: "请检查模型组的配置。确保所列模型存在、其提供商已启用，并且它们具备所需的能力（例如 '聊天'）",
         },
         ALL_FAILED_IN_GROUP: {
             code: "MODEL.ALL_FAILED_IN_GROUP",
+            category: "upstream_failure",
             message: (groupName: string) => `模型组 '${groupName}' 中的所有模型都未能处理请求`,
             suggestion: "这表明存在普遍性问题。请检查错误报告中的 'cause' 以了解单个模型的失败原因。这可能是网络问题或影响组内所有模型的问题",
         },
         RETRY_EXHAUSTED: {
             code: "MODEL.RETRY_EXHAUSTED",
+            category: "upstream_failure",
             message: (modelId: string) => `模型 '${modelId}' 的所有重试次数已用尽`,
             suggestion: "该模型反复失败。请检查错误日志以找出根本原因（例如，网络问题、持续的 API 错误）",
         },
         NO_SUITABLE_MODEL: {
             code: "MODEL.NO_SUITABLE_MODEL",
+            category: "configuration",
             message: (groupName: string) => `在模型组 '${groupName}' 中未找到合适的模型`,
             suggestion: "请检查模型组的配置。确保所列模型存在、其提供商已启用，并且它们具备所需的能力（例如 '聊天'）",
         },
@@ -136,6 +180,7 @@ export const ErrorDefinitions = {
     NETWORK: {
         REQUEST_FAILED: {
             code: "NETWORK.REQUEST_FAILED",
+            category: "upstream_failure",
             message: "网络请求失败",
             suggestion: "请检查您服务器的互联网连接和 DNS 设置。如果您正在使用代理，请确保其配置正确且正在运行",
         },
@@ -144,16 +189,19 @@ export const ErrorDefinitions = {
     MEMORY: {
         PROVIDER_ERROR: {
             code: "MEMORY.PROVIDER_ERROR",
+            category: "upstream_failure",
             message: "记忆提供商发生错误",
             suggestion: "请检查记忆提供商的配置并确保其设置正确。如果问题仍然存在，请考虑报告此问题",
         },
         SEARCH_FAILED: {
             code: "MEMORY.SEARCH_FAILED",
+            category: "internal",
             message: "搜索记忆失败",
             suggestion: "这可能是由于内部错误。请检查日志以获取更多详情。如果问题仍然存在，请考虑报告此问题",
         },
         EMBEDDING_FAILED: {
             code: "MEMORY.EMBEDDING_FAILED",
+            category: "upstream_failure",
             message: "为记忆生成嵌入向量失败",
             suggestion: "这可能是由于内部错误。请检查日志以获取更多详情。如果问题仍然存在，请考虑报告此问题",
         },

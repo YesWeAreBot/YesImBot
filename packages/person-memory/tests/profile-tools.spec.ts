@@ -1,3 +1,4 @@
+import { ErrorDefinitions } from "koishi-plugin-yesimbot";
 import { expect, it } from "vitest";
 
 import { apply } from "../src/index";
@@ -127,3 +128,55 @@ for (const shared of [false, true]) {
         expect(read.result.profile.endsWith(read.result.overview)).toBe(true);
     });
 }
+
+for (const action of ["propose", "propose_claim"])
+    it(`classifies stale ${action} candidates through the plugin failure boundary`, async (t) => {
+        const f = await setup(t, false);
+        const found = (await f.store.find(f.scope, "u"))!;
+        await f.store.setProfile(f.scope, "u", "管理员刚刚更新", "admin");
+        await f.app.parallel("yesimbot/before-user-stimulus" as any, {
+            ...f.session,
+            author: { name: "u" },
+            messageId: "fresh",
+            content: "我喜欢 Python",
+            timestamp: Date.now() + 1,
+        });
+        const source = (await f.store.profileSources(f.scope, "u", 0))[0];
+        const result = await f.tool.execute({
+            session: f.session,
+            action,
+            account_id: "u",
+            profile: "旧候选",
+            message_ids: [source.id],
+            person_id: found.person.id,
+            person_revision: found.person.revision,
+            account_revision: found.accounts[0].revision,
+            changes: [{ action: "support", category: "preferences", statement: "旧候选", messageIds: [source.id] }],
+        });
+        expect(result.status).toBe("error");
+        expect(result.error).toMatchObject({ code: "PERSON_MEMORY.VERSION_CONFLICT", category: "conflict", retryable: false });
+        expect(result.error.errorId).toMatch(/^[0-9a-f-]{36}$/);
+        expect(JSON.stringify(result)).not.toMatch(/stack|cause|context/);
+        expect((await f.store.find(f.scope, "u"))!.person.profile).toContain("管理员刚刚更新");
+    });
+
+it("preserves the conflict guard when an older core has no person error catalog", async (t) => {
+    const f = await setup(t, false);
+    const found = (await f.store.find(f.scope, "u"))!;
+    await f.store.setProfile(f.scope, "u", "管理员刚刚更新", "admin");
+    const catalog = ErrorDefinitions as any;
+    const saved = catalog.PERSON_MEMORY;
+    try {
+        delete catalog.PERSON_MEMORY;
+        await expect(
+            f.store.propose(f.scope, "u", "旧候选", ["source"], "model", {
+                personId: found.person.id,
+                personRevision: found.person.revision,
+                accountRevision: found.accounts[0].revision,
+            }),
+        ).rejects.toThrow("总结期间发生人工修改或身份变更，候选已过期");
+        expect((await f.store.find(f.scope, "u"))!.person.profile).toContain("管理员刚刚更新");
+    } finally {
+        catalog.PERSON_MEMORY = saved;
+    }
+});
