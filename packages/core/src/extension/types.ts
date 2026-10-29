@@ -2,6 +2,8 @@
 
 import { Context, Schema, Session } from "koishi";
 
+import type { ErrorCategory } from "../shared/errors/definitions";
+
 export interface Param {
     type: string;
     description?: string;
@@ -77,6 +79,10 @@ export interface ToolError {
     message: string;
     /** 错误是否可重试 */
     retryable?: boolean;
+    code?: string;
+    errorId?: string;
+    category?: ErrorCategory;
+    suggestion?: string;
 }
 
 /**
