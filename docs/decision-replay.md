@@ -83,3 +83,7 @@ node node_modules/koishi-plugin-yesimbot/scripts/replay-decisions.cjs decisions.
 每条可复算记录增加 `scenario`，并保留原来的 `roll`。未指定的参数沿用原值。`recomputed` 和 `matches` 仍核对原始参数，`scenario` 单独展示假设参数下的概率和判定。调整参数不会重新抽样，也不会把新判定、回复成本或衰减传递给下一条记录；这是独立记录的情景比对，不是完整对话轨迹重演。
 
 参数无效、文件不可读或输出失败时脚本以非零退出码结束；输入记录的不兼容、损坏和缺少数据则在汇总中计数，请检查这些数量后再解释结果。
+
+## 群聊平衡算法记录
+
+`calculation.policy.version` 为 `balanced-v1` 时，回放使用记录中的实际时间衰减、正负增益与短期回复压力计算分数和概率，不使用原算法的动态乘数。普通消息判定间隔限制会保留为零概率；此类记录和其他零概率记录可以没有 `roll`，回放不会重新抽取随机数。`--threshold` 和 `--amplifier` 仍只修改单条记录的参数，保留原有间隔限制，不能重新模拟完整的额度、间隔与回复轨迹。配置见 [可选群聊平衡意愿算法](balanced-willingness.md)。

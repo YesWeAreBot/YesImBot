@@ -42,6 +42,8 @@ const reasons = new Set([
     "permission_denied",
     "muted",
     "forced_reply_by_mention",
+    "conversation_continuation",
+    "continuation_expired",
     "mention_priority",
     "mention_pending",
     "probability_roll",
@@ -69,6 +71,7 @@ const calculationFields = [
     "assessmentMultiplier",
     "participationMultiplier",
     "effectiveGain",
+    "continuationGain",
     "maxWillingness",
     "threshold",
     "amplifier",
@@ -102,14 +105,35 @@ export function sanitizeDecisionRecord(value: unknown): DecisionRecord | undefin
         stimulusType: stimuli.has(value.stimulusType) ? value.stimulusType : "unknown",
         startedAt: finite(value.startedAt) ? value.startedAt : value.time,
     };
+    if (identifier(value.scoreKey)) result.scoreKey = value.scoreKey;
     if (identifier(value.messageId)) result.messageId = value.messageId;
     if (typeof value.reason === "string" && reasons.has(value.reason)) result.reason = value.reason;
     for (const field of ["decision", "success", "forcedReply"] as const) if (typeof value[field] === "boolean") result[field] = value[field];
     for (const field of ["score", "probability", "roll"] as const) if (finite(value[field])) result[field] = value[field];
     if (object(value.calculation)) {
-        const calculation: Record<string, number> = {};
+        const calculation: Record<string, unknown> = {};
         for (const field of calculationFields) if (finite(value.calculation[field])) calculation[field] = value.calculation[field];
         result.calculation = calculation;
+        const policy = value.calculation.policy;
+        if (object(policy) && policy.version === "balanced-v1") {
+            const trace: Record<string, unknown> = { version: "balanced-v1" };
+            for (const field of ["invited", "addressesOthers", "preview"]) if (typeof policy[field] === "boolean") trace[field] = policy[field];
+            for (const field of [
+                "decay",
+                "requestedGain",
+                "positiveGain",
+                "negativeGain",
+                "limitedGain",
+                "ordinaryGainRemaining",
+                "negativeGainRemaining",
+                "fatiguePenalty",
+                "rawProbability",
+            ])
+                if (finite(policy[field])) trace[field] = policy[field];
+            if (typeof policy.gate === "string" && ["none", "opportunity_interval", "recent_reply_pressure"].includes(policy.gate)) trace.gate = policy.gate;
+            calculation.policy = trace;
+        }
+
         if (object(value.calculation.gains)) {
             const gains: Record<string, number> = {};
             for (const field of ["text", "at", "quote", "direct"] as const)
@@ -144,6 +168,27 @@ export function sanitizeDecisionRecord(value: unknown): DecisionRecord | undefin
             assessment.answers = answers;
         }
         result.assessment = assessment;
+    }
+    if (object(value.continuation)) {
+        const c = value.continuation;
+        if (
+            ["trigger", "willingness"].includes(String(c.mode)) &&
+            Number.isSafeInteger(c.revision) &&
+            finite(c.expiresAt) &&
+            typeof c.registeredAt === "string" &&
+            Number.isFinite(Date.parse(c.registeredAt)) &&
+            Array.isArray(c.sourceMessageIds) &&
+            c.sourceMessageIds.length <= 10 &&
+            c.sourceMessageIds.every(identifier)
+        ) {
+            result.continuation = {
+                mode: c.mode,
+                revision: c.revision,
+                expiresAt: c.expiresAt,
+                registeredAt: c.registeredAt,
+                sourceMessageIds: [...c.sourceMessageIds],
+            } as DecisionRecord["continuation"];
+        }
     }
     if (object(value.participation) && typeof value.participation.active === "boolean") {
         const participation: Record<string, unknown> = { active: value.participation.active };
@@ -326,7 +371,16 @@ export class DecisionJournal {
                         if (
                             object(value) &&
                             object((value as any).calculation) &&
-                            calculationFields.some((field) => !finite((value as any).calculation[field]))
+                            calculationFields.some(
+                                (field) =>
+                                    field !== "continuationGain" &&
+                                    !(
+                                        field === "roll" &&
+                                        (value as any).calculation.policy?.version === "balanced-v1" &&
+                                        (value as any).calculation.probability === 0
+                                    ) &&
+                                    !finite((value as any).calculation[field]),
+                            )
                         )
                             this.warning("Decision journal calculation metadata is incomplete; offline replay will report missing fields.");
                         const entry = this.add(record);

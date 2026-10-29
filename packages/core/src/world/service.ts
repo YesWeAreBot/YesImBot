@@ -206,11 +206,17 @@ export class WorldStateService extends YesImBotService<Config> {
         return { ...result, historyGeneration };
     }
 
-    public getConversationState(session: Session) {
-        return this.withConversationState(session, (manager, target, instance, assertCurrent) => manager.read(target, instance, assertCurrent));
+    public getConversationState(session: Session, options: { includeSources?: boolean } = {}) {
+        return this.withConversationState(session, (manager, target, instance, assertCurrent) =>
+            manager.read(target, instance, assertCurrent, options.includeSources, this.config.continuation?.maxDurationSeconds),
+        );
     }
 
     public updateConversationState(session: Session, input: ConversationStateInput) {
+        if (input.followUp && this.config.continuation) {
+            if (!this.config.continuation.enabled) throw new Error("会话续接未启用");
+            if (input.followUp.durationSeconds > this.config.continuation.maxDurationSeconds) throw new Error("等待时长超过配置上限");
+        }
         return this.withConversationState(session, (manager, target, instance, assertCurrent) => manager.update(target, instance, input, assertCurrent));
     }
 

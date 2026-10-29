@@ -17,6 +17,15 @@ import { ProviderFactoryRegistry } from "./factories";
 import { ProviderInstance } from "./provider-instance";
 import { getUsageLedger, UsageScope, withUsageScope } from "./usage";
 
+const withoutImages = (request: ChatRequestOptions): ChatRequestOptions => ({
+    ...request,
+    messages: request.messages.map((message) => {
+        if (!Array.isArray(message.content) || !message.content.some((part) => part.type === "image_url")) return message;
+        const content = message.content.filter((part) => part.type !== "image_url");
+        return { ...message, content: content.length ? content : "[图片：当前模型不支持识图]" } as typeof message;
+    }),
+});
+
 enum CircuitBreakerState {
     CLOSED, // 允许请求
     OPEN, // 阻止请求
@@ -220,7 +229,10 @@ export class ModelService extends YesImBotService<Config> {
             modified = true;
         }
 
+        const names = new Set<string>();
         for (const group of this.config.modelGroups) {
+            if (names.has(group.name)) throw new AppError(ErrorDefinitions.CONFIG.INVALID, { args: [`模型组名称重复: ${group.name}`] });
+            names.add(group.name);
             if (group.models.length === 0) {
                 throw new Error(`配置错误: 模型组 ${group.name} 至少需要包含一个模型`);
             }
@@ -686,6 +698,10 @@ export class ChatModelSwitcher extends ModelSwitcher<IChatModel> {
             } else {
                 this.logger.warn("检测到图片内容，但组内无视觉模型，将忽略图片按纯文本处理");
                 candidateModels = this.nonVisionModels;
+                options = {
+                    ...withoutImages(options),
+                    nativeToolCallingFallback: options.nativeToolCallingFallback ? withoutImages(options.nativeToolCallingFallback) : undefined,
+                };
             }
         } else {
             candidateModels = this._models; // 无图片，使用所有模型

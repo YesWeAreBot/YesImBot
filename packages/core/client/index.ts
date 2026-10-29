@@ -1,9 +1,7 @@
-import { SchemaBase } from "@koishijs/client";
 import { computed, defineComponent, h, ref, resolveComponent } from "vue";
 
-import { ContextCapacityInput } from "./context-capacity";
-
 import "./section.css";
+import { ModelGroups } from "./model-groups";
 
 let nextSectionId = 0;
 
@@ -52,27 +50,8 @@ export const ConfigSection = defineComponent({
 });
 
 export default function apply(ctx) {
-    ctx.extendSchema({
-        type: "string",
-        role: "yib-context-capacity",
-        component: defineComponent({
-            props: ["schema", "modelValue", "initial", "disabled", "prefix", "extra"],
-            emits: ["update:modelValue"],
-            setup(props, { emit, slots }) {
-                return () =>
-                    h(SchemaBase, props, {
-                        ...slots,
-                        control: () =>
-                            h(ContextCapacityInput, {
-                                modelValue: props.modelValue,
-                                disabled: props.disabled,
-                                "onUpdate:modelValue": (value) => emit("update:modelValue", value),
-                            }),
-                    });
-            },
-        }),
-    });
+    ctx.schema({ type: "array", role: "yib-model-groups", component: ModelGroups });
     for (const type of ["object", "intersect"]) {
-        ctx.extendSchema({ type, role: "yib-section", component: ConfigSection });
+        ctx.schema({ type, role: "yib-section", component: ConfigSection });
     }
 }

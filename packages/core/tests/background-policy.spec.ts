@@ -1,3 +1,4 @@
+import { Schema } from "koishi";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { AgentBehaviorConfigSchema } from "../src/agent/config";
@@ -149,6 +150,7 @@ it("defaults background execution off and validates bounded configuration", () =
     const config = AgentBehaviorConfigSchema({});
     expect(config.backgroundTools).toEqual({
         enabled: false,
+        allowedTools: ["web_search", "fetch_webpage", "get_image_description"],
         completion: "next_cycle",
         settlement: "request",
         willingness: { succeeded: 0, failed: 0, cancelled: 0 },
@@ -250,4 +252,18 @@ it("decays pending topic credit and preserves it across stopping the decay timer
     willing.shouldReply(session, "chat", [], 1, topic("topic-one"));
     expect(willing.getCurrentWillingness("topic-one")).toBeCloseTo(20 * Math.pow(0.5, 1 / 100));
     expect(willing.getCurrentWillingness("chat")).toBe(0);
+});
+
+it("exposes ordinary numeric willingness inputs in the serialized configuration", () => {
+    const schema = new Schema(JSON.parse(JSON.stringify(AgentBehaviorConfigSchema)));
+    const background = schema.list.find((branch: any) => branch.dict?.backgroundTools).dict.backgroundTools;
+    const willingness = background.dict.willingness;
+    const fields = willingness.dict ?? willingness.list?.find((branch: any) => branch.type === "object")?.dict;
+    for (const name of ["succeeded", "failed", "cancelled"]) {
+        expect({ type: fields?.[name]?.type, meta: fields?.[name]?.meta }).toMatchObject({ type: "number", meta: { default: 0, min: 0, max: 1000000 } });
+    }
+    expect({ type: background.dict.allowedTools?.type, meta: background.dict.allowedTools?.meta }).toMatchObject({
+        type: "any",
+        meta: { role: "dynamic", extra: { name: "toolService.backgroundEligibleTools" } },
+    });
 });

@@ -6,6 +6,7 @@ import { Computed, Schema } from "koishi";
 import { SystemConfig } from "../config";
 import { PROMPTS_DIR } from "../shared/constants";
 import type { TopicConfig } from "./topics";
+import { DEFAULT_WILLINGNESS_POLICY, type WillingnessPolicyConfig } from "./willingness-policy";
 
 export const SystemBaseTemplate = readFileSync(path.resolve(PROMPTS_DIR, "memgpt_v2_chat.txt"), "utf-8");
 export const UserBaseTemplate = readFileSync(path.resolve(PROMPTS_DIR, "user_base.txt"), "utf-8");
@@ -57,7 +58,16 @@ export interface TypeSafeConfig {
     influence: number;
 }
 
+export interface ContinuationConfig {
+    enabled: boolean;
+    mode: "trigger" | "willingness";
+    willingnessGain: number;
+    maxDurationSeconds: number;
+}
+
 export interface WillingnessConfig {
+    continuation?: ContinuationConfig;
+    willingnessPolicy?: WillingnessPolicyConfig;
     topics?: TopicConfig;
     participation?: {
         enabled: boolean;
@@ -107,6 +117,58 @@ export interface WillingnessConfig {
 }
 
 const WillingnessConfigSchema: Schema<WillingnessConfig> = Schema.object({
+    continuation: Schema.object({
+        enabled: Schema.boolean().default(false).description("允许模型登记等待后续消息；无需额外判断模型"),
+        mode: Schema.union([Schema.const("trigger").description("进入模型回合"), Schema.const("willingness").description("仅增加意愿")])
+            .default("trigger")
+            .description("等待的用户发送后续消息时"),
+        willingnessGain: Schema.number().min(0).max(1000000).default(35).description("仅增加意愿模式的增益"),
+        maxDurationSeconds: Schema.number().min(1).max(86400).default(300).description("单次等待的最长有效时间（秒）"),
+    })
+        .collapse()
+        .description("会话续接（模型显式登记，默认关闭；仍遵守回复控制与新消息处理策略）"),
+    willingnessPolicy: Schema.object({
+        algorithm: Schema.union([Schema.const("legacy").description("原有算法"), Schema.const("balanced").description("群聊平衡算法（实验性）")])
+            .default("legacy")
+            .description("意愿算法；默认保持原有行为"),
+        windowSeconds: Schema.number()
+            .min(1)
+            .max(86400)
+            .default(DEFAULT_WILLINGNESS_POLICY.windowSeconds)
+            .description("平衡算法：增减分额度完全回补所需时间（秒）"),
+        ordinaryGainLimit: Schema.number()
+            .min(0)
+            .max(1000000)
+            .default(DEFAULT_WILLINGNESS_POLICY.ordinaryGainLimit)
+            .description("平衡算法：普通消息增益额度，同一会话的话题共享"),
+        decisionIntervalSeconds: Schema.number()
+            .min(0)
+            .max(86400)
+            .default(DEFAULT_WILLINGNESS_POLICY.decisionIntervalSeconds)
+            .description("平衡算法：普通消息两次概率判定的最短间隔（秒），0 不限制"),
+        othersPenalty: Schema.number()
+            .min(0)
+            .max(1000000)
+            .default(DEFAULT_WILLINGNESS_POLICY.othersPenalty)
+            .description("平衡算法：明确提及或引用他人时的减分，0 关闭"),
+        negativeGainLimit: Schema.number()
+            .min(0)
+            .max(1000000)
+            .default(DEFAULT_WILLINGNESS_POLICY.negativeGainLimit)
+            .description("平衡算法：面向他人减分额度，逐渐回补，避免连续消息过度扣分"),
+        replyPenalty: Schema.number()
+            .min(0)
+            .max(1000000)
+            .default(DEFAULT_WILLINGNESS_POLICY.replyPenalty)
+            .description("平衡算法：每个成功回复回合产生的短期插话压力，0 关闭；只降低普通消息概率"),
+        replyPenaltyHalfLifeSeconds: Schema.number()
+            .min(1)
+            .max(86400)
+            .default(DEFAULT_WILLINGNESS_POLICY.replyPenaltyHalfLifeSeconds)
+            .description("平衡算法：短期插话压力半衰期（秒）"),
+    })
+        .collapse()
+        .description("意愿算法选择（切换算法不会改变忙时处理策略）"),
     topics: Schema.object({
         enabled: Schema.boolean().default(false).experimental().description("启用实验性话题意愿，默认关闭；识别可能滞后或不准确，请按实际聊天效果调整"),
         model: Schema.dynamic("modelService.selectableModels").description("话题总结模型（需具备对话能力；启用后会发送近期聊天内容）"),
@@ -201,12 +263,17 @@ export const VisionConfigSchema: Schema<VisionConfig> = Schema.object({
     enableVision: Schema.boolean().default(false).description("是否启用视觉功能"),
     allowedImageTypes: Schema.array(Schema.string()).default(["image/jpeg", "image/png"]).description("允许的图片类型"),
     maxImagesInContext: Schema.number().default(3).description("在上下文中允许包含的最大图片数量"),
-    imageLifecycleCount: Schema.number().default(2).description("图片的上下文生命周期（出现次数）。超过此次数的图片将被忽略，除非被引用"),
+    imageLifecycleCount: Schema.number()
+        .default(2)
+        .description("单条消息中图片在成功请求上下文中的最大出现次数，按会话与机器人账号分别计算；引用原图时可再次查看"),
     detail: Schema.union(["low", "high", "auto"]).default("low").description("图片细节程度"),
 });
 
+export const DEFAULT_BACKGROUND_TOOLS = ["web_search", "fetch_webpage", "get_image_description"];
+
 export interface BackgroundToolsConfig {
     enabled: boolean;
+    allowedTools?: string[];
     completion: "next_cycle" | "stimulus";
     settlement: "task" | "request";
     willingness: { succeeded: number; failed: number; cancelled: number };
@@ -215,15 +282,22 @@ export interface BackgroundToolsConfig {
     timeoutMs: number;
 }
 
-const backgroundWillingnessSchema = () =>
+const backgroundWillingnessFields: Schema<BackgroundToolsConfig["willingness"]> = Schema.object({
+    succeeded: Schema.number().min(0).max(1000000).default(0).description("成功完成时增加的意愿值"),
+    failed: Schema.number().min(0).max(1000000).default(0).description("执行失败时增加的意愿值"),
+    cancelled: Schema.number().min(0).max(1000000).default(0).description("任务取消时增加的意愿值"),
+});
+const backgroundWillingnessSchema = Schema.intersect([
+    backgroundWillingnessFields,
     Schema.transform(
-        Schema.number().min(0).max(1000000),
+        backgroundWillingnessFields,
         (value) => {
-            if (!Number.isFinite(value)) throw new TypeError("后台任务意愿值必须为有限数值");
+            if (Object.values(value).some((amount) => !Number.isFinite(amount))) throw new TypeError("后台任务意愿值必须为有限数值");
             return value;
         },
         true,
-    ).default(0);
+    ),
+]);
 
 export type AgentBehaviorConfig = ArousalConfig &
     WillingnessConfig &
@@ -250,6 +324,9 @@ export const AgentBehaviorConfigSchema: Schema<AgentBehaviorConfig> = Schema.int
     Schema.object({
         backgroundTools: Schema.object({
             enabled: Schema.boolean().default(false).description("允许模型提交支持后台执行的工具任务"),
+            allowedTools: Schema.dynamic("toolService.backgroundEligibleTools")
+                .default([...DEFAULT_BACKGROUND_TOOLS])
+                .description("允许后台执行的工具（取消勾选不影响普通调用）"),
             completion: Schema.union([
                 Schema.const("next_cycle").description("下轮对话读取结果"),
                 Schema.const("stimulus").description("完成后进行回复意愿判断"),
@@ -262,13 +339,7 @@ export const AgentBehaviorConfigSchema: Schema<AgentBehaviorConfig> = Schema.int
             ])
                 .default("request")
                 .description("完成意愿结算单位"),
-            willingness: Schema.object({
-                succeeded: backgroundWillingnessSchema().description("成功完成时增加的意愿值"),
-                failed: backgroundWillingnessSchema().description("执行失败时增加的意愿值"),
-                cancelled: backgroundWillingnessSchema().description("任务取消时增加的意愿值"),
-            })
-                .collapse()
-                .description("后台任务完成意愿"),
+            willingness: backgroundWillingnessSchema.description("后台任务完成意愿"),
             maxConcurrent: Schema.natural().min(1).max(32).default(4).description("同时执行的后台任务数上限"),
             maxRetained: Schema.natural().min(1).max(1024).default(128).description("保留的后台任务数上限"),
             timeoutMs: Schema.natural().min(1000).max(3600000).default(120000).description("后台任务执行超时（毫秒）"),

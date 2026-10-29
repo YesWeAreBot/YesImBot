@@ -1,5 +1,5 @@
 import { ImagePart, TextPart } from "@xsai/shared-chat";
-import { Context, Logger } from "koishi";
+import { Context, Logger, h } from "koishi";
 
 import { AssetService } from "../asset";
 import { Config } from "../config";
@@ -10,13 +10,16 @@ import { ChatModelSwitcher } from "../model";
 import { conversationChannelId } from "../shared/utils/conversation-scope";
 import { AgentStimulus, ContextualMessage, UserMessagePayload, WorldState, WorldStateService } from "../world";
 import { sessionChannelType } from "../world/channel-metadata";
+import type { ConversationStateResult } from "../world/conversation-state";
 import { deriveConversationFocus, FocusedWorldState } from "./context-packing";
+import { matchContinuation, sameContinuation, type ContinuationMatch } from "./continuation";
 import { assertReplyTurn } from "./reply-turn";
 
 interface ImageCandidate {
     id: string;
     timestamp: number;
     priority: number;
+    sourceId: string;
 }
 
 /**
@@ -31,6 +34,24 @@ export class PromptContextBuilder {
     private readonly worldStateService: WorldStateService;
     private readonly modelSwitcher: ChatModelSwitcher;
     private imageLifecycleTracker = new Map<string, number>();
+    private pendingImageUsage = new WeakMap<object, string[]>();
+
+    /** Count an image once only after the model request succeeds. Failed requests retain their allowance. */
+    public commitMultimodalUsage(messages: Array<{ content?: unknown }>): void {
+        for (const message of messages) {
+            if (!message.content || typeof message.content !== "object") continue;
+            const keys = this.pendingImageUsage.get(message.content);
+            if (!keys) continue;
+            this.pendingImageUsage.delete(message.content);
+            for (const key of keys) {
+                const count = this.imageLifecycleTracker.get(key) ?? 0;
+                this.imageLifecycleTracker.delete(key);
+                this.imageLifecycleTracker.set(key, Math.min(count + 1, Math.max(0, this.config.imageLifecycleCount)));
+            }
+        }
+        // Retain a bounded recent working set rather than every image seen since startup.
+        while (this.imageLifecycleTracker.size > 4096) this.imageLifecycleTracker.delete(this.imageLifecycleTracker.keys().next().value!);
+    }
 
     constructor(
         private readonly ctx: Context,
@@ -79,25 +100,105 @@ export class PromptContextBuilder {
                 throw new Error("上下文构建期间历史已清除");
         };
         assertContextCurrent();
-        const sourceWorldState = await this.worldStateService.buildWorldState(session);
+        let sourceWorldState = await this.worldStateService.buildWorldState(session);
         assertContextCurrent();
+        if (type === "background_task_completion" && session.messageId && this.worldStateService.readMessageWindow) {
+            const present = [...sourceWorldState.l1_working_memory.processed_events, ...sourceWorldState.l1_working_memory.new_events].some(
+                (item) => item.type === "message" && item.id === session.messageId,
+            );
+            if (!present) {
+                try {
+                    const page = await this.worldStateService.readMessageWindow(session, { messageId: session.messageId, before: 0, after: 0, limit: 1 });
+                    assertContextCurrent();
+                    const sources = [page.anchor, ...page.quotes.flatMap((quote) => (quote.record ? [quote.record] : []))];
+                    const currentIds = new Set(
+                        [...sourceWorldState.l1_working_memory.processed_events, ...sourceWorldState.l1_working_memory.new_events]
+                            .filter((item) => item.type === "message")
+                            .map((item) => item.id),
+                    );
+                    const messages = sources
+                        .filter((record) => !currentIds.has(record.id))
+                        .map((record) => ({
+                            type: "message" as const,
+                            id: record.id,
+                            sender: record.sender,
+                            content: record.content,
+                            quoteId: record.quoteId,
+                            timestamp: new Date(record.timestamp),
+                            elements: h.parse(record.content),
+                            is_new: false,
+                        }));
+                    sourceWorldState = {
+                        ...sourceWorldState,
+                        l1_working_memory: {
+                            ...sourceWorldState.l1_working_memory,
+                            processed_events: [...messages, ...sourceWorldState.l1_working_memory.processed_events]
+                                .filter(
+                                    (item, index, items) =>
+                                        item.type !== "message" || items.findIndex((other) => other.type === "message" && other.id === item.id) === index,
+                                )
+                                .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime()),
+                        },
+                    };
+                } catch (error) {
+                    assertContextCurrent();
+                    if (error instanceof Error && error.name === "AbortError") throw error;
+                    this.logger.warn(`后台任务来源读取失败，保留缺失标记：${String(error)}`);
+                }
+            }
+        }
         const focus = deriveConversationFocus(stimulus, sourceWorldState);
+        if (this.config.continuation?.enabled)
+            focus.continuationPolicy = {
+                mode: this.config.continuation.mode,
+                maxDurationSeconds: this.config.continuation.maxDurationSeconds,
+            };
         // Optional for older service adapters. The service validates raw sources and current scope.
         const stateService = this.worldStateService as WorldStateService & {
-            getConversationState?: (session: AgentStimulus<any>["session"]) => Promise<{
-                unknown: boolean;
-                state?: { revision: number; topic?: string; openIssues: string[]; sourceMessageIds: string[]; createdAt: string; updatedAt: string };
-            }>;
+            getConversationState?: (session: AgentStimulus<any>["session"], options?: { includeSources?: boolean }) => Promise<ConversationStateResult>;
         };
         let working: Awaited<ReturnType<NonNullable<typeof stateService.getConversationState>>> | undefined;
         try {
-            working = await stateService.getConversationState?.(session);
+            working = await stateService.getConversationState?.(session, { includeSources: this.config.continuation?.enabled === true });
         } catch (error) {
             assertContextCurrent();
             if (error instanceof Error && error.name === "AbortError") throw error;
             this.logger.warn(`工作状态读取失败，继续使用 unknown：${String(error)}`);
         }
         assertContextCurrent();
+        const traced = stimulus as AgentStimulus<any> & { continuation?: ContinuationMatch; continuationRequired?: boolean };
+        const continuation = traced.continuation;
+        const currentContinuation = matchContinuation(session, this.config.continuation, working);
+        if (traced.continuationRequired && !sameContinuation(continuation, currentContinuation)) throw new DOMException("会话等待已到期或被替换", "AbortError");
+        if (sameContinuation(continuation, currentContinuation)) focus.continuation = currentContinuation;
+        if (this.config.continuation?.enabled && working?.unknown === false && working.sourceMessages?.length) {
+            const present = new Set(
+                [...sourceWorldState.l1_working_memory.processed_events, ...sourceWorldState.l1_working_memory.new_events]
+                    .filter((item) => item.type === "message")
+                    .map((item) => item.id),
+            );
+            const recalled = working.sourceMessages
+                .filter((record) => !present.has(record.id))
+                .map((record) => ({
+                    type: "message" as const,
+                    id: record.id,
+                    sender: record.sender,
+                    content: record.content,
+                    quoteId: record.quoteId,
+                    timestamp: new Date(record.timestamp),
+                    elements: h.parse(record.content),
+                    is_new: false,
+                }));
+            sourceWorldState = {
+                ...sourceWorldState,
+                l1_working_memory: {
+                    ...sourceWorldState.l1_working_memory,
+                    processed_events: [...recalled, ...sourceWorldState.l1_working_memory.processed_events].sort(
+                        (a, b) => a.timestamp.getTime() - b.timestamp.getTime(),
+                    ),
+                },
+            };
+        }
         focus.explicitWorkingState = {
             ...(working?.unknown === false ? working.state : undefined),
             unknown: working?.unknown ?? true,
@@ -152,7 +253,13 @@ export class PromptContextBuilder {
         const multiModalData = await this.buildMultimodalImages(worldState);
         if (multiModalData.images.length > 0) {
             this.logger.debug(`上下文包含 ${multiModalData.images.length / 2} 张图片，将构建多模态消息。`);
-            return [{ type: "text", text: this.config.multiModalSystemTemplate }, ...multiModalData.images, { type: "text", text: userPromptText }];
+            const content = [
+                { type: "text" as const, text: this.config.multiModalSystemTemplate },
+                ...multiModalData.images,
+                { type: "text" as const, text: userPromptText },
+            ];
+            this.pendingImageUsage.set(content, multiModalData.usageKeys);
+            return content;
         }
 
         return userPromptText;
@@ -164,7 +271,7 @@ export class PromptContextBuilder {
      * @param worldState 当前的世界状态
      * @returns 包含筛选后的图片内容的对象
      */
-    private async buildMultimodalImages(worldState: WorldState): Promise<{ images: Array<ImagePart | TextPart> }> {
+    private async buildMultimodalImages(worldState: WorldState): Promise<{ images: Array<ImagePart | TextPart>; usageKeys: string[] }> {
         // 1. 将所有消息扁平化并建立索引
         const allMessages = [...(worldState.l1_working_memory.processed_events || []), ...(worldState.l1_working_memory.new_events || [])].filter(
             (item): item is { type: "message" } & ContextualMessage => item.type === "message",
@@ -184,6 +291,7 @@ export class PromptContextBuilder {
 
             return imageIds.map((id) => ({
                 id,
+                sourceId: msg.id,
                 timestamp: msg.timestamp.getTime(),
                 priority: isQuotedImage ? 1 : 0, // 1 for quoted, 0 for regular
             }));
@@ -205,24 +313,34 @@ export class PromptContextBuilder {
 
         // 4. 根据生命周期和数量上限选择最终图片
         const finalImageIds = new Set<string>();
+        const usageKeysById = new Map<string, string>();
         for (const candidate of sortedUniqueCandidates) {
             if (finalImageIds.size >= this.config.maxImagesInContext) break;
 
-            const usageCount = this.imageLifecycleTracker.get(candidate.id) || 0;
-            if (usageCount < this.config.imageLifecycleCount) {
+            const key = JSON.stringify([
+                worldState.channel?.platform,
+                worldState.self?.id,
+                worldState.channel?.type,
+                worldState.channel?.id,
+                candidate.sourceId,
+                candidate.id,
+            ]);
+            const usageCount = this.imageLifecycleTracker.get(key) || 0;
+            if (candidate.priority > 0 || usageCount < this.config.imageLifecycleCount) {
                 finalImageIds.add(candidate.id);
-                this.imageLifecycleTracker.set(candidate.id, usageCount + 1);
+                usageKeysById.set(candidate.id, key);
             }
         }
 
         // 5. 获取图片数据并格式化输出
         if (finalImageIds.size === 0) {
-            return { images: [] };
+            return { images: [], usageKeys: [] };
         }
 
         const imageDataResults = await Promise.all(Array.from(finalImageIds).map((id) => this.assetService.getInfo(id)));
 
         const finalImages: Array<ImagePart | TextPart> = [];
+        const usageKeys: string[] = [];
         const allowedImageTypes = new Set(this.config.allowedImageTypes);
 
         for (const result of imageDataResults) {
@@ -231,6 +349,7 @@ export class PromptContextBuilder {
                     format: "data-url",
                     image: { process: true, format: "jpeg" },
                 });
+                usageKeys.push(usageKeysById.get(result.id)!);
                 // 为LLM提供更明确的图片标识
                 finalImages.push({ type: "text", text: `The following is an image with ID #${result.id}:` });
                 finalImages.push({
@@ -240,6 +359,6 @@ export class PromptContextBuilder {
             }
         }
 
-        return { images: finalImages };
+        return { images: finalImages, usageKeys };
     }
 }
