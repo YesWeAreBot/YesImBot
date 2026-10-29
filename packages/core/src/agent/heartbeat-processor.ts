@@ -605,7 +605,10 @@ export class HeartbeatProcessor {
             assertReplyTurn();
             const result = await this.invokeAction(turnId, action, session);
             assertReplyTurn();
-            if (action.function === "send_message" && result.status === "success") {
+            if (
+                action.function === "send_message" &&
+                (result.status === "success" || result.metadata?.delivery?.messageIds?.some((id: unknown) => typeof id === "string" && id.trim()))
+            ) {
                 replySent = true;
                 onReplySent();
             }
@@ -615,6 +618,7 @@ export class HeartbeatProcessor {
                 status: result.status,
                 result: result.result,
                 error: result.error,
+                metadata: result.metadata,
             });
             if (result.status !== "success") throw new Error(`工具 ${action.function} 执行失败: ${result.error?.message ?? "未知错误"}`);
         }
@@ -666,7 +670,10 @@ export class HeartbeatProcessor {
             assertReplyTurn();
             const result = await this.invokeAction(turnId, action, session);
             assertReplyTurn();
-            if (action.function === "send_message" && result.status === "success") {
+            if (
+                action.function === "send_message" &&
+                (result.status === "success" || result.metadata?.delivery?.messageIds?.some((id: unknown) => typeof id === "string" && id.trim()))
+            ) {
                 replySent = true;
                 onReplySent();
             }
@@ -676,7 +683,11 @@ export class HeartbeatProcessor {
                 status: result.status,
                 result: result.result,
                 error: result.error,
+                metadata: result.metadata,
             });
+            if (action.function === "send_message" && result.status !== "success" && result.metadata?.delivery?.messageIds?.length) {
+                throw new Error(`消息仅部分发送，停止本轮以避免重复投递: ${result.error?.message ?? "未知错误"}`);
+            }
         }
         return replySent;
     }

@@ -185,6 +185,28 @@ export const ModelConfigSchema: Schema<ModelConfig> = Schema.object({
         .description("断路器策略"),
 }).description("单个模型配置");
 
+// Anthropic models have differing sampling constraints; leave sampling unset unless explicitly configured.
+const NativeAnthropicModelConfigSchema = Schema.object({
+    ...ModelConfigSchema.dict!,
+    parameters: Schema.object({
+        ...ModelConfigSchema.dict!.parameters.dict!,
+        temperature: Schema.number().description("采样温度（可选，请遵循模型限制）"),
+        topP: Schema.number().description("核采样概率（可选，请遵循模型限制）"),
+    })
+        .collapse()
+        .description("生成参数"),
+}).description("单个模型配置") as Schema<ModelConfig>;
+
+// LM Studio native chat exposes server integrations, not client-owned function tools.
+const NativeLMStudioModelConfigSchema = Schema.object({
+    ...ModelConfigSchema.dict!,
+    abilities: Schema.array(Schema.union(Object.values(ModelAbility)))
+        .role("checkbox")
+        .default([ModelAbility.Chat])
+        .description("模型支持的能力"),
+    disableNativeToolCalling: Schema.boolean().default(true).hidden(),
+}).description("单个模型配置") as Schema<ModelConfig>;
+
 const PROVIDERS = {
     TypeSafe: { baseURL: "https://api.typesafe.ai/v1/", link: "https://typesafe.ai/" },
     OpenAI: { baseURL: "https://api.openai.com/v1/", link: "https://platform.openai.com/account/api-keys" },
@@ -193,32 +215,33 @@ const PROVIDERS = {
     Fireworks: { baseURL: "https://api.fireworks.ai/inference/v1/", link: "https://console.fireworks.ai/api-keys" },
     DeepSeek: { baseURL: "https://api.deepseek.com/", link: "https://platform.deepseek.com/api_keys" },
     "Google Gemini": {
-        baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+        baseURL: "https://generativelanguage.googleapis.com/v1beta/",
         link: "https://aistudio.google.com/app/apikey",
     },
-    "LM Studio": { baseURL: "http://localhost:5000/v1/", link: "https://lmstudio.ai/docs/app/api/endpoints/openai" },
+    "LM Studio": { baseURL: "http://localhost:1234/", link: "https://lmstudio.ai/docs/developer/openai-compat" },
     "Workers AI": { baseURL: "https://api.cloudflare.com/client/v4/", link: "https://dash.cloudflare.com/?to=/:account/workers-ai" },
     Zhipu: { baseURL: "https://open.bigmodel.cn/api/paas/v4/", link: "https://open.bigmodel.cn/usercenter/apikeys" },
     "Silicon Flow": { baseURL: "https://api.siliconflow.cn/v1/", link: "https://console.siliconflow.cn/account/key" },
-    Qwen: { baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1/", link: "https://dashscope.console.aliyun.com/apiKey" },
-    Ollama: { baseURL: "http://localhost:11434/v1/", link: "https://ollama.com/" },
+    Qwen: { baseURL: "https://dashscope.aliyuncs.com/api/v1/", link: "https://dashscope.console.aliyun.com/apiKey" },
+    Ollama: { baseURL: "http://localhost:11434/", link: "https://ollama.com/" },
     // "Azure OpenAI": {
     //     baseURL: "https://<resource-name>.services.ai.azure.com/models/",
     //     link: "https://oai.azure.com/",
     // },
     Cerebras: { baseURL: "https://api.cerebras.ai/v1/", link: "https://inference-docs.cerebras.ai/api-reference/chat-completions" },
     DeepInfra: { baseURL: "https://api.deepinfra.com/v1/openai/", link: "https://deepinfra.com/dash/api_keys" },
+    "Featherless AI": { baseURL: "https://api.featherless.ai/v1/", link: "https://featherless.ai/login" },
     "Fatherless AI": { baseURL: "https://api.featherless.ai/v1/", link: "https://featherless.ai/login" },
     Groq: { baseURL: "https://api.groq.com/openai/v1/", link: "https://console.groq.com/keys" },
-    Minimax: { baseURL: "https://api.minimax.chat/v1/", link: "https://platform.minimaxi.com/api-key" },
-    "Minimax (International)": { baseURL: "https://api.minimaxi.chat/v1/", link: "https://www.minimax.io/user-center/api-keys" },
+    Minimax: { baseURL: "https://api.minimax.cn/v1/", link: "https://platform.minimaxi.com/api-key" },
+    "Minimax (International)": { baseURL: "https://api.minimax.io/v1/", link: "https://platform.minimax.io/console/access" },
     Mistral: { baseURL: "https://api.mistral.ai/v1/", link: "https://console.mistral.ai/api-keys/" },
     Moonshot: { baseURL: "https://api.moonshot.cn/v1/", link: "https://platform.moonshot.cn/console/api-keys" },
     Novita: { baseURL: "https://api.novita.ai/v3/openai/", link: "https://novita.ai/get-started" },
     OpenRouter: { baseURL: "https://openrouter.ai/api/v1/", link: "https://openrouter.ai/keys" },
     Perplexity: { baseURL: "https://api.perplexity.ai/", link: "https://www.perplexity.ai/settings/api" },
     Stepfun: { baseURL: "https://api.stepfun.com/v1/", link: "https://platform.stepfun.com/my-keys" },
-    "Tencent Hunyuan": { baseURL: "https://api.hunyuan.cloud.tencent.com/v1/", link: "https://console.cloud.tencent.com/cam/capi" },
+    "Tencent Hunyuan": { baseURL: "https://api.hunyuan.cloud.tencent.com/v1/", link: "https://console.cloud.tencent.com/hunyuan/start" },
     "Together AI": { baseURL: "https://api.together.xyz/v1/", link: "https://api.together.ai/settings/api-keys" },
     "XAI (Grok)": { baseURL: "https://api.x.ai/v1/", link: "https://docs.x.ai/docs/overview" },
 } as const;
@@ -229,31 +252,96 @@ export type ProviderType = keyof typeof PROVIDERS;
 
 const DEFAULT_PROVIDER_TYPE: ProviderType = "OpenAI";
 
+export type ProviderProtocol =
+    | "chat-completions"
+    | "gemini-native"
+    | "anthropic-native"
+    | "ollama-native"
+    | "qwen-native"
+    | "workers-native"
+    | "lmstudio-native";
+
+/** Provider type owns the wire protocol. Some official vendor APIs already use Chat Completions. */
+export function getProviderProtocol(type: ProviderType): ProviderProtocol {
+    if (type === "Google Gemini") return "gemini-native";
+    if (type === "Anthropic") return "anthropic-native";
+    if (type === "Ollama") return "ollama-native";
+    if (type === "Qwen") return "qwen-native";
+    if (type === "Workers AI") return "workers-native";
+    if (type === "LM Studio") return "lmstudio-native";
+    return "chat-completions";
+}
+
+export function getProviderBaseURL(config: Pick<ProviderConfig, "type" | "baseURL" | "accountId">): string {
+    if (config.type === "Workers AI") {
+        if (!config.accountId || !/^[a-zA-Z0-9_-]+$/.test(config.accountId)) throw new Error("Workers AI 需要有效的 Cloudflare 账户 ID");
+        return `https://api.cloudflare.com/client/v4/accounts/${config.accountId}/ai/`;
+    }
+    return config.baseURL ?? PROVIDERS[config.type]?.baseURL;
+}
+
 export interface ProviderConfig {
     name: string;
     type: ProviderType;
     baseURL?: string;
+    accountId?: string;
     apiKey: string;
     proxy?: string;
     models: ModelConfig[];
 }
 
 export const ProviderConfigSchema: Schema<ProviderConfig> = Schema.intersect([
+    // Adapt saved defaults before resolving the visible fields; keep their console schema unchanged.
+    Schema.transform(Schema.any<ProviderConfig>(), (config) => {
+        // Console validation reconstructs this callback without module scope.
+        const roots: Record<string, [string, string]> = {
+            "Google Gemini": ["https://generativelanguage.googleapis.com/v1beta/openai/", "https://generativelanguage.googleapis.com/v1beta/"],
+            Qwen: ["https://dashscope.aliyuncs.com/compatible-mode/v1/", "https://dashscope.aliyuncs.com/api/v1/"],
+            Ollama: ["http://localhost:11434/v1/", "http://localhost:11434/"],
+        };
+        const migration = roots[config?.type];
+        if (migration && typeof config.baseURL === "string" && config.baseURL.replace(/\/?$/, "/") === migration[0]) {
+            config.baseURL = migration[1];
+        }
+        return {};
+    }).hidden(),
     Schema.object({
         name: Schema.string().required().description("提供商名称"),
-        type: Schema.union(PROVIDER_TYPES).default(DEFAULT_PROVIDER_TYPE).description("提供商类型"),
+        type: Schema.union(PROVIDER_TYPES.map((type) => Schema.const(type).description(type === "Fatherless AI" ? "Featherless AI（旧配置名称）" : type)))
+            .default(DEFAULT_PROVIDER_TYPE)
+            .description("提供商类型"),
     }),
     Schema.union(
         PROVIDER_TYPES.map((type) => {
             return Schema.object({
-                // Only the default branch may match when the provider type is omitted.
+                // Provider type determines the wire protocol; compatible gateways use OpenAI Compatible.
                 type: type === DEFAULT_PROVIDER_TYPE ? Schema.const(type) : Schema.const(type).required(),
-                baseURL: Schema.string().default(PROVIDERS[type].baseURL).role("link").description(`提供商的 API 地址`),
+                ...(type === "Workers AI"
+                    ? {
+                          accountId: Schema.string()
+                              .pattern(/^[a-zA-Z0-9_-]+$/)
+                              .required()
+                              .description("Cloudflare 账户 ID"),
+                      }
+                    : {
+                          baseURL: Schema.string()
+                              .default(PROVIDERS[type].baseURL)
+                              .role("link")
+                              .description(
+                                  ["Google Gemini", "Anthropic", "Qwen", "Ollama", "LM Studio"].includes(type)
+                                      ? "原生 API 根地址（兼容服务请选择 OpenAI Compatible）"
+                                      : "提供商的 API 地址",
+                              ),
+                      }),
                 apiKey: Schema.string()
                     .role("secret")
                     .description(`提供商的 API 密钥${PROVIDERS[type].link ? ` (获取地址 - ${PROVIDERS[type].link})` : ""}`),
                 proxy: Schema.string().description("代理地址"),
-                models: Schema.array(ModelConfigSchema).required().description("模型列表"),
+                models: Schema.array(
+                    type === "Anthropic" ? NativeAnthropicModelConfigSchema : type === "LM Studio" ? NativeLMStudioModelConfigSchema : ModelConfigSchema,
+                )
+                    .required()
+                    .description("模型列表"),
             });
         }),
     ),

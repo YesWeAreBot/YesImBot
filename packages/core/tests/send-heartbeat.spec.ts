@@ -8,7 +8,7 @@ import { loggingStub, stubCtx } from "./helpers/yesimbot";
 const modelResponse = (message: string) =>
     JSON.stringify({ thoughts: {}, actions: [{ function: "send_message", params: { message } }], request_heartbeat: false });
 
-for (const scenario of ["success", "error", "query", "legacy"]) {
+for (const scenario of ["success", "error", "query", "legacy", "partial"]) {
     it(`native heartbeat counts confirmed replies: ${scenario}`, async () => {
         const logger = { debug() {}, info() {}, warn() {}, error() {}, success() {} };
         const name = scenario === "query" ? "lookup" : "send_message";
@@ -30,7 +30,10 @@ for (const scenario of ["success", "error", "query", "legacy"]) {
             tool: {
                 getAvailableTools: () => [definition],
                 getTool: () => definition,
-                invoke: async () => ({ status: scenario === "error" ? "error" : "success" }),
+                invoke: async () => ({
+                    status: ["error", "partial"].includes(scenario) ? "error" : "success",
+                    metadata: scenario === "partial" ? { delivery: { messageIds: ["sent"] } } : undefined,
+                }),
             } as any,
             l1: {
                 recordThought: async () => {},
@@ -45,7 +48,7 @@ for (const scenario of ["success", "error", "query", "legacy"]) {
         });
         (processor as any)._prepareLlmRequest = async () => ({ messages: [] });
         expect(await processor.runCycle({ session: { platform: "qq", channelId: "group", cid: "qq:group" } } as any)).toBe(
-            scenario === "success" || scenario === "legacy",
+            scenario === "success" || scenario === "legacy" || scenario === "partial",
         );
     });
 }
@@ -338,5 +341,52 @@ for (const topLevel of [undefined, false]) {
         const result = await (processor as any).performSingleHeartbeatWithStreaming("turn", stimulus(), () => {});
         expect(result.continue).toBe(topLevel ?? true);
         expect(result.replySent).toBe(false);
+    });
+}
+
+for (const streamAction of [false, true]) {
+    it(`${streamAction ? "streaming" : "normal"} heartbeat counts partial delivery while preserving failure observation`, async () => {
+        const observations: any[] = [];
+        const processor = streamingFixture(
+            async () => ({ text: modelResponse("hello") }),
+            async () => ({
+                status: "error",
+                error: { name: "PartialDeliveryError", message: "second paragraph refused", retryable: false },
+                metadata: { delivery: { messageIds: ["first-sent"], sentMessages: 1, totalMessages: 2 } },
+            }),
+        );
+        (processor as any).config.streamAction = streamAction;
+        (processor as any).interactionManager.recordObservation = async (...args: any[]) => observations.push(args[3]);
+        expect(await processor.runCycle(stimulus())).toBe(true);
+        expect(observations[0].status).toBe("error");
+        expect(observations[0].metadata.delivery.messageIds).toEqual(["first-sent"]);
+    });
+}
+
+for (const streamAction of [false, true]) {
+    it(`${streamAction ? "streaming" : "normal"} heartbeat stops after a partially delivered send`, async () => {
+        let invocations = 0;
+        const processor = streamingFixture(
+            async () => ({
+                text: JSON.stringify({
+                    thoughts: {},
+                    actions: [{ function: "send_message", params: { message: "hello" } }],
+                    request_heartbeat: true,
+                }),
+            }),
+            async () => {
+                invocations++;
+                return {
+                    status: "error",
+                    error: { name: "PartialDeliveryError", message: "partial", retryable: false },
+                    metadata: { delivery: { messageIds: ["sent"] } },
+                };
+            },
+        );
+        (processor as any).config.streamAction = streamAction;
+        (processor as any).config.heartbeat = 3;
+        (processor as any).interactionManager.recordHeartbeat = async () => {};
+        expect(await processor.runCycle(stimulus())).toBe(true);
+        expect(invocations).toBe(1);
     });
 }
