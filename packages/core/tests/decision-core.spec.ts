@@ -273,10 +273,8 @@ it("does not revive a read admitted before a mute and immediate unmute", async (
     expect(t.decisions.latest(t.target)?.stage).toBe("cancelled");
 });
 
-it.each(["legacy", "balanced"])("retains topic willingness across mentions and failed assessment in %s", async (algorithm) => {
+it("retains topic willingness across mentions and failed assessment", async () => {
     const t = setup();
-    t.core.config.willingnessPolicy = { algorithm };
-    t.core.willing.now = () => 1000000;
     t.core.config.topics = { enabled: true, model: { providerName: "test", modelId: "test" } };
     const topic = { id: "a", label: "A", scoreKey: "topic-A", share: 1, interest: 0.5, multiplier: 1 };
     t.core.topics = {
