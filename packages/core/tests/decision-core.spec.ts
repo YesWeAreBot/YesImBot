@@ -129,6 +129,9 @@ it("records suppression and muting without scheduling a reply", async () => {
     await t.core.replyControl.set(t.target, ["all"], 1000);
     t.core.receiveStimulus({ type: "user_message", session: t.session });
     expect(t.decisions.latest(t.target)?.reason).toBe("reply_suppressed");
+    expect(t.logs.join("\n")).toContain('"blocked":["all"]');
+    expect(t.logs.join("\n")).toContain('"expiresAt":');
+    expect(t.logs.join("\n")).not.toContain("private-text-marker");
     expect(t.core.willing.getCurrentWillingness(JSON.stringify(["qq", "bot", "g"]))).toBe(0);
     await t.core.replyControl.resume(t.target);
     t.core.worldState.isBotMuted = () => true;

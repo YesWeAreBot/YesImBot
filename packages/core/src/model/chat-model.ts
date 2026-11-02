@@ -216,9 +216,28 @@ export class ChatModel extends BaseModel implements IChatModel {
     ): Promise<GenerateTextResult> {
         const stime = Date.now();
         let result: GenerateTextResult;
+        let originalAssistant: Message | undefined;
+        const originalFetch = chatOptions.fetch as typeof fetch;
         try {
             result = await generateText({
                 ...chatOptions,
+                ...(singleStep
+                    ? {
+                          fetch: async (url: Parameters<typeof fetch>[0], init: Parameters<typeof fetch>[1]) => {
+                              const response = await originalFetch(url, init);
+                              if (response.ok) {
+                                  try {
+                                      const message = (await response.clone().json())?.choices?.[0]?.message;
+                                      if (message?.role === "assistant" && Array.isArray(message.tool_calls)) originalAssistant = message;
+                                  } catch {
+                                      // The SDK still validates the original response, including cancellation.
+                                  }
+                              }
+                              chatOptions.abortSignal?.throwIfAborted();
+                              return response;
+                          },
+                      }
+                    : {}),
                 ...(singleStep
                     ? {
                           onStepFinish: (step: CompletionStep) => {
@@ -229,7 +248,13 @@ export class ChatModel extends BaseModel implements IChatModel {
             });
         } catch (error) {
             if (!(error instanceof SingleStepComplete)) throw error;
-            result = { ...error.step, steps: [error.step], messages: [], text: error.step.text ?? "" } as GenerateTextResult;
+            const calls = error.step.toolCalls ?? [];
+            const originalCalls = originalAssistant?.role === "assistant" ? originalAssistant.tool_calls : undefined;
+            const matched =
+                calls.length > 0 &&
+                originalCalls?.length === calls.length &&
+                originalCalls.every((call, index) => call.id === calls[index].toolCallId && call.function.name === calls[index].toolName);
+            result = { ...error.step, steps: [error.step], messages: matched ? [originalAssistant!] : [], text: error.step.text ?? "" } as GenerateTextResult;
         }
         if (isEmpty(result.text) && !result.toolCalls?.length) {
             throw new AppError(ErrorDefinitions.LLM.OUTPUT_EMPTY_CONTENT, {
@@ -274,6 +299,7 @@ export class ChatModel extends BaseModel implements IChatModel {
         let finalUsage: any = undefined;
         let finalFinishReason: GenerateTextResult["finishReason"] = "unknown";
 
+        const completedResponses: StreamCompletion[] = [];
         let completion = new StreamCompletion();
         let buffer: string[] = [];
         let diagnostics = new StreamDiagnostics(stime);
@@ -352,6 +378,7 @@ export class ChatModel extends BaseModel implements IChatModel {
                                         context: { streamDiagnostics: summary },
                                     });
                                 }
+                                if (completed && responseCompletion.hasTools) completedResponses.push(responseCompletion);
                             },
                         }),
                     );
@@ -459,7 +486,10 @@ export class ChatModel extends BaseModel implements IChatModel {
 
         return {
             steps: finalSteps as Array<CompletionStep<true>>,
-            messages: [],
+            messages: completedResponses.flatMap((response) => {
+                const message = response.assistantMessage(finalToolCalls);
+                return message ? [message] : [];
+            }),
             text: finalText,
             toolCalls: finalToolCalls,
             toolResults: finalToolResults,
@@ -556,6 +586,30 @@ class StreamCompletion {
     completed = false;
     hasTools = false;
     earlyExit = false;
+    private reasoningContent: string | undefined;
+    private text = "";
+    private readonly toolIds = new Map<number, string>();
+
+    assistantMessage(calls: CompletionToolCall[]): Message | undefined {
+        const ids = [...this.toolIds.entries()].sort(([left], [right]) => left - right).map(([, id]) => id);
+        if (!this.completed || !ids.length || new Set(ids).size !== ids.length) return;
+        const matched = ids.map((id) => {
+            const candidates = calls.filter((call) => call.toolCallId === id);
+            return candidates.length === 1 ? candidates[0] : undefined;
+        });
+        if (matched.some((call) => !call)) return;
+        return {
+            role: "assistant",
+            content: this.text,
+            ...(this.reasoningContent === undefined ? {} : { reasoning_content: this.reasoningContent }),
+            tool_calls: matched.map((call, index) => ({
+                index,
+                id: call!.toolCallId,
+                type: "function",
+                function: { name: call!.toolName, arguments: call!.args },
+            })),
+        };
+    }
 
     constructor(private readonly onContent?: (text: string) => void) {}
 
@@ -589,7 +643,14 @@ class StreamCompletion {
                 continue;
             }
             if (typeof choice?.finish_reason === "string" && choice.finish_reason.length > 0) this.completed = true;
-            if (choice?.delta?.tool_calls?.length) this.hasTools = true;
+            if (typeof choice?.delta?.reasoning_content === "string") this.reasoningContent = (this.reasoningContent ?? "") + choice.delta.reasoning_content;
+            if (typeof choice?.delta?.content === "string") this.text += choice.delta.content;
+            if (choice?.delta?.tool_calls?.length) {
+                this.hasTools = true;
+                for (const call of choice.delta.tool_calls) {
+                    if (Number.isSafeInteger(call.index) && typeof call.id === "string") this.toolIds.set(call.index, call.id);
+                }
+            }
             // Match the SDK's first-choice text path; validator failures must propagate.
             else if (typeof choice?.delta?.content === "string") this.onContent?.(choice.delta.content);
         }

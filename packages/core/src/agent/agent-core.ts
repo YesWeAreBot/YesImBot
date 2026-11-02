@@ -137,7 +137,14 @@ export class AgentCore extends YesImBotService<Config> {
         const channelCid = replyKey(this.replyTarget(session));
         stimulus = { ...stimulus, channelCid, decisionId: this.decisions?.begin(this.replyTarget(session), type, session.messageId) };
         if (!this.allowedCategories(stimulus).length) {
-            this.logger.debug(`[${channelCid}] 跳过意愿评估 | 原因: 回复类别已抑制 | 消息ID: ${session.messageId ?? "未知"}`);
+            const rule = this.replyControl.peek(this.replyTarget(session));
+            this.logger.debug(
+                `[${channelCid}] 跳过意愿评估 | 原因: 回复类别已抑制 | 消息ID: ${session.messageId ?? "未知"} | 规则: ${JSON.stringify({
+                    categories: type === "user_message" ? messageCategories(session) : [type],
+                    blocked: rule?.blocked ?? [],
+                    expiresAt: rule?.expiresAt ?? null,
+                })}`,
+            );
             this.recordDecision(stimulus, { stage: "blocked", reason: "reply_suppressed", allowed: [] });
             return;
         }

@@ -236,6 +236,7 @@ export type AgentBehaviorConfig = ArousalConfig &
         decisionRecording?: { enabled: boolean; directory: string; maxEntries: number; maxBytes: number; retentionHours: number };
         streamAction: boolean;
         nativeToolCalling?: boolean;
+        nativeToolCorrectionRetries?: number;
         backgroundTools?: BackgroundToolsConfig;
         heartbeat: number;
         /** Soft input packing budget; 0 disables packing. The model capacity guard remains authoritative. */
@@ -276,6 +277,10 @@ export const AgentBehaviorConfigSchema: Schema<AgentBehaviorConfig> = Schema.int
             .collapse()
             .description("后台工具任务"),
         nativeToolCalling: Schema.boolean().default(false).description("使用模型原生工具调用（需模型支持），关闭时沿用 JSON 动作"),
+        nativeToolCorrectionRetries: Schema.natural()
+            .max(Number.MAX_SAFE_INTEGER)
+            .default(1)
+            .description("原生工具调用参数或格式异常时的追加纠正次数，默认 1；0 关闭自动纠正。仅在工具尚未执行时生效，多次纠正会增加请求耗时与用量"),
         streamAction: Schema.boolean().default(false).experimental().description("实验性流式动作处理"),
         contextInputBudgetTokens: Schema.natural()
             .default(16000)

@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { GenerateTextResult } from "@xsai/generate-text";
 import type { Tool } from "@xsai/shared-chat";
 import { Message } from "@xsai/shared-chat";
@@ -477,7 +479,7 @@ export class HeartbeatProcessor {
     /**
      * 解析并验证来自LLM的响应
      */
-    private parseAndValidateResponse(llmRawResponse: GenerateTextResult, cid: string): Omit<AgentResponse, "observations"> | null {
+    private parseAndValidateResponse(llmRawResponse: GenerateTextResult, cid: string, reportError = true): Omit<AgentResponse, "observations"> | null {
         const errorContext = {
             rawResponse: llmRawResponse.text,
             cid,
@@ -489,13 +491,13 @@ export class HeartbeatProcessor {
         const { data, error } = parser.parse(llmRawResponse.text ?? "");
         if (error || !data) {
             const parseError = new AppError(ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED, { cause: error as any, context: errorContext });
-            handleError(this.logger, parseError, `解析LLM响应时 (CID: ${cid})`);
+            if (reportError) handleError(this.logger, parseError, `解析LLM响应时 (CID: ${cid})`);
             return null;
         }
 
         if (!data.thoughts || typeof data.thoughts !== "object" || Array.isArray(data.thoughts) || !Array.isArray(data.actions)) {
             const formatError = new AppError(ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED, { context: errorContext });
-            handleError(this.logger, formatError, `验证LLM响应格式时 (CID: ${cid})`);
+            if (reportError) handleError(this.logger, formatError, `验证LLM响应格式时 (CID: ${cid})`);
             return null;
         }
 
@@ -557,46 +559,163 @@ export class HeartbeatProcessor {
             // SDK 阶段不执行任何真实工具，失败重试不会重放消息。
             execute: () => ({}),
         }));
-        assertReplyTurn();
-        const response = await this.modelSwitcher.chat({
-            requestPurpose: "主对话",
-            messages: nativeMessages,
-            nativeToolCallingFallback: {
-                messages,
+        let actions: Array<{ function: string; params: Record<string, unknown> }> = [];
+        const configuredRetries = this.config.nativeToolCorrectionRetries ?? 1;
+        const correctionRetries = Number.isSafeInteger(configuredRetries) && configuredRetries >= 0 ? configuredRetries : 1;
+        for (let attempt = 0; attempt <= correctionRetries; attempt++) {
+            assertReplyTurn();
+            const response = await this.modelSwitcher.chat({
+                requestPurpose: "主对话",
+                messages: nativeMessages,
+                nativeToolCallingFallback: {
+                    messages,
+                    abortSignal: replyTurnSignal(),
+                    validation: this.createJsonValidation(),
+                },
+                tools,
+                toolChoice: "required",
+                maxSteps: 1,
+                singleStep: true,
                 abortSignal: replyTurnSignal(),
-                validation: this.createJsonValidation(),
-            },
-            tools,
-            toolChoice: "required",
-            maxSteps: 1,
-            singleStep: true,
-            abortSignal: replyTurnSignal(),
-        });
-        assertReplyTurn();
-        if (!response.toolCalls?.length) {
-            const legacy = this.parseAndValidateResponse(response, conversationCid(session));
-            if (!legacy) throw new Error("模型没有返回有效工具调用");
-            this.displayThoughts(legacy.thoughts);
-            await this.interactionManager.recordThought(turnId, session.platform, conversationChannelId(session)!, legacy.thoughts, manualRecallIds);
-            const replySent = await this.executeActions(turnId, session, legacy.actions, onReplySent);
-            return { continue: legacy.request_heartbeat, replySent };
-        }
-        const seen = new Map<string, string>();
-        const actions: Array<{ function: string; params: Record<string, unknown> }> = [];
-        // 完整校验后才执行，防止坏调用旁边的发送动作先发生。
-        for (const call of response.toolCalls) {
-            const params = JSON.parse(call.args);
-            if (!params || typeof params !== "object" || Array.isArray(params)) throw new Error("工具参数必须是对象");
-            const definition = this.toolService.getTool(call.toolName, session);
-            if (!definition) throw new Error(`工具不可用: ${call.toolName}`);
-            definition.parameters(params);
-            const signature = JSON.stringify([call.toolName, params]);
-            if (seen.has(call.toolCallId)) {
-                if (seen.get(call.toolCallId) !== signature) throw new Error("工具调用 ID 重复但参数不同");
+            });
+            assertReplyTurn();
+            if (!response.toolCalls?.length) {
+                let toolMarkup = false;
+                if (/<\/?tool_call(?:\s|>)/i.test(response.text ?? "")) {
+                    try {
+                        JSON.parse(response.text!);
+                    } catch {
+                        toolMarkup = true;
+                    }
+                }
+                const legacy = toolMarkup ? null : this.parseAndValidateResponse(response, conversationCid(session), false);
+                if (legacy) {
+                    this.displayThoughts(legacy.thoughts);
+                    await this.interactionManager.recordThought(turnId, session.platform, conversationChannelId(session)!, legacy.thoughts, manualRecallIds);
+                    const replySent = await this.executeActions(turnId, session, legacy.actions, onReplySent);
+                    return { continue: legacy.request_heartbeat, replySent };
+                }
+                const failure = new AppError(ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED, { context: { reason: "native_tool_call_missing" } });
+                if (attempt >= correctionRetries) throw failure;
+                // Untrusted plain text is retained as data, never interpreted as an executable call.
+                nativeMessages.push(
+                    { role: "assistant", content: response.text ?? "" },
+                    {
+                        role: "system",
+                        content: "上一轮未返回有效工具调用，未执行任何动作。请通过原生工具接口返回调用，不要把工具调用写在正文、XML 标签或代码块中。",
+                    },
+                );
                 continue;
             }
-            seen.set(call.toolCallId, signature);
-            actions.push({ function: call.toolName, params });
+            const seen = new Map<string, string>();
+            const failures: Array<{ reason: string; toolName: string; toolCallId: string; path?: Array<string | number> }> = [];
+            actions = [];
+            for (const call of response.toolCalls) {
+                const toolName = typeof call.toolName === "string" ? call.toolName : "";
+                const toolCallId = typeof call.toolCallId === "string" ? call.toolCallId : "";
+                const fail = (reason: string, path?: Array<string | number>) =>
+                    failures.push({ reason, toolName, toolCallId, ...(path?.length ? { path } : {}) });
+                if (!toolName || !toolCallId || toolName.length > 1024 || toolCallId.length > 1048576 || /\p{Cc}/u.test(toolName + toolCallId)) {
+                    fail("invalid_tool_identity");
+                    continue;
+                }
+                let params: Record<string, unknown>;
+                try {
+                    params = JSON.parse(call.args);
+                } catch {
+                    fail("invalid_argument_json");
+                    continue;
+                }
+                if (!params || typeof params !== "object" || Array.isArray(params)) {
+                    fail("arguments_not_object");
+                    continue;
+                }
+                const definition = this.toolService.getTool(call.toolName, session);
+                if (!definition) {
+                    fail("tool_unavailable");
+                    continue;
+                }
+                try {
+                    definition.parameters(params);
+                } catch (error) {
+                    const path = Array.isArray(error?.options?.path)
+                        ? error.options.path
+                              .filter((part: unknown) => typeof part === "number" || (typeof part === "string" && /^[\w.-]{1,128}$/.test(part)))
+                              .slice(0, 16)
+                        : [];
+                    fail("invalid_arguments", path);
+                    continue;
+                }
+                const signature = JSON.stringify([call.toolName, params]);
+                if (seen.has(call.toolCallId)) {
+                    if (seen.get(call.toolCallId) !== signature) fail("conflicting_tool_call_id");
+                    continue;
+                }
+                seen.set(call.toolCallId, signature);
+                actions.push({ function: call.toolName, params });
+            }
+            if (!failures.length) break;
+            const failure = new AppError(ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED, {
+                context: {
+                    reason: "native_tool_validation_failed",
+                    calls: failures.map((item) => ({
+                        ...item,
+                        toolName: item.toolName.replace(/\p{Cc}/gu, "").slice(0, 128),
+                        toolCallId:
+                            item.toolCallId.length > 256
+                                ? `sha256:${createHash("sha256").update(item.toolCallId).digest("hex")}`
+                                : item.toolCallId.replace(/\p{Cc}/gu, ""),
+                    })),
+                },
+            });
+            if (attempt >= correctionRetries) throw failure;
+            const calls = response.toolCalls;
+            const ids = calls.map((call) => call.toolCallId);
+            // Invalid/duplicate identifiers cannot form a valid assistant/tool message pair.
+            if (
+                new Set(ids).size === ids.length &&
+                ids.every((id) => typeof id === "string" && id.length > 0 && id.length <= 1048576 && !/\p{Cc}/u.test(id)) &&
+                calls.every(
+                    (call) => typeof call.toolName === "string" && call.toolName.length > 0 && call.toolName.length <= 1024 && !/\p{Cc}/u.test(call.toolName),
+                )
+            ) {
+                const priorAssistant = [...(response.messages ?? [])]
+                    .reverse()
+                    .find(
+                        (message): message is Extract<Message, { role: "assistant" }> =>
+                            message.role === "assistant" &&
+                            message.tool_calls?.length === calls.length &&
+                            message.tool_calls.every((call, index) => call.id === calls[index].toolCallId),
+                    );
+                nativeMessages.push({
+                    ...priorAssistant,
+                    role: "assistant",
+                    content: priorAssistant?.content ?? response.text ?? "",
+                    tool_calls: calls.map((call, index) => ({
+                        ...priorAssistant?.tool_calls?.[index],
+                        index,
+                        id: call.toolCallId,
+                        type: "function",
+                        function: { ...priorAssistant?.tool_calls?.[index]?.function, name: call.toolName, arguments: call.args },
+                    })),
+                });
+                for (const call of calls) {
+                    const invalid = failures.find((item) => item.toolCallId === call.toolCallId);
+                    nativeMessages.push({
+                        role: "tool",
+                        tool_call_id: call.toolCallId,
+                        content: JSON.stringify({
+                            status: "error",
+                            executed: false,
+                            error: invalid ? { reason: invalid.reason, ...(invalid.path ? { path: invalid.path } : {}) } : { reason: "batch_not_executed" },
+                        }),
+                    });
+                }
+            }
+            nativeMessages.push({
+                role: "system",
+                content: "上一轮工具调用校验失败，整批工具均未执行。请根据工具定义和错误反馈修正调用，补齐必填参数；不要重复原先无效的调用标识。",
+            });
         }
         let replySent = false;
         for (const action of actions) {
