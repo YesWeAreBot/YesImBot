@@ -1462,6 +1462,37 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@minatojs/driver-sqlite@npm:^4.7.0":
+  version: 4.7.0
+  resolution: "@minatojs/driver-sqlite@npm:4.7.0"
+  dependencies:
+    "@minatojs/sql-utils": "npm:^5.6.0"
+    "@minatojs/sql.js": "npm:^3.1.0"
+    cosmokit: "npm:^1.6.3"
+  peerDependencies:
+    minato: ^3.7.0
+  checksum: 10c0/ef1059ba9a921e1c5739027f74f2e4b661755f11e9649138c14cfe55fc25de884e26fb204a9fac1dafa5b64a4a6f6f2606c680601dc41fc5e6f2b3b59f459b2a
+  languageName: node
+  linkType: hard
+
+"@minatojs/sql-utils@npm:^5.6.0":
+  version: 5.6.0
+  resolution: "@minatojs/sql-utils@npm:5.6.0"
+  dependencies:
+    cosmokit: "npm:^1.6.3"
+  peerDependencies:
+    minato: ^3.7.0
+  checksum: 10c0/7b97a6ce110e74d2b1d906bf34b79c5fcd784de49da7fb7172595ae695a694db2b7d6e54d224dd17256cc30cf58a669d041bfe37ea365148d54a50b68a247962
+  languageName: node
+  linkType: hard
+
+"@minatojs/sql.js@npm:^3.1.0":
+  version: 3.1.0
+  resolution: "@minatojs/sql.js@npm:3.1.0"
+  checksum: 10c0/3a61cd868d848a008d89ccdf27411a392d690831b6c5508dd04d84bf002bbfb2e1934e8979b0f6c14ab16523b708bff2fdb7004e564dbe186d7812f1c383f066
+  languageName: node
+  linkType: hard
+
 "@modelcontextprotocol/sdk@npm:^1.13.0":
   version: 1.32.1
   resolution: "@modelcontextprotocol/sdk@npm:1.32.1"
@@ -6157,7 +6188,9 @@ __metadata:
   dependencies:
     "@koishijs/plugin-database-memory": "npm:^3.7.0"
     "@koishijs/plugin-mock": "npm:^2.6.6"
+    "@minatojs/driver-sqlite": "npm:^4.7.0"
     koishi: "npm:^4.18.7"
+    minato: "npm:^3.7.0"
   peerDependencies:
     koishi: ^4.18.7
     koishi-plugin-yesimbot: ^3.0.4

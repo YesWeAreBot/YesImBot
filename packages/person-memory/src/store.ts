@@ -488,7 +488,11 @@ export class PersonStore {
             try {
                 const old = await this.db.get(SOURCE, { scope }, { sort: { timestamp: "desc", key: "desc" }, offset: 200, limit: 2000 });
                 const expired = old.filter((row) => row.timestamp < Date.now() - 7 * 86400000);
-                if (expired.length) await this.db.remove(SOURCE, { key: { $in: expired.map((r) => r.key) } });
+                // Bound SQL text: the WASM SQLite driver copies prepared SQL onto a small stack.
+                for (let offset = 0; offset < expired.length; offset += 128) {
+                    if (!active() || this.options.active?.() === false) break;
+                    await this.db.remove(SOURCE, { scope, key: { $in: expired.slice(offset, offset + 128).map((row) => row.key) } });
+                }
             } catch {
                 /* Retry cleanup on the next captured source. */
             }
