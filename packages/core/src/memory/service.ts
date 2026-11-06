@@ -1,4 +1,5 @@
 import fs from "fs/promises";
+import { watch, type FSWatcher } from "node:fs";
 import path from "path";
 
 import { Context, Logger } from "koishi";
@@ -13,6 +14,9 @@ export class MemoryService extends YesImBotService<Config> {
     private logger: Logger;
 
     private disposed = false;
+    private watcher?: FSWatcher;
+    private reloadTimer?: ReturnType<typeof setTimeout>;
+    private initialized = false;
     private loadGeneration = 0;
     private coreMemoryBlocks: Map<string, MemoryBlock> = new Map();
 
@@ -27,10 +31,22 @@ export class MemoryService extends YesImBotService<Config> {
 
     public async start() {
         await this.loadCoreMemoryBlocks();
+        if (this.disposed) return;
+        this.watcher = watch(this.config.coreMemoryPath, () => {
+            if (this.reloadTimer) clearTimeout(this.reloadTimer);
+            this.reloadTimer = setTimeout(() => {
+                this.reloadTimer = undefined;
+                void this.loadCoreMemoryBlocks();
+            }, 50);
+        });
+        // Close the read/watch gap, including files deleted during startup.
+        await this.loadCoreMemoryBlocks();
     }
 
     public stop() {
         this.disposed = true;
+        this.watcher?.close();
+        if (this.reloadTimer) clearTimeout(this.reloadTimer);
         this.loadGeneration++;
         for (const block of this.coreMemoryBlocks.values()) block.dispose();
         this.coreMemoryBlocks.clear();
@@ -55,7 +71,7 @@ export class MemoryService extends YesImBotService<Config> {
             if (!active()) return;
             let memoryFiles = files.filter((file) => file.endsWith(".md") || file.endsWith(".txt"));
 
-            if (memoryFiles.length === 0) {
+            if (!this.initialized && memoryFiles.length === 0) {
                 this.logger.warn(`核心记忆目录 '${memoryPath}' 为空，将应用默认设定`);
                 try {
                     const defaultMemoryFiles = await fs.readdir(path.join(RESOURCES_DIR, "memory_block"));
@@ -73,26 +89,39 @@ export class MemoryService extends YesImBotService<Config> {
                 }
             }
 
-            for (const file of memoryFiles) {
-                if (!active()) return;
+            this.initialized = true;
+            const next = new Map<string, MemoryBlock>();
+            for (const file of memoryFiles.sort()) {
+                if (!active()) {
+                    for (const block of next.values()) block.dispose();
+                    return;
+                }
                 const filePath = path.join(memoryPath, file);
                 try {
-                    const block = await MemoryBlock.createFromFile(this.ctx, this.logging, filePath);
+                    const block = await MemoryBlock.createFromFile(this.ctx, this.logging, filePath, { watch: false, bindDisposal: false });
                     if (!active()) {
                         block.dispose();
+                        for (const loaded of next.values()) loaded.dispose();
                         return;
                     }
-                    if (this.coreMemoryBlocks.has(block.label)) {
+                    if (next.has(block.label)) {
                         block.dispose();
                         this.logger.warn(`发现重复的记忆块标签 '${block.label}'，来自文件 '${filePath}'已忽略`);
                     } else {
-                        this.coreMemoryBlocks.set(block.label, block);
+                        next.set(block.label, block);
                         this.logger.debug(`已从文件 '${file}' 加载核心记忆块 '${block.label}'`);
                     }
                 } catch {
                     // A failed block must not prevent loading the remaining files.
                 }
             }
+            if (!active()) {
+                for (const block of next.values()) block.dispose();
+                return;
+            }
+            const previous = this.coreMemoryBlocks;
+            this.coreMemoryBlocks = next;
+            for (const block of previous.values()) block.dispose();
         } catch (error) {
             if (active()) this.logger.error(`扫描核心记忆目录 '${memoryPath}' 失败: ${error.message}`);
         }

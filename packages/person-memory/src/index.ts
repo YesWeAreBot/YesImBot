@@ -10,9 +10,11 @@ import type { ProfileDocument } from "./profile";
 import { DEFAULT_PROFILE_SYSTEM_PROMPT, mainProfilePolicy } from "./profile-prompt";
 import { catalogParameters, catalogProfile, catalogRequest, profileInputSchema, visibleProfile, visibleLegacyProfile } from "./profile-tools";
 import { applySharedMemory } from "./shared-runtime";
+import { personSnapshotGuard } from "./snapshot-guard";
 import { summarySourceAllowed } from "./source-policy";
 import { PersonStore, registerModels, sceneKey, type Audit, type LinkProposal, type Mode, type Person, type Proposal, type SceneInput } from "./store";
 import { registerSummaryQueueModels, SummaryQueue } from "./summary-queue";
+import { personMemoryFailure as Failed } from "./tool-result";
 import { SummaryWorker, summaryResponseText, type SummaryModel, type WorkerConfig } from "./worker";
 
 declare module "koishi" {
@@ -136,7 +138,7 @@ export interface Dependencies {
     };
 }
 const Success = (result: unknown) => ({ status: "success", result });
-const Failed = (error: unknown) => ({ status: "error", error: { name: "PersonMemoryError", message: error instanceof Error ? error.message : String(error) } });
+
 const key = (session: Session) => sceneKey(session as unknown as SceneInput);
 function profileView(p: Person) {
     return {
@@ -585,7 +587,14 @@ export function apply(ctx: Context, config: Config) {
             }
         },
     };
-    const removeTool = deps.yesimbot.tool.registerTool(tool);
+    const guardSnapshot = personSnapshotGuard(ctx, async (session: Session) => {
+        if (!allowed(session)) throw new Error("当前场景未启用人物记忆");
+        const scope = key(session),
+            state = await store.read(scope);
+        if (state.settings.mode === "off") throw new Error("人物记忆已关闭");
+        return [scope, state.people, state.accounts, state.settings.mode];
+    });
+    const removeTool = deps.yesimbot.tool.registerTool(guardSnapshot(tool));
     ctx.on("dispose", async () => {
         active = false;
         const stopped = worker.stop();

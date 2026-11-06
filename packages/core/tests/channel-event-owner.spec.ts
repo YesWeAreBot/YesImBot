@@ -14,7 +14,7 @@ it("keeps bot-targeted channel events within both bot and channel", async () => 
     const manager: any = Object.create(InteractionManager.prototype);
     Object.assign(manager, {
         config: { l1_memory: {} },
-        getAgentHistoryFromFile: async () => [],
+        getAgentHistoryFromFile: async () => ({ events: [], consumedSourceIds: new Set() }),
         ctx: {
             database: {
                 get: async (table: string, query: any) => (table === TableName.SystemEvents ? rows.filter((row) => executeQuery(row, query, "row")) : []),

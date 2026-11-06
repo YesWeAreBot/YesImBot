@@ -12,16 +12,15 @@ import { ContinuityStore, registerContinuityModels, sourceRef, summaryUnsafeIn, 
 import type { Config, Dependencies } from "./index";
 import { mainProfilePolicy } from "./profile-prompt";
 import { catalogParameters, catalogProfile, catalogRequest, profileInputSchema, visibleProfile, visibleLegacyProfile } from "./profile-tools";
+import { personSnapshotGuard } from "./snapshot-guard";
 import { summarySourceAllowed } from "./source-policy";
 import { PersonStore, accountRef, mindScope, registerModels, sceneKey, type Audit, type Mode, type SceneInput } from "./store";
 import { registerSummaryQueueModels, SummaryQueue } from "./summary-queue";
+import { personMemoryFailure as failed } from "./tool-result";
 import { SummaryWorker, summaryResponseText, type SummaryModel, type WorkerConfig } from "./worker";
 
 const success = (result: unknown) => ({ status: "success", result });
-const failed = (error: unknown) => ({
-    status: "error",
-    error: { name: "PersonMemoryError", message: error instanceof Error ? error.message : String(error) },
-});
+
 const boundedData = (value: unknown, size: number) => {
     const escaped = escapeContext(JSON.stringify(value));
     return escaped.length > size ? escaped.slice(0, size) + "…（内容已截断）" : escaped;
@@ -483,10 +482,25 @@ export function applySharedMemory(ctx: Context, config: Config) {
             ? text
             : "";
     });
+    const guardSnapshot = personSnapshotGuard(
+        ctx,
+        async (session: Session) => {
+            const { scope, state } = await assertEnabled(session);
+            const targets = await targetsFor(session, scope);
+            return [scope, state.people, state.accounts, state.settings.mode, targets];
+        },
+        false,
+    );
     ctx.on("yesimbot/filter-recalled-memory", async (session: Session, state: any) => {
-        if (!baseAllowed(session)) return;
+        if (!baseAllowed(session)) {
+            await guardSnapshot.project(session, state);
+            return;
+        }
         const scope = scopeOf(session);
-        if ((await modeOf(scope)).settings.mode === "off") return;
+        if ((await modeOf(scope)).settings.mode === "off") {
+            await guardSnapshot.project(session, state);
+            return;
+        }
         try {
             const ambiguous = await ambiguousChannels(scope);
             if (ambiguous.has(JSON.stringify([session.platform, conversationChannelId(session)]))) {
@@ -524,6 +538,8 @@ export function applySharedMemory(ctx: Context, config: Config) {
             state.l3_diary_entries = [];
             filterRecallObservations(state, () => false);
             logger.warn(`旧摘要校验失败：${String(error)}`);
+        } finally {
+            await guardSnapshot.project(session, state);
         }
     });
     const catalog = new PeopleCatalog();
@@ -777,8 +793,8 @@ export function applySharedMemory(ctx: Context, config: Config) {
         },
     };
     const removers = [
-        toolService.registerTool({ ...personTool, execute: (args: any) => track(personTool.execute(args)) }),
-        toolService.registerTool({ ...recallTool, execute: (args: any) => track(recallTool.execute(args)) }),
+        toolService.registerTool(guardSnapshot({ ...personTool, execute: (args: any) => track(personTool.execute(args)) })),
+        toolService.registerTool(guardSnapshot({ ...recallTool, execute: (args: any) => track(recallTool.execute(args)) })),
     ];
     function command(
         declaration: string,

@@ -50,7 +50,7 @@ export default class MultiEngineCodeExecutor {
     private registerExecutor(executor: CodeExecutor) {
         try {
             const toolDefinition = executor.getToolDefinition();
-            const unregister = this.toolService.registerTool(toolDefinition);
+            const unregister = this.toolService.registerTool(toolDefinition, this.ctx);
             this.toolDisposers.push(
                 typeof unregister === "function"
                     ? unregister

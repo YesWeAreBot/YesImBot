@@ -10,7 +10,7 @@ export interface PromptServiceConfig {
      */
     injectionPlaceholder?: string;
     /**
-     * 模板渲染的最大深度，用于支持片段的二次渲染，同时防止无限循环。
+     * 兼容旧配置；模板只渲染一次，动态数据不再递归解释。
      * @default 3
      */
     maxRenderDepth?: number;
@@ -18,7 +18,7 @@ export interface PromptServiceConfig {
 
 export const PromptServiceConfigSchema: Schema<PromptServiceConfig> = Schema.object({
     injectionPlaceholder: Schema.string().default("extensions").description("用于注入所有扩展片段的占位符名称。"),
-    maxRenderDepth: Schema.number().default(3).min(1).description("模板渲染的最大深度，用于支持二次渲染并防止无限循环。"),
+    maxRenderDepth: Schema.number().default(3).min(1).description("兼容旧版渲染深度配置；动态内容始终只作为数据插入。"),
 })
     .collapse()
     .description("模板渲染（高级）");

@@ -5,7 +5,7 @@ import Mustache from "mustache";
  */
 export interface RenderOptions {
     /**
-     * 最大渲染深度，用于防止无限循环
+     * 兼容旧配置；数据不再递归渲染
      */
     maxDepth?: number;
 }
@@ -28,27 +28,12 @@ export interface IRenderer {
 
 /**
  * 基于 Mustache.js 的默认渲染器实现
- * 支持二次渲染和循环保护
+ * 只渲染可信模板一次
  */
 export class MustacheRenderer implements IRenderer {
-    public render(templateContent: string, scope: Record<string, any>, partials?: Record<string, string>, options?: RenderOptions): string {
-        const maxDepth = options?.maxDepth ?? 3;
-        let output = templateContent;
-        let previousOutput = "";
-        let currentDepth = 0;
-
-        // 循环渲染，直到输出不再变化或达到最大深度
-        while (output !== previousOutput && currentDepth < maxDepth) {
-            previousOutput = output;
-            output = Mustache.render(previousOutput, scope, partials, { escape: (text: string) => text });
-            currentDepth++;
-        }
-
-        // 如果达到最大深度后模板中仍有占位符，可能存在循环或深度不足，可以添加日志警告
-        if (currentDepth >= maxDepth && output.includes("{{")) {
-            // console.warn(`[PromptRenderer] Reached max render depth of ${maxDepth}. Output may still contain placeholders.`);
-        }
-
-        return output;
+    public render(templateContent: string, scope: Record<string, any>, partials?: Record<string, string>, _options?: RenderOptions): string {
+        // Templates and partials are trusted code; inserted values are terminal data.
+        // Re-rendering the output would interpret user messages and tool results as templates.
+        return Mustache.render(templateContent, scope, partials, { escape: (text: string) => text });
     }
 }

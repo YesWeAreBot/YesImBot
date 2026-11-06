@@ -6,6 +6,8 @@ vi.mock("koishi-plugin-yesimbot", async (importOriginal) => ({
     ...(await importOriginal<object>()),
     getInstanceScope: (ctx: Context, _warn: unknown, options?: unknown) => `${(ctx.root as any).scopePrefix ?? ""}${options ? "plugin-scope" : "core-scope"}`,
 }));
+import { StimulusScheduler } from "../../core/src/agent/scheduler";
+import { loggingStub } from "../../core/tests/helpers/yesimbot";
 import { stubYesImBot } from "../../core/tests/helpers/yesimbot";
 import * as plugin from "../src/index";
 import { TABLE, TaskStore, registerModels, taskOwner } from "../src/store";
@@ -124,9 +126,28 @@ it("runs a real due reminder through database, restored bot session, event write
         recordSystemEvent,
     };
     ctx.set("yesimbot", stubYesImBot({ tool, world }));
-    const stimuli: any[] = [];
+    const stimuli: any[] = [],
+        executed: string[] = [];
+    let release!: () => void;
+    const busy = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    const scheduler = new StimulusScheduler(
+        ctx,
+        { debounceMs: 0, newMessageStrategy: "skip" } as any,
+        async (stimulus) => {
+            executed.push(stimulus.type);
+            if (stimulus.type === "user_message") await busy;
+        },
+        loggingStub(),
+    );
+    t.onTestFinished(() => {
+        release();
+        scheduler.dispose();
+    });
     ctx.on("agent/stimulus" as any, (...args: any[]) => {
         stimuli.push(args);
+        scheduler.schedule(args[0]);
     });
     const fork = ctx.plugin(plugin, { enabled: true, pollIntervalSeconds: 1 });
     t.onTestFinished(async () => {
@@ -138,6 +159,8 @@ it("runs a real due reminder through database, restored bot session, event write
     const bot = ctx.bots[0];
     bot.getChannel = async () => ({ id: "g", type: 0 });
     const session = bot.session({ user: { id: "u" }, channel: { id: "g", type: 0 }, guild: { id: "guild" } });
+    scheduler.schedule({ type: "user_message", channelCid: "mock:g", session, payload: {} } as any);
+    await vi.waitFor(() => expect(executed).toEqual(["user_message"]));
     const result = await tools.get("schedule_reminder").execute({ session, deadline: Date.now() + 10, content: "提醒正文", idempotency_key: "delivery" });
     expect(result.status).toBe("success");
     await vi.waitFor(
@@ -150,6 +173,9 @@ it("runs a real due reminder through database, restored bot session, event write
     expect(recordSystemEvent.mock.calls[0][0]).toMatchObject({ message: "提醒正文", eventScope: "channel", botKey: JSON.stringify(["mock", bot.selfId]) });
     expect(stimuli).toHaveLength(1);
     expect(stimuli[0]).toEqual([expect.objectContaining({ type: "scheduled_task", channelCid: "mock:g" }), "world"]);
+    expect(executed).toEqual(["user_message"]);
+    release();
+    await vi.waitFor(() => expect(executed).toEqual(["user_message", "scheduled_task"]));
 });
 
 it("does not let a session sharing a raw channel id cancel reminders from another guild or chat type", async (t) => {

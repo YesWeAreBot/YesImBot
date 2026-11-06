@@ -20,6 +20,7 @@ export class StimulusScheduler {
     private readonly skippedStimulus = new Map<string, AgentStimulus<any>>();
     private readonly deferredTimers = new Map<string, NodeJS.Timeout>();
     private readonly pendingStimuli = new Map<string, AgentStimulus<any>>();
+    private readonly scheduledStimuli = new Map<string, Array<AgentStimulus<any>>>();
     private readonly completionStimuli = new Map<string, AgentStimulus<any>>();
     private readonly deferredReady = new Set<string>();
     private disposed = false;
@@ -44,6 +45,15 @@ export class StimulusScheduler {
             return;
         }
         const { channelCid: channelKey, type } = stimulus;
+
+        if (type === "scheduled_task") {
+            const queue = this.scheduledStimuli.get(channelKey) ?? [];
+            queue.push(stimulus);
+            this.scheduledStimuli.set(channelKey, queue);
+            this.observe?.(stimulus, "queued", "scheduled_task");
+            this.drainCompletion(channelKey);
+            return;
+        }
 
         if (type === "background_task_completion") {
             this.retainCompletion(stimulus);
@@ -109,6 +119,8 @@ export class StimulusScheduler {
         const skipped = this.skippedStimulus.get(channelKey);
         if (pending) this.observe?.(pending, "cancelled", reason);
         if (skipped) this.observe?.(skipped, "cancelled", reason);
+        for (const scheduled of this.scheduledStimuli.get(channelKey) ?? []) this.observe?.(scheduled, "cancelled", reason);
+        this.scheduledStimuli.delete(channelKey);
         const completion = this.completionStimuli.get(channelKey);
         if (completion) this.observe?.(completion, "cancelled", reason);
         this.completionStimuli.delete(channelKey);
@@ -162,6 +174,8 @@ export class StimulusScheduler {
         for (const stimulus of this.pendingStimuli.values()) this.observe?.(stimulus, "cancelled", "disposed");
         for (const stimulus of this.skippedStimulus.values()) this.observe?.(stimulus, "cancelled", "disposed");
         for (const stimulus of this.completionStimuli.values()) this.observe?.(stimulus, "cancelled", "disposed");
+        for (const queue of this.scheduledStimuli.values()) for (const stimulus of queue) this.observe?.(stimulus, "cancelled", "disposed");
+        this.scheduledStimuli.clear();
         this.debouncedReplyTasks.forEach((task) => task.dispose());
         this.deferredTimers.forEach((timer) => clearTimeout(timer));
         this.debouncedReplyTasks.clear();
@@ -182,6 +196,13 @@ export class StimulusScheduler {
 
     private drainCompletion(channelKey: string): void {
         if (this.disposed || this.runningTasks.has(channelKey) || this.pendingStimuli.has(channelKey)) return;
+        const queue = this.scheduledStimuli.get(channelKey);
+        const scheduled = queue?.shift();
+        if (!queue?.length) this.scheduledStimuli.delete(channelKey);
+        if (scheduled) {
+            void this.executeTask(channelKey, scheduled);
+            return;
+        }
         const completion = this.completionStimuli.get(channelKey);
         if (!completion) return;
         this.completionStimuli.delete(channelKey);
@@ -190,7 +211,7 @@ export class StimulusScheduler {
 
     /** 所有用户消息都影响安静期，包括未触发回复的消息。 */
     public noteUserMessage(channelKey: string): void {
-        if (!this.disposed && this.deferredTimers.has(channelKey)) {
+        if (!this.disposed && (this.deferredTimers.has(channelKey) || this.deferredReady.has(channelKey))) {
             this.setupDeferredTimer(channelKey);
         }
     }

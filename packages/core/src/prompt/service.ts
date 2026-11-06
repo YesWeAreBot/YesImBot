@@ -1,10 +1,15 @@
+import { createHash } from "node:crypto";
+
 import { Context, Logger, Session } from "koishi";
 
+import { SystemBaseTemplate } from "../agent/config";
 import { Config } from "../config";
 import type { LoggerService } from "../logger";
 import { YesImBotService } from "../shared/service";
 import { formatDate, isEmpty } from "../shared/utils";
 import { IRenderer, MustacheRenderer } from "./renderer";
+
+const LEGACY_DEFAULT_SYSTEM_TEMPLATE_SHA256 = "89f805af18060b500d2745082bd4bac963982370298120e0345f33e265a61aee";
 
 export type Snippet = (currentScope: Record<string, any>) => any | Promise<any>;
 
@@ -64,7 +69,7 @@ export class PromptService extends YesImBotService<Config> {
      * 注入一个将自动添加到主提示词的片段。
      * @param name - 注入的唯一名称，用于标识和调试。
      * @param priority - 优先级，数字越小越靠前。
-     * @param renderFn - 渲染函数，返回一个字符串。其返回值可以包含其他占位符，将进行二次渲染。
+     * @param renderFn - 渲染函数，返回一个字符串。返回值只作为数据插入，不解释其中的模板语法。
      */
     public inject(name: string, priority: number, renderFn: Snippet): () => void {
         const registration = { name, priority, renderFn };
@@ -81,6 +86,16 @@ export class PromptService extends YesImBotService<Config> {
         };
     }
 
+    /** Explicitly compose a registered, trusted template with terminal data. */
+    public injectTemplate(name: string, priority: number, templateName: string, data?: Snippet): () => void {
+        return this.inject(name, priority, async (scope) => {
+            const template = this.templates.get(templateName);
+            if (template === undefined) throw new Error(`未找到模板 "${templateName}"`);
+            const values = data ? await data(scope) : {};
+            return this.renderer.render(template, { ...scope, ...values }, Object.fromEntries(this.templates));
+        });
+    }
+
     /**
      * 注册一个提示词模板
      * @param name - 模板的唯一名称 (e.g., "agent.chat.system")
@@ -90,7 +105,12 @@ export class PromptService extends YesImBotService<Config> {
         if (this.templates.has(name)) {
             this._logger.warn(`覆盖已存在的模板 "${name}"`);
         }
-        this.templates.set(name, content);
+        // Match the historical built-in, allowing only LF/CRLF differences. Custom presets remain untouched.
+        const effective =
+            name === "agent.system" && createHash("sha256").update(content.replace(/\r\n/g, "\n")).digest("hex") === LEGACY_DEFAULT_SYSTEM_TEMPLATE_SHA256
+                ? SystemBaseTemplate
+                : content;
+        this.templates.set(name, effective);
     }
 
     /**
@@ -159,7 +179,7 @@ export class PromptService extends YesImBotService<Config> {
                     try {
                         const result = await injection.renderFn(scope);
                         if (!result) return "";
-                        return `<${injection.name}>\n${result}\n</${injection.name}>`;
+                        return `<${injection.name}>\n${String(result)}\n</${injection.name}>`;
                     } catch (error) {
                         this._logger.error(`执行注入片段 "${injection.name}" 时出错: ${error.message}`);
                         return `<!-- Error in injection: ${injection.name} -->`;

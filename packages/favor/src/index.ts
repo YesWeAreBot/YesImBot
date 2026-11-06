@@ -112,7 +112,7 @@ export default class FavorExtension {
                 if (this.disposed) return "";
                 const stageDescription = this._getFavorStage(favorEntry.amount);
                 return `## 好感度设定
-当前你与用户 ${session.username} (ID: ${session.userId}) 的好感度为 ${favorEntry.amount}，关系阶段是：${stageDescription}。
+当前你与用户 ${session.username} (ID: ${session.userId}) 的好感度为 ${favorEntry.amount}（最大值 ${this.config.maxFavor}），关系阶段是：${stageDescription}。
 请时刻参考这些信息，并根据当前的好感度和关系阶段，以合适的语气和内容与用户互动。`;
             }),
         );
@@ -176,7 +176,7 @@ export default class FavorExtension {
 
     @Tool({
         name: "set_favor",
-        description: "为指定用户直接设置好感度。上限为 {{ roleplay.config.maxFavor }}。",
+        description: "为指定用户直接设置好感度，结果限制在配置的最大好感度以内。",
         parameters: withInnerThoughts({
             user_id: Schema.string().required().description("要设置好感度的用户 ID"),
             amount: Schema.number().required().description("要设置的好感度目标值。"),

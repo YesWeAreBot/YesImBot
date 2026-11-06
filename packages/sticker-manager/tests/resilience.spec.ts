@@ -29,7 +29,7 @@ async function fixture(chat: (options: any) => Promise<any>) {
             asset: {
                 read: async (_id: string, options: any) => (options.format === "buffer" ? Buffer.from("image") : "data:image/jpeg;base64,aW1hZ2U="),
             },
-            model: { getChatModel: () => ({ isVisionModel: () => vision, chat }) },
+            model: { useChatModel: () => ({ isVisionModel: () => vision, chat }) },
         }),
     };
     const service = new StickerService(ctx, { storagePath, classifiModel: { providerName: "test", modelId: "test" }, classificationPrompt: "{{categories}}" });

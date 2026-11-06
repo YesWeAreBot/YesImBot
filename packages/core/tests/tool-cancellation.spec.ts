@@ -3,18 +3,26 @@ import { afterEach, expect, it, vi } from "vitest";
 
 import { guardReplySession, withReplyTurn } from "../src/agent/reply-turn";
 import { ToolService } from "../src/extension/service";
+import { loggingStub } from "./helpers/yesimbot";
 
 function fixture(execute: (args: any) => Promise<any>, retry = 0, record?: (event: any) => Promise<any>) {
     const events: any[] = [];
     const errors: any[] = [];
-    const service = {
-        getTool: () => ({ parameters: Schema.object({}), execute }),
-        _logger: { info() {}, warn() {}, success() {}, debug() {}, error: (...args: any[]) => errors.push(args) },
-        config: { advanced: { maxRetry: retry, retryDelay: 60_000 } },
-        executeInvocation: ToolService.prototype["executeInvocation"],
-        deps: { world: { recordSystemEvent: record ?? (async (event: any) => events.push(event)) } },
-    } as unknown as ToolService;
-    return { invoke: (session?: any) => ToolService.prototype.invoke.call(service, "probe", {}, session), events, errors };
+    const service = new ToolService(
+        {} as any,
+        { advanced: { maxRetry: retry, retryDelay: 60_000 } } as any,
+        {
+            logging: loggingStub({ info() {}, warn() {}, success() {}, debug() {}, error: (...args: any[]) => errors.push(args) }),
+            world: { recordSystemEvent: record ?? (async (event: any) => events.push(event)) },
+        } as any,
+    );
+    service.registerTool({ name: "probe", description: "test", parameters: Schema.object({}), execute });
+    return {
+        executions: (service as any).executions,
+        invoke: (session?: any) => ToolService.prototype.invoke.call(service, "probe", {}, session),
+        events,
+        errors,
+    };
 }
 afterEach(() => vi.useRealTimers());
 
@@ -71,7 +79,7 @@ it("clears a tool retry delay immediately on cancellation", async () => {
         controller.signal,
     ).catch(() => "cancelled");
     await vi.advanceTimersByTimeAsync(0);
-    expect(vi.getTimerCount()).toBe(1);
+    expect(vi.getTimerCount()).toBe(2);
     controller.abort();
     expect(await outcome).toBe("cancelled");
     expect(vi.getTimerCount()).toBe(0);
@@ -105,18 +113,18 @@ it("does not cancel another channel's concurrent tool invocation", async () => {
     expect(await other).toEqual({ status: "success", result: "healthy" });
 });
 
-it("removes the turn's abort listener when a tool completes normally", async () => {
+it("clears the execution deadline when a tool completes normally", async () => {
+    vi.useFakeTimers();
     const controller = new AbortController();
-    const add = vi.spyOn(controller.signal, "addEventListener");
-    const remove = vi.spyOn(controller.signal, "removeEventListener");
     const tool = fixture(async () => ({ status: "success" }));
     await withReplyTurn(
         () => true,
         () => tool.invoke(),
         controller.signal,
     );
-    expect(add).toHaveBeenCalledTimes(1);
-    expect(remove).toHaveBeenCalledWith("abort", add.mock.calls[0][1]);
+    expect(controller.signal.aborted).toBe(false);
+    expect(tool.executions.size).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
 });
 
 it("releases cancellation while a successful tool receipt is still being persisted", async () => {

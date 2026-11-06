@@ -157,7 +157,7 @@ export class StickerService {
         // 使用分类列表替换模板中的占位符
         const prompt = this.config.classificationPrompt.replace("{{categories}}", categoryList);
 
-        const model = this.ctx.yesimbot.model.getChatModel(this.config.classifiModel.providerName, this.config.classifiModel.modelId);
+        const model = this.ctx.yesimbot.model.useChatModel(this.config.classifiModel.providerName, this.config.classifiModel.modelId);
 
         if (!model || !model.isVisionModel()) {
             this.ctx.logger.error(`当前模型组中没有支持多模态的模型。`);

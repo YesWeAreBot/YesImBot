@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { GenerateTextResult } from "@xsai/generate-text";
 import type { Tool } from "@xsai/shared-chat";
 import { Message } from "@xsai/shared-chat";
@@ -96,6 +98,9 @@ export class HeartbeatProcessor {
     }
 
     private async runTracedCycle(turnId: string, stimulus: AgentStimulus<any>): Promise<boolean> {
+        // Admission belongs to this cycle, not to every heartbeat or to the caller's
+        // reusable stimulus. Keep the initial context check before any model call.
+        const cycleStimulus = { ...stimulus } as AgentStimulus<any> & { continuationRequired?: boolean };
         let shouldContinueHeartbeat = true;
         let heartbeatCount = 0;
         let success = false;
@@ -109,13 +114,16 @@ export class HeartbeatProcessor {
                     success = true;
                 };
                 const result = this.config.nativeToolCalling
-                    ? await this.performNativeHeartbeat(turnId, stimulus, onReplySent)
+                    ? await this.performNativeHeartbeat(turnId, cycleStimulus, onReplySent)
                     : this.config.streamAction
-                      ? await this.performSingleHeartbeatWithStreaming(turnId, stimulus, onReplySent)
-                      : await this.performSingleHeartbeat(turnId, stimulus, onReplySent);
+                      ? await this.performSingleHeartbeatWithStreaming(turnId, cycleStimulus, onReplySent)
+                      : await this.performSingleHeartbeat(turnId, cycleStimulus, onReplySent);
 
                 assertReplyTurn();
                 if (result) {
+                    // A successful heartbeat has passed context admission. Its tools
+                    // may have replaced/cleared the wait, or the wait may now expire.
+                    cycleStimulus.continuationRequired = false;
                     shouldContinueHeartbeat = result.continue;
                     success = success || result.replySent;
                 } else {
@@ -142,7 +150,9 @@ export class HeartbeatProcessor {
     /**
      * 准备LLM请求所需的消息负载
      */
-    private async _prepareLlmRequest(stimulus: AgentStimulus<any>): Promise<{ messages: Message[]; manualRecallIds: string[] }> {
+    private async _prepareLlmRequest(
+        stimulus: AgentStimulus<any>,
+    ): Promise<{ messages: Message[]; manualRecallIds: string[]; consumedSourceIds: string[]; fallbackMessages?: Message[] }> {
         // 1. 构建非消息部分的上下文
         this.logger.debug("步骤 1/4: 构建提示词上下文...");
         const promptContext = await this.contextBuilder.build(stimulus);
@@ -159,6 +169,7 @@ export class HeartbeatProcessor {
         this.logger.debug("步骤 2/4: 准备模板渲染视图...");
         const view = {
             session: stimulus.session,
+            NATIVE_TOOL_CALLING: this.config.nativeToolCalling === true,
             TOOL_DEFINITION: prepareDataForTemplate(promptContext.toolSchemas),
             MEMORY_BLOCKS: promptContext.memoryBlocks,
             WORLD_STATE: promptContext.worldState,
@@ -273,8 +284,25 @@ export class HeartbeatProcessor {
                     if (images.length)
                         messages.push({ role: "user", content: [{ type: "text", text: this.config.multiModalSystemTemplate ?? "" }, ...images] });
                 }
+                // A model switch may select JSON fallback; budget both protocol views.
+                let fallbackTokens = 0;
+                if (nativeTools) {
+                    view.NATIVE_TOOL_CALLING = false;
+                    try {
+                        const fallback = await render(candidate);
+                        fallbackTokens = estimateContextTokens({
+                            messages: [
+                                { role: "system", content: fallback.system },
+                                { role: "user", content: fallback.user },
+                                ...messages.filter((message, index) => index > 1 && message.content !== NATIVE_SYSTEM_PROMPT),
+                            ],
+                        });
+                    } finally {
+                        view.NATIVE_TOOL_CALLING = true;
+                    }
+                }
                 // Reserve room for the final program-derived report itself.
-                return estimateContextTokens({ messages, tools: nativeTools }) + 256;
+                return Math.max(estimateContextTokens({ messages, tools: nativeTools }), fallbackTokens) + 256;
             },
         });
         promptContext.worldState = { ...packed.worldState, memoryBudgetReport: packed.report } as FocusedWorldState;
@@ -295,7 +323,27 @@ export class HeartbeatProcessor {
         const manualRecallIds = [...manualRecallOwners([...l1.processed_events, ...l1.new_events])]
             .filter(([, owner]) => owner === undefined)
             .map(([item]) => (item as { turnId: string }).turnId);
-        return { messages, manualRecallIds };
+        let fallbackMessages: Message[] | undefined;
+        if (this.config.nativeToolCalling) {
+            view.NATIVE_TOOL_CALLING = false;
+            const fallback = await render(promptContext.worldState);
+            fallbackMessages = [
+                { role: "system", content: fallback.system },
+                {
+                    role: "user",
+                    content:
+                        typeof userMessageContent === "string"
+                            ? fallback.user
+                            : userMessageContent.map((part, index) =>
+                                  index === userMessageContent.length - 1 && part.type === "text" ? { ...part, text: fallback.user } : part,
+                              ),
+                },
+            ];
+        }
+        const consumedSourceIds = [...l1.processed_events, ...l1.new_events].flatMap((item) =>
+            item.type === "message" || item.type === "system_event" ? [JSON.stringify([item.type, item.id])] : [],
+        );
+        return { messages, manualRecallIds, consumedSourceIds, fallbackMessages };
     }
 
     /**
@@ -310,7 +358,7 @@ export class HeartbeatProcessor {
         const { platform } = session;
         const channelId = conversationChannelId(session)!;
         // 步骤 1-4: 准备请求
-        const { messages, manualRecallIds } = await this._prepareLlmRequest(stimulus);
+        const { messages, manualRecallIds, consumedSourceIds } = await this._prepareLlmRequest(stimulus);
 
         // 步骤 5: 调用LLM
         this.logger.info("步骤 5/7: 调用大语言模型...");
@@ -323,6 +371,7 @@ export class HeartbeatProcessor {
         });
 
         assertReplyTurn();
+        this.contextBuilder.commitMultimodalUsage?.(messages);
         const prompt_tokens = llmRawResponse.usage?.prompt_tokens || `~${estimateTokensByRegex(messages.map((m) => m.content).join())}`;
         const completion_tokens = llmRawResponse.usage?.completion_tokens || `~${estimateTokensByRegex(llmRawResponse.text ?? "")}`;
         this.logger.info(`💰 Token 消耗 | 输入: ${prompt_tokens} | 输出: ${completion_tokens}`);
@@ -336,7 +385,7 @@ export class HeartbeatProcessor {
         }
 
         this.displayThoughts(agentResponseData.thoughts);
-        await this.interactionManager.recordThought(turnId, platform, channelId, agentResponseData.thoughts, manualRecallIds);
+        await this.interactionManager.recordThought(turnId, platform, channelId, agentResponseData.thoughts, manualRecallIds, consumedSourceIds);
 
         // 步骤 7: 执行动作
         this.logger.debug(`步骤 7/7: 执行 ${agentResponseData.actions.length} 个动作...`);
@@ -360,7 +409,7 @@ export class HeartbeatProcessor {
         const channelId = conversationChannelId(session)!;
 
         // 步骤 1-4: 准备请求
-        const { messages, manualRecallIds } = await this._prepareLlmRequest(stimulus);
+        const { messages, manualRecallIds, consumedSourceIds } = await this._prepareLlmRequest(stimulus);
 
         this.logger.info("步骤 5/7: 调用大语言模型...");
         const stime = Date.now();
@@ -465,9 +514,10 @@ export class HeartbeatProcessor {
 
         // 模型重试和切换结束后，以最终响应为唯一动作来源。
         assertReplyTurn();
+        this.contextBuilder.commitMultimodalUsage?.(messages);
         const response = this.parseAndValidateResponse(llmRawResponse, conversationCid(session));
         if (!response) return null;
-        await this.interactionManager.recordThought(turnId, platform, channelId, response.thoughts, manualRecallIds);
+        await this.interactionManager.recordThought(turnId, platform, channelId, response.thoughts, manualRecallIds, consumedSourceIds);
         const replySent = await this.executeActions(turnId, session, response.actions, onReplySent);
         if (replySent) this.logger.success("单次心跳成功完成");
         else this.logger.debug("单次心跳完成，未成功发送回复");
@@ -477,7 +527,7 @@ export class HeartbeatProcessor {
     /**
      * 解析并验证来自LLM的响应
      */
-    private parseAndValidateResponse(llmRawResponse: GenerateTextResult, cid: string): Omit<AgentResponse, "observations"> | null {
+    private parseAndValidateResponse(llmRawResponse: GenerateTextResult, cid: string, reportError = true): Omit<AgentResponse, "observations"> | null {
         const errorContext = {
             rawResponse: llmRawResponse.text,
             cid,
@@ -489,13 +539,13 @@ export class HeartbeatProcessor {
         const { data, error } = parser.parse(llmRawResponse.text ?? "");
         if (error || !data) {
             const parseError = new AppError(ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED, { cause: error as any, context: errorContext });
-            handleError(this.logger, parseError, `解析LLM响应时 (CID: ${cid})`);
+            if (reportError) handleError(this.logger, parseError, `解析LLM响应时 (CID: ${cid})`);
             return null;
         }
 
         if (!data.thoughts || typeof data.thoughts !== "object" || Array.isArray(data.thoughts) || !Array.isArray(data.actions)) {
             const formatError = new AppError(ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED, { context: errorContext });
-            handleError(this.logger, formatError, `验证LLM响应格式时 (CID: ${cid})`);
+            if (reportError) handleError(this.logger, formatError, `验证LLM响应格式时 (CID: ${cid})`);
             return null;
         }
 
@@ -541,7 +591,7 @@ export class HeartbeatProcessor {
         onReplySent: () => void,
     ): Promise<{ continue: boolean; replySent: boolean }> {
         const session = stimulus.session;
-        const { messages, manualRecallIds } = await this._prepareLlmRequest(stimulus);
+        const { messages, manualRecallIds, consumedSourceIds, fallbackMessages } = await this._prepareLlmRequest(stimulus);
         const nativeMessages: Message[] = [
             ...messages,
             {
@@ -557,55 +607,190 @@ export class HeartbeatProcessor {
             // SDK 阶段不执行任何真实工具，失败重试不会重放消息。
             execute: () => ({}),
         }));
-        assertReplyTurn();
-        const response = await this.modelSwitcher.chat({
-            requestPurpose: "主对话",
-            messages: nativeMessages,
-            nativeToolCallingFallback: {
-                messages,
+        let actions: Array<{ function: string; params: Record<string, unknown> }> = [];
+        const configuredRetries = this.config.nativeToolCorrectionRetries ?? 1;
+        const correctionRetries = Number.isSafeInteger(configuredRetries) && configuredRetries >= 0 ? configuredRetries : 1;
+        for (let attempt = 0; attempt <= correctionRetries; attempt++) {
+            assertReplyTurn();
+            const response = await this.modelSwitcher.chat({
+                requestPurpose: "主对话",
+                messages: nativeMessages,
+                nativeToolCallingFallback: {
+                    messages: fallbackMessages ?? messages,
+                    abortSignal: replyTurnSignal(),
+                    validation: this.createJsonValidation(),
+                },
+                tools,
+                toolChoice: "required",
+                maxSteps: 1,
+                singleStep: true,
                 abortSignal: replyTurnSignal(),
-                validation: this.createJsonValidation(),
-            },
-            tools,
-            toolChoice: "required",
-            maxSteps: 1,
-            singleStep: true,
-            abortSignal: replyTurnSignal(),
-        });
-        assertReplyTurn();
-        if (!response.toolCalls?.length) {
-            const legacy = this.parseAndValidateResponse(response, conversationCid(session));
-            if (!legacy) throw new Error("模型没有返回有效工具调用");
-            this.displayThoughts(legacy.thoughts);
-            await this.interactionManager.recordThought(turnId, session.platform, conversationChannelId(session)!, legacy.thoughts, manualRecallIds);
-            const replySent = await this.executeActions(turnId, session, legacy.actions, onReplySent);
-            return { continue: legacy.request_heartbeat, replySent };
-        }
-        const seen = new Map<string, string>();
-        const actions: Array<{ function: string; params: Record<string, unknown> }> = [];
-        // 完整校验后才执行，防止坏调用旁边的发送动作先发生。
-        for (const call of response.toolCalls) {
-            const params = JSON.parse(call.args);
-            if (!params || typeof params !== "object" || Array.isArray(params)) throw new Error("工具参数必须是对象");
-            const definition = this.toolService.getTool(call.toolName, session);
-            if (!definition) throw new Error(`工具不可用: ${call.toolName}`);
-            definition.parameters(params);
-            const signature = JSON.stringify([call.toolName, params]);
-            if (seen.has(call.toolCallId)) {
-                if (seen.get(call.toolCallId) !== signature) throw new Error("工具调用 ID 重复但参数不同");
+            });
+            assertReplyTurn();
+            this.contextBuilder.commitMultimodalUsage?.(messages);
+            if (!response.toolCalls?.length) {
+                let toolMarkup = false;
+                if (/<\/?tool_call(?:\s|>)/i.test(response.text ?? "")) {
+                    try {
+                        JSON.parse(response.text!);
+                    } catch {
+                        toolMarkup = true;
+                    }
+                }
+                const legacy = toolMarkup ? null : this.parseAndValidateResponse(response, conversationCid(session), false);
+                if (legacy) {
+                    this.displayThoughts(legacy.thoughts);
+                    await this.interactionManager.recordThought(
+                        turnId,
+                        session.platform,
+                        conversationChannelId(session)!,
+                        legacy.thoughts,
+                        manualRecallIds,
+                        consumedSourceIds,
+                    );
+                    const replySent = await this.executeActions(turnId, session, legacy.actions, onReplySent);
+                    return { continue: legacy.request_heartbeat, replySent };
+                }
+                const failure = new AppError(ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED, { context: { reason: "native_tool_call_missing" } });
+                if (attempt >= correctionRetries) throw failure;
+                // Untrusted plain text is retained as data, never interpreted as an executable call.
+                nativeMessages.push(
+                    { role: "assistant", content: response.text ?? "" },
+                    {
+                        role: "system",
+                        content: "上一轮未返回有效工具调用，未执行任何动作。请通过原生工具接口返回调用，不要把工具调用写在正文、XML 标签或代码块中。",
+                    },
+                );
                 continue;
             }
-            seen.set(call.toolCallId, signature);
-            actions.push({ function: call.toolName, params });
+            const seen = new Map<string, string>();
+            const failures: Array<{ reason: string; toolName: string; toolCallId: string; path?: Array<string | number> }> = [];
+            actions = [];
+            for (const call of response.toolCalls) {
+                const toolName = typeof call.toolName === "string" ? call.toolName : "";
+                const toolCallId = typeof call.toolCallId === "string" ? call.toolCallId : "";
+                const fail = (reason: string, path?: Array<string | number>) =>
+                    failures.push({ reason, toolName, toolCallId, ...(path?.length ? { path } : {}) });
+                if (!toolName || !toolCallId || toolName.length > 1024 || toolCallId.length > 1048576 || /\p{Cc}/u.test(toolName + toolCallId)) {
+                    fail("invalid_tool_identity");
+                    continue;
+                }
+                let params: Record<string, unknown>;
+                try {
+                    params = JSON.parse(call.args);
+                } catch {
+                    fail("invalid_argument_json");
+                    continue;
+                }
+                if (!params || typeof params !== "object" || Array.isArray(params)) {
+                    fail("arguments_not_object");
+                    continue;
+                }
+                const definition = this.toolService.getTool(call.toolName, session);
+                if (!definition) {
+                    fail("tool_unavailable");
+                    continue;
+                }
+                try {
+                    definition.parameters(params);
+                } catch (error) {
+                    const path = Array.isArray(error?.options?.path)
+                        ? error.options.path
+                              .filter((part: unknown) => typeof part === "number" || (typeof part === "string" && /^[\w.-]{1,128}$/.test(part)))
+                              .slice(0, 16)
+                        : [];
+                    fail("invalid_arguments", path);
+                    continue;
+                }
+                const signature = JSON.stringify([call.toolName, params]);
+                if (seen.has(call.toolCallId)) {
+                    if (seen.get(call.toolCallId) !== signature) fail("conflicting_tool_call_id");
+                    continue;
+                }
+                seen.set(call.toolCallId, signature);
+                actions.push({ function: call.toolName, params });
+            }
+            if (!failures.length) break;
+            const failure = new AppError(ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED, {
+                context: {
+                    reason: "native_tool_validation_failed",
+                    calls: failures.map((item) => ({
+                        ...item,
+                        toolName: item.toolName.replace(/\p{Cc}/gu, "").slice(0, 128),
+                        toolCallId:
+                            item.toolCallId.length > 256
+                                ? `sha256:${createHash("sha256").update(item.toolCallId).digest("hex")}`
+                                : item.toolCallId.replace(/\p{Cc}/gu, ""),
+                    })),
+                },
+            });
+            if (attempt >= correctionRetries) throw failure;
+            const calls = response.toolCalls;
+            const ids = calls.map((call) => call.toolCallId);
+            // Invalid/duplicate identifiers cannot form a valid assistant/tool message pair.
+            if (
+                new Set(ids).size === ids.length &&
+                ids.every((id) => typeof id === "string" && id.length > 0 && id.length <= 1048576 && !/\p{Cc}/u.test(id)) &&
+                calls.every(
+                    (call) => typeof call.toolName === "string" && call.toolName.length > 0 && call.toolName.length <= 1024 && !/\p{Cc}/u.test(call.toolName),
+                )
+            ) {
+                const priorAssistant = [...(response.messages ?? [])]
+                    .reverse()
+                    .find(
+                        (message): message is Extract<Message, { role: "assistant" }> =>
+                            message.role === "assistant" &&
+                            message.tool_calls?.length === calls.length &&
+                            message.tool_calls.every((call, index) => call.id === calls[index].toolCallId),
+                    );
+                nativeMessages.push({
+                    ...priorAssistant,
+                    role: "assistant",
+                    content: priorAssistant?.content ?? response.text ?? "",
+                    tool_calls: calls.map((call, index) => ({
+                        ...priorAssistant?.tool_calls?.[index],
+                        index,
+                        id: call.toolCallId,
+                        type: "function",
+                        function: { ...priorAssistant?.tool_calls?.[index]?.function, name: call.toolName, arguments: call.args },
+                    })),
+                });
+                for (const call of calls) {
+                    const invalid = failures.find((item) => item.toolCallId === call.toolCallId);
+                    nativeMessages.push({
+                        role: "tool",
+                        tool_call_id: call.toolCallId,
+                        content: JSON.stringify({
+                            status: "error",
+                            executed: false,
+                            error: invalid ? { reason: invalid.reason, ...(invalid.path ? { path: invalid.path } : {}) } : { reason: "batch_not_executed" },
+                        }),
+                    });
+                }
+            }
+            nativeMessages.push({
+                role: "system",
+                content: "上一轮工具调用校验失败，整批工具均未执行。请根据工具定义和错误反馈修正调用，补齐必填参数；不要重复原先无效的调用标识。",
+            });
         }
         let replySent = false;
         for (const action of actions) {
             assertReplyTurn();
-            const actionId = await this.interactionManager.recordAction(turnId, session.platform, conversationChannelId(session)!, action, manualRecallIds);
+            const actionId = await this.interactionManager.recordAction(
+                turnId,
+                session.platform,
+                conversationChannelId(session)!,
+                action,
+                manualRecallIds,
+                consumedSourceIds,
+            );
             assertReplyTurn();
             const result = await this.invokeAction(turnId, action, session);
             assertReplyTurn();
-            if (action.function === "send_message" && result.status === "success") {
+            if (
+                action.function === "send_message" &&
+                (result.status === "success" || result.metadata?.delivery?.messageIds?.some((id: unknown) => typeof id === "string" && id.trim()))
+            ) {
                 replySent = true;
                 onReplySent();
             }
@@ -615,6 +800,7 @@ export class HeartbeatProcessor {
                 status: result.status,
                 result: result.result,
                 error: result.error,
+                metadata: result.metadata,
             });
             if (result.status !== "success") throw new Error(`工具 ${action.function} 执行失败: ${result.error?.message ?? "未知错误"}`);
         }
@@ -666,7 +852,10 @@ export class HeartbeatProcessor {
             assertReplyTurn();
             const result = await this.invokeAction(turnId, action, session);
             assertReplyTurn();
-            if (action.function === "send_message" && result.status === "success") {
+            if (
+                action.function === "send_message" &&
+                (result.status === "success" || result.metadata?.delivery?.messageIds?.some((id: unknown) => typeof id === "string" && id.trim()))
+            ) {
                 replySent = true;
                 onReplySent();
             }
@@ -676,7 +865,11 @@ export class HeartbeatProcessor {
                 status: result.status,
                 result: result.result,
                 error: result.error,
+                metadata: result.metadata,
             });
+            if (action.function === "send_message" && result.status !== "success" && result.metadata?.delivery?.messageIds?.length) {
+                throw new Error(`消息仅部分发送，停止本轮以避免重复投递: ${result.error?.message ?? "未知错误"}`);
+            }
         }
         return replySent;
     }
@@ -710,6 +903,7 @@ function processParams(params: Properties, indent = ""): any[] {
 function prepareDataForTemplate(tools: ToolSchema[]) {
     return tools.map((tool) => ({
         ...tool,
+        parametersJSONSchema: "parametersJSONSchema" in tool ? JSON.stringify(tool.parametersJSONSchema) : "",
         parameters: tool.parameters ? processParams(tool.parameters) : [],
     }));
 }

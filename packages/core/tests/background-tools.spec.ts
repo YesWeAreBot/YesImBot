@@ -1,5 +1,5 @@
 import { Bot, Context, Schema } from "koishi";
-import { expect, it, onTestFinished } from "vitest";
+import { expect, it, onTestFinished, vi } from "vitest";
 
 import { withReplyTurn, guardReplySession } from "../src/agent/reply-turn";
 import { ToolService } from "../src/extension/service";
@@ -31,6 +31,7 @@ async function fixture(enabled = true) {
     const config: any = {
         backgroundTools: {
             enabled,
+            allowedTools: ["read_slow"],
             completion: "next_cycle",
             settlement: "request",
             willingness: { succeeded: 2, failed: 0, cancelled: 0 },
@@ -317,4 +318,184 @@ it("retains administrator attribution for a manually submitted background tool",
     await f.tools.invoke("background_task_start", { tool: "read_slow", params: {} }, f.session);
     await drain();
     expect(f.receipts.find((receipt) => receipt.payload.operation === "read_slow").payload.actor).toBe("admin:telegram:u");
+});
+
+it("blocks unselected background tools without changing direct calls", async () => {
+    const f = await fixture();
+    let calls = 0;
+    add(f, async () => {
+        calls++;
+        return { status: "success", result: "done" };
+    });
+    f.config.backgroundTools.allowedTools = [];
+    expect((f.tools.background!.query(f.session) as any).tools).toEqual([]);
+    expect(() => f.tools.background!.start(f.session, "read_slow", {})).toThrow("该工具不允许后台执行");
+    expect(calls).toBe(0);
+    expect((await f.tools.invoke("read_slow", {}, f.session)).status).toBe("success");
+    expect(calls).toBe(1);
+});
+it("does not let selection authorize a tool without background support", async () => {
+    const f = await fixture();
+    add(f, async () => ({ status: "success" }), false);
+    expect((f.tools.background!.query(f.session) as any).tools).toEqual([]);
+    expect(() => f.tools.background!.start(f.session, "read_slow", {})).toThrow("该工具不允许后台执行");
+});
+it("invalidates a running task result when its background permission is revoked", async () => {
+    const f = await fixture(),
+        d = deferred();
+    add(f, async () => {
+        await d.promise;
+        return { status: "success", result: "stale" };
+    });
+    const task = f.tools.background!.start(f.session, "read_slow", {});
+    await drain();
+    f.config.backgroundTools.allowedTools = [];
+    d.resolve();
+    await drain();
+    expect(f.completions).toEqual([]);
+    expect(() => f.tools.background!.query(f.session, task.id)).toThrow("Background task not found");
+});
+it("refreshes selectable tools on registration, replacement and disposal", async () => {
+    const f = await fixture(false);
+    const definition = {
+        name: "extra_read",
+        description: "Extra read",
+        background: true,
+        parameters: Schema.object({}),
+        execute: async () => ({ status: "success" as const }),
+    };
+    const removeOld = f.tools.registerTool(definition);
+    const names = () => f.tools.ctx.schema.get("toolService.backgroundEligibleTools")?.inner?.list?.map((choice: any) => choice.value) ?? [];
+    expect(names()).toContain("extra_read");
+    const rendered = f.tools.ctx.schema.get("toolService.backgroundEligibleTools");
+    expect(rendered.type).toBe("array");
+    expect(rendered.meta.role).toBe("checkbox");
+    expect(rendered.meta.default).toEqual(["web_search", "fetch_webpage", "get_image_description"]);
+    f.tools.registerTool({ ...definition, background: false });
+    expect(names()).not.toContain("extra_read");
+    const removeNew = f.tools.registerTool({ ...definition });
+    removeOld();
+    expect(names()).toContain("extra_read");
+    removeNew();
+    expect(names()).not.toContain("extra_read");
+});
+
+it("keeps other instances' tool choices when a shared schema owner stops", async () => {
+    const f = await fixture(false);
+    let other!: ToolService;
+    const fork = f.tools.ctx.plugin((scope) => {
+        other = new ToolService(scope, { backgroundTools: { enabled: false } } as any, { logging: loggingStub() } as any);
+        scope.on("dispose", () => other.stop());
+    });
+    onTestFinished(() => fork.dispose());
+    add(f, async () => ({ status: "success" }));
+    other.registerTool({
+        name: "other_read",
+        description: "Other read",
+        background: true,
+        parameters: Schema.object({}),
+        execute: async () => ({ status: "success" }),
+    });
+    const names = () => f.tools.ctx.schema.get("toolService.backgroundEligibleTools").inner!.list!.map((choice) => choice.value);
+    expect(names()).toContain("other_read");
+    expect(names()).toContain("read_slow");
+    await fork.dispose();
+    expect(names()).not.toContain("other_read");
+    expect(names()).toContain("read_slow");
+});
+it("transforms background input exactly once through the ordinary invocation path", async () => {
+    const f = await fixture();
+    let calls = 0;
+    f.tools.registerTool({
+        name: "read_slow",
+        description: "read",
+        background: true,
+        parameters: Schema.object({ value: Schema.transform(Schema.string(), JSON.parse) }),
+        execute: async ({ value }) => {
+            calls++;
+            return { status: "success", result: value };
+        },
+    });
+    const started = await f.tools.invoke("background_task_start", { tool: "read_slow", params: { value: '{"answer":42}' } }, f.session);
+    await drain();
+    const task: any = await f.tools.invoke("background_task_query", { id: started.result.id }, f.session);
+    expect(task.result).toMatchObject({ state: "succeeded", result: { result: { answer: 42 } } });
+    expect(calls).toBe(1);
+});
+
+it("rechecks an extension owner's filter for discovery, execution and completed background reads", async () => {
+    const f = await fixture(),
+        d = deferred();
+    let allowed = true,
+        calls = 0;
+    f.tools.registerTool(
+        {
+            name: "read_slow",
+            description: "read",
+            background: true,
+            parameters: Schema.object({}),
+            execute: async () => {
+                calls++;
+                return d.promise;
+            },
+        },
+        f.bot.ctx.intersect(() => allowed),
+    );
+    const task = f.tools.background!.start(f.session, "read_slow", {});
+    await drain();
+    allowed = false;
+    expect(f.tools.getAvailableTools(f.session).some((tool) => tool.name === "read_slow")).toBe(false);
+    expect((await f.tools.invoke("read_slow", {}, f.session)).status).toBe("error");
+    d.resolve({ status: "success", result: "restricted" });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await drain();
+    expect(calls).toBe(1);
+    expect(() => f.tools.background!.query(f.session, task.id)).toThrow(Error);
+    expect(f.completions).toHaveLength(0);
+});
+
+it("rejects stale background result reads while keeping result-free task listings", async () => {
+    const f = await fixture();
+    let current = true;
+    f.tools.registerTool({
+        name: "read_slow",
+        description: "read",
+        background: true,
+        parameters: Schema.object({}),
+        isResultCurrent: async () => current,
+        execute: async () => ({ status: "success", result: "restricted", metadata: { personMemorySnapshot: "old" } }),
+    });
+    const start = await f.tools.invoke("background_task_start", { tool: "read_slow", params: {} }, f.session);
+    await vi.waitFor(() => expect(f.tools.background!.query(f.session, start.result.id)).toMatchObject({ state: "succeeded" }));
+    expect((await f.tools.invoke("background_task_query", { id: start.result.id }, f.session)).status).toBe("success");
+    current = false;
+    const read = await f.tools.invoke("background_task_query", { id: start.result.id }, f.session);
+    expect(read.status).toBe("error");
+    expect(JSON.stringify(read)).not.toContain("restricted");
+    const list = await f.tools.invoke("background_task_query", {}, f.session);
+    expect(list.status).toBe("success");
+    expect(JSON.stringify(list)).not.toContain("restricted");
+});
+
+it("invalidates an already published completion after its extension owner is filtered out", async () => {
+    const f = await fixture();
+    let allowed = true;
+    f.tools.registerTool(
+        {
+            name: "read_slow",
+            description: "read",
+            background: true,
+            parameters: Schema.object({}),
+            execute: async () => ({ status: "success", result: "private result" }),
+        },
+        f.bot.ctx.intersect(() => allowed),
+    );
+    const task = f.tools.background!.start(f.session, "read_slow", {});
+    await vi.waitFor(() => expect(f.completions).toHaveLength(1));
+    const payload = f.completions[0].s.payload;
+    expect(f.tools.background!.isCompletionCurrent(f.session, payload)).toBe(true);
+    allowed = false;
+    expect(f.tools.background!.isCompletionCurrent(f.session, payload)).toBe(false);
+    expect(f.tools.background!.consumeCompletion(f.session, payload)).toBeUndefined();
+    expect(() => f.tools.background!.query(f.session, task.id)).toThrow(/permission|authorization|not found|权限|失效|不存在/i);
 });

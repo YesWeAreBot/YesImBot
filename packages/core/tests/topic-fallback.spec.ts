@@ -14,7 +14,7 @@ function fixture() {
     const reset: string[] = [];
     const ctx = stubCtx({
         model: {
-            getChatModel: () => ({
+            useChatModel: () => ({
                 chat: (options: any) =>
                     new Promise((resolve) => {
                         requests.push({ resolve, signal: options.abortSignal });

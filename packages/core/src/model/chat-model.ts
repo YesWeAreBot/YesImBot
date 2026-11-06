@@ -4,7 +4,7 @@ import type { ChatOptions, CompletionStep, CompletionToolCall, CompletionToolRes
 import { Context } from "koishi";
 
 import { budgetContext } from "../agent/context-budget";
-import { generateText, streamText } from "../dependencies/xsai";
+import { chat as requestChat, generateText, streamText } from "../dependencies/xsai";
 import type { LoggerService } from "../logger";
 import { AppError, ErrorDefinitions } from "../shared/errors";
 import { isEmpty, JsonParser, toBoolean } from "../shared/utils";
@@ -145,7 +145,7 @@ export class ChatModel extends BaseModel implements IChatModel {
         try {
             return await withUsageScope({ contextBudget: budget.report }, () =>
                 useStream
-                    ? this._executeStream(chatOptions, options.onStreamStart, options.validation, requestId)
+                    ? this._executeStream(chatOptions, options.onStreamStart, options.validation, requestId, options.singleStep)
                     : this._executeNonStream(chatOptions, options.singleStep, options.validation, requestId),
             );
         } catch (error) {
@@ -216,20 +216,27 @@ export class ChatModel extends BaseModel implements IChatModel {
     ): Promise<GenerateTextResult> {
         const stime = Date.now();
         let result: GenerateTextResult;
-        try {
-            result = await generateText({
-                ...chatOptions,
-                ...(singleStep
-                    ? {
-                          onStepFinish: (step: CompletionStep) => {
-                              throw new SingleStepComplete(step);
-                          },
-                      }
-                    : {}),
-            });
-        } catch (error) {
-            if (!(error instanceof SingleStepComplete)) throw error;
-            result = { ...error.step, steps: [error.step], messages: [], text: error.step.text ?? "" } as GenerateTextResult;
+        if (singleStep) {
+            // The framework owns validation and execution. Never let the SDK parse
+            // arguments or look up a tool before the caller can issue a correction.
+            const response = await requestChat({ ...chatOptions, maxSteps: undefined, stream: false });
+            const data = await response.json();
+            chatOptions.abortSignal?.throwIfAborted();
+            const choice = data.choices?.[0];
+            if (!choice?.message) throw new Error("模型未返回有效回复");
+            const message = choice.message;
+            const calls = rawToolCalls(message.tool_calls ?? []);
+            const step = {
+                text: message.content ?? "",
+                toolCalls: calls,
+                toolResults: [],
+                finishReason: choice.finish_reason,
+                usage: data.usage,
+                stepType: "initial",
+            } as CompletionStep;
+            result = { ...step, messages: [message], steps: [step] } as GenerateTextResult;
+        } else {
+            result = await generateText(chatOptions);
         }
         if (isEmpty(result.text) && !result.toolCalls?.length) {
             throw new AppError(ErrorDefinitions.LLM.OUTPUT_EMPTY_CONTENT, {
@@ -262,6 +269,7 @@ export class ChatModel extends BaseModel implements IChatModel {
         onStreamStart?: () => void,
         validation?: ValidationOptions,
         requestId = "stream",
+        singleStep = false,
     ): Promise<GenerateTextResult> {
         const stime = Date.now();
         let streamStarted = false;
@@ -274,13 +282,37 @@ export class ChatModel extends BaseModel implements IChatModel {
         let finalUsage: any = undefined;
         let finalFinishReason: GenerateTextResult["finishReason"] = "unknown";
 
+        const completedResponses: StreamCompletion[] = [];
         let completion = new StreamCompletion();
         let buffer: string[] = [];
         let diagnostics = new StreamDiagnostics(stime);
+        const markStreamStarted = () => {
+            if (streamStarted) return;
+            onStreamStart?.();
+            streamStarted = true;
+            this.logger.debug(`🌊 流式传输已开始 | 延迟: ${Date.now() - stime}ms`);
+        };
         const originalFetch = chatOptions.fetch as (url: any, init: any) => Promise<Response>;
         const streamOptions = {
             ...chatOptions,
             fetch: async (url: URL, init: RequestInit) => {
+                // xsai builds its own continuation messages; restore metadata on the
+                // actual wire request, not merely on the final returned result.
+                if (typeof init.body === "string" && completedResponses.length) {
+                    const payload = JSON.parse(init.body);
+                    for (const message of payload.messages ?? []) {
+                        if (message.role !== "assistant" || !message.tool_calls?.length) continue;
+                        const ids = message.tool_calls.map((call: any) => call.id);
+                        const matches = completedResponses
+                            .map((item) => item.assistantMessage(item.rawCalls()))
+                            .filter(
+                                (item: any) =>
+                                    item?.tool_calls?.length === ids.length && item.tool_calls.every((call: any, index: number) => call.id === ids[index]),
+                            );
+                        if (matches.length === 1) Object.assign(message, matches[0]);
+                    }
+                    init = { ...init, body: JSON.stringify(payload) };
+                }
                 const response = await originalFetch(url, init);
                 // 多步工具响应每次都必须有自己的终止信号。
                 diagnostics = new StreamDiagnostics(stime);
@@ -288,11 +320,7 @@ export class ChatModel extends BaseModel implements IChatModel {
                 // Validate complete SSE text before the transport EOF gate, not in downstream SDK events.
                 const responseCompletion = (completion = new StreamCompletion((textDelta) => {
                     if (responseCompletion.earlyExit || !textDelta) return;
-                    if (!streamStarted) {
-                        onStreamStart?.();
-                        streamStarted = true;
-                        this.logger.debug(`🌊 流式传输已开始 | 延迟: ${Date.now() - stime}ms`);
-                    }
+                    markStreamStarted();
                     buffer.push(textDelta);
                     finalContentParts.push(textDelta);
                     if (!validator) return;
@@ -301,7 +329,7 @@ export class ChatModel extends BaseModel implements IChatModel {
                     responseCompletion.earlyExit = true;
                     this.logger.debug(`✅ 内容有效，可提前结束流 | 耗时: ${Date.now() - stime}ms`);
                     if (validationResult.parsedData) finalContentParts.splice(0, finalContentParts.length, JSON.stringify(validationResult.parsedData));
-                }));
+                }, markStreamStarted));
                 diagnostics.recordResponse(response);
                 this.logger.debug(`[${requestId}] HTTP 响应 | ${JSON.stringify(diagnostics.summary())}`);
                 if (response.ok) {
@@ -352,6 +380,7 @@ export class ChatModel extends BaseModel implements IChatModel {
                                         context: { streamDiagnostics: summary },
                                     });
                                 }
+                                if (completed && responseCompletion.hasTools) completedResponses.push(responseCompletion);
                             },
                         }),
                     );
@@ -362,49 +391,75 @@ export class ChatModel extends BaseModel implements IChatModel {
         };
 
         try {
-            const stream = await streamText({
-                ...streamOptions,
-                streamOptions: { includeUsage: true },
-                onEvent: (event) => {
-                    if (!streamStarted && (event.type === "tool-call-streaming-start" || event.type === "tool-call-delta")) {
-                        onStreamStart?.();
-                        streamStarted = true;
+            if (singleStep) {
+                const response = await requestChat({ ...streamOptions, maxSteps: undefined, stream: true, streamOptions: { include_usage: true } } as any);
+                if (!response.body) throw new Error("模型返回空流");
+                const reader = response.body.getReader();
+                try {
+                    while (!(await reader.read()).done) {
+                        /* completion observes the guarded transport */
                     }
-                },
-            });
-
-            // SDK 的各个结果 Promise 可能一起拒绝，均附加处理避免未处理异常。
-            for (const promise of [stream.steps, stream.usage, stream.messages]) void promise.catch(() => {});
-
-            // xsai 0.3.5 的结果 Promise 可能丢失异常，fullStream 仍保留原始错误。
-            // 文本继续由 onEvent 实时处理，此处只确认整条流成功完成。
-            const reader = stream.fullStream.getReader();
-            try {
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    if (value.type === "error") {
-                        throw new AppError(ErrorDefinitions.LLM.REQUEST_FAILED, {
-                            args: [String(value.error)],
-                            cause: value.error instanceof Error ? value.error : undefined,
-                        });
-                    }
+                } finally {
+                    reader.releaseLock();
                 }
-            } finally {
-                reader.releaseLock();
+                finalToolCalls = completion.rawCalls();
+                finalUsage = completion.usage;
+                finalFinishReason = completion.finishReason;
+                finalSteps = [
+                    {
+                        text: finalContentParts.join(""),
+                        toolCalls: finalToolCalls,
+                        toolResults: [],
+                        usage: finalUsage,
+                        finishReason: finalFinishReason,
+                        stepType: "initial",
+                    } as CompletionStep,
+                ];
+            } else {
+                const stream = await streamText({
+                    ...streamOptions,
+                    streamOptions: { includeUsage: true },
+                    onEvent: (event) => {
+                        if (!streamStarted && (event.type === "tool-call-streaming-start" || event.type === "tool-call-delta")) {
+                            onStreamStart?.();
+                            streamStarted = true;
+                        }
+                    },
+                });
+
+                // SDK 的各个结果 Promise 可能一起拒绝，均附加处理避免未处理异常。
+                for (const promise of [stream.steps, stream.usage, stream.messages]) void promise.catch(() => {});
+
+                // xsai 0.3.5 的结果 Promise 可能丢失异常，fullStream 仍保留原始错误。
+                // 文本继续由 onEvent 实时处理，此处只确认整条流成功完成。
+                const reader = stream.fullStream.getReader();
+                try {
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        if (value.type === "error") {
+                            throw new AppError(ErrorDefinitions.LLM.REQUEST_FAILED, {
+                                args: [String(value.error)],
+                                cause: value.error instanceof Error ? value.error : undefined,
+                            });
+                        }
+                    }
+                } finally {
+                    reader.releaseLock();
+                }
+
+                // 仅等待元数据（如 usage, finishReason）处理完成
+                // 文本部分已在 onEvent 中实时处理
+                await (async () => {
+                    for await (const step of await stream.steps) {
+                        finalSteps.push(step);
+                        if (step.toolCalls?.length) finalToolCalls.push(...step.toolCalls);
+                        if (step.toolResults?.length) finalToolResults.push(...step.toolResults);
+                        if (step.usage) finalUsage = step.usage;
+                        if (step.finishReason) finalFinishReason = step.finishReason;
+                    }
+                })();
             }
-
-            // 仅等待元数据（如 usage, finishReason）处理完成
-            // 文本部分已在 onEvent 中实时处理
-            await (async () => {
-                for await (const step of await stream.steps) {
-                    finalSteps.push(step);
-                    if (step.toolCalls?.length) finalToolCalls.push(...step.toolCalls);
-                    if (step.toolResults?.length) finalToolResults.push(...step.toolResults);
-                    if (step.usage) finalUsage = step.usage;
-                    if (step.finishReason) finalFinishReason = step.finishReason;
-                }
-            })();
         } catch (error) {
             this.logger.debug(`[${requestId}] 流式异常 | 类型: ${error.name} | ${JSON.stringify(diagnostics.summary())}`);
             const summary = diagnostics.summary();
@@ -459,7 +514,10 @@ export class ChatModel extends BaseModel implements IChatModel {
 
         return {
             steps: finalSteps as Array<CompletionStep<true>>,
-            messages: [],
+            messages: completedResponses.flatMap((response) => {
+                const message = response.assistantMessage(finalToolCalls);
+                return message ? [message] : [];
+            }),
             text: finalText,
             toolCalls: finalToolCalls,
             toolResults: finalToolResults,
@@ -542,11 +600,10 @@ export class ChatModel extends BaseModel implements IChatModel {
     }
 }
 
-/** 单步调用交回框架；真实工具只在模型请求完整成功后执行。 */
-class SingleStepComplete extends Error {
-    constructor(public readonly step: CompletionStep) {
-        super("Single step complete");
-    }
+function rawToolCalls(calls: any[]): CompletionToolCall[] {
+    return calls.map(
+        (call) => ({ toolCallId: call.id, toolCallType: call.type, toolName: call.function?.name, args: call.function?.arguments }) as CompletionToolCall,
+    );
 }
 
 /** 协议授权独立于有长度限制的诊断。与 SDK 一样逐行解析，完整帧后立即释放正文。 */
@@ -556,8 +613,41 @@ class StreamCompletion {
     completed = false;
     hasTools = false;
     earlyExit = false;
+    private reasoningContent: string | undefined;
+    private text = "";
+    private readonly toolIds = new Map<number, string>();
+    private readonly toolDeltas = new Map<number, any>();
+    usage: any;
+    finishReason: any = "unknown";
+    rawCalls(): CompletionToolCall[] {
+        return rawToolCalls([...this.toolDeltas.entries()].sort(([a], [b]) => a - b).map(([, call]) => call));
+    }
 
-    constructor(private readonly onContent?: (text: string) => void) {}
+    assistantMessage(calls: CompletionToolCall[]): Message | undefined {
+        const ids = [...this.toolIds.entries()].sort(([left], [right]) => left - right).map(([, id]) => id);
+        if (!this.completed || !ids.length || new Set(ids).size !== ids.length) return;
+        const matched = ids.map((id) => {
+            const candidates = calls.filter((call) => call.toolCallId === id);
+            return candidates.length === 1 ? candidates[0] : undefined;
+        });
+        if (matched.some((call) => !call)) return;
+        return {
+            role: "assistant",
+            content: this.text,
+            ...(this.reasoningContent === undefined ? {} : { reasoning_content: this.reasoningContent }),
+            tool_calls: matched.map((call, index) => ({
+                index,
+                id: call!.toolCallId,
+                type: "function",
+                function: { name: call!.toolName, arguments: call!.args },
+            })),
+        };
+    }
+
+    constructor(
+        private readonly onContent?: (text: string) => void,
+        private readonly onNativeActivity?: () => void,
+    ) {}
 
     observe(chunk: Uint8Array): void {
         this.scan(this.decoder.decode(chunk, { stream: true }));
@@ -583,13 +673,38 @@ class StreamCompletion {
             }
             let choice: any;
             try {
-                choice = JSON.parse(data)?.choices?.[0];
-            } catch {
-                // SDK 保留原始解析错误；这里不把畸形帧当作完成信号。
-                continue;
+                const frame = JSON.parse(data);
+                if (frame.error) throw new AppError(ErrorDefinitions.LLM.REQUEST_FAILED, { args: [String(frame.error.message ?? frame.error)] });
+                if (frame.usage) this.usage = frame.usage;
+                choice = frame.choices?.[0];
+            } catch (error) {
+                throw new AppError(ErrorDefinitions.LLM.REQUEST_FAILED, { args: ["模型返回无效 SSE 帧"], cause: error });
             }
+            if (choice?.finish_reason) this.finishReason = choice.finish_reason;
             if (typeof choice?.finish_reason === "string" && choice.finish_reason.length > 0) this.completed = true;
-            if (choice?.delta?.tool_calls?.length) this.hasTools = true;
+            if (choice?.delta?.yib_native_activity === true) {
+                this.hasTools = true;
+                this.onNativeActivity?.();
+            }
+            if (typeof choice?.delta?.reasoning_content === "string") this.reasoningContent = (this.reasoningContent ?? "") + choice.delta.reasoning_content;
+            if (typeof choice?.delta?.content === "string") this.text += choice.delta.content;
+            if (choice?.delta?.tool_calls?.length) {
+                this.hasTools = true;
+                for (const call of choice.delta.tool_calls) {
+                    if (!Number.isSafeInteger(call.index) || call.index < 0) throw new Error("工具调用索引无效");
+                    if (typeof call.id === "string") this.toolIds.set(call.index, call.id);
+                    const prior = this.toolDeltas.get(call.index);
+                    this.toolDeltas.set(call.index, {
+                        ...prior,
+                        ...call,
+                        function: {
+                            ...prior?.function,
+                            ...call.function,
+                            arguments: (prior?.function?.arguments ?? "") + (call.function?.arguments ?? ""),
+                        },
+                    });
+                }
+            }
             // Match the SDK's first-choice text path; validator failures must propagate.
             else if (typeof choice?.delta?.content === "string") this.onContent?.(choice.delta.content);
         }

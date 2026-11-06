@@ -2,11 +2,13 @@ import { randomUUID } from "node:crypto";
 
 import { Context, ForkScope, h, Logger, Schema, Session } from "koishi";
 
-import { assertReplyTurn, awaitReplyTurn } from "../agent/reply-turn";
+import { DEFAULT_BACKGROUND_TOOLS } from "../agent/config";
+import { assertReplyTurn, awaitReplyTurn, guardReplySession, replyTurnSignal, withReplyTurnGuard } from "../agent/reply-turn";
 import { Config } from "../config";
 import type { LoggerService } from "../logger";
 import { PromptService } from "../prompt";
 import { sanitizeDiagnostic } from "../shared/diagnostic-sanitizer";
+import { normalizeAppError, fromAppError } from "../shared/errors";
 import { getInstanceDirectory, getInstanceScope } from "../shared/instance-scope";
 import { YesImBotService } from "../shared/service";
 import { isEmpty, stringify, truncate } from "../shared/utils";
@@ -21,8 +23,11 @@ import MemoryExtension from "./builtin/memory";
 import QManagerExtension from "./builtin/qmanager";
 import SearchExtension from "./builtin/search";
 import { extractMetaFromSchema, Failed } from "./helpers";
+import { toolJSONSchema } from "./json-schema";
 import { ToolOutputStore, TOOL_OUTPUT_THRESHOLD, ToolOutputOwner } from "./tool-output-store";
 import { IExtension, Properties, ToolCallResult, ToolDefinition, ToolSchema, ToolExecutionContext } from "./types";
+
+const backgroundToolChoices = new WeakMap<object, Map<ToolService, ToolDefinition[]>>();
 
 /** Keep JSON containers and quoted values intact before Koishi's tool-schema validation. */
 function parseCommandParams(source: string): Record<string, string> {
@@ -129,6 +134,10 @@ export class ToolService extends YesImBotService<Config> {
     private outputOwnerContext?: Context;
 
     private tools: Map<string, ToolDefinition> = new Map();
+    private schemaStopped = false;
+    private readonly toolOwners = new Map<string, { definition: ToolDefinition; context: Context }>();
+    private readonly executions = new Set<AbortController>();
+    private readonly outputProducers = new Map<string, { definition: ToolDefinition; result: ToolCallResult; expiresAt: number }>();
     private extensions: Map<string, IExtension> = new Map();
     // Disabled instances are also retained so their own plugin scope can be re-enabled.
     private knownExtensions: Map<string, IExtension> = new Map();
@@ -144,11 +153,16 @@ export class ToolService extends YesImBotService<Config> {
         super(ctx, config);
         this._logger = deps.logging.getLogger("[工具管理器]");
         this.promptService = deps.prompt;
+        this.updateBackgroundToolSchema();
         if (config.backgroundTools?.enabled) this.background = new BackgroundTools(ctx, config.backgroundTools, deps.world, this);
     }
 
     public async stop() {
         this.background?.dispose();
+        for (const controller of this.executions) controller.abort(new Error("Tool service stopped"));
+        this.outputProducers.clear();
+        this.schemaStopped = true;
+        this.updateBackgroundToolSchema();
     }
 
     public async start() {
@@ -165,7 +179,8 @@ export class ToolService extends YesImBotService<Config> {
             }),
             execute: async ({ session, ...options }) => {
                 try {
-                    return { status: "success", result: await this.readToolOutput(session, options as { uri: string; offset?: number; limit?: number }) };
+                    const { metadata, ...result } = await this.readToolOutput(session, options as { uri: string; offset?: number; limit?: number });
+                    return { status: "success", result, metadata };
                 } catch (error) {
                     return Failed({ name: "ToolOutputReadError", message: error.message, retryable: false });
                 }
@@ -476,10 +491,11 @@ export class ToolService extends YesImBotService<Config> {
             this.extensions.set(metadata.name, extensionInstance);
 
             if (extensionInstance.tools) {
-                for (const [name, tool] of extensionInstance.tools.entries()) {
+                for (const tool of extensionInstance.tools.values()) {
                     this._logger.debug(`  -> 注册工具: "${tool.name}"`);
-                    this.tools.set(name, tool);
+                    this.registerTool(tool, extensionInstance.ctx);
                 }
+                this.updateBackgroundToolSchema();
             }
 
             // this._logger.debug(`扩展 "${metadata.name}" 已加载`);
@@ -497,21 +513,55 @@ export class ToolService extends YesImBotService<Config> {
         if (this.extensions.get(name) === ext) this.extensions.delete(name);
         for (const definition of ext.tools?.values() || []) {
             // Another extension (or registerTool) may have replaced a colliding name.
-            if (this.tools.get(definition.name) === definition) this.tools.delete(definition.name);
+            if (this.tools.get(definition.name) === definition) this.unregisterTool(definition.name);
         }
         this._logger.info(`已卸载扩展: "${name}"`);
         return true;
     }
 
-    public registerTool(definition: ToolDefinition) {
+    private updateBackgroundToolSchema() {
+        // Root ownership keeps shared choices alive when an individual plugin is disposed.
+        const schema = this.ctx.root?.schema ?? this.ctx.schema;
+        if (!schema?.set) return;
+        const identity = schema._data ?? schema;
+        let instances = backgroundToolChoices.get(identity);
+        if (!instances) backgroundToolChoices.set(identity, (instances = new Map()));
+        if (this.schemaStopped) instances.delete(this);
+        else
+            instances.set(
+                this,
+                [...this.tools.values()].filter((tool) => tool.background && !tool.name.startsWith("background_task_")),
+            );
+        const choices = new Map(DEFAULT_BACKGROUND_TOOLS.map((name) => [name, name]));
+        for (const tools of instances.values()) {
+            for (const tool of tools) choices.set(tool.name, `${tool.name}：${tool.description.split("\n")[0].slice(0, 80)}`);
+        }
+        schema.set(
+            "toolService.backgroundEligibleTools",
+            Schema.array(Schema.union([...choices].map(([name, label]) => Schema.const(name).description(label))))
+                .role("checkbox")
+                .default([...DEFAULT_BACKGROUND_TOOLS]),
+        );
+    }
+
+    public registerTool(definition: ToolDefinition, ownerContext: Context = this.ctx) {
+        const registration = { definition, context: ownerContext };
         this.tools.set(definition.name, definition);
-        return () => {
-            if (this.tools.get(definition.name) === definition) this.tools.delete(definition.name);
+        this.toolOwners.set(definition.name, registration);
+        this.updateBackgroundToolSchema();
+        const remove = () => {
+            if (this.toolOwners.get(definition.name) !== registration || this.tools.get(definition.name) !== definition) return;
+            this.unregisterTool(definition.name);
         };
+        ownerContext.on?.("dispose", remove);
+        return remove;
     }
 
     public unregisterTool(name: string) {
-        return this.tools.delete(name);
+        this.toolOwners.delete(name);
+        const removed = this.tools.delete(name);
+        this.updateBackgroundToolSchema();
+        return removed;
     }
 
     private async recordFrameworkChange(session: Session, operation: string, name: string, status: string) {
@@ -550,6 +600,7 @@ export class ToolService extends YesImBotService<Config> {
             session && typeof this.ctx?.filter === "function" && this.deps.world?.l2_manager
                 ? ToolService.prototype.captureOutputOwner.call(this, session)
                 : undefined;
+        const definition = this.getTool(functionName, session);
         let result = await this.executeInvocation(functionName, params, session, toolContext);
         if (session && functionName !== "tool_output_read" && result.status === "success" && result.result !== undefined) {
             try {
@@ -565,7 +616,10 @@ export class ToolService extends YesImBotService<Config> {
                     const store = ToolService.prototype.getOutputStore.call(this);
                     const resource = await store.save(text, capture.owner, capture.assertCurrent);
                     capture.assertCurrent();
-                    result = { ...result, result: resource };
+                    for (const [uri, producer] of this.outputProducers) if (producer.expiresAt <= Date.now()) this.outputProducers.delete(uri);
+                    if (definition)
+                        this.outputProducers.set(resource.uri, { definition, result: structuredClone(result), expiresAt: Date.parse(resource.expiresAt) });
+                    result = { ...result, result: { ...resource, metadata: result.metadata } };
                 }
             } catch (error) {
                 // Execution already completed: archival failure must never trigger a retry of its side effects.
@@ -717,9 +771,22 @@ export class ToolService extends YesImBotService<Config> {
         if (!session) throw new Error("Tool output read requires an authenticated session");
         const captured = this.captureOutputOwner(session);
         captured.assertCurrent();
+        const producer = this.outputProducers.get(options.uri);
+        if (!producer) throw new Error("Tool output producer authorization or result revision expired");
+        const assertProducer = async () => {
+            captured.assertCurrent();
+            if (
+                !producer ||
+                this.getTool(producer.definition.name, session) !== producer.definition ||
+                (producer.definition.isResultCurrent && !(await producer.definition.isResultCurrent(producer.result, session)))
+            )
+                throw new Error("Tool output producer authorization or result revision expired");
+            captured.assertCurrent();
+        };
+        await assertProducer();
         const page = await this.getOutputStore().read(options.uri, captured.owner, options.offset, options.limit, captured.assertCurrent);
-        captured.assertCurrent();
-        return page;
+        await assertProducer();
+        return { ...page, metadata: producer.result.metadata };
     }
 
     private async executeInvocation(
@@ -748,7 +815,54 @@ export class ToolService extends YesImBotService<Config> {
             }
         }
 
-        const stringifyParams = stringify(params);
+        if (toolContext?.backgroundExecution) return this.runToolAttempts(tool, functionName, validatedParams, session, toolContext);
+        const controller = new AbortController();
+        const timeout = this.config.advanced?.timeout;
+        const timeoutMs = typeof timeout === "number" && Number.isFinite(timeout) && timeout > 0 ? timeout : 10000;
+        let timedOut = false;
+        const timer = setTimeout(() => {
+            timedOut = true;
+            controller.abort(new Error("Tool execution deadline exceeded"));
+        }, timeoutMs);
+        const signals = [controller.signal, toolContext?.signal].filter((signal): signal is AbortSignal => !!signal);
+        this.executions.add(controller);
+        try {
+            return await withReplyTurnGuard(
+                () => this.getTool(functionName, session) === tool,
+                () =>
+                    this.runToolAttempts(tool, functionName, validatedParams, session?.bot ? guardReplySession(session) : session, {
+                        ...toolContext,
+                        signal: replyTurnSignal(),
+                    }),
+                AbortSignal.any(signals),
+            );
+        } catch {
+            if (timedOut)
+                return Failed({
+                    name: "ToolTimeoutError",
+                    message: `Tool ${functionName} exceeded ${timeoutMs}ms. Cancellation was requested; external work may already have completed. Do not automatically resubmit.`,
+                    retryable: false,
+                });
+            assertReplyTurn();
+            return Failed({
+                name: "ToolInvalidatedError",
+                message: "Tool invocation cancelled or authorization revoked; already submitted external work cannot be recalled.",
+                retryable: false,
+            });
+        } finally {
+            clearTimeout(timer);
+            this.executions.delete(controller);
+        }
+    }
+
+    private async runToolAttempts(
+        tool: ToolDefinition,
+        functionName: string,
+        validatedParams: Record<string, unknown>,
+        session?: Session,
+        toolContext?: ToolExecutionContext,
+    ): Promise<ToolCallResult> {
+        const stringifyParams = stringify(validatedParams);
         this._logger.info(`→ 调用: ${functionName} | 参数: ${stringifyParams}`);
         let lastResult: ToolCallResult = Failed("Tool call did not execute.");
 
@@ -794,9 +908,10 @@ export class ToolService extends YesImBotService<Config> {
                 }
             } catch (error) {
                 assertReplyTurn();
-                this._logger.error(`💥 异常 | 调用 ${functionName} 时出错`, error.message);
-                this._logger.debug(error.stack);
-                lastResult = Failed(`Exception: ${error.message}`);
+                const normalized = normalizeAppError(error);
+                this._logger.error(`💥 异常 | 调用 ${functionName} 时出错`, { code: normalized.code, errorId: normalized.errorId });
+                this._logger.debug(sanitizeDiagnostic(normalized));
+                lastResult = Failed(fromAppError(normalized));
                 return lastResult;
             }
         }
@@ -806,22 +921,25 @@ export class ToolService extends YesImBotService<Config> {
 
     public getTool(name: string, session?: Session): ToolDefinition | undefined {
         const tool = this.tools.get(name);
-        // 如果没有 session，默认工具可用
-        // 如果有 session，则必须通过 isSupported 的检查
-        if (!tool || (session && tool.isSupported && !tool.isSupported(session))) {
-            return undefined;
+        if (!tool || this.schemaStopped) return undefined;
+        if (session) {
+            const owner = this.toolOwners.get(name)?.context;
+            if (typeof this.ctx.filter === "function" && !this.ctx.filter(session)) return undefined;
+            if (typeof owner?.filter === "function" && !owner.filter(session)) return undefined;
+            if (tool.isSupported && !tool.isSupported(session)) return undefined;
         }
         return tool;
     }
 
     public getAvailableTools(session?: Session): ToolDefinition[] {
+        if (this.schemaStopped) return [];
         // 如果没有 session，无法进行过滤，返回所有工具
         if (!session) {
             return Array.from(this.tools.values());
         }
         // 如果有 session，则过滤出支持的工具
         return Array.from(this.tools.values())
-            .filter((tool) => !tool.isSupported || tool.isSupported(session))
+            .filter((tool) => this.getTool(tool.name, session) === tool)
             .map((tool) =>
                 this.background && tool.background
                     ? { ...tool, description: tool.description + " [Supports background_task_start for independent work.]" }
@@ -864,6 +982,7 @@ export class ToolService extends YesImBotService<Config> {
             name: tool.name,
             description: tool.description,
             parameters: extractMetaFromSchema(tool.parameters),
+            parametersJSONSchema: toolJSONSchema(tool.parameters),
         };
     }
 }

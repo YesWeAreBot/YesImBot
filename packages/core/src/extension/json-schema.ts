@@ -1,11 +1,14 @@
 import { Schema } from "koishi";
 
-/** 将现有工具参数描述转成原生调用使用的 JSON Schema，参数验证仍由 ToolService 负责。 */
+/** Describe the input contract; conversion and validation still run once in ToolService. */
 export function toolJSONSchema(schema: Schema): Record<string, any> {
-    const result: Record<string, any> = {};
-    if (schema.meta.description) result.description = schema.meta.description;
-    if (schema.meta.default !== undefined) result.default = schema.meta.default;
+    const meta = schema.meta ?? {};
+    const result: Record<string, any> = schema.type === "transform" && schema.inner ? toolJSONSchema(schema.inner) : {};
+    if (meta.description !== undefined) result.description = meta.description;
+    if (meta.default !== undefined) result.default = meta.default;
     switch (schema.type) {
+        case "transform":
+            break;
         case "object":
             result.type = "object";
             result.properties = Object.fromEntries(Object.entries(schema.dict || {}).map(([key, value]) => [key, toolJSONSchema(value)]));
@@ -15,11 +18,16 @@ export function toolJSONSchema(schema: Schema): Record<string, any> {
             break;
         case "array":
             result.type = "array";
-            result.items = toolJSONSchema(schema.inner!);
+            result.items = schema.inner ? toolJSONSchema(schema.inner) : {};
             break;
         case "dict":
             result.type = "object";
-            result.additionalProperties = toolJSONSchema(schema.inner!);
+            result.additionalProperties = schema.inner ? toolJSONSchema(schema.inner) : {};
+            break;
+        case "tuple":
+            result.type = "array";
+            result.prefixItems = (schema.list ?? []).map(toolJSONSchema);
+            result.minItems = result.maxItems = result.prefixItems.length;
             break;
         case "union":
             result.anyOf = (schema.list ?? []).map(toolJSONSchema);
@@ -38,7 +46,32 @@ export function toolJSONSchema(schema: Schema): Record<string, any> {
         case "any":
             break;
         default:
-            throw new Error(`工具参数类型不支持原生调用: ${schema.type}`);
+            // Custom Schemastery resolvers remain executable. An unknown input shape
+            // must not prevent unrelated tools from being offered to a model.
+            result["x-schemastery-type"] = schema.type;
+    }
+    const bounds =
+        schema.type === "string"
+            ? ["minLength", "maxLength"]
+            : schema.type === "array"
+              ? ["minItems", "maxItems"]
+              : schema.type === "number"
+                ? ["minimum", "maximum"]
+                : [];
+    if (typeof meta.min === "number" && Number.isFinite(meta.min) && bounds[0]) result[bounds[0]] = meta.min;
+    if (typeof meta.max === "number" && Number.isFinite(meta.max) && bounds[1]) result[bounds[1]] = meta.max;
+    if (schema.type === "number" && typeof meta.step === "number" && meta.step > 0 && Number.isFinite(meta.step)) {
+        const base = typeof meta.min === "number" ? meta.min : 0;
+        if (Number.isInteger(base / meta.step)) result.multipleOf = meta.step;
+        else {
+            result["x-step"] = meta.step;
+            result["x-step-base"] = base;
+        }
+    }
+    if (schema.type === "string" && meta.pattern) {
+        const pattern = meta.pattern as { source?: string; flags?: string };
+        if (typeof pattern.source === "string") result.pattern = pattern.source;
+        if (pattern.flags) result["x-pattern-flags"] = pattern.flags;
     }
     return result;
 }

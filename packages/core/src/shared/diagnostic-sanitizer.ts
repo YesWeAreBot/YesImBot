@@ -1,3 +1,5 @@
+import { types } from "node:util";
+
 const secretKey =
     /^(authorization|proxy-authorization|cookie|set-cookie|(?:x-)?api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|secret|token)$/i;
 
@@ -85,7 +87,64 @@ function collectCredentialValues(value: unknown, seen = new Set<object>(), depth
     return result;
 }
 
-/** Returns data only: custom JSON output is filtered, accessors are never invoked. */
+const nativeStackGetter = Object.getOwnPropertyDescriptor(new Error(), "stack")?.get;
+const nativeCallSiteToString = (() => {
+    if (!nativeStackGetter) return;
+    const previous = Object.getOwnPropertyDescriptor(Error, "prepareStackTrace");
+    try {
+        Object.defineProperty(Error, "prepareStackTrace", {
+            configurable: previous?.configurable ?? true,
+            writable: true,
+            value: (_error: Error, frames: NodeJS.CallSite[]) =>
+                frames[0] && Object.getOwnPropertyDescriptor(Object.getPrototypeOf(frames[0]), "toString")?.value,
+        });
+        const format = nativeStackGetter.call(new Error());
+        return typeof format === "function" ? format : undefined;
+    } catch {
+        return;
+    } finally {
+        if (previous) Object.defineProperty(Error, "prepareStackTrace", previous);
+        else Reflect.deleteProperty(Error, "prepareStackTrace");
+    }
+})();
+
+function errorTextField(error: Error, key: "name" | "message"): string | undefined {
+    let current: object | null = error;
+    while (current) {
+        const descriptor = Object.getOwnPropertyDescriptor(current, key);
+        if (descriptor) return "value" in descriptor && typeof descriptor.value === "string" ? descriptor.value : undefined;
+        current = Object.getPrototypeOf(current);
+    }
+    return "";
+}
+
+/** V8 lazy stacks are native accessors; format them without invoking user hooks. */
+function nativeErrorStack(error: Error, descriptor: PropertyDescriptor): string | undefined {
+    if (!nativeStackGetter || !nativeCallSiteToString || descriptor.get !== nativeStackGetter || !types.isNativeError(error)) return;
+    const name = errorTextField(error, "name");
+    const message = errorTextField(error, "message");
+    if (name === undefined || message === undefined) return;
+    const previous = Object.getOwnPropertyDescriptor(Error, "prepareStackTrace");
+    try {
+        Object.defineProperty(Error, "prepareStackTrace", {
+            configurable: previous?.configurable ?? true,
+            writable: true,
+            value: (_error: Error, frames: NodeJS.CallSite[]) => {
+                const heading = !name ? message : !message ? name : `${name}: ${message}`;
+                return heading + frames.map((frame) => `\n    at ${nativeCallSiteToString.call(frame)}`).join("");
+            },
+        });
+        const stack = nativeStackGetter.call(error);
+        return typeof stack === "string" ? stack : undefined;
+    } catch {
+        return;
+    } finally {
+        if (previous) Object.defineProperty(Error, "prepareStackTrace", previous);
+        else Reflect.deleteProperty(Error, "prepareStackTrace");
+    }
+}
+
+/** Returns data only: custom JSON output is filtered and untrusted accessors are not invoked. */
 export function sanitizeDiagnostic(
     value: unknown,
     secrets: readonly string[] = [],
@@ -142,10 +201,11 @@ export function sanitizeDiagnostic(
                             prototype = Object.getPrototypeOf(prototype);
                         }
                     }
+                    const stack = error && key === "stack" && descriptor && !("value" in descriptor) ? nativeErrorStack(value, descriptor) : undefined;
                     cleaned =
-                        descriptor && !("value" in descriptor)
+                        descriptor && !("value" in descriptor) && stack === undefined
                             ? "[Accessor]"
-                            : sanitizeDiagnostic(descriptor?.value, secrets, seen, depth + 1, redactDiagnosticText(key, secrets, options), options);
+                            : sanitizeDiagnostic(stack ?? descriptor?.value, secrets, seen, depth + 1, redactDiagnosticText(key, secrets, options), options);
                 }
             } catch {
                 cleaned = "[Unreadable]";

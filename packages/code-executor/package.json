@@ -33,9 +33,6 @@
   "publishConfig": {
     "access": "public"
   },
-  "dependencies": {
-    "pyodide": "0.28.2"
-  },
   "devDependencies": {
     "koishi": "^4.18.7",
     "koishi-plugin-yesimbot": "^3.0.2"
@@ -46,8 +43,8 @@
   },
   "koishi": {
     "description": {
-      "zh": "为 YesImBot 提供一个安全、隔离的代码执行器",
-      "en": "Provides a secure and isolated code interpreter for the YesImBot"
+      "zh": "为 YesImBot 提供 Linux 隔离的 Python 执行工具（需配置独立根文件系统）",
+      "en": "Linux-isolated Python execution for YesImBot (requires a dedicated root filesystem)"
     },
     "service": {
       "required": [

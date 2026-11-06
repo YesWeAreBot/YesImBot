@@ -12,6 +12,31 @@ import { registerHistoryInspection } from "./history-inspection";
 import { WorldStateService } from "./index";
 import { MessageData } from "./types";
 
+/** Split target lists without splitting the JSON tuple in canonical topic IDs. */
+function splitHistoryTargets(value: string): string[] {
+    const result: string[] = [];
+    let start = 0,
+        depth = 0,
+        quoted = false,
+        escaped = false;
+    for (let index = 0; index < value.length; index++) {
+        const char = value[index];
+        if (quoted) {
+            if (escaped) escaped = false;
+            else if (char === "\\") escaped = true;
+            else if (char === '"') quoted = false;
+        } else if (char === '"' && depth > 0) quoted = true;
+        else if (char === "[") depth++;
+        else if (char === "]") depth = Math.max(0, depth - 1);
+        else if (char === "," && depth === 0) {
+            result.push(value.slice(start, index).trim());
+            start = index + 1;
+        }
+    }
+    result.push(value.slice(start).trim());
+    return result.filter(Boolean);
+}
+
 /** 把召回结果按 3000 字一段发到当前会话。 */
 async function displayRecallResult(session: Session, result: unknown) {
     const text = Array.from(JSON.stringify(result, null, 2));
@@ -173,7 +198,7 @@ export class HistoryCommandManager {
                         await this.service.recordSystemEvent({
                             id: randomUUID(),
                             platform: session!.platform,
-                            channelId: session!.channelId!,
+                            channelId: conversationChannelId(session!)!,
                             eventScope: options!.all ? "global" : "channel",
                             type: "history-cleared",
                             timestamp: new Date(),
@@ -185,7 +210,7 @@ export class HistoryCommandManager {
                                 origin: {
                                     platform: session!.platform,
                                     selfId: session!.selfId,
-                                    channelId: session!.channelId!,
+                                    channelId: conversationChannelId(session!)!,
                                     adapter: session!.bot?.platform,
                                 },
                                 target,
@@ -290,8 +315,7 @@ export class HistoryCommandManager {
                 const ambiguousChannels: string[] = [];
 
                 if (options.target) {
-                    for (const target of options.target
-                        .split(",")
+                    for (const target of splitHistoryTargets(options.target)
                         .map((t) => t.trim())
                         .filter(Boolean)) {
                         const parts = target.split(":");
@@ -304,8 +328,7 @@ export class HistoryCommandManager {
                 }
 
                 if (options.channel) {
-                    for (const channelId of options.channel
-                        .split(",")
+                    for (const channelId of splitHistoryTargets(options.channel)
                         .map((c) => c.trim())
                         .filter(Boolean)) {
                         if (options.platform) {

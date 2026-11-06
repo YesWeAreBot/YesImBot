@@ -79,7 +79,9 @@ export class ContextBuilder {
         } else {
             let selfInGuild: Awaited<ReturnType<Bot["getGuildMember"]>> | undefined;
             try {
-                if (session.guildId) selfInGuild = await session.bot.getGuildMember(session.guildId, session.selfId);
+                if (session.guildId && typeof session.bot.getGuildMember === "function") {
+                    selfInGuild = await session.bot.getGuildMember(session.guildId, session.selfId);
+                }
             } catch (error) {
                 this.logger.error(`获取机器人自身信息失败 for id ${session.selfId}: ${error.message}`);
             }
@@ -224,15 +226,15 @@ export class ContextBuilder {
         if (isDirect) {
             let userInfo: Awaited<ReturnType<Bot["getUser"]>> | undefined;
             try {
-                userInfo = await session.bot.getUser(session.userId!);
+                if (typeof session.bot.getUser === "function") userInfo = await session.bot.getUser(session.userId!);
             } catch (error) {
                 this.logger.debug(`获取用户信息失败 for user ${session.userId}: ${error.message}`);
             }
 
-            channelName = `与 ${userInfo?.name || session.userId} 的私聊`;
+            channelName = `与 ${userInfo?.name || session.author?.name || session.userId} 的私聊`;
         } else {
             try {
-                channelInfo = await session.bot.getChannel(channelId!);
+                if (typeof session.bot.getChannel === "function") channelInfo = await session.bot.getChannel(channelId!);
                 channelName = channelInfo?.name ?? "";
             } catch (error) {
                 this.logger.debug(`获取频道信息失败 for channel ${channelId}: ${error.message}`);
@@ -246,12 +248,14 @@ export class ContextBuilder {
     private async getSelfInfo(session: Session) {
         const { selfId } = session;
         try {
-            const user = await session.bot.getUser(selfId);
-            return { id: selfId, name: user.name ?? "" };
+            if (typeof session.bot.getUser === "function") {
+                const user = await session.bot.getUser(selfId);
+                return { id: selfId, name: user.name ?? "" };
+            }
         } catch (error) {
             this.logger.debug(`获取机器人自身信息失败 for id ${selfId}: ${error.message}`);
-            return { id: selfId, name: session.bot.user?.name || "Self" };
         }
+        return { id: selfId, name: session.bot.user?.name || "Self" };
     }
 
     private partitionL1History(selfId: string, history: L1HistoryItem[]) {
@@ -267,7 +271,10 @@ export class ContextBuilder {
             // 基于时间戳判断是否是新的
             // 如果 item 是一个消息，则它需要发送者不是机器人自身才算“新”
             // 如果 item 不是消息，则这个条件始终为 true，也就是说只要时间戳满足，非消息类型就总是“新”的
-            item.is_new = item.timestamp > lastAgentTurnTime && (item.type === "message" ? item.sender.id !== selfId : true);
+            item.is_new =
+                item.type === "message" || item.type === "system_event"
+                    ? item.wasConsumed !== true && (item.type !== "message" || item.sender.id !== selfId)
+                    : item.timestamp > lastAgentTurnTime;
 
             (item as any).is_message = item.type === "message";
             (item as any).is_agent_thought = item.type === "agent_thought";
@@ -277,14 +284,7 @@ export class ContextBuilder {
             (item as any).is_system_event = item.type === "system_event";
         });
 
-        const firstNewIndex = history.findIndex((item) => item.is_new);
-
-        if (firstNewIndex === -1) {
-            processed_events.push(...history);
-        } else {
-            processed_events.push(...history.slice(0, firstNewIndex));
-            new_events.push(...history.slice(firstNewIndex));
-        }
+        for (const item of history) (item.is_new ? new_events : processed_events).push(item);
         return { processed_events, new_events };
     }
 }

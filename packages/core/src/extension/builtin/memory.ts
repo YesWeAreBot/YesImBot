@@ -3,6 +3,7 @@ import { Context, h, Schema, Session } from "koishi";
 import { Extension, Tool, withInnerThoughts } from "../../extension/decorators";
 import { Failed, Success } from "../../extension/helpers";
 import { Infer } from "../../extension/types";
+import type { ConversationStateInput } from "../../world/conversation-state";
 
 @Extension({
     name: "memory",
@@ -178,15 +179,19 @@ export default class MemoryExtension {
     @Tool({
         name: "conversation_state_update",
         description:
-            "显式完整替换当前会话工作话题/未决问题；不自动推断事实。非空状态须引用当前会话中 1–10 个现存原始消息 ID，并提交读取到的 expectedRevision（初始 0）。空 topic/issues 和空来源数组可清空；省略字段按空替换。",
+            "显式完整替换当前会话工作话题/未决问题；不自动推断事实。非空状态须引用当前会话中 1–10 个现存原始消息 ID，并提交读取到的 expectedRevision（初始 0）。空 topic/issues 和空来源数组可清空；省略字段按空替换。启用会话续接后，可用 followUp 登记等待指定用户的后续消息；这只申请处理机会，仍可选择沉默，发送给他人的消息不会命中。省略 followUp 会清除此前等待。",
         parameters: withInnerThoughts({
             topic: Schema.string().max(1000),
             openIssues: Schema.array(Schema.string().max(500)).max(10),
             sourceMessageIds: Schema.array(Schema.string()).max(10).required(),
             expectedRevision: Schema.number().min(0).step(1).required(),
+            followUp: Schema.object({
+                userIds: Schema.array(Schema.string().max(255)).min(1).max(10).required().description("等待的用户 ID"),
+                durationSeconds: Schema.number().min(1).max(86400).required().description("等待有效时间（秒），不超过管理者配置上限"),
+            }),
         }),
     })
-    async conversationStateUpdate(args: Infer<{ topic?: string; openIssues?: string[]; sourceMessageIds: string[]; expectedRevision: number }>) {
+    async conversationStateUpdate(args: Infer<ConversationStateInput>) {
         if (!args.session) return Failed("session 不可用");
         try {
             return Success(
@@ -195,6 +200,7 @@ export default class MemoryExtension {
                     openIssues: args.openIssues,
                     sourceMessageIds: args.sourceMessageIds,
                     expectedRevision: args.expectedRevision,
+                    followUp: args.followUp,
                 }),
             );
         } catch (error) {

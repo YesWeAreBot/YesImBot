@@ -116,6 +116,7 @@ export class InteractionManager {
         channelId: string,
         thoughts: AgentThoughtLog["thoughts"],
         consumedRecallIds?: string[],
+        consumedSourceIds?: string[],
     ): Promise<void> {
         const logEntry: AgentThoughtLog = {
             type: "agent_thought",
@@ -124,6 +125,7 @@ export class InteractionManager {
             timestamp: new Date().toISOString(),
             thoughts,
             ...(consumedRecallIds?.length ? { consumedRecallIds } : {}),
+            ...(consumedSourceIds?.length ? { consumedSourceIds } : {}),
         };
         await this.appendToLog(platform, channelId, logEntry);
     }
@@ -134,6 +136,7 @@ export class InteractionManager {
         channelId: string,
         action: { function: string; params: Record<string, unknown> },
         consumedRecallIds?: string[],
+        consumedSourceIds?: string[],
     ): Promise<string> {
         const actionId = uuidv4();
         const logEntry: AgentActionLog = {
@@ -144,6 +147,7 @@ export class InteractionManager {
             function: action.function,
             params: action.params,
             ...(consumedRecallIds?.length ? { consumedRecallIds } : {}),
+            ...(consumedSourceIds?.length ? { consumedSourceIds } : {}),
         };
         await this.appendToLog(platform, channelId, logEntry);
         return actionId;
@@ -177,31 +181,40 @@ export class InteractionManager {
         await this.appendToLog(platform, channelId, logEntry);
     }
 
-    private async getAgentHistoryFromFile(platform: string, channelId: string, limit: number): Promise<L1HistoryItem[]> {
+    private async getAgentHistoryFromFile(
+        platform: string,
+        channelId: string,
+        limit: number,
+    ): Promise<{ events: L1HistoryItem[]; consumedSourceIds: Set<string> }> {
         const filePath = this.getLogFilePath(platform, channelId);
         try {
             const content = await fs.readFile(filePath, "utf-8");
             const legacyAllowed = this.canIdentifyLegacyLogOwner(filePath, channelId);
             const history: L1HistoryItem[] = [];
+            const consumedSourceIds = new Set<string>();
             for (const line of content.split("\n")) {
                 if (!line.trim()) continue;
                 try {
-                    const entry = JSON.parse(line) as InteractionLogEntry & { platform?: unknown; channelId?: unknown };
+                    const entry = JSON.parse(line) as InteractionLogEntry & { platform?: unknown; channelId?: unknown; consumedSourceIds?: unknown };
                     if (!entry || typeof entry !== "object") continue;
                     if (typeof entry.platform === "string" && entry.platform !== platform) continue;
                     if (typeof entry.channelId === "string" && entry.channelId !== channelId) continue;
                     if ((typeof entry.platform !== "string" || typeof entry.channelId !== "string") && !legacyAllowed) continue;
+                    if (Array.isArray(entry.consumedSourceIds)) {
+                        for (const id of entry.consumedSourceIds) if (typeof id === "string") consumedSourceIds.add(id);
+                    }
                     const item = this.logEntryToHistoryItem(entry);
                     if (item && Number.isFinite(item.timestamp.getTime())) history.push(item);
                 } catch {
                     // 坏行不应使同一文件中的有效记录全部丢失。
                 }
             }
-            return retainPendingRecalls(history, limit);
+            history.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+            return { events: retainPendingRecalls(history, limit), consumedSourceIds };
         } catch (error) {
-            if (error.code === "ENOENT") return [];
+            if (error.code === "ENOENT") return { events: [], consumedSourceIds: new Set() };
             this.logger.error(`读取Agent日志失败: ${filePath}`, error);
-            return [];
+            return { events: [], consumedSourceIds: new Set() };
         }
     }
 
@@ -285,10 +298,12 @@ export class InteractionManager {
                 elements: h.parse(m.content),
                 timestamp: m.timestamp,
                 quoteId: m.quoteId,
+                wasConsumed: agentEvents.consumedSourceIds.has(JSON.stringify(["message", m.id])),
             })),
             ...systemEvents.map((s): L1HistoryItem => ({
                 type: "system_event",
                 id: s.id,
+                wasConsumed: agentEvents.consumedSourceIds.has(JSON.stringify(["system_event", s.id])),
                 eventType: s.type,
                 message: s.message,
                 eventDetails: escapeEventData({
@@ -303,7 +318,7 @@ export class InteractionManager {
                 }),
                 timestamp: s.timestamp,
             })),
-            ...agentEvents,
+            ...agentEvents.events,
         ];
 
         combinedEvents.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
@@ -323,6 +338,7 @@ export class InteractionManager {
                     analyze_infer: entry.thoughts.analyze_infer,
                     plan: entry.thoughts.plan,
                     consumedRecallIds: entry.consumedRecallIds,
+                    consumedSourceIds: entry.consumedSourceIds,
                 };
             case "agent_action":
                 return {
@@ -332,6 +348,7 @@ export class InteractionManager {
                     function: entry.function,
                     params: entry.params,
                     consumedRecallIds: entry.consumedRecallIds,
+                    consumedSourceIds: entry.consumedSourceIds,
                 };
             case "agent_observation":
                 return {
@@ -380,8 +397,71 @@ export class InteractionManager {
                     try {
                         const content = await fs.readFile(filePath, "utf-8");
                         const lines = content.trim().split("\n").filter(Boolean);
-                        const linesToKeep = this.config.logLengthLimit ? lines.slice(-this.config.logLengthLimit) : lines;
-
+                        const linesToKeep = retainManualRecallReceipts(
+                            lines,
+                            this.config.logLengthLimit ? lines.slice(-this.config.logLengthLimit) : [...lines],
+                        );
+                        // Carry consumption independently of thought/action display retention. The
+                        // receipt may live on the final heartbeat/observation after log compaction.
+                        const snapshots = new Map<string, { entry: Record<string, any>; ids: Set<string> }>();
+                        for (const line of lines) {
+                            try {
+                                const entry = JSON.parse(line);
+                                if (typeof entry?.platform !== "string" || typeof entry?.channelId !== "string") continue;
+                                const key = JSON.stringify([entry.platform, entry.channelId]);
+                                const snapshot = snapshots.get(key) ?? { entry, ids: new Set<string>() };
+                                snapshot.entry = entry;
+                                for (const id of Array.isArray(entry.consumedSourceIds) ? entry.consumedSourceIds : [])
+                                    if (typeof id === "string") snapshot.ids.add(id);
+                                snapshots.set(key, snapshot);
+                            } catch {
+                                /* Keep malformed rows under the ordinary retention policy. */
+                            }
+                        }
+                        for (const { entry, ids } of snapshots.values()) {
+                            if (!ids.size) continue;
+                            const sourceIds = { message: [] as string[], system_event: [] as string[] };
+                            for (const id of ids) {
+                                try {
+                                    const [kind, sourceId] = JSON.parse(id) as [string, unknown];
+                                    if ((kind === "message" || kind === "system_event") && typeof sourceId === "string") sourceIds[kind].push(sourceId);
+                                } catch {
+                                    /* Ignore invalid receipt metadata. */
+                                }
+                            }
+                            const options = { limit: this.config.l1_memory.maxMessages, sort: { timestamp: "desc" as const } };
+                            const messages = sourceIds.message.length
+                                ? (await this.ctx.database.get(TableName.Messages, { platform: entry.platform, channelId: entry.channelId }, options)).filter(
+                                      (row) => ids.has(JSON.stringify(["message", row.id])),
+                                  )
+                                : [];
+                            // Bound each IN clause for SQLite and other parameter-limited drivers.
+                            let events: SystemEventData[] = [];
+                            for (let offset = 0; offset < sourceIds.system_event.length; offset += 200) {
+                                events.push(
+                                    ...(await this.ctx.database.get(
+                                        TableName.SystemEvents,
+                                        { id: { $in: sourceIds.system_event.slice(offset, offset + 200) } },
+                                        options,
+                                    )),
+                                );
+                            }
+                            events = events.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()).slice(0, options.limit);
+                            entry.consumedSourceIds = [
+                                ...messages.map((row) => JSON.stringify(["message", row.id])),
+                                ...events.map((row) => JSON.stringify(["system_event", row.id])),
+                            ];
+                            const index = linesToKeep.findIndex((line) => {
+                                try {
+                                    const row = JSON.parse(line);
+                                    return row.id === entry.id && row.platform === entry.platform && row.channelId === entry.channelId;
+                                } catch {
+                                    return false;
+                                }
+                            });
+                            if (index >= 0) linesToKeep[index] = JSON.stringify(entry);
+                            else linesToKeep.push(JSON.stringify(entry));
+                        }
                         await fs.writeFile(filePath, linesToKeep.join("\n") + "\n");
                     } catch (error) {
                         this.logger.error(`清理日志文件失败: ${filePath}`, error);
@@ -649,4 +729,35 @@ export class InteractionManager {
 function escapeEventData(value: unknown): string {
     const text = JSON.stringify(sanitizeDiagnostic(value)) ?? "";
     return text.slice(0, 5000).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+/** Protect pending pages and the original consumer of any retained consumed page. */
+function retainManualRecallReceipts(lines: string[], recent: string[]): string[] {
+    const pages = new Map<string, string>();
+    const receipts = new Map<string, string>();
+    for (const line of lines) {
+        try {
+            const entry = JSON.parse(line);
+            if (!entry || typeof entry !== "object") continue;
+            if (entry.type === "agent_observation" && entry.manualRecall === true && typeof entry.turnId === "string")
+                pages.set(manualRecallKey(entry, entry.turnId), line);
+            if ((entry.type === "agent_thought" || entry.type === "agent_action") && Array.isArray(entry.consumedRecallIds)) {
+                for (const id of entry.consumedRecallIds) {
+                    if (typeof id === "string" && !receipts.has(manualRecallKey(entry, id))) receipts.set(manualRecallKey(entry, id), line);
+                }
+            }
+        } catch {
+            /* Keep malformed lines under the ordinary retention policy. */
+        }
+    }
+    const retained = new Set(recent);
+    for (const [id, line] of pages) {
+        if (!receipts.has(id)) retained.add(line);
+        else if (retained.has(line)) retained.add(receipts.get(id)!);
+    }
+    return [...retained];
+}
+
+function manualRecallKey(entry: Record<string, any>, turnId: string): string {
+    return JSON.stringify([entry.platform ?? null, entry.channelId ?? null, turnId]);
 }

@@ -54,7 +54,7 @@ it("reports TypeSafe request failures without disclosing exception payloads or c
 
 it("reports rejected topic responses and returns to ordinary willingness without inventing a topic", async () => {
     const f = fixture();
-    f.ctx.yesimbot.model = { getChatModel: () => ({ chat: async () => ({ text: JSON.stringify({ topics: [] }) }) }) };
+    f.ctx.yesimbot.model = { useChatModel: () => ({ chat: async () => ({ text: JSON.stringify({ topics: [] }) }) }) };
     const manager = new TopicManager(
         f.ctx,
         {
@@ -111,7 +111,7 @@ it("applies a valid topic interest multiplier to the actual willingness gain", a
     const f = fixture();
     f.ctx.on = () => {};
     f.ctx.yesimbot.model = {
-        getChatModel: () => ({
+        useChatModel: () => ({
             chat: async () => ({ text: JSON.stringify({ topics: [{ id: "topic", label: "兴趣话题", share: 1, interest: 1 }], currentTopicId: "topic" }) }),
         }),
     };

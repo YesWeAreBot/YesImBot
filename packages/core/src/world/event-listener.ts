@@ -354,7 +354,7 @@ export class EventListenerManager {
     }
 
     private async recordBotSentMessage(session: Session): Promise<void> {
-        if (!session.content || !session.messageId) return;
+        if ((typeof this.ctx.filter === "function" && !this.ctx.filter(session)) || !session.content || !session.messageId) return;
 
         await this.service.observeChannel(session);
         this.logger.debug(`记录机器人消息 | 频道: ${conversationCid(session)} | 消息ID: ${session.messageId}`);

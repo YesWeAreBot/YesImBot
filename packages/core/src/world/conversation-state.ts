@@ -10,7 +10,13 @@ import type { MessageData } from "./types";
 
 const CONVERSATION_STATE = "worldstate.conversation_state";
 
+export interface FollowUpState {
+    userIds: string[];
+    expiresAt: number;
+}
+
 export interface ConversationStateInput {
+    followUp?: { userIds: string[]; durationSeconds: number };
     topic?: string;
     openIssues?: string[];
     sourceMessageIds: string[];
@@ -18,6 +24,7 @@ export interface ConversationStateInput {
 }
 
 export interface ConversationState {
+    followUp?: FollowUpState;
     revision: number;
     topic: string;
     openIssues: string[];
@@ -29,6 +36,7 @@ export interface ConversationState {
 export interface ConversationStateResult {
     state?: ConversationState;
     unknown: boolean;
+    sourceMessages?: MessageData[];
 }
 
 interface StatePayload extends ConversationState {
@@ -140,6 +148,17 @@ function fingerprint(record: MessageData): string {
         .digest("hex");
 }
 
+function validateRecipients(ids: string[]) {
+    if (
+        !Array.isArray(ids) ||
+        ids.length < 1 ||
+        ids.length > 10 ||
+        new Set(ids).size !== ids.length ||
+        ids.some((id) => typeof id !== "string" || !id.trim() || id.length > 255 || /\p{Cc}/u.test(id))
+    )
+        throw new Error("等待用户须为 1–10 个不同的用户 ID");
+}
+
 function validateInput(input: ConversationStateInput) {
     if (!input || !Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 0) throw new Error("工作会话状态 expectedRevision 须为非负整数");
     const topic = input.topic ?? "",
@@ -150,8 +169,15 @@ function validateInput(input: ConversationStateInput) {
     const ids = input.sourceMessageIds;
     if (!Array.isArray(ids) || ids.length > 10 || ids.some((id) => typeof id !== "string" || !id.trim() || id.length > 255) || new Set(ids).size !== ids.length)
         throw new Error("来源消息 ID 须为最多 10 个不同的原始 ID");
-    if ((topic.trim() || openIssues.length) && !ids.length) throw new Error("非空工作状态需要 1–10 个已验证来源消息 ID");
-    return { topic, openIssues: [...openIssues], sourceMessageIds: [...ids] };
+    if ((topic.trim() || openIssues.length || input.followUp) && !ids.length) throw new Error("非空工作状态需要 1–10 个已验证来源消息 ID");
+    let followUp: FollowUpState | undefined;
+    if (input.followUp !== undefined) {
+        const { userIds, durationSeconds } = input.followUp;
+        validateRecipients(userIds);
+        if (!Number.isFinite(durationSeconds) || durationSeconds < 1 || durationSeconds > 86400) throw new Error("等待时长须为 1–86400 秒");
+        followUp = { userIds: [...userIds], expiresAt: Date.now() + durationSeconds * 1000 };
+    }
+    return { topic, openIssues: [...openIssues], sourceMessageIds: [...ids], ...(followUp ? { followUp } : {}) };
 }
 
 /** Explicit working notes, not inferred facts. World service supplies barrier and live authorization. */
@@ -192,7 +218,7 @@ export class ConversationStateManager {
     }
 
     private async sourceFingerprints(target: MessageWindowTarget, ids: string[]) {
-        if (!ids.length) return { fingerprints: [], sourceOldestAt: undefined };
+        if (!ids.length) return { fingerprints: [], sourceOldestAt: undefined, records: [] as MessageData[] };
         const scope = { platform: target.platform, channelId: target.channelId, channelType: target.channelType };
         const rows = await this.ctx.database.get(TableName.Messages, { ...scope, id: { $in: ids } });
         if (
@@ -205,7 +231,7 @@ export class ConversationStateManager {
             if (matching.length !== 1) throw new SourceUnavailableError("工作状态的原始来源不唯一");
             return fingerprint(matching[0]);
         });
-        return { fingerprints, sourceOldestAt: new Date(Math.min(...rows.map((row) => new Date(row.timestamp).getTime()))).toISOString() };
+        return { fingerprints, records: rows, sourceOldestAt: new Date(Math.min(...rows.map((row) => new Date(row.timestamp).getTime()))).toISOString() };
     }
 
     private async readPayload(id: string, scope: string, target: MessageWindowTarget, assertCurrent: () => void): Promise<StatePayload | undefined> {
@@ -227,7 +253,17 @@ export class ConversationStateManager {
         valid = valid && Number.isFinite(Date.parse(state.createdAt)) && Number.isFinite(Date.parse(state.updatedAt)) && state.createdAt <= state.updatedAt;
         if (valid) {
             try {
-                validateInput({ ...state, expectedRevision: state.revision });
+                validateInput({ ...state, followUp: undefined, expectedRevision: state.revision });
+                if (state.followUp !== undefined) {
+                    validateRecipients(state.followUp.userIds);
+                    if (
+                        !state.sourceMessageIds.length ||
+                        !Number.isFinite(state.followUp.expiresAt) ||
+                        state.followUp.expiresAt <= Date.parse(state.updatedAt) ||
+                        state.followUp.expiresAt > Date.parse(state.updatedAt) + 86400_000
+                    )
+                        throw new Error("等待状态无效");
+                }
             } catch {
                 valid = false;
             }
@@ -250,24 +286,41 @@ export class ConversationStateManager {
         return state;
     }
 
-    private result(payload?: StatePayload): ConversationStateResult {
+    private result(payload?: StatePayload, maxFollowUpDurationSeconds = 86400): ConversationStateResult {
         if (!payload) return { unknown: true };
         const { scope: _scope, sourceFingerprints: _fingerprints, sourceOldestAt: _sourceOldestAt, ...state } = payload;
-        return { state, unknown: !state.topic.trim() && !state.openIssues.length };
+        if (state.followUp) {
+            const expiresAt = Math.min(state.followUp.expiresAt, Date.parse(state.updatedAt) + maxFollowUpDurationSeconds * 1000);
+            if (Date.now() >= expiresAt) delete state.followUp;
+            else state.followUp = { userIds: [...state.followUp.userIds], expiresAt };
+        }
+        return { state, unknown: !state.topic.trim() && !state.openIssues.length && !state.followUp };
     }
 
-    public read(target: MessageWindowTarget, instance: string, assertCurrent: () => void) {
+    public read(target: MessageWindowTarget, instance: string, assertCurrent: () => void, includeSources = false, maxFollowUpDurationSeconds = 86400) {
         const { id, scope } = this.key(target, instance);
         return serialize(this.ctx.database, id, async () => {
             assertCurrent();
-            return this.result(await this.readPayload(id, scope, target, assertCurrent));
+            const payload = await this.readPayload(id, scope, target, assertCurrent);
+            if (!payload || !includeSources) return this.result(payload, maxFollowUpDurationSeconds);
+            try {
+                const sources = await this.sourceFingerprints(target, payload.sourceMessageIds);
+                assertCurrent();
+                if (JSON.stringify(sources.fingerprints) !== JSON.stringify(payload.sourceFingerprints)) return { unknown: true };
+                return { ...this.result(payload, maxFollowUpDurationSeconds), sourceMessages: sources.records };
+            } catch (error) {
+                assertCurrent();
+                if (error instanceof SourceUnavailableError) return { unknown: true };
+                throw error;
+            }
         });
     }
 
     public update(target: MessageWindowTarget, instance: string, input: ConversationStateInput, assertCurrent: () => void) {
         // Snapshot caller-owned arrays before any await; a changed input cannot bypass validation.
         const fields = validateInput(input),
-            expectedRevision = input.expectedRevision;
+            expectedRevision = input.expectedRevision,
+            durationSeconds = input.followUp?.durationSeconds;
         const { id, scope } = this.key(target, instance);
         return serialize(this.ctx.database, id, async () => {
             assertCurrent();
@@ -278,6 +331,7 @@ export class ConversationStateManager {
             const now = new Date().toISOString();
             const payload: StatePayload = {
                 ...fields,
+                ...(fields.followUp ? { followUp: { userIds: fields.followUp.userIds, expiresAt: Date.parse(now) + durationSeconds! * 1000 } } : {}),
                 scope,
                 sourceFingerprints,
                 sourceOldestAt,

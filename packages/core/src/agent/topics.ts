@@ -243,7 +243,7 @@ export class TopicManager {
 
     private async request(session: Session, state: ChannelState, signal: AbortSignal): Promise<{ topics: TopicFocus[]; currentTopicId: string } | undefined> {
         const selected = this.config.model!;
-        const model = this.modelService.getChatModel(selected.providerName, selected.modelId);
+        const model = this.modelService.useChatModel(selected.providerName, selected.modelId);
         if (!model) {
             this.logger?.warn?.(`[${selected.providerName}][${selected.modelId}] 所选对话模型不可用 | 沿用普通意愿`);
             return undefined;

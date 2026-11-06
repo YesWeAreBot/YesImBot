@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 import { test } from "vitest";
 
+import { MustacheRenderer } from "../../core/src/prompt/renderer";
 import { applySharedMemory } from "../src/shared-runtime";
 import { PersonStore, accountRef, mindScope } from "../src/store";
 import { fixture } from "./helpers";
@@ -23,7 +25,7 @@ async function runtime(t, config = {}) {
         });
         ctx.model.extend("saved_observations", { id: "string", event: "json" }, { primary: "id" });
         ctx.set("yesimbot", {
-            world: { isChannelAllowed: () => true },
+            world: { isChannelAllowed: (s) => (config.allow ? config.allow(s) : true) },
             tool: {
                 registerTool: (tool) => {
                     tools.set(tool.name, tool);
@@ -124,3 +126,95 @@ for (const kind of ["l2", "l3"])
             assert.deepEqual((await app.database.get("saved_observations", { id: "recall" }))[0].event, event);
         });
     }
+
+test("person snapshots expire after source revocation and profile correction without mutating audit observations", async (t) => {
+    let hiddenAllowed = true;
+    const { app, tools } = await runtime(t, { recallScope: "mind", allow: (s) => s.channelId !== "hidden" || hiddenAllowed });
+    const source = {
+        ...session,
+        userId: "alice",
+        channelId: "hidden",
+        messageId: "secret",
+        content: "秘密旅行 PRIVATE-MEMORY",
+        timestamp: Date.now(),
+        author: { name: "Alice" },
+    };
+    await app.parallel("yesimbot/before-user-stimulus", source);
+    const query = { session, query: "秘密旅行" };
+    const recalled = await tools.get("person_recall").execute(query);
+    assert.equal(recalled.result.sources.length, 1);
+    const store = new PersonStore(app.database, "review"),
+        scope = mindScope(session),
+        ref = accountRef("onebot", "alice");
+    await store.setProfile(scope, ref, "WRONG-PROFILE", "admin");
+    const read = await tools.get("person_memory").execute({ session, action: "read", account_id: "alice" });
+    const events = [
+        { type: "agent_observation", function: "person_recall", result: recalled.result, metadata: recalled.metadata },
+        { type: "agent_observation", function: "person_memory", result: read.result, metadata: read.metadata },
+    ];
+    const original = structuredClone(events);
+    hiddenAllowed = false;
+    await store.setProfile(scope, ref, "CORRECT-PROFILE", "admin");
+    assert.equal((await tools.get("person_recall").execute(query)).result.sources.length, 0);
+    const nested = { type: "agent_observation", function: "background_task_query", result: { task: { result: recalled } } };
+    const wrapped = { type: "agent_observation", function: "person_memory", result: read };
+    const state = { l1_working_memory: { new_events: [nested, wrapped], processed_events: events } };
+    await app.parallel("yesimbot/filter-recalled-memory", session, state);
+    assert.ok(!JSON.stringify(state).includes("PRIVATE-MEMORY"));
+    assert.ok(!JSON.stringify(state).includes("WRONG-PROFILE"));
+    const template = await readFile(new URL("../../core/resources/templates/l1_history_item.mustache", import.meta.url), "utf8");
+    const prompt = new MustacheRenderer().render(
+        "{{#events}}{{> observation}}{{/events}}",
+        {
+            events: state.l1_working_memory.processed_events.map((e) => ({ ...e, is_agent_observation: true })),
+            _toString: function () {
+                return JSON.stringify(this);
+            },
+        },
+        { observation: template },
+    );
+    assert.ok(prompt.includes("人物记忆快照已过期"));
+    assert.ok(!prompt.includes("PRIVATE-MEMORY"));
+    assert.ok(!prompt.includes("WRONG-PROFILE"));
+    assert.deepEqual(events, original);
+    assert.equal(await tools.get("person_memory").isResultCurrent(read, session), false);
+});
+
+test("a source permission revoked during an awaited person read rejects the entire result", async (t) => {
+    let hiddenAllowed = true;
+    const { app, tools } = await runtime(t, { recallScope: "mind", allow: (s) => s.channelId !== "hidden" || hiddenAllowed });
+    await app.parallel("yesimbot/before-user-stimulus", {
+        ...session,
+        channelId: "hidden",
+        userId: "alice",
+        messageId: "secret",
+        content: "旅行 PRIVATE-CONCURRENT",
+        timestamp: Date.now(),
+        author: { name: "Alice" },
+    });
+    // Gate the actual source database read, after the tool has captured its initial
+    // authorized snapshot. Revoking here exercises its post-await validation.
+    const get = app.database.get.bind(app.database);
+    let entered!: () => void, release!: () => void;
+    const reached = new Promise<void>((r) => {
+            entered = r;
+        }),
+        gate = new Promise<void>((r) => {
+            release = r;
+        });
+    app.database.get = async (table: any, ...args: any[]) => {
+        const rows = await get(table, ...args);
+        if (table === "person_memory.experiences") {
+            entered();
+            await gate;
+        }
+        return rows;
+    };
+    const pending = tools.get("person_recall").execute({ session, query: "旅行" });
+    await reached;
+    hiddenAllowed = false;
+    release();
+    const result = await pending;
+    assert.equal(result.status, "error");
+    assert.ok(!JSON.stringify(result).includes("PRIVATE-CONCURRENT"));
+});

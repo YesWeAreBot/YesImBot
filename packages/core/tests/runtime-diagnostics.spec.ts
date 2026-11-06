@@ -65,6 +65,7 @@ it("decision journal closes even if reply-control persistence fails during stop"
     let closed = false;
     Object.assign(core, {
         pendingAssessments: new Map(),
+        startupStimuli: [],
         activeTurns: new Map(),
         activeDecisionIds: new Map(),
         topics: { dispose() {} },

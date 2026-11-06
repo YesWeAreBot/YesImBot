@@ -51,7 +51,7 @@ it.each(["http-sse", "sse-alias", "streamable"])("connects and discovers tools o
         await new Promise<void>((resolve) => server.close(() => resolve()));
     });
     await manager.connectServers();
-    expect(registerTool).toHaveBeenCalledWith(expect.objectContaining({ name: "remote" }));
+    expect(registerTool).toHaveBeenCalledWith(expect.objectContaining({ name: "remote" }), expect.anything());
     expect(requests).toContain(mode === "streamable" ? "POST /sse" : "GET /sse");
 });
 
