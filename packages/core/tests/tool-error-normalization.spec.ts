@@ -36,6 +36,7 @@ describe("public tool error boundary", () => {
     it.each([new Error("secret"), null, new AppError(ErrorDefinitions.LLM.TIMEOUT)])("normalizes thrown values without adding retries (%s)", async (error) => {
         let calls = 0;
         const tool = {
+            readOnly: true,
             parameters: Schema.object({}),
             execute: async () => {
                 calls++;
@@ -52,11 +53,12 @@ describe("public tool error boundary", () => {
     });
 });
 
-it("retains explicit legacy structured retry eligibility and attempt limits", async () => {
+it("retains explicit read-only structured retry eligibility and attempt limits", async () => {
     for (const retryable of [false, true]) {
         let calls = 0;
         const legacy = Failed({ name: "Legacy", message: "original text", retryable });
         const tool = {
+            readOnly: true,
             parameters: Schema.object({}),
             execute: async () => {
                 calls++;

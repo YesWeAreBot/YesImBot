@@ -1,58 +1,122 @@
+.yib-config-layout {
+    min-width: 0;
+}
 .yib-config-section {
     border: 1px solid var(--k-color-divider);
     border-radius: 8px;
-    margin: 18px 0;
+    margin: 14px 0;
     overflow: hidden;
 }
-.yib-config-section > .yib-config-section-heading {
+.yib-config-heading {
     margin: 0;
     font-size: 1rem;
 }
-.yib-config-section-heading > button {
+.yib-config-heading > button {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 16px;
+    gap: 12px;
     width: 100%;
     border: 0;
-    padding: 16px 20px;
+    padding: 14px 18px;
     color: var(--k-text-normal);
     background: var(--k-card-bg);
     font: inherit;
     text-align: left;
     cursor: pointer;
 }
-.yib-config-section-heading > button:focus-visible {
+.yib-config-heading > button:focus-visible {
     outline: 2px solid var(--k-color-primary);
     outline-offset: -3px;
 }
-.yib-config-section-toggle {
+.yib-config-toggle {
     flex-shrink: 0;
     color: var(--k-color-primary);
-    font-size: 0.85rem;
+    font-size: 0.8rem;
+    font-weight: normal;
 }
-.yib-config-section-body {
-    padding: 4px 20px 20px;
+.yib-config-section > .yib-config-body {
     border-top: 1px solid var(--k-color-divider);
+    padding: 0 12px;
 }
-.yib-config-section-body[hidden] {
+.yib-config-body[hidden] {
     display: none;
 }
-.yib-config-section-body .k-schema-group {
-    border-left: 2px solid var(--k-color-divider);
-    padding-left: 16px;
-    margin: 0 0 24px 8px;
+.yib-config-subgroup + .yib-config-subgroup {
+    border-top: 1px solid var(--k-color-divider);
+}
+.yib-config-subgroup > .yib-config-heading {
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+.yib-config-subgroup > .yib-config-heading > button {
+    padding: 12px 6px;
+}
+.yib-config-subgroup > .yib-config-body {
+    padding-bottom: 12px;
+}
+/* Purpose groups provide context; titles only need the local field name.
+   Native prefix props remain intact for editor controls and tool menus. */
+.yib-config-layout .k-schema-left > h3 > .prefix {
+    display: none;
+}
+.yib-config-layout .k-schema-item {
+    min-width: 0;
+}
+.yib-config-layout .k-schema-left {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.yib-config-layout .k-schema-table {
+    overflow-x: auto;
+    max-width: 100%;
+}
+.yib-config-note,
+.yib-config-actions {
+    color: var(--k-text-light);
+    font-size: 0.875rem;
+}
+.yib-config-actions > summary {
+    cursor: pointer;
+    text-align: right;
 }
 @media (max-width: 600px) {
-    .yib-config-section-heading > button {
+    .yib-config-section > .yib-config-body {
+        padding: 0 6px;
+    }
+    .yib-config-section > .yib-config-heading > button {
         padding: 14px 12px;
     }
-    .yib-config-section-body {
-        padding: 4px 12px 16px;
+    .yib-config-layout .k-schema-item {
+        padding: 0.5rem;
     }
-    .yib-config-section-body .k-schema-group {
-        padding-left: 8px;
-        margin-left: 2px;
+    .yib-config-layout .k-schema-main {
+        grid-template-columns: minmax(0, 1fr) 2rem;
+        column-gap: 0.5rem;
+    }
+    .yib-config-layout .k-schema-right {
+        grid-column: 1;
+        grid-row: 2;
+        justify-content: flex-start;
+        min-width: 0;
+        max-width: 100%;
+    }
+    .yib-config-layout .k-schema-menu {
+        grid-column: 2;
+        grid-row: 1;
+    }
+    .yib-config-layout .k-schema-main:has(.el-switch) {
+        grid-template-columns: minmax(0, 1fr) auto 2rem;
+    }
+    .yib-config-layout .k-schema-main:has(.el-switch) > .k-schema-right {
+        grid-column: 2;
+        grid-row: 1;
+    }
+    .yib-config-layout .k-schema-main:has(.el-switch) > .k-schema-menu {
+        grid-column: 3;
+    }
+    .yib-config-layout .k-schema-right .el-select {
+        width: min(18rem, 100%);
     }
 }
 

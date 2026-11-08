@@ -16,7 +16,7 @@ function fixture(execute: (args: any) => Promise<any>, retry = 0, record?: (even
             world: { recordSystemEvent: record ?? (async (event: any) => events.push(event)) },
         } as any,
     );
-    service.registerTool({ name: "probe", description: "test", parameters: Schema.object({}), execute });
+    service.registerTool({ name: "probe", readOnly: true, description: "test", parameters: Schema.object({}), execute });
     return {
         executions: (service as any).executions,
         invoke: (session?: any) => ToolService.prototype.invoke.call(service, "probe", {}, session),

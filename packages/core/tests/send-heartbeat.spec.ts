@@ -204,8 +204,7 @@ for (const streamAction of [false, true]) {
     for (const turns of [
         [{ actions: [], want: false }],
         [{ actions: [{ function: "lookup", status: "success" }], want: false }],
-        [{ actions: [{ function: "send_message", status: "error" }] }, { actions: [], want: false }],
-        [{ actions: [{ function: "send_message", status: "error" }] }, { actions: [{ function: "send_message", status: "success" }], want: true }],
+        [{ actions: [{ function: "send_message", status: "error" }], want: false }],
         [{ actions: [{ function: "send_message", status: "success" }] }, { actions: [{ function: "send_message", status: "error" }], want: true }],
     ]) {
         it(`${streamAction ? "streaming" : "normal"} cycle counts only confirmed replies: ${JSON.stringify(turns)}`, async () => {

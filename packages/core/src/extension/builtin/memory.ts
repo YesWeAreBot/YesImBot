@@ -106,6 +106,7 @@ export default class MemoryExtension {
 
     @Tool({
         name: "conversation_search",
+        readOnly: true,
         description:
             "Searches your raw conversation history (recall memory). Useful for finding specific keywords, names, or direct quotes from past conversations.",
         parameters: withInnerThoughts({
@@ -135,6 +136,7 @@ export default class MemoryExtension {
     }
     @Tool({
         name: "conversation_read",
+        readOnly: true,
         description:
             "按当前会话消息 ID 读取完整原始消息及前后文；按时间和 ID 稳定排序，保留 XML/媒体和引用关系。前后最多各 50 条，每页最多 20 条，用 nextOffset 继续；窗口外用 before/after.nextAnchorId 继续。重复读取同一 sourceIdentity 不构成新证据。",
         parameters: withInnerThoughts({
@@ -164,6 +166,7 @@ export default class MemoryExtension {
 
     @Tool({
         name: "conversation_state_read",
+        readOnly: true,
         description: "读取当前会话显式保存的工作话题和未决问题（不是事实断言）；无已验证来源时返回 unknown。使用返回 revision 进行替换更新。",
         parameters: withInnerThoughts({}),
     })

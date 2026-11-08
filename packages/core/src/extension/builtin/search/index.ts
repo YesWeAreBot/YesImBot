@@ -58,6 +58,14 @@ export default class SearchExtension {
     @Tool({
         name: "fetch_webpage",
         background: true,
+        readOnly: true,
+        timeout(this: SearchExtension, params) {
+            const dynamic = params.use_dynamic === true || this.config.usePuppeteer;
+            return (
+                (dynamic ? this.config.puppeteerTimeout + Math.max(0, this.config.puppeteerWaitTime) : this.config.httpTimeout + this.config.puppeteerTimeout) +
+                5000
+            );
+        },
         description: `获取指定网页的内容。支持动态渲染页面。
   - 将网页URL添加到url参数来获取网页内容
   - 可以获取HTML内容或纯文本内容
@@ -257,6 +265,10 @@ export default class SearchExtension {
     @Tool({
         name: "web_search",
         background: true,
+        readOnly: true,
+        timeout(this: SearchExtension) {
+            return this.config.httpTimeout + 5000;
+        },
         description: "搜索网络内容，获取相关信息和链接。可以多次搜索。在你搜索完之后，可以先访问具体内容",
         parameters: withInnerThoughts({
             query: Schema.string().required().description("搜索关键词或查询内容。"),

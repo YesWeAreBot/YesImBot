@@ -48,15 +48,27 @@ export interface ToolExecutionContext {
     signal?: AbortSignal;
     reportProgress?: (progress: string) => void;
     backgroundExecution?: boolean;
+    /** IDs whose actual image pixels were included in this request. */
+    attachedImageIds?: readonly string[];
+    /** Absolute upstream execution deadline, when the caller has one. */
+    deadline?: number;
+    /** Publish irreversible effects before the tool has finished (trusted runtime only). */
+    reportMetadata?: (metadata: NonNullable<ToolCallResult["metadata"]>) => void;
 }
 
 export interface ToolMetadata<TParams> {
     /** Explicit opt-in for independent background reads; sends and mutations remain serial. */
     background?: boolean;
+    /** Explicitly safe to give failed reads back to the model for another bounded decision. */
+    readOnly?: boolean;
+    /** Total execution budget in ms; an absent value inherits the ordinary tool budget. */
+    timeout?: number | ((params: Record<string, unknown>) => number | undefined);
     name?: string; // 工具名称，若不提供，则使用方法名
     description: string; // 工具功能详细描述，这是给 LLM 看的关键信息
     parameters: Schema<TParams>; // 工具的参数定义，使用 Koishi 的 Schema
     isSupported?: (session: Session) => boolean;
+    /** False or an explanatory string hides/rejects this tool for the request. */
+    isAvailable?: (context?: ToolExecutionContext) => boolean | string;
 }
 
 /**
@@ -64,10 +76,16 @@ export interface ToolMetadata<TParams> {
  */
 export interface ToolDefinition<TParams = any> {
     background?: boolean;
+    /** Explicitly safe to give failed reads back to the model for another bounded decision. */
+    readOnly?: boolean;
+    /** Total execution budget in ms; an absent value inherits the ordinary tool budget. */
+    timeout?: number | ((params: Record<string, unknown>) => number | undefined);
     name: string;
     description: string;
     parameters: Schema<TParams>;
     isSupported?: (session: Session) => boolean;
+    /** False or an explanatory string hides/rejects this tool for the request. */
+    isAvailable?: (context?: ToolExecutionContext) => boolean | string;
     /** Recheck result-specific authorization/revision before archived output can be read. */
     isResultCurrent?: (result: ToolCallResult, session: Session) => boolean | Promise<boolean>;
     execute: (args: Infer<TParams>) => Promise<any>;

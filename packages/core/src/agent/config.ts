@@ -208,10 +208,12 @@ export interface VisionConfig {
     /** 允许在上下文中包含的最大图片数量 */
     maxImagesInContext: number;
     /**
-     * 图片在上下文中的最大生命周期。
-     * 一张图片在上下文中出现 N 次后将被视为"过期"，除非它被引用。
+     * 普通历史图片可随成功用户任务附带的次数；内部心跳不重复计数。
+     * 当前发图、明确引用和有限近图追问优先保留。
      */
     imageLifecycleCount: number;
+    imageFollowUpWindowSeconds?: number;
+    imageFollowUpMaxTurns?: number;
     detail: "low" | "high" | "auto";
 }
 
@@ -221,7 +223,18 @@ export const VisionConfigSchema: Schema<VisionConfig> = Schema.object({
     maxImagesInContext: Schema.number().default(3).description("在上下文中允许包含的最大图片数量"),
     imageLifecycleCount: Schema.number()
         .default(2)
-        .description("单条消息中图片在成功请求上下文中的最大出现次数，按会话与机器人账号分别计算；引用原图时可再次查看"),
+        .min(0)
+        .description("普通历史图片可随成功用户任务附带的次数；同任务内部心跳只计一次，当前发图、明确引用与有限近图追问优先保留"),
+    imageFollowUpWindowSeconds: Schema.number()
+        .default(600)
+        .min(0)
+        .max(86400)
+        .description("同一用户近图追问保留时间（秒）；0关闭额外近图保留，普通历史图片寿命仍生效"),
+    imageFollowUpMaxTurns: Schema.number()
+        .default(4)
+        .min(0)
+        .max(20)
+        .description("近图最多跟随后续用户消息次数；内部工具心跳不计数，0关闭额外近图保留，普通历史图片寿命仍生效"),
     detail: Schema.union(["low", "high", "auto"]).default("low").description("图片细节程度"),
 });
 

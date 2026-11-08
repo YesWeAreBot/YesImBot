@@ -113,11 +113,16 @@ async function withGuardedEncoder<T>(
                 delete encoderOptions[messageReceiptSink];
             }
             const receiptSink = guarded ? args[3]?.[messageReceiptSink] : undefined;
+            const signal = replyTurnSignal();
             const encoderArgs = [...args];
             // OneBot enforces destination checks through its bot receiver.
             encoderArgs[0] = guardedBots.has(args[0]) ? args[0] : bot;
             if (guarded) encoderArgs[3] = encoderOptions;
             const encoder = Reflect.construct(target, encoderArgs);
+            const publishReceipts = () => receiptSink?.(Array.isArray(encoder.results) ? encoder.results : []);
+            // A split encoder may have confirmed text before a later image stalls.
+            // Snapshot those adapter-confirmed results synchronously on cancellation.
+            const onAbort = () => publishReceipts();
             for (const key of ["send", "prepare", "render", "visit", "flush"] as const) {
                 const method = encoder[key];
                 if (typeof method !== "function") continue;
@@ -129,16 +134,20 @@ async function withGuardedEncoder<T>(
                     else scope.delete(bot);
                     const result = outboundScopes.run(scope, () => method.apply(encoder, args));
                     if (guarded && key === "send") {
+                        signal?.addEventListener("abort", onAbort, { once: true });
+                        if (signal?.aborted) publishReceipts();
                         return Promise.resolve(result)
                             .then((value) => {
-                                receiptSink?.(Array.isArray(encoder.results) ? encoder.results : []);
+                                publishReceipts();
                                 return value;
                             })
                             .catch((error) => {
                                 const deliveryError = new MessageDeliveryError(error, Array.isArray(encoder.results) ? encoder.results : []);
+                                publishReceipts();
                                 if (deliveryError.messages.length) throw deliveryError;
                                 throw error;
-                            });
+                            })
+                            .finally(() => signal?.removeEventListener("abort", onAbort));
                     }
                     return result;
                 };
@@ -181,7 +190,14 @@ async function withGuardedEncoder<T>(
     }
 }
 /** Capture adapter-confirmed content while preserving the guarded bot's send path. */
-export async function sendMessageWithReceipts(bot: Bot, channelId: string, content: Parameters<Bot["sendMessage"]>[1], referrer?: any, options?: any) {
+export async function sendMessageWithReceipts(
+    bot: Bot,
+    channelId: string,
+    content: Parameters<Bot["sendMessage"]>[1],
+    referrer?: any,
+    options?: any,
+    onReceipts?: (messages: ConfirmedMessage[]) => void,
+) {
     let raw = bot;
     while (guardedBots.has(raw)) raw = guardedBots.get(raw)!.bot;
     let messages: ConfirmedMessage[] | undefined;
@@ -189,6 +205,7 @@ export async function sendMessageWithReceipts(bot: Bot, channelId: string, conte
         ...options,
         [messageReceiptSink]: (receipts: ConfirmedMessage[]) => {
             messages = confirmedMessages(receipts);
+            onReceipts?.(messages);
         },
     };
     // Adapters without encoders retain their exact calling convention.

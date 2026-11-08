@@ -1,5 +1,5 @@
 import { GenerateTextResult } from "@xsai/generate-text";
-import { Awaitable, Context, Logger, Schema } from "koishi";
+import { Context, Logger, Schema } from "koishi";
 
 import { ContextBudgetError } from "../agent/context-budget";
 import { Config } from "../config";
@@ -539,49 +539,19 @@ class RequestExecutor {
                 if (error instanceof AppError && error.code === ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED.code) {
                     if (retryPolicy.onContentFailure === ContentFailureAction.AugmentAndRetry && attempt < retryPolicy.maxRetries) {
                         const rawResponse = error.context?.rawResponse;
-
-                        // 简单判断是否是有效内容
-                        if (rawResponse) {
-                            const keywords = ["thoughts", "observe", "analyze_infer", "plan", "actions", "function", "params"];
-                            const isValid = keywords.every((keyword) => rawResponse.includes(keyword));
-                            if (isValid) {
-                                attemptLogger.warn("内容无效，尝试使用LLM进行修复");
-                                const systemPrompt = `You are a JSON formatter. Your task is to fix the formatting of the given JSON string. The output must be a valid JSON string. Do not add any extra text or commentary.
-### 1. Format Rules
-- Your entire output MUST be a single, raw \`\`\`json ... \`\`\` code block.
-- No text, spaces, or newlines before \` \`\`\`json \` or after \` \`\`\` \`.
-
-### 2. JSON Structure
-\`\`\`json
-{
-  "thoughts": {
-    "observe": "...",
-    "analyze_infer": "...",
-    "plan": "..."
-  },
-  "actions": [
-    {
-      "function": "function_name",
-      "params": {
-        "inner_thoughts": "Your commentary on this specific action.",
-        "...": "..."
-      }
-    }
-  ],
-  "request_heartbeat": false
-}
-\`\`\`
-                                `;
-                                // 使用LLM修正JSON
-                                // 直接修改原始消息，下一次循环时会发送到模型
-                                attemptLogger.info("下一步: 修复内容并重试 | 等待: 0ms");
-                                options.messages = [
-                                    { role: "system", content: systemPrompt },
-                                    { role: "user", content: rawResponse },
-                                ];
-                                continue;
-                            }
-                        }
+                        const failedOutput = typeof rawResponse === "string" ? rawResponse.slice(0, 8000) : "";
+                        attemptLogger.warn("内容校验失败，保留原上下文并请求纠正；无效响应未执行工具");
+                        options.messages = [
+                            ...originalMessages,
+                            ...(failedOutput ? [{ role: "assistant" as const, content: failedOutput }] : []),
+                            {
+                                role: "system",
+                                content:
+                                    "The previous response failed output validation. No actions from that invalid response were executed. Regenerate a complete response following the original task, persona, tool definitions and required output format. Correct the format instead of commenting on this validation feedback.",
+                            },
+                        ];
+                        attemptLogger.info("下一步: 修正响应并重试 | 等待: 0ms");
+                        continue;
                     } else {
                         attemptLogger.error(
                             `内容无效，放弃重试 | 错误码: ${appError?.code ?? "未知"} | HTTP: ${appError?.context?.httpStatus ?? "未知"} | 耗时: ${Date.now() - startedAt}ms | 错误: ${error.message}`,

@@ -47,7 +47,7 @@ function streamResponse(text: string): Response {
     });
 }
 
-function fixture(responses: Array<string | Error>) {
+function fixture(responses: Array<string | Error>, maxRetries = 1, onContentFailure = ContentFailureAction.AugmentAndRetry) {
     const logger = {
         extend() {
             return this;
@@ -78,7 +78,7 @@ function fixture(responses: Array<string | Error>) {
                     abilities: [ModelAbility.Chat, ModelAbility.Vision],
                     parameters: { stream: true },
                     timeoutPolicy: { firstTokenTimeout: 5, totalTimeout: 10 },
-                    retryPolicy: { maxRetries: modelId === "primary" ? 1 : 0, onContentFailure: ContentFailureAction.AugmentAndRetry },
+                    retryPolicy: { maxRetries: modelId === "primary" ? maxRetries : 0, onContentFailure },
                 },
                 fetch,
                 loggingStub(logger),
@@ -104,10 +104,9 @@ describe("model failover message isolation", () => {
         expect(result.text).toBe(validResponse);
         expect(requests.map((request) => request.model)).toEqual(["primary", "primary"]);
         expect(requests[0].messages).toEqual(originalMessages());
-        expect(requests[1].messages).toHaveLength(2);
-        expect(requests[1].messages[0].role).toBe("system");
-        expect(requests[1].messages[0].content).toContain("JSON formatter");
-        expect(requests[1].messages[1]).toEqual({ role: "user", content: malformedResponse });
+        expect(requests[1].messages.slice(0, originalMessages().length)).toEqual(originalMessages());
+        expect(requests[1].messages.at(-2)).toEqual({ role: "assistant", content: malformedResponse });
+        expect(requests[1].messages.at(-1)?.content).toContain("validation");
         expect(options.messages).toBe(messages);
         expect(options.messages).toEqual(originalMessages());
     });
@@ -119,7 +118,7 @@ describe("model failover message isolation", () => {
 
         expect(result.text).toBe(validResponse);
         expect(requests.map((request) => request.model)).toEqual(["primary", "primary", "fallback"]);
-        expect(requests[1].messages[1]).toEqual({ role: "user", content: malformedResponse });
+        expect(requests[1].messages.at(-2)).toEqual({ role: "assistant", content: malformedResponse });
         expect(requests[2].messages).toEqual(originalMessages());
         expect(requests.every((request) => request.stream)).toBe(true);
         expect(options.messages).toEqual(originalMessages());
@@ -135,4 +134,64 @@ describe("model failover message isolation", () => {
         expect(requests.map((request) => request.model)).toEqual(["primary", "primary", "primary"]);
         expect(requests[2].messages).toEqual(originalMessages());
     });
+});
+
+it("corrects plain prose using the original question, persona, tools and image", async () => {
+    const prose = "I cannot produce the requested format yet.";
+    const { switcher, requests, options } = fixture([prose, validResponse]);
+    const result = await switcher.chat(options);
+    expect(result.text).toBe(validResponse);
+    expect(requests).toHaveLength(2);
+    expect(requests[1].messages.slice(0, originalMessages().length)).toEqual(originalMessages());
+    expect(requests[1].messages.at(-2)).toEqual({ role: "assistant", content: prose });
+    expect(requests[1].messages.at(-1)?.content).toContain("validation");
+    expect(options.messages).toEqual(originalMessages());
+});
+
+it("does not retry malformed output on a model configured with zero retries", async () => {
+    const { switcher, requests, options } = fixture(["invalid", validResponse], 0);
+    expect((await switcher.chat(options)).text).toBe(validResponse);
+    expect(requests.map((request) => request.model)).toEqual(["primary", "fallback"]);
+    expect(requests[1].messages).toEqual(originalMessages());
+});
+
+it("honors immediate failover instead of retrying invalid content on the same model", async () => {
+    const { switcher, requests, options } = fixture(["invalid", validResponse], 2, ContentFailureAction.FailoverToNext);
+    expect((await switcher.chat(options)).text).toBe(validResponse);
+    expect(requests.map((request) => request.model)).toEqual(["primary", "fallback"]);
+});
+
+it("bounds repeated format corrections and gives the fallback the original context", async () => {
+    const { switcher, requests, options } = fixture(["first invalid", "second invalid", validResponse]);
+    expect((await switcher.chat(options)).text).toBe(validResponse);
+    expect(requests.map((request) => request.model)).toEqual(["primary", "primary", "fallback"]);
+    expect(requests[2].messages).toEqual(originalMessages());
+});
+
+it("corrects a syntactically valid response that fails the action schema", async () => {
+    const { switcher, requests, options } = fixture(["{}", validResponse]);
+    options.validation = {
+        validator: (text) => {
+            try {
+                const value = JSON.parse(text);
+                return { valid: !!value.thoughts && Array.isArray(value.actions), error: "Missing thoughts or actions" };
+            } catch {
+                return { valid: false, error: "Invalid JSON" };
+            }
+        },
+    };
+    expect((await switcher.chat(options)).text).toBe(validResponse);
+    expect(requests).toHaveLength(2);
+    expect(requests[1].messages.slice(0, originalMessages().length)).toEqual(originalMessages());
+    expect(requests[1].messages.at(-2)).toEqual({ role: "assistant", content: "{}" });
+});
+
+it("keeps correction feedback bounded instead of accumulating invalid responses", async () => {
+    const oversized = "broken output ".repeat(1000);
+    const { switcher, requests, options } = fixture([oversized, "another invalid response", validResponse], 2);
+    expect((await switcher.chat(options)).text).toBe(validResponse);
+    expect(requests).toHaveLength(3);
+    expect(requests[1].messages.at(-2)?.content).toHaveLength(8000);
+    expect(requests[2].messages).toHaveLength(originalMessages().length + 2);
+    expect(requests[2].messages.at(-2)).toEqual({ role: "assistant", content: "another invalid response" });
 });

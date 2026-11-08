@@ -10,6 +10,9 @@ export interface ConversationFocus {
     continuation?: import("./continuation").ContinuationMatch;
     continuationPolicy?: { mode: "trigger" | "willingness"; maxDurationSeconds: number };
     triggerMessageIds: string[];
+    /** Bounded, program-selected visual sources; never inferred quote relationships. */
+    visualSourceMessageIds?: string[];
+    visualTaskId?: string;
     quoteMessageIds: string[];
     missingMessageIds: string[];
     sourceProvenance: "trusted_stimulus_and_current_target_l1";
@@ -91,6 +94,7 @@ export async function packWorldState(
     const protectedIds = new Set([
         ...options.focus.triggerMessageIds,
         ...options.focus.quoteMessageIds,
+        ...(options.focus.visualSourceMessageIds ?? []),
         ...(options.focus.explicitWorkingState?.sourceMessageIds ?? []),
     ]);
     // Even scheduled triggers retain the last source message; unknown anchors never cause its eviction.

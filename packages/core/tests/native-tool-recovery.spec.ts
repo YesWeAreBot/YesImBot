@@ -48,7 +48,7 @@ it("feeds invalid argument paths back as paired tool responses before any batch 
         { toolCalls: [call("send_message", { message: "accepted" }, "corrected")] },
     ]);
     expect(await f.run()).toBe(true);
-    expect(f.invoke.mock.calls).toEqual([["send_message", { message: "accepted" }, expect.anything()]]);
+    expect(f.invoke.mock.calls).toEqual([["send_message", { message: "accepted" }, expect.anything(), expect.objectContaining({ attachedImageIds: [] })]]);
     const repair = f.requests[1];
     expect(repair.find((message) => message.role === "assistant").tool_calls).toHaveLength(2);
     const results = repair.filter((message) => message.role === "tool");
@@ -191,7 +191,7 @@ it("executes only the successful batch after multiple corrections", async () => 
     );
     expect(await f.run()).toBe(true);
     expect(f.requests).toHaveLength(3);
-    expect(f.invoke.mock.calls).toEqual([["send_message", { message: "accepted" }, expect.anything()]]);
+    expect(f.invoke.mock.calls).toEqual([["send_message", { message: "accepted" }, expect.anything(), expect.objectContaining({ attachedImageIds: [] })]]);
     expect(f.requests[2].filter((message) => message.role === "tool").map((message) => message.tool_call_id)).toEqual(["first", "second"]);
 });
 

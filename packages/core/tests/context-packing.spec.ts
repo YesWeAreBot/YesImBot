@@ -130,15 +130,18 @@ it("prioritizes quoted source images over more recent unrelated images", async (
         {
             model: { hasVisionCapability: () => true } as any,
             logging: loggingStub({ debug() {} }),
-            asset: { getInfo: async (id: string) => ({ id, mime: "image/png" }), read: async (id: string) => `data:${id}` } as any,
+            asset: {
+                getInfo: async (id: string) => ({ id, mime: "image/png" }),
+                read: async (id: string) => `data:image/png;base64,${Buffer.from(id).toString("base64")}`,
+            } as any,
             memory: {} as any,
             tool: {} as any,
             world: {} as any,
         },
     );
     const content = await builder.buildMultimodalUserMessage("text", state([quote, unrelated], [message("trigger", "reply", "quote")]));
-    expect(JSON.stringify(content)).toContain("data:quoted-image");
-    expect(JSON.stringify(content)).not.toContain("data:recent-image");
+    expect(JSON.stringify(content)).toContain(`data:image/png;base64,${Buffer.from("quoted-image").toString("base64")}`);
+    expect(JSON.stringify(content)).not.toContain(`data:image/png;base64,${Buffer.from("recent-image").toString("base64")}`);
 });
 
 it("treats focus identifiers as escaped data even when a custom template contains a user supplied focus tag", async () => {
@@ -244,3 +247,11 @@ for (const mode of ["json", "stream", "native"])
         expect(requests[0].messages[1].content).not.toContain("history history");
         expect(world.l1_working_memory.processed_events).toHaveLength(1);
     });
+
+it("protects selected visual sources while dropping unrelated old images under the soft budget", async () => {
+    const world = state([message("unrelated-image"), message("selected-image")], [message("trigger")]);
+    const focus = { ...deriveConversationFocus(stimulus, world), visualSourceMessageIds: ["selected-image"] };
+    const packed = await packWorldState(world, { budgetTokens: 150, focus, estimate: count });
+    expect(packed.worldState.l1_working_memory.processed_events.map((item: any) => item.id)).toEqual(["selected-image"]);
+    expect(packed.report.protectedOverBudget).toBe(true);
+});

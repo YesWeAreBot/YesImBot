@@ -39,7 +39,14 @@ export function Extension(metadata: ExtensionMetadata): ClassDecorator {
                         // 遍历原型上的所有工具定义
                         for (const [name, tool] of protoTools.entries()) {
                             // 创建一个新工具对象，其 execute 方法通过 .bind(this) 永久绑定到当前实例
-                            tools.set(name, Object.assign({}, tool, { execute: tool.execute.bind(this) }));
+                            tools.set(
+                                name,
+                                Object.assign({}, tool, {
+                                    execute: tool.execute.bind(this),
+                                    timeout: typeof tool.timeout === "function" ? tool.timeout.bind(this) : tool.timeout,
+                                    isAvailable: tool.isAvailable?.bind(this),
+                                }),
+                            );
                         }
 
                         //@ts-ignore
@@ -124,6 +131,9 @@ export function Tool<TParams>(metadata: ToolMetadata<TParams>) {
             execute: descriptor.value,
             isSupported: metadata.isSupported,
             background: metadata.background,
+            readOnly: metadata.readOnly,
+            timeout: metadata.timeout,
+            isAvailable: metadata.isAvailable,
         };
         target.tools.set(toolDefinition.name, toolDefinition);
     };

@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { ImagePart, TextPart } from "@xsai/shared-chat";
 import { Context, Logger, h } from "koishi";
 
@@ -11,9 +13,11 @@ import { conversationChannelId } from "../shared/utils/conversation-scope";
 import { AgentStimulus, ContextualMessage, UserMessagePayload, WorldState, WorldStateService } from "../world";
 import { sessionChannelType } from "../world/channel-metadata";
 import type { ConversationStateResult } from "../world/conversation-state";
-import { deriveConversationFocus, FocusedWorldState } from "./context-packing";
+import { deriveConversationFocus, type ConversationFocus, FocusedWorldState } from "./context-packing";
 import { matchContinuation, sameContinuation, type ContinuationMatch } from "./continuation";
 import { assertReplyTurn } from "./reply-turn";
+
+const hasImage = (message: ContextualMessage) => message.elements.some((element) => ["img", "image"].includes(element.type) && element.attrs.id);
 
 interface ImageCandidate {
     id: string;
@@ -34,22 +38,62 @@ export class PromptContextBuilder {
     private readonly worldStateService: WorldStateService;
     private readonly modelSwitcher: ChatModelSwitcher;
     private imageLifecycleTracker = new Map<string, number>();
-    private pendingImageUsage = new WeakMap<object, string[]>();
+    private pendingImageUsage = new WeakMap<object, { keys: string[]; taskId: string }>();
+    private attachedImages = new WeakMap<object, string>();
+    private attachedImageFingerprints = new Map<string, string>();
+    private imageTaskUsage = new Map<string, Set<string>>();
+    private anonymousTaskIds = new WeakMap<object, string>();
+    private nextAnonymousTaskId = 0;
+    private recentVisualSources = new Map<
+        string,
+        { sourceIds: string[]; timestamp: number; followUpIds: Set<string>; generation?: number; activeTaskId: string }
+    >();
+
+    /** Only actual image parts created by this builder establish that pixels were attached. */
+    public getAttachedImageIds(messages: Array<{ content?: unknown }>): string[] {
+        const ids = new Set<string>();
+        for (const message of messages) {
+            if (!Array.isArray(message.content)) continue;
+            for (const part of message.content) {
+                if (part?.type !== "image_url") continue;
+                const url = part.image_url?.url;
+                const id =
+                    this.attachedImages.get(part) ??
+                    (typeof url === "string" ? this.attachedImageFingerprints.get(createHash("sha256").update(url).digest("hex")) : undefined);
+                if (id) ids.add(id);
+            }
+        }
+        return [...ids];
+    }
+
+    private visualDiagnostic(reason: string, counts: Record<string, number> = {}): void {
+        // Never log message text, asset URLs, base64, or caller-supplied error strings.
+        this.logger.debug(`图片上下文 | ${JSON.stringify({ reason, ...counts })}`);
+    }
 
     /** Count an image once only after the model request succeeds. Failed requests retain their allowance. */
     public commitMultimodalUsage(messages: Array<{ content?: unknown }>): void {
         for (const message of messages) {
-            if (!message.content || typeof message.content !== "object") continue;
-            const keys = this.pendingImageUsage.get(message.content);
-            if (!keys) continue;
-            this.pendingImageUsage.delete(message.content);
-            for (const key of keys) {
-                const count = this.imageLifecycleTracker.get(key) ?? 0;
-                this.imageLifecycleTracker.delete(key);
-                this.imageLifecycleTracker.set(key, Math.min(count + 1, Math.max(0, this.config.imageLifecycleCount)));
+            if (!Array.isArray(message.content)) continue;
+            for (const part of message.content) {
+                if (!part || typeof part !== "object") continue;
+                const pending = this.pendingImageUsage.get(part);
+                if (!pending) continue;
+                this.pendingImageUsage.delete(part);
+                const used = this.imageTaskUsage.get(pending.taskId) ?? new Set<string>();
+                this.imageTaskUsage.delete(pending.taskId);
+                this.imageTaskUsage.set(pending.taskId, used);
+                for (const key of pending.keys) {
+                    if (used.has(key)) continue;
+                    used.add(key);
+                    const count = this.imageLifecycleTracker.get(key) ?? 0;
+                    this.imageLifecycleTracker.delete(key);
+                    this.imageLifecycleTracker.set(key, Math.min(count + 1, Math.max(0, this.config.imageLifecycleCount)));
+                }
             }
         }
         // Retain a bounded recent working set rather than every image seen since startup.
+        while (this.imageTaskUsage.size > 512) this.imageTaskUsage.delete(this.imageTaskUsage.keys().next().value!);
         while (this.imageLifecycleTracker.size > 4096) this.imageLifecycleTracker.delete(this.imageLifecycleTracker.keys().next().value!);
     }
 
@@ -209,6 +253,8 @@ export class PromptContextBuilder {
             unknown: working?.unknown ?? true,
             sourceProvenance: "explicit_scoped_tool_state_not_verified_fact",
         };
+        sourceWorldState = await this.prepareVisualSources(stimulus, sourceWorldState, focus, generation, assertContextCurrent);
+        assertContextCurrent();
         const present = new Set(
             [...sourceWorldState.l1_working_memory.processed_events, ...sourceWorldState.l1_working_memory.new_events].flatMap((item) =>
                 item.type === "message" ? [item.id] : [],
@@ -255,6 +301,146 @@ export class PromptContextBuilder {
         };
     }
 
+    private async prepareVisualSources(
+        stimulus: AgentStimulus<any>,
+        world: WorldState,
+        focus: ConversationFocus,
+        generation: number | undefined,
+        assertCurrent: () => void,
+    ): Promise<WorldState> {
+        if (!this.config.enableVision || !this.modelSwitcher.hasVisionCapability() || !(this.config.maxImagesInContext > 0)) return world;
+        const triggerIds = focus.triggerMessageIds;
+        let taskId = triggerIds.length
+            ? JSON.stringify([focus.target, focus.targetUserId, stimulus.type, [...triggerIds].sort()])
+            : this.anonymousTaskIds.get(stimulus);
+        if (!taskId) {
+            taskId = `anonymous-task-${++this.nextAnonymousTaskId}`;
+            this.anonymousTaskIds.set(stimulus, taskId);
+        }
+        focus.visualTaskId = taskId;
+        if (stimulus.type !== "user_message" || !focus.targetUserId || !triggerIds.length) return world;
+        const scope = JSON.stringify([focus.target, sessionChannelType(stimulus.session), focus.targetUserId]);
+        const messages = [...world.l1_working_memory.processed_events, ...world.l1_working_memory.new_events].filter(
+            (item): item is ContextualMessage & { type: "message" } => item.type === "message",
+        );
+        const now = Date.now();
+        const windowMs = Math.max(0, Math.min(86400, this.config.imageFollowUpWindowSeconds ?? 600)) * 1000;
+        const maxFollowUps = Math.max(0, Math.min(20, this.config.imageFollowUpMaxTurns ?? 4));
+        const ownMessages = messages.filter((message) => message.sender?.id === focus.targetUserId);
+        const currentImages = ownMessages
+            .filter((message) => triggerIds.includes(message.id) && hasImage(message))
+            .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+        let recent = this.recentVisualSources.get(scope);
+        if (recent?.generation !== generation) recent = undefined;
+        if (currentImages.length) {
+            recent = {
+                sourceIds: currentImages.slice(0, this.config.maxImagesInContext).map((message) => message.id),
+                timestamp: Math.min(now, currentImages[0].timestamp.getTime()),
+                followUpIds: new Set(),
+                generation,
+                activeTaskId: taskId,
+            };
+        } else if (!recent && windowMs > 0 && maxFollowUps > 0) {
+            const latest = ownMessages.filter(hasImage).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())[0];
+            if (latest && now - latest.timestamp.getTime() <= windowMs) {
+                recent = {
+                    sourceIds: [latest.id],
+                    timestamp: Math.min(now, latest.timestamp.getTime()),
+                    followUpIds: new Set(
+                        ownMessages
+                            .filter((message) => message.timestamp >= latest.timestamp && message.id !== latest.id)
+                            .map((message) => message.id)
+                            .slice(0, maxFollowUps + 1),
+                    ),
+                    generation,
+                    activeTaskId: "",
+                };
+            }
+        }
+        if (!recent) {
+            this.recentVisualSources.delete(scope);
+            return world;
+        }
+        const sameTask = recent.activeTaskId === taskId;
+        if (!sameTask) {
+            // Count recorded user messages even when they did not wake the agent.
+            const subsequentIds = ownMessages.filter((message) => message.timestamp.getTime() >= recent.timestamp).map((message) => message.id);
+            for (const id of [...subsequentIds, ...triggerIds]) {
+                if (!recent.sourceIds.includes(id) && recent.followUpIds.size <= maxFollowUps) recent.followUpIds.add(id);
+            }
+        }
+        this.recentVisualSources.delete(scope);
+        this.recentVisualSources.set(scope, recent);
+        while (this.recentVisualSources.size > 256) this.recentVisualSources.delete(this.recentVisualSources.keys().next().value!);
+        if (!sameTask && (!(windowMs > 0) || !(maxFollowUps > 0) || now - recent.timestamp > windowMs || recent.followUpIds.size > maxFollowUps)) {
+            this.visualDiagnostic("recent_image_window_expired", {
+                window_seconds: windowMs / 1000,
+                max_followups: maxFollowUps,
+                follow_up_count: recent.followUpIds.size,
+                age_seconds: Math.max(0, Math.floor((now - recent.timestamp) / 1000)),
+            });
+            return world;
+        }
+        recent.activeTaskId = taskId;
+        const present = new Set(messages.map((message) => message.id));
+        const restored: Array<ContextualMessage & { type: "message"; is_message: boolean }> = [];
+        for (const messageId of recent.sourceIds) {
+            if (present.has(messageId)) continue;
+            if (!this.worldStateService.readMessageWindow) {
+                this.visualDiagnostic("source_restore_unavailable");
+                continue;
+            }
+            try {
+                const page = await this.worldStateService.readMessageWindow(stimulus.session, { messageId, before: 0, after: 0, limit: 1 });
+                assertCurrent();
+                const source = page.anchor;
+                if (
+                    source.id !== messageId ||
+                    source.sender?.id !== focus.targetUserId ||
+                    source.platform !== stimulus.session.platform ||
+                    source.channelId !== conversationChannelId(stimulus.session) ||
+                    source.channelType !== sessionChannelType(stimulus.session)
+                ) {
+                    this.visualDiagnostic("source_scope_mismatch");
+                    continue;
+                }
+                const message = {
+                    type: "message" as const,
+                    id: source.id,
+                    sender: source.sender,
+                    content: source.content,
+                    timestamp: new Date(source.timestamp),
+                    quoteId: source.quoteId,
+                    elements: h.parse(source.content),
+                    is_message: true,
+                    is_new: false,
+                };
+                if (!hasImage(message)) {
+                    this.visualDiagnostic("source_image_missing");
+                    continue;
+                }
+                restored.push(message);
+                present.add(message.id);
+            } catch (error) {
+                assertCurrent();
+                if (error instanceof Error && error.name === "AbortError") throw error;
+                this.visualDiagnostic("source_restore_failed");
+            }
+        }
+        focus.visualSourceMessageIds = recent.sourceIds.filter((id) => present.has(id));
+        return restored.length
+            ? {
+                  ...world,
+                  l1_working_memory: {
+                      ...world.l1_working_memory,
+                      processed_events: [...restored, ...world.l1_working_memory.processed_events].sort(
+                          (a, b) => a.timestamp.getTime() - b.timestamp.getTime(),
+                      ),
+                  },
+              }
+            : world;
+    }
+
     /**
      * 构建多模态消息内容，如果模型和配置支持。
      * @returns 包含图片和文本的消息内容数组，或纯文本字符串。
@@ -262,6 +448,7 @@ export class PromptContextBuilder {
     public async buildMultimodalUserMessage(userPromptText: string, worldState: WorldState): Promise<string | Array<ImagePart | TextPart>> {
         const canUseVision = this.modelSwitcher.hasVisionCapability() && this.config.enableVision;
         if (!canUseVision) {
+            this.visualDiagnostic(this.config.enableVision ? "no_vision_model" : "vision_disabled");
             return userPromptText;
         }
 
@@ -273,7 +460,12 @@ export class PromptContextBuilder {
                 ...multiModalData.images,
                 { type: "text" as const, text: userPromptText },
             ];
-            this.pendingImageUsage.set(content, multiModalData.usageKeys);
+            const taskId = (worldState as FocusedWorldState).conversationFocus?.visualTaskId ?? `anonymous-image-${++this.nextAnonymousTaskId}`;
+            let imageIndex = 0;
+            for (const part of content) {
+                if (part.type !== "image_url") continue;
+                this.pendingImageUsage.set(part, { keys: [multiModalData.usageKeys[imageIndex++]], taskId });
+            }
             return content;
         }
 
@@ -292,7 +484,21 @@ export class PromptContextBuilder {
             (item): item is { type: "message" } & ContextualMessage => item.type === "message",
         );
 
-        const quoteIds = new Set(allMessages.flatMap((message) => (message.quoteId ? [message.quoteId] : [])));
+        const focus = (worldState as FocusedWorldState).conversationFocus;
+        const quoteIds = new Set(focus?.quoteMessageIds ?? allMessages.flatMap((message) => (message.quoteId ? [message.quoteId] : [])));
+        const currentIds = new Set(focus?.triggerMessageIds ?? []);
+        const relatedIds = new Set(focus?.visualSourceMessageIds ?? []);
+        const diagnostics = {
+            lifecycle_limit: this.config.imageLifecycleCount,
+            max_images: this.config.maxImagesInContext,
+            candidates: 0,
+            lifecycle_expired: 0,
+            count_limit: 0,
+            missing_asset: 0,
+            unsupported_mime: 0,
+            invalid_image_data: 0,
+            selected: 0,
+        };
 
         const imageTags = ["img", "image"];
 
@@ -308,7 +514,7 @@ export class PromptContextBuilder {
                 id,
                 sourceId: msg.id,
                 timestamp: msg.timestamp.getTime(),
-                priority: isQuotedImage ? 1 : 0, // 1 for quoted, 0 for regular
+                priority: currentIds.has(msg.id) ? 3 : isQuotedImage ? 2 : relatedIds.has(msg.id) ? 1 : 0,
             }));
         });
 
@@ -329,8 +535,12 @@ export class PromptContextBuilder {
         // 4. 根据生命周期和数量上限选择最终图片
         const finalImageIds = new Set<string>();
         const usageKeysById = new Map<string, string>();
+        diagnostics.candidates = sortedUniqueCandidates.length;
         for (const candidate of sortedUniqueCandidates) {
-            if (finalImageIds.size >= this.config.maxImagesInContext) break;
+            if (finalImageIds.size >= Math.max(0, this.config.maxImagesInContext)) {
+                diagnostics.count_limit++;
+                continue;
+            }
 
             const key = JSON.stringify([
                 worldState.channel?.platform,
@@ -341,39 +551,70 @@ export class PromptContextBuilder {
                 candidate.id,
             ]);
             const usageCount = this.imageLifecycleTracker.get(key) || 0;
-            if (candidate.priority > 0 || usageCount < this.config.imageLifecycleCount) {
+            if (
+                candidate.priority > 0 ||
+                (focus?.visualTaskId && this.imageTaskUsage.get(focus.visualTaskId)?.has(key)) ||
+                usageCount < this.config.imageLifecycleCount
+            ) {
                 finalImageIds.add(candidate.id);
                 usageKeysById.set(candidate.id, key);
-            }
+            } else diagnostics.lifecycle_expired++;
         }
 
         // 5. 获取图片数据并格式化输出
         if (finalImageIds.size === 0) {
+            this.visualDiagnostic("no_images_selected", diagnostics);
             return { images: [], usageKeys: [] };
         }
 
-        const imageDataResults = await Promise.all(Array.from(finalImageIds).map((id) => this.assetService.getInfo(id)));
+        let imageDataResults: Array<Awaited<ReturnType<AssetService["getInfo"]>>>;
+        try {
+            imageDataResults = await Promise.all(Array.from(finalImageIds).map((id) => this.assetService.getInfo(id)));
+        } catch (error) {
+            this.visualDiagnostic("asset_metadata_failed");
+            throw error;
+        }
 
         const finalImages: Array<ImagePart | TextPart> = [];
         const usageKeys: string[] = [];
         const allowedImageTypes = new Set(this.config.allowedImageTypes);
 
         for (const result of imageDataResults) {
+            if (!result) {
+                diagnostics.missing_asset++;
+                continue;
+            }
+            if (!allowedImageTypes.has(result.mime)) {
+                diagnostics.unsupported_mime++;
+                continue;
+            }
             if (result && allowedImageTypes.has(result.mime)) {
-                const imageBuffer = await this.assetService.read(result.id, {
-                    format: "data-url",
-                    image: { process: true, format: "jpeg" },
-                });
+                let imageBuffer: Awaited<ReturnType<AssetService["read"]>>;
+                try {
+                    imageBuffer = await this.assetService.read(result.id, { format: "data-url", image: { process: true, format: "jpeg" } });
+                } catch (error) {
+                    this.visualDiagnostic("asset_read_failed");
+                    throw error;
+                }
+                if (typeof imageBuffer !== "string" || !/^data:image\/[^;,]+;base64,[A-Za-z0-9+/=\s]+$/.test(imageBuffer)) {
+                    diagnostics.invalid_image_data++;
+                    continue;
+                }
                 usageKeys.push(usageKeysById.get(result.id)!);
                 // 为LLM提供更明确的图片标识
                 finalImages.push({ type: "text", text: `The following is an image with ID #${result.id}:` });
-                finalImages.push({
-                    type: "image_url",
-                    image_url: { url: imageBuffer as string, detail: this.config.detail },
-                });
+                const image: ImagePart = { type: "image_url", image_url: { url: imageBuffer as string, detail: this.config.detail } };
+                this.attachedImages.set(image, result.id);
+                const fingerprint = createHash("sha256").update(imageBuffer).digest("hex");
+                this.attachedImageFingerprints.delete(fingerprint);
+                this.attachedImageFingerprints.set(fingerprint, result.id);
+                while (this.attachedImageFingerprints.size > 512) this.attachedImageFingerprints.delete(this.attachedImageFingerprints.keys().next().value!);
+                finalImages.push(image);
+                diagnostics.selected++;
             }
         }
 
+        this.visualDiagnostic("image_selection", diagnostics);
         return { images: finalImages, usageKeys };
     }
 }

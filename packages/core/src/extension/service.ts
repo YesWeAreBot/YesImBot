@@ -170,6 +170,7 @@ export class ToolService extends YesImBotService<Config> {
         this.background?.registerCommands();
         this.registerTool({
             name: "tool_output_read",
+            readOnly: true,
             description:
                 "Read exact pages of a long tool result JSON text. Use nextOffset until null and concatenate text to reconstruct. Offsets count UTF-16 code units. Resources expire after 24 hours or service reload.",
             parameters: Schema.object({
@@ -789,6 +790,13 @@ export class ToolService extends YesImBotService<Config> {
         return { ...page, metadata: producer.result.metadata };
     }
 
+    /** Dedicated total budget shared by foreground and independent background work. */
+    public getExecutionTimeout(tool: ToolDefinition, params: Record<string, unknown>): number | undefined {
+        const dedicated = this.config.advanced?.toolTimeouts?.[tool.name];
+        const resolved = dedicated ?? (typeof tool.timeout === "function" ? tool.timeout(params) : tool.timeout);
+        return typeof resolved === "number" && Number.isFinite(resolved) && resolved > 0 ? Math.min(resolved, 2147483647) : undefined;
+    }
+
     private async executeInvocation(
         functionName: string,
         params: Record<string, unknown>,
@@ -796,10 +804,13 @@ export class ToolService extends YesImBotService<Config> {
         toolContext?: ToolExecutionContext,
     ): Promise<ToolCallResult> {
         // 1. 获取工具，这里已经包含了 isSupported 的检查
-        const tool = this.getTool(functionName, session);
+        const tool = this.getTool(functionName, session, toolContext);
         if (!tool) {
             this._logger.warn(`工具未找到或在当前会话中不可用 | 名称: ${functionName}`);
-            return Failed(`Tool ${functionName} not found or not supported in this context.`);
+            const reason = this.tools.get(functionName)?.isAvailable?.(toolContext);
+            return typeof reason === "string"
+                ? Failed({ name: "ToolUnavailableError", message: reason, retryable: false })
+                : Failed(`Tool ${functionName} not found or not supported in this context.`);
         }
 
         // 2. 参数验证 (新加的优雅方案)
@@ -816,9 +827,29 @@ export class ToolService extends YesImBotService<Config> {
         }
 
         if (toolContext?.backgroundExecution) return this.runToolAttempts(tool, functionName, validatedParams, session, toolContext);
+        if (typeof toolContext?.deadline === "number" && Number.isFinite(toolContext.deadline) && toolContext.deadline <= Date.now())
+            return Failed(
+                {
+                    name: "ToolTimeoutError",
+                    code: "TOOL.TIMEOUT",
+                    category: "timeout",
+                    message: "Tool invocation deadline already expired; execution did not start.",
+                    retryable: false,
+                },
+                { execution: { timedOut: true, timeoutMs: 0, externalWorkMayContinue: false } },
+            );
         const controller = new AbortController();
-        const timeout = this.config.advanced?.timeout;
-        const timeoutMs = typeof timeout === "number" && Number.isFinite(timeout) && timeout > 0 ? timeout : 10000;
+        const configured = this.getExecutionTimeout(tool, validatedParams) ?? this.config.advanced?.timeout ?? 10000;
+        let timeoutMs = Number.isFinite(configured) && configured > 0 ? configured : 10000;
+        if (typeof toolContext?.deadline === "number" && Number.isFinite(toolContext.deadline))
+            timeoutMs = Math.min(timeoutMs, Math.max(1, toolContext.deadline - Date.now()));
+        timeoutMs = Math.min(timeoutMs, 2147483647);
+        let metadata: ToolCallResult["metadata"];
+        const reportMetadata = (update: NonNullable<ToolCallResult["metadata"]>) => {
+            // Retain a snapshot, never a mutable reference that late work can rewrite.
+            metadata = structuredClone(update);
+            toolContext?.reportMetadata?.(structuredClone(update));
+        };
         let timedOut = false;
         const timer = setTimeout(() => {
             timedOut = true;
@@ -828,21 +859,32 @@ export class ToolService extends YesImBotService<Config> {
         this.executions.add(controller);
         try {
             return await withReplyTurnGuard(
-                () => this.getTool(functionName, session) === tool,
+                () => this.getTool(functionName, session, toolContext) === tool,
                 () =>
                     this.runToolAttempts(tool, functionName, validatedParams, session?.bot ? guardReplySession(session) : session, {
                         ...toolContext,
                         signal: replyTurnSignal(),
+                        deadline: Date.now() + timeoutMs,
+                        reportMetadata,
                     }),
                 AbortSignal.any(signals),
             );
         } catch {
-            if (timedOut)
-                return Failed({
-                    name: "ToolTimeoutError",
-                    message: `Tool ${functionName} exceeded ${timeoutMs}ms. Cancellation was requested; external work may already have completed. Do not automatically resubmit.`,
-                    retryable: false,
-                });
+            if (timedOut) {
+                this._logger.warn(
+                    `工具超时 | 工具: ${functionName} | 预算: ${timeoutMs}ms | 已确认发送: ${metadata?.delivery?.messageIds?.length ?? 0} | 送达未知: ${metadata?.delivery?.deliveryUnknown === true}`,
+                );
+                return Failed(
+                    {
+                        name: "ToolTimeoutError",
+                        code: "TOOL.TIMEOUT",
+                        category: "timeout",
+                        message: `Tool ${functionName} exceeded ${timeoutMs}ms. Cancellation was requested; external work may already have completed. Do not automatically resubmit.`,
+                        retryable: false,
+                    },
+                    { ...metadata, execution: { timedOut: true, timeoutMs, externalWorkMayContinue: true } },
+                );
+            }
             assertReplyTurn();
             return Failed({
                 name: "ToolInvalidatedError",
@@ -900,7 +942,10 @@ export class ToolService extends YesImBotService<Config> {
                         this._logger.warn(`✖ 失败 (不可重试) ← 原因: ${stringify(lastResult.error)}`);
                         return lastResult;
                     } else {
-                        this._logger.warn(`⚠ 失败 (可重试) ← 原因: ${lastResult.error}`);
+                        if (tool.readOnly !== true && tool.background !== true) {
+                            return { ...lastResult, error: { ...lastResult.error, retryable: false } };
+                        }
+                        this._logger.warn(`⚠ 读取失败 (可重试) ← 原因: ${lastResult.error}`);
                         continue;
                     }
                 } else {
@@ -919,9 +964,11 @@ export class ToolService extends YesImBotService<Config> {
         return lastResult;
     }
 
-    public getTool(name: string, session?: Session): ToolDefinition | undefined {
+    public getTool(name: string, session?: Session, toolContext?: ToolExecutionContext): ToolDefinition | undefined {
         const tool = this.tools.get(name);
         if (!tool || this.schemaStopped) return undefined;
+        const available = tool.isAvailable?.(toolContext);
+        if (available === false || typeof available === "string") return undefined;
         if (session) {
             const owner = this.toolOwners.get(name)?.context;
             if (typeof this.ctx.filter === "function" && !this.ctx.filter(session)) return undefined;
@@ -931,15 +978,15 @@ export class ToolService extends YesImBotService<Config> {
         return tool;
     }
 
-    public getAvailableTools(session?: Session): ToolDefinition[] {
+    public getAvailableTools(session?: Session, toolContext?: ToolExecutionContext): ToolDefinition[] {
         if (this.schemaStopped) return [];
         // 如果没有 session，无法进行过滤，返回所有工具
         if (!session) {
-            return Array.from(this.tools.values());
+            return Array.from(this.tools.values()).filter((tool) => this.getTool(tool.name, session, toolContext) === tool);
         }
         // 如果有 session，则过滤出支持的工具
         return Array.from(this.tools.values())
-            .filter((tool) => this.getTool(tool.name, session) === tool)
+            .filter((tool) => this.getTool(tool.name, session, toolContext) === tool)
             .map((tool) =>
                 this.background && tool.background
                     ? { ...tool, description: tool.description + " [Supports background_task_start for independent work.]" }
