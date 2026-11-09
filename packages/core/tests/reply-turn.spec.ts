@@ -2,6 +2,89 @@ import { Bot, Context, MessageEncoder, Universal } from "koishi";
 import { expect, it } from "vitest";
 
 import { withReplyTurn, withReplyTurnGuard, assertReplyTurn, guardReplySession } from "../src/agent/reply-turn";
+
+it("retains confirmed encoder deliveries when a later request fails without retrying", async () => {
+    const ctx = new Context();
+    const failure = new Error("second request failed");
+    let attempts = 0;
+    class Encoder extends MessageEncoder {
+        async visit() {
+            attempts++;
+            this.results.push({ id: "confirmed", content: "first" }, { id: "" }, { id: "   " }, { id: 42 } as any);
+            this.errors.push(failure);
+        }
+        async flush() {}
+    }
+    class SendingBot extends Bot {
+        static MessageEncoder = Encoder;
+    }
+    const bot = new SendingBot(ctx, {} as any, "qq");
+    bot.user = { id: "bot" };
+    const session = bot.session({ channel: { id: "group" } });
+    const error = await withReplyTurn(
+        () => true,
+        () => guardReplySession(session).bot.sendMessage("group", "reply"),
+    ).catch((error) => error);
+    expect(error.messages).toEqual([{ id: "confirmed", content: "first" }]);
+    expect(error.cause.errors).toEqual([failure]);
+    expect(attempts).toBe(1);
+    await ctx.stop();
+});
+
+it("preserves the original encoder failure when nothing was confirmed", async () => {
+    const ctx = new Context();
+    const failure = new Error("upload failed");
+    class Encoder extends MessageEncoder {
+        async visit() {
+            throw failure;
+        }
+        async flush() {}
+    }
+    class SendingBot extends Bot {
+        static MessageEncoder = Encoder;
+    }
+    const bot = new SendingBot(ctx, {} as any, "qq");
+    bot.user = { id: "bot" };
+    const session = bot.session({ channel: { id: "group" } });
+    await expect(
+        withReplyTurn(
+            () => true,
+            () => guardReplySession(session).bot.sendMessage("group", "reply"),
+        ),
+    ).rejects.toBe(failure);
+    await ctx.stop();
+});
+
+it("keeps cancellation effective after an encoder has confirmed an earlier delivery", async () => {
+    const ctx = new Context();
+    const controller = new AbortController();
+    let laterRequests = 0;
+    class Encoder extends MessageEncoder {
+        async visit() {
+            this.results.push({ id: "confirmed" });
+            controller.abort();
+        }
+        async flush() {
+            laterRequests++;
+        }
+    }
+    class SendingBot extends Bot {
+        static MessageEncoder = Encoder;
+    }
+    const bot = new SendingBot(ctx, {} as any, "qq");
+    bot.user = { id: "bot" };
+    const session = bot.session({ channel: { id: "group" } });
+    const error = await withReplyTurn(
+        () => true,
+        () => guardReplySession(session).bot.sendMessage("group", "reply"),
+        controller.signal,
+    ).catch((error) => error);
+    expect(error.messages).toEqual([{ id: "confirmed" }]);
+    expect(error.cause.name).toBe("AbortError");
+    expect(laterRequests).toBe(0);
+    await ctx.stop();
+});
+
 it("stops delayed sends from cancelled turns but leaves normal commands working", async () => {
     let valid = true,
         sends = 0;
