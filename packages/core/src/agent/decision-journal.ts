@@ -42,6 +42,8 @@ const reasons = new Set([
     "permission_denied",
     "muted",
     "forced_reply_by_mention",
+    "conversation_continuation",
+    "continuation_expired",
     "mention_priority",
     "mention_pending",
     "probability_roll",
@@ -69,6 +71,7 @@ const calculationFields = [
     "assessmentMultiplier",
     "participationMultiplier",
     "effectiveGain",
+    "continuationGain",
     "maxWillingness",
     "threshold",
     "amplifier",
@@ -144,6 +147,27 @@ export function sanitizeDecisionRecord(value: unknown): DecisionRecord | undefin
             assessment.answers = answers;
         }
         result.assessment = assessment;
+    }
+    if (object(value.continuation)) {
+        const c = value.continuation;
+        if (
+            ["trigger", "willingness"].includes(String(c.mode)) &&
+            Number.isSafeInteger(c.revision) &&
+            finite(c.expiresAt) &&
+            typeof c.registeredAt === "string" &&
+            Number.isFinite(Date.parse(c.registeredAt)) &&
+            Array.isArray(c.sourceMessageIds) &&
+            c.sourceMessageIds.length <= 10 &&
+            c.sourceMessageIds.every(identifier)
+        ) {
+            result.continuation = {
+                mode: c.mode,
+                revision: c.revision,
+                expiresAt: c.expiresAt,
+                registeredAt: c.registeredAt,
+                sourceMessageIds: [...c.sourceMessageIds],
+            } as DecisionRecord["continuation"];
+        }
     }
     if (object(value.participation) && typeof value.participation.active === "boolean") {
         const participation: Record<string, unknown> = { active: value.participation.active };

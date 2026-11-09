@@ -7,6 +7,8 @@ export interface ConversationFocus {
     target: { platform: string; selfId: string; channelId: string };
     targetUserId?: string;
     triggerType: string;
+    continuation?: import("./continuation").ContinuationMatch;
+    continuationPolicy?: { mode: "trigger" | "willingness"; maxDurationSeconds: number };
     triggerMessageIds: string[];
     quoteMessageIds: string[];
     missingMessageIds: string[];
@@ -18,6 +20,7 @@ export interface ConversationFocus {
         topic?: string;
         openIssues?: string[];
         sourceMessageIds?: string[];
+        followUp?: import("../world/conversation-state").FollowUpState;
         createdAt?: string;
         updatedAt?: string;
         sourceProvenance: "explicit_scoped_tool_state_not_verified_fact";
@@ -41,7 +44,9 @@ export function deriveConversationFocus(stimulus: AgentStimulus<any>, world: Wor
     const ids =
         stimulus.type === "user_message" && Array.isArray(stimulus.payload?.messageIds)
             ? [...new Set<string>(stimulus.payload.messageIds.filter((id: unknown): id is string => typeof id === "string" && !!id))]
-            : [];
+            : stimulus.type === "background_task_completion" && session.messageId
+              ? [session.messageId]
+              : [];
     const messages = [...world.l1_working_memory.processed_events, ...world.l1_working_memory.new_events].filter((item) => item.type === "message");
     const quotes = [...new Set(messages.filter((item) => ids.includes(item.id)).flatMap((item) => (item.quoteId ? [item.quoteId] : [])))];
     const present = new Set(messages.map((item) => item.id));

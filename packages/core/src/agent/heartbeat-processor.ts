@@ -96,6 +96,9 @@ export class HeartbeatProcessor {
     }
 
     private async runTracedCycle(turnId: string, stimulus: AgentStimulus<any>): Promise<boolean> {
+        // Admission belongs to this cycle, not to every heartbeat or to the caller's
+        // reusable stimulus. Keep the initial context check before any model call.
+        const cycleStimulus = { ...stimulus } as AgentStimulus<any> & { continuationRequired?: boolean };
         let shouldContinueHeartbeat = true;
         let heartbeatCount = 0;
         let success = false;
@@ -109,13 +112,16 @@ export class HeartbeatProcessor {
                     success = true;
                 };
                 const result = this.config.nativeToolCalling
-                    ? await this.performNativeHeartbeat(turnId, stimulus, onReplySent)
+                    ? await this.performNativeHeartbeat(turnId, cycleStimulus, onReplySent)
                     : this.config.streamAction
-                      ? await this.performSingleHeartbeatWithStreaming(turnId, stimulus, onReplySent)
-                      : await this.performSingleHeartbeat(turnId, stimulus, onReplySent);
+                      ? await this.performSingleHeartbeatWithStreaming(turnId, cycleStimulus, onReplySent)
+                      : await this.performSingleHeartbeat(turnId, cycleStimulus, onReplySent);
 
                 assertReplyTurn();
                 if (result) {
+                    // A successful heartbeat has passed context admission. Its tools
+                    // may have replaced/cleared the wait, or the wait may now expire.
+                    cycleStimulus.continuationRequired = false;
                     shouldContinueHeartbeat = result.continue;
                     success = success || result.replySent;
                 } else {

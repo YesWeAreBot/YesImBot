@@ -1,5 +1,5 @@
 import { ImagePart, TextPart } from "@xsai/shared-chat";
-import { Context, Logger } from "koishi";
+import { Context, Logger, h } from "koishi";
 
 import { AssetService } from "../asset";
 import { Config } from "../config";
@@ -10,7 +10,9 @@ import { ChatModelSwitcher } from "../model";
 import { conversationChannelId } from "../shared/utils/conversation-scope";
 import { AgentStimulus, ContextualMessage, UserMessagePayload, WorldState, WorldStateService } from "../world";
 import { sessionChannelType } from "../world/channel-metadata";
+import type { ConversationStateResult } from "../world/conversation-state";
 import { deriveConversationFocus, FocusedWorldState } from "./context-packing";
+import { matchContinuation, sameContinuation, type ContinuationMatch } from "./continuation";
 import { assertReplyTurn } from "./reply-turn";
 
 interface ImageCandidate {
@@ -79,25 +81,105 @@ export class PromptContextBuilder {
                 throw new Error("上下文构建期间历史已清除");
         };
         assertContextCurrent();
-        const sourceWorldState = await this.worldStateService.buildWorldState(session);
+        let sourceWorldState = await this.worldStateService.buildWorldState(session);
         assertContextCurrent();
+        if (type === "background_task_completion" && session.messageId && this.worldStateService.readMessageWindow) {
+            const present = [...sourceWorldState.l1_working_memory.processed_events, ...sourceWorldState.l1_working_memory.new_events].some(
+                (item) => item.type === "message" && item.id === session.messageId,
+            );
+            if (!present) {
+                try {
+                    const page = await this.worldStateService.readMessageWindow(session, { messageId: session.messageId, before: 0, after: 0, limit: 1 });
+                    assertContextCurrent();
+                    const sources = [page.anchor, ...page.quotes.flatMap((quote) => (quote.record ? [quote.record] : []))];
+                    const currentIds = new Set(
+                        [...sourceWorldState.l1_working_memory.processed_events, ...sourceWorldState.l1_working_memory.new_events]
+                            .filter((item) => item.type === "message")
+                            .map((item) => item.id),
+                    );
+                    const messages = sources
+                        .filter((record) => !currentIds.has(record.id))
+                        .map((record) => ({
+                            type: "message" as const,
+                            id: record.id,
+                            sender: record.sender,
+                            content: record.content,
+                            quoteId: record.quoteId,
+                            timestamp: new Date(record.timestamp),
+                            elements: h.parse(record.content),
+                            is_new: false,
+                        }));
+                    sourceWorldState = {
+                        ...sourceWorldState,
+                        l1_working_memory: {
+                            ...sourceWorldState.l1_working_memory,
+                            processed_events: [...messages, ...sourceWorldState.l1_working_memory.processed_events]
+                                .filter(
+                                    (item, index, items) =>
+                                        item.type !== "message" || items.findIndex((other) => other.type === "message" && other.id === item.id) === index,
+                                )
+                                .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime()),
+                        },
+                    };
+                } catch (error) {
+                    assertContextCurrent();
+                    if (error instanceof Error && error.name === "AbortError") throw error;
+                    this.logger.warn(`后台任务来源读取失败，保留缺失标记：${String(error)}`);
+                }
+            }
+        }
         const focus = deriveConversationFocus(stimulus, sourceWorldState);
+        if (this.config.continuation?.enabled)
+            focus.continuationPolicy = {
+                mode: this.config.continuation.mode,
+                maxDurationSeconds: this.config.continuation.maxDurationSeconds,
+            };
         // Optional for older service adapters. The service validates raw sources and current scope.
         const stateService = this.worldStateService as WorldStateService & {
-            getConversationState?: (session: AgentStimulus<any>["session"]) => Promise<{
-                unknown: boolean;
-                state?: { revision: number; topic?: string; openIssues: string[]; sourceMessageIds: string[]; createdAt: string; updatedAt: string };
-            }>;
+            getConversationState?: (session: AgentStimulus<any>["session"], options?: { includeSources?: boolean }) => Promise<ConversationStateResult>;
         };
         let working: Awaited<ReturnType<NonNullable<typeof stateService.getConversationState>>> | undefined;
         try {
-            working = await stateService.getConversationState?.(session);
+            working = await stateService.getConversationState?.(session, { includeSources: this.config.continuation?.enabled === true });
         } catch (error) {
             assertContextCurrent();
             if (error instanceof Error && error.name === "AbortError") throw error;
             this.logger.warn(`工作状态读取失败，继续使用 unknown：${String(error)}`);
         }
         assertContextCurrent();
+        const traced = stimulus as AgentStimulus<any> & { continuation?: ContinuationMatch; continuationRequired?: boolean };
+        const continuation = traced.continuation;
+        const currentContinuation = matchContinuation(session, this.config.continuation, working);
+        if (traced.continuationRequired && !sameContinuation(continuation, currentContinuation)) throw new DOMException("会话等待已到期或被替换", "AbortError");
+        if (sameContinuation(continuation, currentContinuation)) focus.continuation = currentContinuation;
+        if (this.config.continuation?.enabled && working?.unknown === false && working.sourceMessages?.length) {
+            const present = new Set(
+                [...sourceWorldState.l1_working_memory.processed_events, ...sourceWorldState.l1_working_memory.new_events]
+                    .filter((item) => item.type === "message")
+                    .map((item) => item.id),
+            );
+            const recalled = working.sourceMessages
+                .filter((record) => !present.has(record.id))
+                .map((record) => ({
+                    type: "message" as const,
+                    id: record.id,
+                    sender: record.sender,
+                    content: record.content,
+                    quoteId: record.quoteId,
+                    timestamp: new Date(record.timestamp),
+                    elements: h.parse(record.content),
+                    is_new: false,
+                }));
+            sourceWorldState = {
+                ...sourceWorldState,
+                l1_working_memory: {
+                    ...sourceWorldState.l1_working_memory,
+                    processed_events: [...recalled, ...sourceWorldState.l1_working_memory.processed_events].sort(
+                        (a, b) => a.timestamp.getTime() - b.timestamp.getTime(),
+                    ),
+                },
+            };
+        }
         focus.explicitWorkingState = {
             ...(working?.unknown === false ? working.state : undefined),
             unknown: working?.unknown ?? true,
