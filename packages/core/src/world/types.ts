@@ -242,6 +242,7 @@ export interface ContextualAgentThought {
 
 /** 上下文中的 Agent 动作对象 */
 export interface ContextualAgentAction {
+    actionId?: string;
     consumedRecallIds?: string[];
     consumedSourceIds?: string[];
     type: "agent_action";
@@ -254,6 +255,8 @@ export interface ContextualAgentAction {
 
 /** 上下文中的 Agent 观察对象 */
 export interface ContextualAgentObservation {
+    /** Exact persisted tool action identity for receipt projection. */
+    actionId?: string;
     error?: string;
     type: "agent_observation";
     turnId: string;

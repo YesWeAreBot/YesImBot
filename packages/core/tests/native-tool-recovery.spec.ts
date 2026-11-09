@@ -202,3 +202,17 @@ it("defaults correction retries to one and accepts only non-negative safe intege
         expect(() => AgentBehaviorConfigSchema({ nativeToolCorrectionRetries: value })).toThrow();
     }
 });
+
+it.each(["ordinary reply", '<tool_call>{"function":"send_message"}</tool_call>'])(
+    "classifies missing native calls without claiming the text is malformed JSON: %s",
+    async (text) => {
+        const f = setup([{ text }], { nativeToolCorrectionRetries: 1 });
+        expect(await f.run()).toBe(false);
+        expect(f.requests).toHaveLength(2);
+        expect(f.invoke).not.toHaveBeenCalled();
+        const errors = f.logger.error.mock.calls.flat().join("\n");
+        expect(errors).toContain("LLM.NATIVE_TOOL_CALL_MISSING");
+        expect(errors).toContain("原生工具");
+        expect(errors).not.toContain("不是有效的 JSON");
+    },
+);

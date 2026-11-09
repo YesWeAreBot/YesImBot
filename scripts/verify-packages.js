@@ -29,6 +29,7 @@ try {
             "--no-audit",
             "--no-fund",
             "@koishijs/plugin-database-memory@^3.7.0",
+            "@koishijs/plugin-mock@^2.6.6",
             ...tarballs.map((name) => path.join(artifacts, name)),
         ],
         {

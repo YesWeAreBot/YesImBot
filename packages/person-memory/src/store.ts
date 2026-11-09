@@ -156,6 +156,7 @@ export interface Audit {
 }
 declare module "koishi" {
     interface Tables {
+        "person_memory.owners": { key: string; domain: string; scope: string };
         "person_memory.state": StateRow;
         "person_memory.sources": SourceRow;
         "person_memory.audit": Audit;
@@ -165,6 +166,7 @@ const STATE = "person_memory.state",
     SOURCE = "person_memory.sources",
     AUDIT = "person_memory.audit";
 export function registerModels(ctx: Context) {
+    ctx.model.extend("person_memory.owners", { key: "string", domain: "string", scope: "string" }, { primary: "key" });
     ctx.model.extend(STATE, { scope: "string", revision: "unsigned", state: "json" }, { primary: "scope" });
     ctx.model.extend(SOURCE, { key: "string", scope: "string", userId: "string", timestamp: "double", source: "json" }, { primary: "key" });
     ctx.model.extend(
@@ -296,13 +298,47 @@ async function serial<T>(db: object, key: string, fn: () => Promise<T>): Promise
     }
 }
 
+type ResetCoordination = WeakMap<object, { readers: Map<string, Set<Promise<unknown>>>; purging: Set<string> }>;
+const coordinationKey = Symbol.for("yesimbot.person-memory.reset.v1");
+const sharedCoordination = globalThis as typeof globalThis & { [key: symbol]: ResetCoordination | undefined };
+const resetCoordination = (sharedCoordination[coordinationKey] ??= new WeakMap());
+function resetGuard(db: Context["database"]) {
+    let guard = resetCoordination.get(db.tables);
+    if (!guard) resetCoordination.set(db.tables, (guard = { readers: new Map(), purging: new Set() }));
+    return guard;
+}
 export class PersonStore {
+    private purgeSummary = { cleared: 0, retained: 0 };
+    purgeReport() {
+        return { ...this.purgeSummary };
+    }
+    private reading = new Set<Promise<unknown>>();
     constructor(
         private db: Context["database"],
         private defaultMode: Mode,
-        private options: { autoLinks?: boolean; active?: () => boolean; onCommit?: (audit: Audit) => Promise<void> } = {},
+        private options: { domain?: () => string; autoLinks?: boolean; active?: () => boolean; onCommit?: (audit: Audit) => Promise<void> } = {},
     ) {}
     private async snapshot(scope: string): Promise<StateRow & { firstCommit: boolean }> {
+        const guard = resetGuard(this.db);
+        if (this.options.active?.() === false || guard.purging.has(scope)) throw new Error("任务已取消");
+        const operation = this.snapshotRows(scope);
+        this.reading.add(operation);
+        let readers = guard.readers.get(scope);
+        if (!readers) guard.readers.set(scope, (readers = new Set()));
+        readers.add(operation);
+        try {
+            return await operation;
+        } finally {
+            this.reading.delete(operation);
+            readers.delete(operation);
+            if (!readers.size) guard.readers.delete(scope);
+        }
+    }
+    private async snapshotRows(scope: string): Promise<StateRow & { firstCommit: boolean }> {
+        if (this.options.domain) {
+            const domain = this.options.domain();
+            await this.db.upsert("person_memory.owners", [{ key: digest(JSON.stringify([domain, scope])), domain, scope }]);
+        }
         const cached = (await this.db.get(STATE, { scope }))[0];
         const first = (await this.db.get(AUDIT, { scope, format: 1 }, { sort: { revision: "asc" }, limit: 1 }))[0];
         const baseline = first?.baseline;
@@ -326,6 +362,36 @@ export class PersonStore {
         row.firstCommit = !first && !commits.length;
         if (row.revision && (!cached || cached.revision !== row.revision)) await this.cache({ scope, revision: row.revision, state: row.state });
         return row;
+    }
+    async purgeOwned(extraScopes: string[] = []) {
+        const domain = this.options.domain?.();
+        if (!domain) throw new Error("人物资料缺少可证明的实例归属，拒绝清理");
+        await Promise.allSettled(this.reading);
+        const owned = await this.db.get("person_memory.owners", { domain });
+        const scopes = [...new Set([...owned.map((row) => row.scope), ...extraScopes])];
+        const removed: string[] = [];
+        for (const scope of scopes)
+            await serial(this.db.tables, scope, async () => {
+                const guard = resetGuard(this.db);
+                guard.purging.add(scope);
+                try {
+                    await Promise.allSettled(guard.readers.get(scope) ?? []);
+                    const owners = await this.db.get("person_memory.owners", { scope });
+                    if (owners.some((owner) => owner.domain !== domain)) return;
+                    await this.db.remove(SOURCE, { scope });
+                    // Audit baselines can reconstruct state, so delete them before the cache.
+                    await this.db.remove(AUDIT, { scope });
+                    await this.db.remove(STATE, { scope });
+                    for (const table of ["person_memory.experiences", "person_memory.scenes"] as const)
+                        if (this.db.tables[table]) await this.db.remove(table, { scope });
+                    await this.db.remove("person_memory.owners", { scope, domain });
+                    removed.push(scope);
+                } finally {
+                    guard.purging.delete(scope);
+                }
+            });
+        this.purgeSummary = { cleared: removed.length, retained: scopes.length - removed.length };
+        return removed;
     }
     async read(scope: string): Promise<State> {
         return (await this.snapshot(scope)).state;

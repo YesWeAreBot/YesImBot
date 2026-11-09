@@ -1,6 +1,17 @@
 import { Schema } from "koishi";
 
-import { Param, Properties, ToolCallResult, ToolError } from "./types";
+import { Param, Properties, ToolCallResult, ToolDefinition, ToolError } from "./types";
+
+/** Classify this action without treating mixed read/write tools as always safe. */
+export function isReadOnlyTool(tool: ToolDefinition | undefined, params: Record<string, unknown>): boolean {
+    if (!tool) return false;
+    try {
+        if (typeof tool.readOnly === "function") return tool.readOnly(params) === true;
+        return tool.readOnly === true || (tool.readOnly === undefined && tool.background === true);
+    } catch {
+        return false;
+    }
+}
 
 /**
  * 成功结果辅助函数

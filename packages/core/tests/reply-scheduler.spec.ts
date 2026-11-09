@@ -63,3 +63,17 @@ for (const strategy of ["immediate", "deferred"])
         expect(calls).toEqual(["bot1"]);
         scheduler.dispose();
     });
+
+it("cancels old queued history work and accepts new work after reset", async () => {
+    const { scheduler, calls, finish } = fixture();
+    scheduler.schedule({ channelCid: "old", type: "user_message", session: { platform: "qq", channelId: "room" } } as any);
+    scheduler.schedule({ channelCid: "foreign", type: "user_message", session: { platform: "qq", channelId: "elsewhere" } } as any);
+    scheduler.cancelMatching((item) => item.session.channelId === "room", "history_cleared");
+    finish();
+    await settle();
+    expect(calls).toEqual(["foreign"]);
+    scheduler.schedule({ channelCid: "fresh", type: "user_message", session: { platform: "qq", channelId: "room" } } as any);
+    await settle();
+    expect(calls).toEqual(["foreign", "fresh"]);
+    scheduler.dispose();
+});

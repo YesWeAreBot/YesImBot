@@ -308,6 +308,11 @@ export class EventListenerManager {
     }
 
     private async recordUserMessage(session: Session): Promise<void> {
+        const generation = this.service.l2_manager?.getHistoryGeneration({
+            platform: session.platform,
+            channelId: conversationChannelId(session)!,
+            channelType: session.isDirect ? "private" : "guild",
+        });
         await this.service.observeChannel(session);
         /* prettier-ignore */
         this.logger.info(`用户消息 | ${session.author.name} | 频道: ${conversationCid(session)} | 内容: ${truncate(session.content ?? "").replace(/\n/g, " ")}`);
@@ -350,12 +355,18 @@ export class EventListenerManager {
             timestamp: new Date(session.timestamp),
             quoteId: session.quote?.id,
         };
-        await this.service.recordMessage(message);
+        await this.service.recordMessage(message, generation);
     }
 
     private async recordBotSentMessage(session: Session): Promise<void> {
         if ((typeof this.ctx.filter === "function" && !this.ctx.filter(session)) || !session.content || !session.messageId) return;
 
+        // Bind the event before channel lookup or media processing can outlive a reset.
+        const generation = this.service.l2_manager?.getHistoryGeneration({
+            platform: session.platform,
+            channelId: conversationChannelId(session)!,
+            channelType: session.isDirect ? "private" : "guild",
+        });
         await this.service.observeChannel(session);
         this.logger.debug(`记录机器人消息 | 频道: ${conversationCid(session)} | 消息ID: ${session.messageId}`);
 
@@ -371,7 +382,7 @@ export class EventListenerManager {
             timestamp: new Date(session.timestamp),
             quoteId: session.quote?.id,
         };
-        await this.service.recordMessage(message);
+        await this.service.recordMessage(message, generation);
     }
 
     private async updateMemberInfo(session: Session): Promise<void> {

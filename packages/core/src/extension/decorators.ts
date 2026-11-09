@@ -44,6 +44,7 @@ export function Extension(metadata: ExtensionMetadata): ClassDecorator {
                                 Object.assign({}, tool, {
                                     execute: tool.execute.bind(this),
                                     timeout: typeof tool.timeout === "function" ? tool.timeout.bind(this) : tool.timeout,
+                                    readOnly: typeof tool.readOnly === "function" ? tool.readOnly.bind(this) : tool.readOnly,
                                     isAvailable: tool.isAvailable?.bind(this),
                                 }),
                             );

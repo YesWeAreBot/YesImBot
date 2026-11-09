@@ -16,6 +16,7 @@ import { EvaluationModel } from "./evaluation-model";
 import { ProviderFactoryRegistry } from "./factories";
 import { ProviderInstance } from "./provider-instance";
 import { getUsageLedger, UsageScope, withUsageScope } from "./usage";
+import { bindUsageOwner } from "./usage-owner";
 
 const withoutImages = (request: ChatRequestOptions): ChatRequestOptions => ({
     ...request,
@@ -116,6 +117,7 @@ export class ModelService extends YesImBotService<Config> {
     ) {
         super(ctx, config);
         this.usageOwner = { context: ctx };
+        bindUsageOwner(ctx, this.usageOwner);
         this.logger = logging.getLogger("[模型服务]");
 
         try {
@@ -565,6 +567,14 @@ class RequestExecutor {
                 attemptLogger.error(
                     `请求失败 | 错误码: ${appError?.code ?? "未知"} | HTTP: ${appError?.context?.httpStatus ?? "未知"} | 耗时: ${Date.now() - startedAt}ms | 错误: ${error.message}`,
                 );
+                const status = appError?.context?.httpStatus;
+                const deterministicStatus = typeof status === "number" && status >= 400 && status < 500 && ![408, 425, 429].includes(status);
+                const deterministicCategory =
+                    appError && ["invalid_input", "configuration", "permission_denied", "not_found", "conflict", "source_invalid"].includes(appError.category);
+                if (deterministicStatus || deterministicCategory) {
+                    attemptLogger.info("下一步: 放弃当前模型 | 确定性请求错误，不重复发送相同请求");
+                    return { success: false, error, providerFailure: false };
+                }
                 if (attempt >= retryPolicy.maxRetries) {
                     attemptLogger.info("下一步: 放弃当前模型 | 重试次数已耗尽");
                     return { success: false, error };

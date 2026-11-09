@@ -110,7 +110,7 @@ it("packs inside the shared request preparation and includes fixed template and 
         expect(result.messages[1].content).toContain("latest");
         expect(result.messages[1].content).not.toContain("old old");
         expect(result.messages[1].content).toContain("<conversation_focus>");
-        expect(result.messages[1].content).toContain("<context_budget>");
+        expect(result.messages[1].content).not.toContain("<context_budget>");
         expect(estimateContextTokens({ messages: result.messages })).toBeLessThan(1100);
         expect(world.l1_working_memory.processed_events).toHaveLength(1);
     }
@@ -254,4 +254,21 @@ it("protects selected visual sources while dropping unrelated old images under t
     const packed = await packWorldState(world, { budgetTokens: 150, focus, estimate: count });
     expect(packed.worldState.l1_working_memory.processed_events.map((item: any) => item.id)).toEqual(["selected-image"]);
     expect(packed.report.protectedOverBudget).toBe(true);
+});
+
+it("packs a uniquely linked receipt with its old tool turn instead of leaving a duplicate orphan", async () => {
+    const observation = { ...event("agent_observation", "old"), actionId: "old-action", status: "success" };
+    const receipt: any = {
+        type: "system_event",
+        id: "receipt",
+        eventType: "tool-result",
+        timestamp: new Date(0),
+        eventDetails: JSON.stringify({ details: { actor: "model", actionId: "old-action", operation: "lookup", status: "success" } }),
+    };
+    const world = state([event("agent_action", "old"), observation, receipt, message("recent-user")], [message("trigger")]);
+    const focus = { ...deriveConversationFocus(stimulus, world), activeTurnId: "new-task" };
+    const packed = await packWorldState(world, { budgetTokens: 350, focus, estimate: count });
+    const retained = [...packed.worldState.l1_working_memory.processed_events, ...packed.worldState.l1_working_memory.new_events];
+    expect(retained.map((item: any) => item.id)).toEqual(["recent-user", "trigger"]);
+    expect(packed.report.droppedEvents).toBe(3);
 });

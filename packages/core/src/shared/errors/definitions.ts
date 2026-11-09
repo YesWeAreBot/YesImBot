@@ -63,6 +63,13 @@ export const ErrorDefinitions = {
             suggestion: "这通常是暂时的模型问题，请重试。如果问题持续存在，可能是模型不稳定或系统提示词需要调整以确保生成有效的 JSON",
         },
 
+        NATIVE_TOOL_CALL_MISSING: {
+            code: "LLM.NATIVE_TOOL_CALL_MISSING",
+            category: "upstream_failure",
+            message: "原生工具协议未返回有效工具调用，未执行任何动作",
+            suggestion: "请检查模型是否支持原生工具调用；可切换支持工具调用的模型，或关闭原生工具模式使用 JSON 动作协议",
+        },
+
         OUTPUT_EMPTY_CONTENT: {
             code: "LLM.OUTPUT_EMPTY_CONTENT",
             category: "upstream_failure",
@@ -258,6 +265,7 @@ export const ErrorCodes = {
         ADAPTER_ERROR: "LLM.ADAPTER_ERROR",
         RETRY_EXHAUSTED: "LLM.RETRY_EXHAUSTED",
         OUTPUT_PARSING_FAILED: "LLM.OUTPUT_PARSING_FAILED",
+        NATIVE_TOOL_CALL_MISSING: "LLM.NATIVE_TOOL_CALL_MISSING",
         MODEL_NOT_FOUND: "LLM.MODEL_NOT_FOUND",
     },
     // 网络错误

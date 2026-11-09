@@ -5,8 +5,13 @@ export interface UsageOwner {
     context: Context;
 }
 
+const owners = new WeakMap<Context, UsageOwner>();
+
+/** Register an explicit owner without resolving the facade while it is being constructed. */
+export function bindUsageOwner(ctx: Context, owner: UsageOwner): void {
+    owners.set(ctx, owner);
+}
+
 export function resolveUsageOwner(ctx: Context, explicitOwner?: UsageOwner): UsageOwner | undefined {
-    // Model-service internals cannot inject their own service. Commands may resolve
-    // it through their declared dependency; transports receive the owner directly.
-    return explicitOwner ?? ctx.yesimbot?.model?.usageOwner;
+    return explicitOwner ?? owners.get(ctx);
 }

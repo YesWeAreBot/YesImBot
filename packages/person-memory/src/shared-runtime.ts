@@ -9,6 +9,7 @@ import { claimParameters, executeClaimTool, visibleClaims } from "./claim-tools"
 import { describePeopleCommand } from "./command-help";
 import { escapeContext } from "./context";
 import { ContinuityStore, registerContinuityModels, sourceRef, summaryUnsafeIn, type RecallTarget } from "./continuity";
+import { PersonHistoryReset, readPersonAction } from "./history-reset";
 import type { Config, Dependencies } from "./index";
 import { mainProfilePolicy } from "./profile-prompt";
 import { catalogParameters, catalogProfile, catalogRequest, profileInputSchema, visibleProfile, visibleLegacyProfile } from "./profile-tools";
@@ -70,15 +71,17 @@ export function applySharedMemory(ctx: Context, config: Config) {
     registerModels(ctx);
     if (config.modelGroup) registerSummaryQueueModels(ctx);
     registerContinuityModels(ctx);
+    const reset = new PersonHistoryReset(ctx);
     let active = true;
     const modes = new Map<string, Mode>();
     const generations = new Map<string, number>();
 
     const scopeOf = (session: Session) => mindScope(session as unknown as SceneInput, config.memoryDomain || "");
-    const baseAllowed = (session: Session) => active && ctx.filter(session) && world.isChannelAllowed(session);
+    const baseAllowed = (session: Session) => active && reset.available() && ctx.filter(session) && world.isChannelAllowed(session);
     const store = new PersonStore(ctx.database, config.mode, {
+        domain: reset.domain,
         autoLinks: true,
-        active: () => active,
+        active: () => active && reset.available(),
         onCommit: async (audit) => {
             if (audit.actor !== "summary-model") return;
             const sources = audit.changes.flatMap((c) => (c.after as any)?.evidence || []),
@@ -110,6 +113,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
     const memories = new ContinuityStore(ctx.database, store);
     const pending = new Set<Promise<unknown>>();
     const track = <T>(promise: Promise<T>) => {
+        reset.track(promise);
         pending.add(promise);
         void promise.finally(() => pending.delete(promise)).catch(() => {});
         return promise;
@@ -154,10 +158,12 @@ export function applySharedMemory(ctx: Context, config: Config) {
             logger.warn(`记忆已接受，事件投递失败：${String(error)}`);
         }
     };
-    const writingStore = (session: Session) =>
-        new PersonStore(ctx.database, config.mode, {
+    const writingStore = (session: Session) => {
+        const epoch = reset.epoch();
+        return new PersonStore(ctx.database, config.mode, {
+            domain: reset.domain,
             autoLinks: true,
-            active: () => active,
+            active: () => active && reset.available() && reset.epoch() === epoch,
             onCommit: async (audit: Audit) => {
                 if (audit.action === "recognize") return;
                 await event(
@@ -174,6 +180,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
                 );
             },
         });
+    };
     const assertEnabled = async (session: Session) => {
         if (!baseAllowed(session)) throw new Error("当前会话未启用共同记忆");
         const scope = scopeOf(session),
@@ -342,6 +349,10 @@ export function applySharedMemory(ctx: Context, config: Config) {
         sourceAllowed: (scope, _userId, evidence) => summarySourceAllowed(ctx, evidence, scope, true, baseAllowed, scopeOf),
     };
     const worker = new SummaryWorker(store, model, workerConfig, (error) => logger.warn(String(error)));
+    reset.install(store, worker, scopeOf, true, () => {
+        modes.clear();
+        generations.clear();
+    });
     if (model) {
         const getScope = (core as unknown as { getPersistentInstanceScope?: (ctx: Context, options?: { owner?: Context }) => string })
             .getPersistentInstanceScope;
@@ -370,6 +381,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
                 )
                     return;
                 try {
+                    const resetEpoch = reset.epoch();
                     const scope = scopeOf(session),
                         target = sessionTargetKey(session),
                         generation = generations.get(scope) ?? 0;
@@ -377,6 +389,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
                     // permission after each async phase and at every store commit.
                     const current = () =>
                         baseAllowed(session) &&
+                        reset.epoch() === resetEpoch &&
                         scopeOf(session) === scope &&
                         sessionTargetKey(session) === target &&
                         generation === (generations.get(scope) ?? 0) &&
@@ -487,7 +500,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
         async (session: Session) => {
             const { scope, state } = await assertEnabled(session);
             const targets = await targetsFor(session, scope);
-            return [scope, state.people, state.accounts, state.settings.mode, targets];
+            return [reset.epoch(), scope, state.people, state.accounts, state.settings.mode, targets];
         },
         false,
     );
@@ -545,6 +558,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
     const catalog = new PeopleCatalog();
     const personTool = {
         name: "person_memory",
+        readOnly: readPersonAction,
         description:
             "共同域人物记忆。claims 列出逐条认识，claim_evidence 读取原始证据，propose_claim 补证/反证/修订/停用；有逐条认识后不能整段覆盖。list 列出可查询人物；read_many 用 account_ids 多选或 all=true 全选，fields 选 overview/structured/full，cursor 继续分页。read/search/history 查资料；propose 提交画像；propose_link 提交账号关联。review 等管理员确认，auto 可自动接受；锁定、暂停与版本校验始终生效。account_id 可为当前平台 ID、人物 UUID 或 JSON [平台,ID]；消息证据使用当前场景消息 ID，跨场景证据使用 people.sources 或 read 返回的来源编号。",
         isSupported: readable,
@@ -775,6 +789,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
     };
     const recallTool = {
         name: "person_recall",
+        readOnly: true,
         description: "按关键词、人物和日期回忆当前配置允许的旧经历与 L2/L3 摘要。返回原始来源，不代表内容已核实；不改变事实或身份。",
         isSupported: readable,
         parameters: Schema.object({
@@ -814,7 +829,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
                 const authority = (session.user as any)?.authority ?? (await session.observeUser(["authority"])).authority;
                 if (authority < 3) throw new Error("仅管理员可管理共同记忆");
                 const scope = scopeOf(session),
-                    result = await fn(session, writingStore(session), scope, args, options);
+                    result = await reset.track(fn(session, writingStore(session), scope, args, options));
                 await modeOf(scope);
                 const output = typeof result === "string" ? result : (JSON.stringify(result, null, 2) ?? "操作未返回结果，请执行 people.status 检查状态。");
                 return h.escape(output.slice(0, 12000));

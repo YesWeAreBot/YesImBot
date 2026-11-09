@@ -64,6 +64,10 @@ it("decision journal closes even if reply-control persistence fails during stop"
     const core: any = Object.create(AgentCore.prototype);
     let closed = false;
     Object.assign(core, {
+        activeTurnSettlements: new Map(),
+        resettingHistory: new Set(),
+        historyTargets: new Map(),
+        resetStimuli: new Map(),
         pendingAssessments: new Map(),
         startupStimuli: [],
         activeTurns: new Map(),

@@ -7,7 +7,7 @@ import { loggingStub } from "./helpers/yesimbot";
 
 const params = (name: string) => (name === "conversation_read" ? { message_id: "source" } : {});
 
-function setup(mode: "native" | "json" | "stream", batches: string[][], heartbeat = 3) {
+function setup(mode: "native" | "json" | "stream", batches: string[][], heartbeat = 3, actionParams = params) {
     const ctx: any = { filter: () => true, on() {}, logger: () => ({ warn() {} }) };
     const tools = new ToolService(ctx, { advanced: { maxRetry: 0 } } as any, { logging: loggingStub() } as any);
     const observations: any[] = [],
@@ -37,12 +37,12 @@ function setup(mode: "native" | "json" | "stream", batches: string[][], heartbea
                         toolCalls: names.map((name, index) => ({
                             toolName: name,
                             toolCallId: `call-${modelCalls}-${index}`,
-                            args: JSON.stringify(params(name)),
+                            args: JSON.stringify(actionParams(name)),
                         })),
                     };
                 const text = JSON.stringify({
                     thoughts: {},
-                    actions: names.map((name) => ({ function: name, params: params(name) })),
+                    actions: names.map((name) => ({ function: name, params: actionParams(name) })),
                     request_heartbeat: false,
                 });
                 options.validation?.validator(text, true);
@@ -80,6 +80,26 @@ function setup(mode: "native" | "json" | "stream", batches: string[][], heartbea
 }
 
 for (const mode of ["native", "json", "stream"] as const) {
+    for (const action of ["list", "propose"] as const) {
+        it(`${mode}: mixed person_memory ${action} recovers only for the pure read action`, async () => {
+            const f = setup(mode, [["person_memory", "send_message"], ["send_message"]], 3, (name) => (name === "person_memory" ? { action } : {}));
+            let attempts = 0;
+            f.tools.registerTool({
+                name: "person_memory",
+                description: "mixed read/write",
+                parameters: Schema.object({ action: Schema.string().required() }),
+                readOnly: (args: Record<string, unknown>) => args.action === "list",
+                execute: async () => {
+                    attempts++;
+                    return { status: "error", error: { name: "PersonMemoryError", message: "invalid request", retryable: false } };
+                },
+            } as any);
+            expect(await f.run()).toBe(action === "list");
+            expect(attempts).toBe(1);
+            expect(f.modelCalls()).toBe(action === "list" ? 2 : 1);
+            expect(f.invoked).toEqual(action === "list" ? ["send_message"] : []);
+        });
+    }
     it(`${mode}: a failed read skips dependent sends and gives its structured observation to the next bounded decision`, async () => {
         const f = setup(mode, [["read", "send_message"], ["send_message"]]);
         expect(await f.run()).toBe(true);

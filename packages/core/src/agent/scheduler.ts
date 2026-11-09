@@ -114,6 +114,16 @@ export class StimulusScheduler {
         return tracked;
     }
 
+    public cancelMatching(matches: (stimulus: AgentStimulus<any>) => boolean, reason: string): void {
+        const queued = [
+            ...this.pendingStimuli.values(),
+            ...this.skippedStimulus.values(),
+            ...this.completionStimuli.values(),
+            ...[...this.scheduledStimuli.values()].flat(),
+        ];
+        for (const key of new Set(queued.filter(matches).map((stimulus) => stimulus.channelCid))) this.cancel(key, reason);
+    }
+
     public cancel(channelKey: string, reason = "reply_suppressed"): void {
         const pending = this.pendingStimuli.get(channelKey);
         const skipped = this.skippedStimulus.get(channelKey);

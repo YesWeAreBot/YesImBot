@@ -7,12 +7,14 @@ import type { LoggerService } from "../logger";
 import { MemoryService } from "../memory";
 import { ChatModelSwitcher, ModelService, TaskType } from "../model";
 import { loadTemplate, PromptService } from "../prompt";
-import { getInstanceDirectory, guardReplySession, withReplyTurn } from "../shared";
+import { awaitReplyTurn, getInstanceDirectory, guardReplySession, withReplyTurn } from "../shared";
 import { AppError, handleError } from "../shared/errors";
 import { ErrorDefinitions } from "../shared/errors/definitions";
 import { YesImBotService } from "../shared/service";
 import { conversationChannelId, conversationCid } from "../shared/utils/conversation-scope";
 import { AgentStimulus, WorldStateService } from "../world";
+import { sessionChannelType } from "../world/channel-metadata";
+import { registerHistoryResetParticipant, type HistoryResetScope } from "../world/history-reset";
 import { PromptContextBuilder } from "./context-builder";
 import { matchContinuation, sameContinuation, type ContinuationMatch } from "./continuation";
 import { registerDecisionCommands } from "./decision-commands";
@@ -29,6 +31,7 @@ import { WillingnessManager } from "./willing";
 
 type TracedStimulus = AgentStimulus<any> & {
     decisionId?: string;
+    historyGeneration?: number;
     topic?: TopicSnapshot;
     scoringTopic?: TopicSnapshot;
     continuation?: ContinuationMatch;
@@ -61,12 +64,16 @@ export class AgentCore extends YesImBotService<Config> {
     private topicScores = new Map<string, Set<string>>();
 
     private activeTurns = new Map<string, AbortController>();
+    private readonly activeTurnSettlements = new Map<string, Promise<void>>();
     private replyControl: ReplyControl;
     private modelSwitcher: ChatModelSwitcher;
     private readonly pendingAssessments = new Map<string, { controller: AbortController; stimulus: AgentStimulus<any>; token: number }>();
     private stopped = false;
     private stimulusReady = false;
     private startupStimuli: Array<{ stimulus: AgentStimulus<any>; ownerId?: string; generation?: number }> = [];
+    private readonly historyTargets = new Map<string, { platform: string; channelId: string; channelType?: "private" | "guild" }>();
+    private readonly resetStimuli = new Map<string, { stimulus: AgentStimulus<any>; ownerId?: string; generation?: number }>();
+    private readonly resettingHistory = new Set<HistoryResetScope>();
     private continuationReads = new Map<string, Promise<void>>();
     private continuationEpochs = new Map<string, object>();
     private decisionJournal?: DecisionJournal;
@@ -143,10 +150,21 @@ export class AgentCore extends YesImBotService<Config> {
     }
 
     private receiveStimulus(stimulus: TracedStimulus): void {
-        if (this.stopped) return;
+        if (this.stopped || this.historyResetting(stimulus.session)) return;
         const { session, type } = stimulus;
         const channelCid = replyKey(this.replyTarget(session));
-        stimulus = { ...stimulus, channelCid, decisionId: this.decisions?.begin(this.replyTarget(session), type, session.messageId) };
+        if (this.historyTargets.size >= 1024 && !this.historyTargets.has(channelCid)) this.historyTargets.delete(this.historyTargets.keys().next().value!);
+        this.historyTargets.set(channelCid, {
+            platform: session.platform,
+            channelId: conversationChannelId(session)!,
+            channelType: sessionChannelType(session),
+        });
+        stimulus = {
+            ...stimulus,
+            historyGeneration: this.stimulusGeneration(stimulus),
+            channelCid,
+            decisionId: this.decisions?.begin(this.replyTarget(session), type, session.messageId),
+        };
         if (!this.allowedCategories(stimulus).length) {
             const rule = this.replyControl.peek(this.replyTarget(session));
             this.logger.debug(
@@ -205,7 +223,13 @@ export class AgentCore extends YesImBotService<Config> {
         const topic = useTopics ? this.topics!.assess(session, channelCid, pending.controller.signal, false) : Promise.resolve(undefined);
         void Promise.all([semantic, topic]).then(
             ([multiplier, snapshot]) => {
-                if (this.stopped || this.pendingAssessments.get(channelCid) !== pending || !this.replyControl.valid(target, pending.token)) return;
+                if (
+                    this.stopped ||
+                    !this.stimulusCurrent(stimulus) ||
+                    this.pendingAssessments.get(channelCid) !== pending ||
+                    !this.replyControl.valid(target, pending.token)
+                )
+                    return;
                 this.pendingAssessments.delete(channelCid);
                 this.recordDecision(stimulus, {
                     assessment: { mode: config?.mode ?? "off", multiplier, answers, status: multiplier === null ? "unavailable" : "completed" },
@@ -216,7 +240,13 @@ export class AgentCore extends YesImBotService<Config> {
                 this.processStimulus({ ...stimulus, topic: snapshot }, config?.mode === "adjust" ? (multiplier ?? 1) : 1);
             },
             () => {
-                if (this.pendingAssessments.get(channelCid) !== pending || this.stopped || !this.replyControl.valid(target, pending.token)) return;
+                if (
+                    this.pendingAssessments.get(channelCid) !== pending ||
+                    this.stopped ||
+                    !this.stimulusCurrent(stimulus) ||
+                    !this.replyControl.valid(target, pending.token)
+                )
+                    return;
                 this.pendingAssessments.delete(channelCid);
                 this.processStimulus(stimulus);
             },
@@ -336,11 +366,17 @@ export class AgentCore extends YesImBotService<Config> {
                 const channelCid = replyKey(target);
                 // 在首个异步等待前登记，禁言后立即解禁也不能恢复旧任务。
                 const controller = new AbortController();
+                let finishLocal!: () => void;
+                const localSettlement = new Promise<void>((resolve) => {
+                    finishLocal = resolve;
+                });
+                this.activeTurnSettlements.set(channelCid, localSettlement);
                 this.activeTurns.set(channelCid, controller);
                 this.activeDecisionIds.set(channelCid, (stimulus as TracedStimulus).decisionId!);
                 let success = false;
                 const valid = () =>
                     !controller.signal.aborted &&
+                    this.stimulusCurrent(stimulus as TracedStimulus) &&
                     this.replyControl.valid(target, token) &&
                     !this.worldState.isBotMuted(conversationCid(stimulus.session), target.selfId) &&
                     (stimulus.type !== "background_task_completion" ||
@@ -369,7 +405,9 @@ export class AgentCore extends YesImBotService<Config> {
                         valid,
                         async () => {
                             const session = guardReplySession(stimulus.session);
-                            return this.processor.runCycle({ ...stimulus, session });
+                            // Release local scheduling on cancellation even if a remote
+                            // implementation ignores abort. Its late promise stays observed.
+                            return awaitReplyTurn(() => this.processor.runCycle({ ...stimulus, session }));
                         },
                         controller.signal,
                         (destination) => {
@@ -390,6 +428,8 @@ export class AgentCore extends YesImBotService<Config> {
                 } finally {
                     if (this.activeTurns.get(channelCid) === controller) this.activeTurns.delete(channelCid);
                     this.activeDecisionIds.delete(channelCid);
+                    if (this.activeTurnSettlements.get(channelCid) === localSettlement) this.activeTurnSettlements.delete(channelCid);
+                    finishLocal();
                 }
 
                 const replyTopic = (stimulus as TracedStimulus).scoringTopic ?? (stimulus as TracedStimulus).topic;
@@ -430,13 +470,100 @@ export class AgentCore extends YesImBotService<Config> {
         // Subscribe before service startup, but defer all decisions until ready.
         this.ctx.on("agent/stimulus", (stimulus, ownerId) => {
             if (this.stopped || !this.acceptsStimulus(stimulus, ownerId)) return;
+            if (this.historyResetting(stimulus.session)) {
+                this.resetStimuli.set(replyKey(this.replyTarget(stimulus.session)), { stimulus, ownerId, generation: this.stimulusGeneration(stimulus) });
+                return;
+            }
             if (!this.stimulusReady) this.startupStimuli.push({ stimulus, ownerId, generation: this.stimulusGeneration(stimulus) });
             else this.receiveStimulus(stimulus);
+        });
+        registerHistoryResetParticipant(ctx, {
+            prepare: (scope) => {
+                const token = { ...scope };
+                this.resettingHistory.add(token);
+                const ready = this.resetHistory(scope);
+                return {
+                    ready,
+                    release: () => {
+                        this.resettingHistory.delete(token);
+                        this.releaseResetStimuli();
+                    },
+                };
+            },
         });
         this.ctx.on("dispose", () => {
             this.stopped = true;
             this.startupStimuli.length = 0;
         });
+    }
+
+    private matchesHistory(session: Session, scope: HistoryResetScope): boolean {
+        if (!("type" in scope)) return session.platform === scope.platform && conversationChannelId(session) === scope.channelId;
+        return scope.type === "all" || sessionChannelType(session) === scope.type;
+    }
+
+    private historyResetting(session: Session): boolean {
+        return [...this.resettingHistory].some((scope) => this.matchesHistory(session, scope));
+    }
+
+    private stimulusCurrent(stimulus: TracedStimulus): boolean {
+        return (
+            !this.historyResetting(stimulus.session) &&
+            (stimulus.historyGeneration === undefined || stimulus.historyGeneration === this.stimulusGeneration(stimulus))
+        );
+    }
+
+    private resetHistory(scope: HistoryResetScope): Promise<void> {
+        const settling: Array<Promise<void>> = [];
+        const all = "type" in scope && scope.type === "all";
+        const keys = new Set([
+            ...this.historyTargets.keys(),
+            ...this.pendingAssessments.keys(),
+            ...this.activeTurns.keys(),
+            ...this.topicScores.keys(),
+            ...this.continuationEpochs.keys(),
+        ]);
+        this.startupStimuli = this.startupStimuli.filter(({ stimulus }) => !this.matchesHistory(stimulus.session, scope));
+        this.scheduler.cancelMatching((stimulus) => this.matchesHistory(stimulus.session, scope), "history_cleared");
+        for (const key of keys) {
+            const target = this.historyTargets.get(key);
+            const pendingSession = this.pendingAssessments.get(key)?.stimulus.session;
+            if (
+                !all &&
+                !(target
+                    ? !("type" in scope)
+                        ? target.platform === scope.platform && target.channelId === scope.channelId
+                        : target.channelType === scope.type
+                    : pendingSession && this.matchesHistory(pendingSession, scope))
+            )
+                continue;
+            this.cancelAssessment(key, false, "history_cleared");
+            const settlement = this.activeTurnSettlements.get(key);
+            if (settlement) settling.push(settlement);
+            this.activeTurns.get(key)?.abort(new Error("历史已清除"));
+            this.decisions.update(this.activeDecisionIds.get(key), { stage: "cancelled", reason: "history_cleared", success: false });
+            this.resetWillingness(key, "history_cleared");
+            this.continuationReads.delete(key);
+            this.historyTargets.delete(key);
+        }
+        if (all) {
+            this.willing.resetAll();
+            this.topics?.resetAll();
+            this.continuationReads.clear();
+            this.continuationEpochs.clear();
+        }
+        return Promise.allSettled(settling).then(() => {});
+    }
+
+    private releaseResetStimuli(): void {
+        for (const [key, pending] of this.resetStimuli) {
+            if (this.historyResetting(pending.stimulus.session)) continue;
+            this.resetStimuli.delete(key);
+            if (this.stopped || pending.generation !== this.stimulusGeneration(pending.stimulus) || !this.acceptsStimulus(pending.stimulus, pending.ownerId))
+                continue;
+            if (this.stimulusReady) this.receiveStimulus(pending.stimulus);
+            else this.startupStimuli.push(pending);
+        }
     }
 
     private acceptsStimulus(stimulus: AgentStimulus<any>, ownerId?: string): boolean {
@@ -492,6 +619,7 @@ export class AgentCore extends YesImBotService<Config> {
     }
 
     private processStimulus(stimulus: TracedStimulus, assessmentMultiplier = 1, allowSchedule = true): void {
+        if (!this.stimulusCurrent(stimulus)) return;
         if (stimulus.type !== "user_message" || !this.config.continuation?.enabled) {
             this.processResolvedStimulus(stimulus, assessmentMultiplier, allowSchedule);
             return;
@@ -685,6 +813,8 @@ export class AgentCore extends YesImBotService<Config> {
     public async stop(): Promise<void> {
         this.stopped = true;
         this.startupStimuli.length = 0;
+        this.resetStimuli.clear();
+        this.historyTargets.clear();
         for (const channelCid of this.pendingAssessments.keys()) this.cancelAssessment(channelCid, false);
         this.activeTurns.forEach((controller) => controller.abort(new Error("插件已停止")));
         this.activeTurns.clear();

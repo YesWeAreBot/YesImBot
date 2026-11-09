@@ -343,6 +343,7 @@ export class InteractionManager {
             case "agent_action":
                 return {
                     type: "agent_action",
+                    actionId: entry.id,
                     turnId: entry.turnId,
                     timestamp,
                     function: entry.function,
@@ -353,6 +354,7 @@ export class InteractionManager {
             case "agent_observation":
                 return {
                     type: "agent_observation",
+                    actionId: entry.actionId,
                     turnId: entry.turnId,
                     timestamp,
                     function: entry.function,

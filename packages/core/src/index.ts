@@ -113,7 +113,7 @@ export default class YesImBot extends Service<Config> {
         this.prompt = new PromptService(ctx, config, this.logging);
         this.memory = new MemoryService(ctx, config, this.logging);
         this.model = new ModelService(ctx, config, this.logging);
-        this.world = new WorldStateService(ctx, config, { logging: this.logging, asset: this.asset, model: this.model });
+        this.world = new WorldStateService(ctx, config, { logging: this.logging, asset: this.asset, model: this.model, memory: this.memory });
         this.tool = new ToolService(ctx, config, { logging: this.logging, prompt: this.prompt, world: this.world });
         this.agent = new AgentCore(ctx, config, {
             logging: this.logging,

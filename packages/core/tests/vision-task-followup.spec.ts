@@ -274,3 +274,46 @@ it("counts same-user messages that did not wake the agent toward the follow-up l
     expect(images(f.wires.at(-1)!.messages)).toHaveLength(0);
     expect(f.diagnostics.some((line) => line.includes('"follow_up_count":2'))).toBe(true);
 });
+
+it("recovers the latest same-user image skipped while busy even after it leaves L1", async () => {
+    const f = fixture();
+    f.photo.timestamp = new Date(Date.now() - 1000);
+    await f.processor.runCycle(f.stimulus("photo"));
+    const newer = {
+        ...f.photo,
+        id: "skipped-photo",
+        timestamp: new Date(Date.now()),
+        content: '<img id="new-pixels"/>',
+        elements: h.parse('<img id="new-pixels"/>'),
+    };
+    f.records.set(newer.id, newer);
+    const follow = f.followUp("after-skipped-photo");
+    f.world.readMessageWindow.mockImplementation(async (_session: any, options: any) => ({
+        anchor: { ...f.records.get(options.messageId), platform: "mock", channelId: "room" },
+        quotes: [],
+        records: options.before ? [newer, f.records.get("after-skipped-photo")].map((record) => ({ ...record, platform: "mock", channelId: "room" })) : [],
+    }));
+    await f.processor.runCycle(follow);
+    expect(f.builder.getAttachedImageIds(f.wires.at(-1)!.messages)).toEqual(["new-pixels"]);
+});
+
+it("rejects discovery results when history is cleared while the bounded window is being read", async () => {
+    const f = fixture();
+    await f.processor.runCycle(f.stimulus("photo"));
+    const follow = f.followUp("after-clear-during-discovery");
+    let release!: (page: any) => void;
+    let started!: () => void;
+    const reading = new Promise<void>((resolve) => (started = resolve));
+    f.world.readMessageWindow.mockImplementationOnce(async () => {
+        started();
+        return await new Promise((resolve) => (release = resolve));
+    });
+    const building = f.builder.build(follow);
+    await reading;
+    f.clear();
+    release({ anchor: f.records.get("after-clear-during-discovery"), records: [{ ...f.photo, platform: "mock", channelId: "room" }], quotes: [] });
+    await expect(building).rejects.toThrow("历史已清除");
+    expect(f.asset.read).toHaveBeenCalledTimes(1);
+    await f.processor.runCycle(f.followUp("new-epoch-follow-up"));
+    expect(images(f.wires.at(-1)!.messages)).toHaveLength(0);
+});

@@ -1,9 +1,16 @@
+import memory from "@koishijs/plugin-database-memory";
 import { Bot, Context, MessageEncoder, h } from "koishi";
+import { OneBotMessageEncoder } from "koishi-plugin-adapter-onebot";
 import { describe, expect, it } from "vitest";
 
 import { withReplyTurn } from "../src/agent/reply-turn";
 import CoreUtilExtension from "../src/extension/builtin/core-util";
+import { TableName } from "../src/shared/constants";
 import { MessageDeliveryError } from "../src/shared/message-delivery";
+import { EventListenerManager } from "../src/world/event-listener";
+import { readMessageWindowPage } from "../src/world/message-window";
+import { WorldStateService } from "../src/world/service";
+import { loggingStub } from "./helpers/yesimbot";
 
 function setup(send: (...args: any[]) => Promise<string[]> = async () => ["sent"]) {
     const events: any[] = [];
@@ -365,6 +372,52 @@ it("preserves the direct destination category when resolving a private tool targ
 });
 
 for (const guarded of [false, true]) {
+    it(`records and reads back one successful ID-only encoder receipt with reply guard ${guarded}`, async () => {
+        const app = new Context();
+        app.plugin(memory);
+        (WorldStateService.prototype as any).registerModels.call({ ctx: app });
+        let bot!: Bot;
+        class Sender extends Bot {
+            static MessageEncoder = OneBotMessageEncoder;
+        }
+        app.plugin((ctx) => {
+            bot = new Sender(ctx, {} as any, "onebot");
+            bot.user = { id: "bot" };
+            bot.internal = { sendGroupMsg: async () => "confirmed" };
+        });
+        await app.start();
+        await app.database.prepared();
+        try {
+            const f = setup();
+            f.ctx.bots = [bot];
+            f.ctx.yesimbot.asset.encode = async () => h.parse("actual encoded paragraph");
+            const session = bot.session({ channel: { id: "room", type: 0 }, message: { id: "incoming" } });
+            const send = () => f.tool.sendMessage({ session, message: "before encoding" } as any);
+            const result = guarded ? await withReplyTurn(() => true, send) : await send();
+            expect(result).toMatchObject({ status: "success", metadata: { delivery: { messageIds: ["confirmed"], sentMessages: 1 } } });
+            const listener: any = new EventListenerManager(
+                app,
+                {
+                    observeChannel: async () => {},
+                    recordMessage: async (row: any) => app.database.create(TableName.Messages, row),
+                } as any,
+                {} as any,
+                loggingStub(),
+                { transform: async (text: string) => text } as any,
+            );
+            for (const event of f.events) await listener.recordBotSentMessage(event[2]);
+            const page = await readMessageWindowPage(
+                app.database,
+                { platform: "onebot", selfId: "bot", channelId: "room", channelType: "guild" },
+                { messageId: "confirmed" },
+            );
+            expect(page.anchor.content).toBe("actual encoded paragraph");
+            expect(page.anchor.sender.id).toBe("bot");
+        } finally {
+            await app.stop();
+        }
+    });
+
     it(`records successful encoder split content with reply guard ${guarded}`, async () => {
         const ctx = new Context();
         class Encoder extends MessageEncoder {
@@ -391,6 +444,35 @@ for (const guarded of [false, true]) {
         await ctx.stop();
     });
 }
+
+for (const partial of [false, true])
+    it(`does not assign the attempted paragraph to OneBot split receipts with partial failure ${partial}`, async () => {
+        const app = new Context();
+        class Sender extends Bot {
+            static MessageEncoder = OneBotMessageEncoder;
+        }
+        const bot = new Sender(app, {} as any, "onebot");
+        bot.user = { id: "bot" };
+        let requests = 0;
+        bot.internal = {
+            sendGroupMsg: async () => {
+                requests++;
+                if (partial && requests === 2) throw new Error("second request refused");
+                return `confirmed-${requests}`;
+            },
+        };
+        const f = setup();
+        f.ctx.bots = [bot];
+        const session = bot.session({ channel: { id: "room", type: 0 }, message: { id: "incoming" } });
+        const result = await withReplyTurn(
+            () => true,
+            () => f.tool.sendMessage({ session, message: "<message>first</message><message>second</message>" } as any),
+        );
+        expect(result.status).toBe(partial ? "error" : "success");
+        expect(requests).toBe(2);
+        expect(f.events.map((event) => event[2].event.message.content)).toEqual(partial ? [""] : ["", ""]);
+        await app.stop();
+    });
 
 it("leaves split receipt content unknown when an adapter returns only IDs", async () => {
     const f = setup(async () => ["text", "image"]);

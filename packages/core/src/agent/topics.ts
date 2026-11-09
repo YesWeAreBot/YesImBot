@@ -220,6 +220,10 @@ export class TopicManager {
         if (state) this.onReset?.(channelKey);
     }
 
+    public resetAll(): void {
+        for (const key of this.states.keys()) this.reset(key);
+    }
+
     public dispose(): void {
         this.disposed = true;
         for (const key of this.states.keys()) this.reset(key);

@@ -10,7 +10,7 @@ import type { LoggerService } from "../logger";
 import { MemoryService } from "../memory";
 import { ChatModelSwitcher } from "../model";
 import { conversationChannelId } from "../shared/utils/conversation-scope";
-import { AgentStimulus, ContextualMessage, UserMessagePayload, WorldState, WorldStateService } from "../world";
+import { AgentStimulus, ContextualMessage, MessageData, UserMessagePayload, WorldState, WorldStateService } from "../world";
 import { sessionChannelType } from "../world/channel-metadata";
 import type { ConversationStateResult } from "../world/conversation-state";
 import { deriveConversationFocus, type ConversationFocus, FocusedWorldState } from "./context-packing";
@@ -326,7 +326,52 @@ export class PromptContextBuilder {
         const now = Date.now();
         const windowMs = Math.max(0, Math.min(86400, this.config.imageFollowUpWindowSeconds ?? 600)) * 1000;
         const maxFollowUps = Math.max(0, Math.min(20, this.config.imageFollowUpMaxTurns ?? 4));
-        const ownMessages = messages.filter((message) => message.sender?.id === focus.targetUserId);
+        let ownMessages = messages.filter((message) => message.sender?.id === focus.targetUserId);
+        const discoveredSources = new Map<string, MessageData & ContextualMessage & { type: "message"; is_message: boolean }>();
+        const cached = this.recentVisualSources.get(scope);
+        // A photo received while the channel was busy may never have been a trigger.
+        // Inspect only the 19 preceding messages plus the current anchor, once per task.
+        if (
+            windowMs > 0 &&
+            maxFollowUps > 0 &&
+            cached?.activeTaskId !== taskId &&
+            !ownMessages.some((message) => triggerIds.includes(message.id) && hasImage(message)) &&
+            this.worldStateService.readMessageWindow
+        ) {
+            try {
+                const page = await this.worldStateService.readMessageWindow(stimulus.session, {
+                    messageId: triggerIds.at(-1)!,
+                    before: 19,
+                    after: 0,
+                    limit: 20,
+                });
+                assertCurrent();
+                for (const source of (page.records ?? []).slice(-20)) {
+                    if (
+                        source.sender?.id !== focus.targetUserId ||
+                        source.platform !== stimulus.session.platform ||
+                        source.channelId !== conversationChannelId(stimulus.session) ||
+                        source.channelType !== sessionChannelType(stimulus.session)
+                    )
+                        continue;
+                    const timestamp = new Date(source.timestamp);
+                    if (!Number.isFinite(timestamp.getTime()) || now - timestamp.getTime() > windowMs || timestamp.getTime() > now + 1000) continue;
+                    discoveredSources.set(source.id, {
+                        ...source,
+                        type: "message",
+                        timestamp,
+                        elements: h.parse(source.content),
+                        is_message: true,
+                        is_new: false,
+                    });
+                }
+                ownMessages = [...new Map([...ownMessages, ...discoveredSources.values()].map((message) => [message.id, message])).values()];
+            } catch (error) {
+                assertCurrent();
+                if (error instanceof Error && error.name === "AbortError") throw error;
+                this.visualDiagnostic("recent_source_discovery_failed");
+            }
+        }
         const currentImages = ownMessages
             .filter((message) => triggerIds.includes(message.id) && hasImage(message))
             .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
@@ -340,9 +385,9 @@ export class PromptContextBuilder {
                 generation,
                 activeTaskId: taskId,
             };
-        } else if (!recent && windowMs > 0 && maxFollowUps > 0) {
+        } else if (windowMs > 0 && maxFollowUps > 0 && recent?.activeTaskId !== taskId) {
             const latest = ownMessages.filter(hasImage).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())[0];
-            if (latest && now - latest.timestamp.getTime() <= windowMs) {
+            if (latest && now - latest.timestamp.getTime() <= windowMs && (!recent || latest.timestamp.getTime() > recent.timestamp)) {
                 recent = {
                     sourceIds: [latest.id],
                     timestamp: Math.min(now, latest.timestamp.getTime()),
@@ -391,9 +436,12 @@ export class PromptContextBuilder {
                 continue;
             }
             try {
-                const page = await this.worldStateService.readMessageWindow(stimulus.session, { messageId, before: 0, after: 0, limit: 1 });
+                const discovered = discoveredSources.get(messageId);
+                const page = discovered
+                    ? undefined
+                    : await this.worldStateService.readMessageWindow(stimulus.session, { messageId, before: 0, after: 0, limit: 1 });
                 assertCurrent();
-                const source = page.anchor;
+                const source = discovered ?? page!.anchor;
                 if (
                     source.id !== messageId ||
                     source.sender?.id !== focus.targetUserId ||

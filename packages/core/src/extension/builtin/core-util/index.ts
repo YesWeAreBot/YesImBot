@@ -456,11 +456,11 @@ export default class CoreUtilExtension {
             // Preserve confirmed external effects even if a later encoder request failed.
             for (const messageId of confirmedIds) {
                 const confirmed = partialError?.messages ?? receipts;
-                const sentContent = confirmed
-                    ? (confirmed.find((message) => message.id === messageId)?.content ?? "")
-                    : confirmedIds.length === 1
-                      ? quoted
-                      : "";
+                // A fully successful single-ID send maps to this one submitted paragraph.
+                // Split/partial results require per-ID content from the adapter itself.
+                const sentContent =
+                    confirmed?.find((message) => message.id === messageId)?.content ||
+                    (!partialError && confirmedIds.length === 1 ? h.normalize(content).join("") : "");
                 await this.emitAfterSendEvent(bot, channelId, sentContent, messageId, originalSession, channel, guild);
             }
             if (partialError) throw partialError;

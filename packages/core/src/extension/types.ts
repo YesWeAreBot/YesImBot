@@ -45,6 +45,8 @@ export interface ExtensionMetadata {
 export interface ToolExecutionContext {
     invocationActor?: "admin" | "model";
     requestId?: string;
+    /** Stable action-log ID, distinct from the turn ID and invocation receipt UUID. */
+    actionId?: string;
     signal?: AbortSignal;
     reportProgress?: (progress: string) => void;
     backgroundExecution?: boolean;
@@ -60,7 +62,7 @@ export interface ToolMetadata<TParams> {
     /** Explicit opt-in for independent background reads; sends and mutations remain serial. */
     background?: boolean;
     /** Explicitly safe to give failed reads back to the model for another bounded decision. */
-    readOnly?: boolean;
+    readOnly?: boolean | ((params: Record<string, unknown>) => boolean);
     /** Total execution budget in ms; an absent value inherits the ordinary tool budget. */
     timeout?: number | ((params: Record<string, unknown>) => number | undefined);
     name?: string; // 工具名称，若不提供，则使用方法名
@@ -77,7 +79,7 @@ export interface ToolMetadata<TParams> {
 export interface ToolDefinition<TParams = any> {
     background?: boolean;
     /** Explicitly safe to give failed reads back to the model for another bounded decision. */
-    readOnly?: boolean;
+    readOnly?: boolean | ((params: Record<string, unknown>) => boolean);
     /** Total execution budget in ms; an absent value inherits the ordinary tool budget. */
     timeout?: number | ((params: Record<string, unknown>) => number | undefined);
     name: string;

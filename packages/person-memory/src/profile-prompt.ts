@@ -22,6 +22,7 @@ const PROFILE_FORMAT_RULES =
     '仅输出一次完整 JSON 候选，不输出增量、解释或 Markdown。格式为 {"profile":{"version":1,"background":[],"goals":[],"contexts":[],"needs":[],"preferences":[],"values":[],"scenes":[],"overview":""},"messageIds":["证据ID"]}。' +
     "background、goals、contexts、needs、preferences、values 均为字符串数组，overview 为字符串；所有字段必须完整提供。" +
     '每个 scene 格式为 {"key":"场景键","platform":"","selfId":"","channelId":"","nickname":"","recent":{"from":0,"to":0,"coverage":"recorded_only","messageCount":0,"activeDays":0,"topics":[],"emotions":[],"events":[],"interactions":[],"disagreements":[]},"taboos":[],"openers":[]}。' +
+    "recent.topics 必须为字符串数组且最多 5 项；其他字符串数组最多 20 项，scenes 最多 12 项。未知列表必须写空数组，不能写字符串、null或对象。" +
     "场景身份和计数采用输入 scenes 中程序计算的值，不自行推断；recent 只能采用 window 范围内证据，旧画像近期信息过期必须删除。" +
     "coverage 固定 recorded_only：计数只表示已捕获记录，evidence 为有限采样，不能据此声称覆盖全部聊天或推断精确活动比例。" +
     'messageIds 引用 1 到 10 个本次 evidence 中支持更新的不同消息 ID；无新增可靠信息时返回 {"profile":"","messageIds":[]}。' +

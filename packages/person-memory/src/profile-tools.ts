@@ -56,7 +56,7 @@ export const catalogParameters = () => ({
 export function catalogRequest(args: CatalogArgs): CatalogArgs {
     return {
         action: args.action,
-        account_ids: args.account_ids,
+        account_ids: Array.isArray(args.account_ids) && args.account_ids.length === 0 ? undefined : args.account_ids,
         all: args.all,
         query: args.query,
         fields: args.fields,

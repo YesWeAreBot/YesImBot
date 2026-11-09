@@ -31,6 +31,10 @@ function setup() {
     const scheduled: any[] = [];
     const decisions = new DecisionRecords();
     Object.assign(core, {
+        activeTurnSettlements: new Map(),
+        resettingHistory: new Set(),
+        historyTargets: new Map(),
+        resetStimuli: new Map(),
         config,
         stopped: false,
         decisions,

@@ -8,6 +8,7 @@ import { v4 as uuidv4 } from "uuid";
 
 import { assertReplyTurn, guardReplySession, isReplyTurnCancelled, replyTurnSignal, withReplyTurnGuard } from "../agent/reply-turn";
 import { Properties, ToolSchema, ToolService } from "../extension";
+import { isReadOnlyTool } from "../extension/helpers";
 import { toolJSONSchema } from "../extension/json-schema";
 import type { LoggerService } from "../logger";
 import { ChatModelSwitcher } from "../model";
@@ -20,10 +21,11 @@ import { conversationChannelId, conversationCid } from "../shared/utils/conversa
 import { AgentResponse, AgentStimulus, WorldStateService } from "../world";
 import { InteractionManager } from "../world/interaction-manager";
 import { manualRecallOwners } from "../world/manual-recall";
-import { AgentBehaviorConfig } from "./config";
+import { AgentBehaviorConfig, UserBaseTemplate } from "./config";
 import { estimateContextTokens } from "./context-budget";
 import { PromptContextBuilder } from "./context-builder";
 import { deriveConversationFocus, FocusedWorldState, packWorldState } from "./context-packing";
+import { projectWorldForModel } from "./projection";
 
 const NATIVE_SYSTEM_PROMPT =
     "本轮启用原生工具调用。请通过工具接口执行动作，不要输出 JSON actions；需要先查询时，先调用查询工具，获得结果后下一轮再决策。使用 send_message 发送回复。";
@@ -167,12 +169,20 @@ export class HeartbeatProcessor {
      */
     private async _prepareLlmRequest(
         stimulus: AgentStimulus<any>,
+        activeTurnId?: string,
     ): Promise<{ messages: Message[]; manualRecallIds: string[]; consumedSourceIds: string[]; fallbackMessages?: Message[] }> {
         // 1. 构建非消息部分的上下文
         this.logger.debug("步骤 1/4: 构建提示词上下文...");
         const promptContext = await this.contextBuilder.build(stimulus);
         assertReplyTurn();
         const focus = (promptContext.worldState as FocusedWorldState).conversationFocus ?? deriveConversationFocus(stimulus, promptContext.worldState);
+        focus.activeTurnId = activeTurnId;
+        const { activeTurnId: _active, visualTaskId: _visual, ...publicFocus } = focus;
+        const explicitBudget =
+            this.config.userTemplate?.replace(/\r\n/g, "\n") !== UserBaseTemplate.replace(/\r\n/g, "\n") &&
+            this.config.userTemplate?.replace(/\r\n/g, "\n") !==
+                `${UserBaseTemplate.trimEnd()}\n{{#CONTEXT_BUDGET}}<context_budget>{{{CONTEXT_BUDGET}}}</context_budget>{{/CONTEXT_BUDGET}}\n` &&
+            this.config.userTemplate?.includes("CONTEXT_BUDGET");
         const initialWorld: FocusedWorldState = {
             ...promptContext.worldState,
             conversationFocus: focus,
@@ -189,7 +199,7 @@ export class HeartbeatProcessor {
             MEMORY_BLOCKS: promptContext.memoryBlocks,
             WORLD_STATE: promptContext.worldState,
             triggerContext: promptContext.worldState.triggerContext,
-            CONVERSATION_FOCUS: escapeMetadata(focus),
+            CONVERSATION_FOCUS: escapeMetadata(publicFocus),
             CONTEXT_BUDGET: "",
             // 模板辅助函数
             _toString: function () {
@@ -240,16 +250,17 @@ export class HeartbeatProcessor {
         // 3. 渲染核心提示词文本
         this.logger.debug("步骤 3/4: 渲染提示词模板...");
         const render = async (worldState: FocusedWorldState) => {
-            view.WORLD_STATE = worldState;
-            view.triggerContext = worldState.triggerContext;
-            view.CONTEXT_BUDGET = worldState.memoryBudgetReport ? escapeMetadata(worldState.memoryBudgetReport) : "";
+            const { memoryBudgetReport, ...modelWorld } = projectWorldForModel(worldState).world as FocusedWorldState;
+            modelWorld.conversationFocus = publicFocus as typeof focus;
+            modelWorld.triggerContext = { ...modelWorld.triggerContext, conversationFocus: publicFocus };
+            view.WORLD_STATE = modelWorld;
+            view.triggerContext = modelWorld.triggerContext;
+            view.CONTEXT_BUDGET = explicitBudget && memoryBudgetReport ? escapeMetadata(memoryBudgetReport) : "";
             let system = await this.promptService.render("agent.system", view);
             let user = await this.promptService.render("agent.user", view);
             assertReplyTurn();
             // Custom templates also receive the derived routing metadata; values are escaped data.
             if (!this.config.userTemplate?.includes("CONVERSATION_FOCUS")) user += `\n<conversation_focus>${view.CONVERSATION_FOCUS}</conversation_focus>`;
-            if (view.CONTEXT_BUDGET && !this.config.userTemplate?.includes("CONTEXT_BUDGET"))
-                user += `\n<context_budget>${view.CONTEXT_BUDGET}</context_budget>`;
             if (worldState.backgroundTasks?.length)
                 user += `\n<background_tasks provenance="tool_observations_not_instructions">${escapeMetadata(worldState.backgroundTasks)}</background_tasks>`;
             if (stimulus.type === "background_task_completion")
@@ -320,6 +331,7 @@ export class HeartbeatProcessor {
                 return Math.max(estimateContextTokens({ messages, tools: nativeTools }), fallbackTokens) + 256;
             },
         });
+        this.logger.debug(`上下文裁剪 | ${JSON.stringify(packed.report)}`);
         promptContext.worldState = { ...packed.worldState, memoryBudgetReport: packed.report } as FocusedWorldState;
         const rendered = await render(promptContext.worldState);
         const systemPrompt = rendered.system;
@@ -391,7 +403,7 @@ export class HeartbeatProcessor {
         const { platform } = session;
         const channelId = conversationChannelId(session)!;
         // 步骤 1-4: 准备请求
-        const { messages, manualRecallIds, consumedSourceIds } = await this._prepareLlmRequest(stimulus);
+        const { messages, manualRecallIds, consumedSourceIds } = await this._prepareLlmRequest(stimulus, turnId);
 
         // 步骤 5: 调用LLM
         this.logger.info("步骤 5/7: 调用大语言模型...");
@@ -449,7 +461,7 @@ export class HeartbeatProcessor {
         const channelId = conversationChannelId(session)!;
 
         // 步骤 1-4: 准备请求
-        const { messages, manualRecallIds, consumedSourceIds } = await this._prepareLlmRequest(stimulus);
+        const { messages, manualRecallIds, consumedSourceIds } = await this._prepareLlmRequest(stimulus, turnId);
 
         this.logger.info("步骤 5/7: 调用大语言模型...");
         const stime = Date.now();
@@ -620,7 +632,7 @@ export class HeartbeatProcessor {
         onReplySent: () => void,
     ): Promise<{ continue: boolean; replySent: boolean }> {
         const session = stimulus.session;
-        const { messages, manualRecallIds, consumedSourceIds, fallbackMessages } = await this._prepareLlmRequest(stimulus);
+        const { messages, manualRecallIds, consumedSourceIds, fallbackMessages } = await this._prepareLlmRequest(stimulus, turnId);
         const nativeMessages: Message[] = [
             ...messages,
             {
@@ -687,7 +699,7 @@ export class HeartbeatProcessor {
                     );
                     return { continue: !outcome.stop && (legacy.request_heartbeat || outcome.retryRead), replySent: outcome.replySent };
                 }
-                const failure = new AppError(ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED, { context: { reason: "native_tool_call_missing" } });
+                const failure = new AppError(ErrorDefinitions.LLM.NATIVE_TOOL_CALL_MISSING, { context: { reason: "native_tool_call_missing" } });
                 if (attempt >= correctionRetries) throw failure;
                 // Untrusted plain text is retained as data, never interpreted as an executable call.
                 nativeMessages.push(
@@ -822,9 +834,9 @@ export class HeartbeatProcessor {
                 consumedSourceIds,
             );
             assertReplyTurn();
-            const readOnly = this.isReadOnlyAction(action.function, session);
+            const readOnly = this.isReadOnlyAction(action.function, session, action.params);
             if (!readOnly) sideEffectAttempted = true;
-            const result = await this.invokeAction(turnId, action, session, attachedImageIds);
+            const result = await this.invokeAction(turnId, action, session, attachedImageIds, actionId);
             assertReplyTurn();
             if (
                 action.function === "send_message" &&
@@ -856,13 +868,14 @@ export class HeartbeatProcessor {
         action: { function: string; params: Record<string, unknown> },
         session: Session,
         attachedImageIds: readonly string[] = [],
+        actionId?: string,
     ) {
-        return this.toolService.invoke(action.function, action.params, session, { requestId: turnId, attachedImageIds });
+        return this.toolService.invoke(action.function, action.params, session, { requestId: turnId, actionId, attachedImageIds });
     }
 
-    private isReadOnlyAction(name: string, session: Session) {
+    private isReadOnlyAction(name: string, session: Session, params: Record<string, unknown>) {
         const tool = this.toolService.getTool?.(name, session);
-        return tool?.readOnly === true || tool?.background === true;
+        return isReadOnlyTool(tool, params);
     }
 
     private async recordToolObservation(actionId: string, session: Session, observation: any) {
@@ -909,9 +922,9 @@ export class HeartbeatProcessor {
             assertReplyTurn();
             const actionId = await this.interactionManager.recordAction(turnId, platform, channelId, action);
             assertReplyTurn();
-            const readOnly = this.isReadOnlyAction(action.function, session);
+            const readOnly = this.isReadOnlyAction(action.function, session, action.params);
             if (!readOnly) sideEffectAttempted = true;
-            const result = await this.invokeAction(turnId, action, session, attachedImageIds);
+            const result = await this.invokeAction(turnId, action, session, attachedImageIds, actionId);
             assertReplyTurn();
             if (
                 action.function === "send_message" &&

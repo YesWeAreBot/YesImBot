@@ -36,6 +36,8 @@ export interface HistoryConfig {
         diaryGenerationTime: string;
         scheduled?: boolean;
         messageThreshold?: number;
+        failureCooldownSeconds?: number;
+        failureMaxCooldownSeconds?: number;
     };
     ignoreSelfMessage: boolean;
 
@@ -69,6 +71,8 @@ export const HistoryConfigSchema: Schema<HistoryConfig> = Schema.intersect([
             enabled: Schema.boolean().default(false).description("启用 L3 长期日记功能"),
             scheduled: Schema.boolean().default(true).description("每天按固定时间生成日记"),
             messageThreshold: Schema.number().min(0).max(10000).step(1).default(0).description("新增消息达到此数量时生成当日日记；0 关闭，首次至少 5 条"),
+            failureCooldownSeconds: Schema.number().min(1).max(3600).default(30).description("自动日记失败后的首次等待时间（秒），连续失败会逐步延长"),
+            failureMaxCooldownSeconds: Schema.number().min(1).max(3600).default(300).description("自动日记连续失败时的最长等待时间（秒），手动生成不受影响"),
             diaryGenerationTime: Schema.string().default("04:00").description("每日生成日记的时间（HH:mm 格式，使用服务器本地时区）"),
         })
             .collapse()

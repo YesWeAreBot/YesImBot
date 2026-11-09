@@ -22,12 +22,30 @@ import InteractionsExtension from "./builtin/interactions";
 import MemoryExtension from "./builtin/memory";
 import QManagerExtension from "./builtin/qmanager";
 import SearchExtension from "./builtin/search";
-import { extractMetaFromSchema, Failed } from "./helpers";
+import { extractMetaFromSchema, Failed, isReadOnlyTool } from "./helpers";
 import { toolJSONSchema } from "./json-schema";
 import { ToolOutputStore, TOOL_OUTPUT_THRESHOLD, ToolOutputOwner } from "./tool-output-store";
 import { IExtension, Properties, ToolCallResult, ToolDefinition, ToolSchema, ToolExecutionContext } from "./types";
 
 const backgroundToolChoices = new WeakMap<object, Map<ToolService, ToolDefinition[]>>();
+
+/** Model-facing status only; the complete receipt remains separate audit data. */
+function toolEventSummary(name: string, result: ToolCallResult): string {
+    const operation = name.replace(/\p{Cc}/gu, "").slice(0, 128);
+    const state = result.metadata?.execution?.timedOut ? "执行超时" : result.status === "success" ? "已返回成功回执" : "已返回失败回执";
+    const delivery = result.metadata?.delivery;
+    if (name !== "send_message" || !delivery) return `工具 ${operation} ${state}。`;
+    const count = Array.isArray(delivery.messageIds) ? new Set(delivery.messageIds.filter((id: unknown) => typeof id === "string" && id.trim())).size : 0;
+    const segments =
+        Number.isSafeInteger(delivery.sentMessages) &&
+        delivery.sentMessages >= 0 &&
+        Number.isSafeInteger(delivery.totalMessages) &&
+        delivery.totalMessages >= delivery.sentMessages
+            ? `，已完整发送 ${delivery.sentMessages}/${delivery.totalMessages} 段`
+            : "";
+    const unknown = delivery.deliveryUnknown === true || delivery.inFlight === true ? "；仍有消息送达结果未知" : "";
+    return `工具 ${operation} ${state}；已确认 ${count} 条消息${segments}${unknown}。${result.status !== "success" || unknown ? "请勿自动重发。" : ""}`;
+}
 
 /** Keep JSON containers and quoted values intact before Koishi's tool-schema validation. */
 function parseCommandParams(source: string): Record<string, string> {
@@ -647,6 +665,7 @@ export class ToolService extends YesImBotService<Config> {
             const channelId = conversationChannelId(session)!;
             try {
                 const admin = session.argv?.command?.name === "tool.invoke" || toolContext?.invocationActor === "admin";
+                const summary = toolEventSummary(functionName, result);
                 const historyGeneration =
                     scopedBackground || result.result?.kind === "tool-output-resource" || result.metadata?.payloadError
                         ? capture?.owner.generation
@@ -664,6 +683,8 @@ export class ToolService extends YesImBotService<Config> {
                             timestamp: new Date(),
                             payload: {
                                 requestId,
+                                turnId: toolContext?.requestId,
+                                actionId: toolContext?.actionId,
                                 actor: admin ? `admin:${session.platform}:${session.userId}` : "model",
                                 requester: session.userId,
                                 operation: functionName,
@@ -679,9 +700,10 @@ export class ToolService extends YesImBotService<Config> {
                                 startedAt: startedAt.toISOString(),
                                 finishedAt: new Date().toISOString(),
                                 status: result.status,
+                                summary,
                                 receipt: JSON.stringify(sanitizeDiagnostic(result)).slice(0, 2000),
                             },
-                            message: "框架工具调用已返回；记录的状态是工具回执，不代表所有外部副作用均已核实。",
+                            message: summary,
                         },
                         historyGeneration,
                     ),
@@ -905,6 +927,7 @@ export class ToolService extends YesImBotService<Config> {
         toolContext?: ToolExecutionContext,
     ): Promise<ToolCallResult> {
         const stringifyParams = stringify(validatedParams);
+        const initiallyReadOnly = isReadOnlyTool(tool, validatedParams);
         this._logger.info(`→ 调用: ${functionName} | 参数: ${stringifyParams}`);
         let lastResult: ToolCallResult = Failed("Tool call did not execute.");
 
@@ -942,7 +965,7 @@ export class ToolService extends YesImBotService<Config> {
                         this._logger.warn(`✖ 失败 (不可重试) ← 原因: ${stringify(lastResult.error)}`);
                         return lastResult;
                     } else {
-                        if (tool.readOnly !== true && tool.background !== true) {
+                        if (!initiallyReadOnly || !isReadOnlyTool(tool, validatedParams)) {
                             return { ...lastResult, error: { ...lastResult.error, retryable: false } };
                         }
                         this._logger.warn(`⚠ 读取失败 (可重试) ← 原因: ${lastResult.error}`);

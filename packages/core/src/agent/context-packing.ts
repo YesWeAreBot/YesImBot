@@ -1,6 +1,7 @@
 import { conversationChannelId } from "../shared/utils/conversation-scope";
 import { manualRecallOwners } from "../world/manual-recall";
 import type { AgentStimulus, L1HistoryItem, WorldState } from "../world/types";
+import { toolEventDetails } from "./projection";
 
 /** Identity-only routing metadata: never a model-inferred topic or user intention. */
 export interface ConversationFocus {
@@ -10,6 +11,8 @@ export interface ConversationFocus {
     continuation?: import("./continuation").ContinuationMatch;
     continuationPolicy?: { mode: "trigger" | "willingness"; maxDurationSeconds: number };
     triggerMessageIds: string[];
+    /** Explicit current execution identity; empty means a newly started task. */
+    activeTurnId?: string;
     /** Bounded, program-selected visual sources; never inferred quote relationships. */
     visualSourceMessageIds?: string[];
     visualTaskId?: string;
@@ -101,6 +104,17 @@ export async function packWorldState(
     const latest = history.filter((item) => item.type === "message").at(-1);
     if (latest) protectedIds.add(latest.id);
     const recallOwners = manualRecallOwners(history);
+    const observationTurns = new Map(
+        history.flatMap((item) => (item.type === "agent_observation" && item.actionId ? [[item.actionId, item.turnId] as const] : [])),
+    );
+    const receiptOwners = new Map<L1HistoryItem, string>();
+    for (const item of history) {
+        if (item.type !== "system_event" || item.eventType !== "tool-result") continue;
+        const details = toolEventDetails(item);
+        const owner = details?.actor === "model" && typeof details.actionId === "string" ? observationTurns.get(details.actionId) : undefined;
+        if (owner) receiptOwners.set(item, owner);
+    }
+    const ownerOf = (item: L1HistoryItem) => recallOwners.get(item) ?? receiptOwners.get(item);
     // Keep the latest started turn intact through heartbeat continuations. A late event
     // from an older turn does not make that older turn the active one again.
     const seenTurns = new Set<string>();
@@ -114,7 +128,8 @@ export async function packWorldState(
     const protectedItem = (item: L1HistoryItem) =>
         protectedEvents.has(item) ||
         (item.type === "message" && protectedIds.has(item.id)) ||
-        ("turnId" in item && (recallOwners.get(item) ?? item.turnId) === latestTurn);
+        (ownerOf(item) === (options.focus.activeTurnId ?? latestTurn) && ownerOf(item) !== undefined) ||
+        ("turnId" in item && (ownerOf(item) ?? item.turnId) === (options.focus.activeTurnId ?? latestTurn));
     const l2 = [...(world.l2_retrieved_memories ?? [])];
     const l3 = [...(world.l3_diary_entries ?? [])];
     const removedL2 = new Set<number>();
@@ -148,14 +163,18 @@ export async function packWorldState(
     const groups = new Map<string | L1HistoryItem, L1HistoryItem[]>();
     for (const item of history) {
         // Consumed manual recall pages belong to the consuming turn, not their synthetic page turn.
-        const owner = recallOwners.get(item);
+        const owner = ownerOf(item);
         const key = owner ?? ("turnId" in item ? item.turnId : item);
         const group = groups.get(key) ?? [];
         group.push(item);
         groups.set(key, group);
     }
     const processed = new Set(world.l1_working_memory.processed_events);
-    const candidates = [...groups.values()].sort((a, b) => Number(!a.some((item) => processed.has(item))) - Number(!b.some((item) => processed.has(item))));
+    const candidates = [...groups.values()].sort(
+        (a, b) =>
+            Number(!a.some((item) => "turnId" in item)) - Number(!b.some((item) => "turnId" in item)) ||
+            Number(!a.some((item) => processed.has(item))) - Number(!b.some((item) => processed.has(item))),
+    );
     for (const group of candidates) {
         if (!over()) break;
         if (group.some(protectedItem)) continue;
