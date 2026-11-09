@@ -14,6 +14,7 @@ export interface WillingnessCalculation {
     assessmentMultiplier: number;
     participationMultiplier: number;
     effectiveGain: number;
+    continuationGain?: number;
     maxWillingness: number;
     threshold: number;
     amplifier: number;
@@ -34,6 +35,7 @@ export interface DecisionRecord {
     reason?: string;
     decision?: boolean;
     forcedReply?: boolean;
+    continuation?: import("./continuation").ContinuationMatch;
     calculation?: WillingnessCalculation;
     allowed?: string[];
     assessment?: {
@@ -133,6 +135,8 @@ const reasons: Record<string, string> = {
     permission_denied: "会话未获许可",
     muted: "机器人被禁言",
     forced_reply_by_mention: "明确 @ 机器人，优先回复",
+    conversation_continuation: "命中模型登记的等待，进入模型回合",
+    continuation_expired: "会话等待已到期或被替换",
     mention_priority: "明确 @ 消息优先排队",
     mention_pending: "合并到待回复的 @ 消息",
     probability_roll: "随机判定",
@@ -188,6 +192,10 @@ export function formatDecision(record: DecisionRecord | undefined, state: Decisi
         lines.push(`语义评分：面向机器人 ${a.addressed}；兴趣匹配 ${a.interested}；面向他人 ${a.others}`);
     }
     if (record.forcedReply) lines.push("明确 @ 优先回复：不依赖随机判定，仍遵守回复控制。");
+    if (record.continuation)
+        lines.push(
+            `会话续接：${record.continuation.mode === "trigger" ? "进入模型回合" : "增加意愿"}；工作状态版本 ${record.continuation.revision}；有效至 ${new Date(record.continuation.expiresAt).toISOString()}`,
+        );
     if (record.success !== undefined) lines.push(`成功发送回复：${record.success ? "是" : "否"}`);
     return lines.join("\n");
 }

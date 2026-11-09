@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { Context, ForkScope, h, Logger, Schema, Session } from "koishi";
 
+import { DEFAULT_BACKGROUND_TOOLS } from "../agent/config";
 import { assertReplyTurn, awaitReplyTurn } from "../agent/reply-turn";
 import { Config } from "../config";
 import type { LoggerService } from "../logger";
@@ -23,6 +24,8 @@ import SearchExtension from "./builtin/search";
 import { extractMetaFromSchema, Failed } from "./helpers";
 import { ToolOutputStore, TOOL_OUTPUT_THRESHOLD, ToolOutputOwner } from "./tool-output-store";
 import { IExtension, Properties, ToolCallResult, ToolDefinition, ToolSchema, ToolExecutionContext } from "./types";
+
+const backgroundToolChoices = new WeakMap<object, Map<ToolService, ToolDefinition[]>>();
 
 /** Keep JSON containers and quoted values intact before Koishi's tool-schema validation. */
 function parseCommandParams(source: string): Record<string, string> {
@@ -129,6 +132,7 @@ export class ToolService extends YesImBotService<Config> {
     private outputOwnerContext?: Context;
 
     private tools: Map<string, ToolDefinition> = new Map();
+    private schemaStopped = false;
     private extensions: Map<string, IExtension> = new Map();
     // Disabled instances are also retained so their own plugin scope can be re-enabled.
     private knownExtensions: Map<string, IExtension> = new Map();
@@ -144,11 +148,14 @@ export class ToolService extends YesImBotService<Config> {
         super(ctx, config);
         this._logger = deps.logging.getLogger("[工具管理器]");
         this.promptService = deps.prompt;
+        this.updateBackgroundToolSchema();
         if (config.backgroundTools?.enabled) this.background = new BackgroundTools(ctx, config.backgroundTools, deps.world, this);
     }
 
     public async stop() {
         this.background?.dispose();
+        this.schemaStopped = true;
+        this.updateBackgroundToolSchema();
     }
 
     public async start() {
@@ -480,6 +487,7 @@ export class ToolService extends YesImBotService<Config> {
                     this._logger.debug(`  -> 注册工具: "${tool.name}"`);
                     this.tools.set(name, tool);
                 }
+                this.updateBackgroundToolSchema();
             }
 
             // this._logger.debug(`扩展 "${metadata.name}" 已加载`);
@@ -497,21 +505,49 @@ export class ToolService extends YesImBotService<Config> {
         if (this.extensions.get(name) === ext) this.extensions.delete(name);
         for (const definition of ext.tools?.values() || []) {
             // Another extension (or registerTool) may have replaced a colliding name.
-            if (this.tools.get(definition.name) === definition) this.tools.delete(definition.name);
+            if (this.tools.get(definition.name) === definition) this.unregisterTool(definition.name);
         }
         this._logger.info(`已卸载扩展: "${name}"`);
         return true;
     }
 
+    private updateBackgroundToolSchema() {
+        // Root ownership keeps shared choices alive when an individual plugin is disposed.
+        const schema = this.ctx.root?.schema ?? this.ctx.schema;
+        if (!schema?.set) return;
+        const identity = schema._data ?? schema;
+        let instances = backgroundToolChoices.get(identity);
+        if (!instances) backgroundToolChoices.set(identity, (instances = new Map()));
+        if (this.schemaStopped) instances.delete(this);
+        else
+            instances.set(
+                this,
+                [...this.tools.values()].filter((tool) => tool.background && !tool.name.startsWith("background_task_")),
+            );
+        const choices = new Map(DEFAULT_BACKGROUND_TOOLS.map((name) => [name, name]));
+        for (const tools of instances.values()) {
+            for (const tool of tools) choices.set(tool.name, `${tool.name}：${tool.description.split("\n")[0].slice(0, 80)}`);
+        }
+        schema.set(
+            "toolService.backgroundEligibleTools",
+            Schema.array(Schema.union([...choices].map(([name, label]) => Schema.const(name).description(label))))
+                .role("checkbox")
+                .default([...DEFAULT_BACKGROUND_TOOLS]),
+        );
+    }
+
     public registerTool(definition: ToolDefinition) {
         this.tools.set(definition.name, definition);
+        this.updateBackgroundToolSchema();
         return () => {
-            if (this.tools.get(definition.name) === definition) this.tools.delete(definition.name);
+            if (this.tools.get(definition.name) === definition) this.unregisterTool(definition.name);
         };
     }
 
     public unregisterTool(name: string) {
-        return this.tools.delete(name);
+        const removed = this.tools.delete(name);
+        if (removed) this.updateBackgroundToolSchema();
+        return removed;
     }
 
     private async recordFrameworkChange(session: Session, operation: string, name: string, status: string) {

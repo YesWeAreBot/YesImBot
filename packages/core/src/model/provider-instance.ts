@@ -10,6 +10,7 @@ import { ContextLimitResult, contextMetadataURL, parseContextLimit, readContextL
 import { EmbedModel, IEmbedModel } from "./embed-model";
 import { EvaluationModel } from "./evaluation-model";
 import { IProviderClient } from "./factories";
+import { createNativeFetch } from "./native-fetch";
 import type { UsageOwner } from "./usage-owner";
 
 export class ProviderInstance {
@@ -41,6 +42,8 @@ export class ProviderInstance {
         } else {
             this.fetch = ufetch as unknown as typeof globalThis.fetch;
         }
+
+        this.fetch = createNativeFetch(config, this.fetch);
 
         // this.logger.info(`[初始化] 🔌 提供商实例已创建`);
     }
@@ -78,7 +81,12 @@ export class ProviderInstance {
             return null;
         }
 
-        const finalModelConfig: ModelConfig = { ...modelConfig, providerName: this.name };
+        const finalModelConfig: ModelConfig = {
+            ...modelConfig,
+            providerName: this.name,
+            // Native LM Studio chat cannot carry client-owned tools; retain the framework's JSON-action fallback.
+            ...(this.config.type === "LM Studio" ? { disableNativeToolCalling: true } : {}),
+        };
 
         //this.logger.debug(`[获取模型] 🟢 成功 | 模型ID: ${modelId} | 能力: ${capabilityName}`);
         return new modelConstructor(this.ctx, providerCapability, finalModelConfig, this.fetch, this.logging, this.usageOwner);

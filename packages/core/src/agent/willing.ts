@@ -17,6 +17,7 @@ export interface MessageContext {
     isQuote: boolean;
     isDirect: boolean;
     allowedCategories?: ReplyCategory[];
+    continuationGain?: number;
 }
 
 export interface TopicWillingnessInput {
@@ -265,7 +266,8 @@ export class WillingnessManager {
 
         // --- 非线性增益 ---
         const gainMultiplier = getDynamicGainMultiplier(currentWillingness, resolvedMaxWillingness);
-        const effectiveGain = details.gain * gainMultiplier * assessmentMultiplier;
+        const continuationGain = Number.isFinite(context.continuationGain) ? Math.max(0, context.continuationGain!) : 0;
+        const effectiveGain = details.gain * gainMultiplier * assessmentMultiplier + continuationGain;
 
         currentWillingness += effectiveGain;
         // -------------------------
@@ -289,6 +291,7 @@ export class WillingnessManager {
             assessmentMultiplier,
             participationMultiplier: details.participationMultiplier,
             effectiveGain,
+            ...(continuationGain ? { continuationGain } : {}),
             maxWillingness: resolvedMaxWillingness,
             threshold: resolvedProbabilityThreshold,
             amplifier: resolvedProbabilityAmplifier,
@@ -401,6 +404,7 @@ export class WillingnessManager {
         allowedCategories?: ReplyCategory[],
         assessmentMultiplier = 1,
         topic?: TopicWillingnessInput,
+        continuationGain = 0,
     ): { decision: boolean; probability: number; roll: number; calculation: WillingnessCalculation; scoreKey?: string } {
         const currentScoreKey = topic?.currentScoreKey ?? chatId;
         const credit = this.backgroundCredits.get(chatId) ?? 0;
@@ -420,6 +424,7 @@ export class WillingnessManager {
         const context: MessageContext = {
             chatId: currentScoreKey,
             participationId: topic ? chatId : undefined,
+            continuationGain,
             allowedCategories,
             content: session.content ?? "",
             isMentioned: allowedCategories
@@ -454,7 +459,7 @@ export class WillingnessManager {
             }
             if (scoreKey !== currentScoreKey) {
                 this.sessions.set(scoreKey, session);
-                probability = this.calculateReplyProbability(session, { ...context, chatId: scoreKey }, 0, (value) => {
+                probability = this.calculateReplyProbability(session, { ...context, chatId: scoreKey, continuationGain: 0 }, 0, (value) => {
                     calculation = value;
                 });
             }

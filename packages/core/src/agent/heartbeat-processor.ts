@@ -98,6 +98,9 @@ export class HeartbeatProcessor {
     }
 
     private async runTracedCycle(turnId: string, stimulus: AgentStimulus<any>): Promise<boolean> {
+        // Admission belongs to this cycle, not to every heartbeat or to the caller's
+        // reusable stimulus. Keep the initial context check before any model call.
+        const cycleStimulus = { ...stimulus } as AgentStimulus<any> & { continuationRequired?: boolean };
         let shouldContinueHeartbeat = true;
         let heartbeatCount = 0;
         let success = false;
@@ -111,13 +114,16 @@ export class HeartbeatProcessor {
                     success = true;
                 };
                 const result = this.config.nativeToolCalling
-                    ? await this.performNativeHeartbeat(turnId, stimulus, onReplySent)
+                    ? await this.performNativeHeartbeat(turnId, cycleStimulus, onReplySent)
                     : this.config.streamAction
-                      ? await this.performSingleHeartbeatWithStreaming(turnId, stimulus, onReplySent)
-                      : await this.performSingleHeartbeat(turnId, stimulus, onReplySent);
+                      ? await this.performSingleHeartbeatWithStreaming(turnId, cycleStimulus, onReplySent)
+                      : await this.performSingleHeartbeat(turnId, cycleStimulus, onReplySent);
 
                 assertReplyTurn();
                 if (result) {
+                    // A successful heartbeat has passed context admission. Its tools
+                    // may have replaced/cleared the wait, or the wait may now expire.
+                    cycleStimulus.continuationRequired = false;
                     shouldContinueHeartbeat = result.continue;
                     success = success || result.replySent;
                 } else {
@@ -724,7 +730,10 @@ export class HeartbeatProcessor {
             assertReplyTurn();
             const result = await this.invokeAction(turnId, action, session);
             assertReplyTurn();
-            if (action.function === "send_message" && result.status === "success") {
+            if (
+                action.function === "send_message" &&
+                (result.status === "success" || result.metadata?.delivery?.messageIds?.some((id: unknown) => typeof id === "string" && id.trim()))
+            ) {
                 replySent = true;
                 onReplySent();
             }
@@ -734,6 +743,7 @@ export class HeartbeatProcessor {
                 status: result.status,
                 result: result.result,
                 error: result.error,
+                metadata: result.metadata,
             });
             if (result.status !== "success") throw new Error(`工具 ${action.function} 执行失败: ${result.error?.message ?? "未知错误"}`);
         }
@@ -785,7 +795,10 @@ export class HeartbeatProcessor {
             assertReplyTurn();
             const result = await this.invokeAction(turnId, action, session);
             assertReplyTurn();
-            if (action.function === "send_message" && result.status === "success") {
+            if (
+                action.function === "send_message" &&
+                (result.status === "success" || result.metadata?.delivery?.messageIds?.some((id: unknown) => typeof id === "string" && id.trim()))
+            ) {
                 replySent = true;
                 onReplySent();
             }
@@ -795,7 +808,11 @@ export class HeartbeatProcessor {
                 status: result.status,
                 result: result.result,
                 error: result.error,
+                metadata: result.metadata,
             });
+            if (action.function === "send_message" && result.status !== "success" && result.metadata?.delivery?.messageIds?.length) {
+                throw new Error(`消息仅部分发送，停止本轮以避免重复投递: ${result.error?.message ?? "未知错误"}`);
+            }
         }
         return replySent;
     }

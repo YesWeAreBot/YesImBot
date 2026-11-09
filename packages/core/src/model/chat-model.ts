@@ -303,6 +303,12 @@ export class ChatModel extends BaseModel implements IChatModel {
         let completion = new StreamCompletion();
         let buffer: string[] = [];
         let diagnostics = new StreamDiagnostics(stime);
+        const markStreamStarted = () => {
+            if (streamStarted) return;
+            onStreamStart?.();
+            streamStarted = true;
+            this.logger.debug(`🌊 流式传输已开始 | 延迟: ${Date.now() - stime}ms`);
+        };
         const originalFetch = chatOptions.fetch as (url: any, init: any) => Promise<Response>;
         const streamOptions = {
             ...chatOptions,
@@ -314,11 +320,7 @@ export class ChatModel extends BaseModel implements IChatModel {
                 // Validate complete SSE text before the transport EOF gate, not in downstream SDK events.
                 const responseCompletion = (completion = new StreamCompletion((textDelta) => {
                     if (responseCompletion.earlyExit || !textDelta) return;
-                    if (!streamStarted) {
-                        onStreamStart?.();
-                        streamStarted = true;
-                        this.logger.debug(`🌊 流式传输已开始 | 延迟: ${Date.now() - stime}ms`);
-                    }
+                    markStreamStarted();
                     buffer.push(textDelta);
                     finalContentParts.push(textDelta);
                     if (!validator) return;
@@ -327,7 +329,7 @@ export class ChatModel extends BaseModel implements IChatModel {
                     responseCompletion.earlyExit = true;
                     this.logger.debug(`✅ 内容有效，可提前结束流 | 耗时: ${Date.now() - stime}ms`);
                     if (validationResult.parsedData) finalContentParts.splice(0, finalContentParts.length, JSON.stringify(validationResult.parsedData));
-                }));
+                }, markStreamStarted));
                 diagnostics.recordResponse(response);
                 this.logger.debug(`[${requestId}] HTTP 响应 | ${JSON.stringify(diagnostics.summary())}`);
                 if (response.ok) {
@@ -611,7 +613,10 @@ class StreamCompletion {
         };
     }
 
-    constructor(private readonly onContent?: (text: string) => void) {}
+    constructor(
+        private readonly onContent?: (text: string) => void,
+        private readonly onNativeActivity?: () => void,
+    ) {}
 
     observe(chunk: Uint8Array): void {
         this.scan(this.decoder.decode(chunk, { stream: true }));
@@ -643,6 +648,10 @@ class StreamCompletion {
                 continue;
             }
             if (typeof choice?.finish_reason === "string" && choice.finish_reason.length > 0) this.completed = true;
+            if (choice?.delta?.yib_native_activity === true) {
+                this.hasTools = true;
+                this.onNativeActivity?.();
+            }
             if (typeof choice?.delta?.reasoning_content === "string") this.reasoningContent = (this.reasoningContent ?? "") + choice.delta.reasoning_content;
             if (typeof choice?.delta?.content === "string") this.text += choice.delta.content;
             if (choice?.delta?.tool_calls?.length) {
