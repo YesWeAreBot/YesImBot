@@ -273,3 +273,34 @@ it("disposal aborts active work and prevents subsequent starts, reports and sett
     expect(registry.list("a")).toEqual([]);
     expect(() => registry.start("a", "next", "read", async () => 1)).toThrow(/Background/);
 });
+
+it.each([
+    [15, 100],
+    [100, 15],
+])("uses the smaller tool/background budget (%s/%s) without freeing a noncooperative slot", async (toolTimeoutMs, backgroundTimeoutMs) => {
+    vi.useFakeTimers();
+    const { registry, events } = fixture({ maxConcurrent: 1, timeoutMs: backgroundTimeoutMs, settlement: "task" });
+    const job = deferred();
+    let signal!: AbortSignal;
+    const task = registry.start(
+        "a",
+        "request",
+        "read",
+        async (current) => {
+            signal = current;
+            return job.promise;
+        },
+        undefined,
+        toolTimeoutMs,
+    );
+    await settle();
+    await vi.advanceTimersByTimeAsync(16);
+    expect(signal.aborted).toBe(true);
+    expect(registry.query("a", task.id).state).toBe("cancelling");
+    expect(() => registry.start("b", "other", "read", async () => "other")).toThrow(/concurrency/);
+    expect(events).toEqual([]);
+    job.resolve("late result");
+    await settle();
+    expect(registry.query("a", task.id)).toMatchObject({ state: "failed", error: "Background task timeout (15ms)" });
+    expect(registry.query("a", task.id)).not.toHaveProperty("result");
+});

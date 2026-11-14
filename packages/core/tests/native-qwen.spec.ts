@@ -174,7 +174,7 @@ for (const stream of [false, true]) {
                 (error) => error,
             );
             expect(error === null).toBe(reason === "tool_calls");
-            expect(executions).toBe(reason === "tool_calls" ? 1 : 0);
+            expect(executions).toBe(0);
             expect(calls[0].init.headers.get("X-DashScope-SSE")).toBe(stream ? "enable" : null);
         });
 }
@@ -281,7 +281,7 @@ it("signals Qwen tool activity before EOF without exposing executable deltas", a
     await pending;
     expect(observed).toBe(true);
     expect(count).toBe(1);
-    expect(executions).toBe(1);
+    expect(executions).toBe(0);
 });
 it("cancels Qwen native bodies and preserves abort signal", async () => {
     let cancelled = false;
@@ -433,8 +433,8 @@ for (const stream of [false, true]) {
                     () => null,
                     (error) => error,
                 );
-                expect(error === null).toBe(matching);
-                expect(executions).toBe(matching ? 1 : 0);
+                expect(error === null).toBe(!named || matching);
+                expect(executions).toBe(0);
                 expect(calls[0].body.parameters.tool_choice).not.toBe("required");
                 expect(typeof calls[0].body.parameters.tool_choice).not.toBe("object");
                 expect(calls[0].body.parameters.enable_thinking).toBe(true);

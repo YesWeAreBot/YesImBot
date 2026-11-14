@@ -271,7 +271,10 @@ export class ContextBuilder {
             // 基于时间戳判断是否是新的
             // 如果 item 是一个消息，则它需要发送者不是机器人自身才算“新”
             // 如果 item 不是消息，则这个条件始终为 true，也就是说只要时间戳满足，非消息类型就总是“新”的
-            item.is_new = item.timestamp > lastAgentTurnTime && (item.type === "message" ? item.sender.id !== selfId : true);
+            item.is_new =
+                item.type === "message" || item.type === "system_event"
+                    ? item.wasConsumed !== true && (item.type !== "message" || item.sender.id !== selfId)
+                    : item.timestamp > lastAgentTurnTime;
 
             (item as any).is_message = item.type === "message";
             (item as any).is_agent_thought = item.type === "agent_thought";
@@ -281,14 +284,7 @@ export class ContextBuilder {
             (item as any).is_system_event = item.type === "system_event";
         });
 
-        const firstNewIndex = history.findIndex((item) => item.is_new);
-
-        if (firstNewIndex === -1) {
-            processed_events.push(...history);
-        } else {
-            processed_events.push(...history.slice(0, firstNewIndex));
-            new_events.push(...history.slice(firstNewIndex));
-        }
+        for (const item of history) (item.is_new ? new_events : processed_events).push(item);
         return { processed_events, new_events };
     }
 }

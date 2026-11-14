@@ -47,16 +47,16 @@ export const profileInputSchema = () =>
 export const catalogParameters = () => ({
     account_ids: Schema.array(Schema.string()).description("read_many 多选人物 UUID 或账号 ID；与 all 互斥"),
     all: Schema.boolean().description("read_many 读取当前范围全部人物；过大时返回后续游标"),
-    fields: Schema.union(["overview", "structured", "full"]).description("返回概述、结构化栏目或完整档案；默认概述"),
-    cursor: Schema.string().description("继续上次查询；可仅传相同 action 和 cursor"),
-    limit: Schema.natural().min(1).max(20).description("本页人物数，最多20；响应过大时自动分页，不截断档案"),
+    fields: Schema.union(["overview", "structured", "full"]).description("list/read_many 可选；返回概述、结构化栏目或完整档案，默认概述"),
+    cursor: Schema.string().description("list/read_many 可选；继续上次查询时只传相同 action 和 cursor 即可"),
+    limit: Schema.natural().min(1).max(20).description("list/read_many/claims/claim_evidence 可选；每页最多 20 条"),
 });
 
 /** Keep runtime Session objects and tool bookkeeping out of immutable snapshots. */
 export function catalogRequest(args: CatalogArgs): CatalogArgs {
     return {
         action: args.action,
-        account_ids: args.account_ids,
+        account_ids: Array.isArray(args.account_ids) && args.account_ids.length === 0 ? undefined : args.account_ids,
         all: args.all,
         query: args.query,
         fields: args.fields,

@@ -104,7 +104,10 @@ export async function requestSystemOne(
                 signal: config.signal,
                 redirect: config.redirect,
             });
-            if (!response.ok) throw new Error(`TypeSafe request failed with status ${response.status}`);
+            if (!response.ok) {
+                await response.body?.cancel();
+                throw new Error(`TypeSafe request failed with status ${response.status}`);
+            }
             return response.json();
         });
     const response = await post(url, body, init);

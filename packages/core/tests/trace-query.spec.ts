@@ -45,6 +45,9 @@ it("returns a useful missing-provider error through real Koishi command dispatch
     const command = app.$commander.get("history.context")!;
     expect(String(command._usage)).toContain("--target");
     expect(command._examples).toContain("history.context --adapter onebot --target onebot:857518324");
+    const tokens = app.$commander.get("history.tokens")!;
+    expect(tokens.parse("--reset").options).toEqual({ reset: true });
+    expect(tokens.parse("--restart").options).toEqual({ reset: true });
 });
 
 it("accepts an exact bounded trace option and prevents trace from being ignored during a statistics reset", () => {

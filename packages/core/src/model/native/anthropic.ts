@@ -95,7 +95,11 @@ export function anthropicRequest(body: Json): Json {
         const choice = body.tool_choice;
         const type = choice === "required" ? "any" : choice === "auto" ? "auto" : choice === "none" ? "none" : choice?.type === "function" ? "tool" : null;
         if (!type) throw new Error("Anthropic 不支持此 tool_choice");
-        result.tool_choice = { type, ...(type === "tool" ? { name: choice.function.name } : {}) };
+        const manualThinking = body.thinking?.type === "enabled";
+        result.tool_choice = {
+            type: manualThinking && ["any", "tool"].includes(type) ? "auto" : type,
+            ...(!manualThinking && type === "tool" ? { name: choice.function.name } : {}),
+        };
     }
     return result;
 }

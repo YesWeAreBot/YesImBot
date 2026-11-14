@@ -2,6 +2,8 @@
 
 import { Context, Schema, Session } from "koishi";
 
+import type { ErrorCategory } from "../shared/errors/definitions";
+
 export interface Param {
     type: string;
     description?: string;
@@ -21,6 +23,8 @@ export interface ToolSchema {
     name: string;
     description: string;
     parameters: Properties;
+    /** Complete input JSON Schema, including composite branches and validation constraints. */
+    parametersJSONSchema: Record<string, any>;
 }
 
 /**
@@ -41,29 +45,61 @@ export interface ExtensionMetadata {
 export interface ToolExecutionContext {
     invocationActor?: "admin" | "model";
     requestId?: string;
+    /** Stable action-log ID, distinct from the turn ID and invocation receipt UUID. */
+    actionId?: string;
     signal?: AbortSignal;
     reportProgress?: (progress: string) => void;
     backgroundExecution?: boolean;
+    /** IDs whose actual image pixels were included in this request. */
+    attachedImageIds?: readonly string[];
+    /** Absolute upstream execution deadline, when the caller has one. */
+    deadline?: number;
+    /** Publish irreversible effects before the tool has finished (trusted runtime only). */
+    reportMetadata?: (metadata: NonNullable<ToolCallResult["metadata"]>) => void;
 }
 
 export interface ToolMetadata<TParams> {
+    /** Keep the old invocation available when a replacement from the same owner is advertised. */
+    modelReplacement?: string;
+    /** Model catalog aliases this tool is designed to replace. */
+    supersedes?: readonly string[];
+    /** Dispatch an explicit action through an existing, independently authorized tool. */
+    actionAliases?: Readonly<Record<string, string>>;
     /** Explicit opt-in for independent background reads; sends and mutations remain serial. */
     background?: boolean;
+    /** Explicitly safe to give failed reads back to the model for another bounded decision. */
+    readOnly?: boolean | ((params: Record<string, unknown>) => boolean);
+    /** Total execution budget in ms; an absent value inherits the ordinary tool budget. */
+    timeout?: number | ((params: Record<string, unknown>) => number | undefined);
     name?: string; // 工具名称，若不提供，则使用方法名
     description: string; // 工具功能详细描述，这是给 LLM 看的关键信息
     parameters: Schema<TParams>; // 工具的参数定义，使用 Koishi 的 Schema
     isSupported?: (session: Session) => boolean;
+    /** False or an explanatory string hides/rejects this tool for the request. */
+    isAvailable?: (context?: ToolExecutionContext) => boolean | string;
 }
 
 /**
  * 完整的工具定义，包含了元数据和可执行函数。
  */
 export interface ToolDefinition<TParams = any> {
+    modelReplacement?: string;
+    supersedes?: readonly string[];
+    /** Dispatch an explicit action through an existing, independently authorized tool. */
+    actionAliases?: Readonly<Record<string, string>>;
     background?: boolean;
+    /** Explicitly safe to give failed reads back to the model for another bounded decision. */
+    readOnly?: boolean | ((params: Record<string, unknown>) => boolean);
+    /** Total execution budget in ms; an absent value inherits the ordinary tool budget. */
+    timeout?: number | ((params: Record<string, unknown>) => number | undefined);
     name: string;
     description: string;
     parameters: Schema<TParams>;
     isSupported?: (session: Session) => boolean;
+    /** False or an explanatory string hides/rejects this tool for the request. */
+    isAvailable?: (context?: ToolExecutionContext) => boolean | string;
+    /** Recheck result-specific authorization/revision before archived output can be read. */
+    isResultCurrent?: (result: ToolCallResult, session: Session) => boolean | Promise<boolean>;
     execute: (args: Infer<TParams>) => Promise<any>;
 }
 
@@ -77,6 +113,10 @@ export interface ToolError {
     message: string;
     /** 错误是否可重试 */
     retryable?: boolean;
+    code?: string;
+    errorId?: string;
+    category?: ErrorCategory;
+    suggestion?: string;
 }
 
 /**

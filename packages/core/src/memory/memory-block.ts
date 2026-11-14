@@ -153,15 +153,21 @@ export class MemoryBlock {
 
     // --- Static Factory ---
 
-    public static async createFromFile(ctx: Context, logging: LoggerService, filePath: string): Promise<MemoryBlock> {
+    public static async createFromFile(
+        ctx: Context,
+        logging: LoggerService,
+        filePath: string,
+        options: { watch?: boolean; bindDisposal?: boolean } = {},
+    ): Promise<MemoryBlock> {
         const logger = logging.getLogger("[核心记忆]");
         let disposed = false;
         let block: MemoryBlock | undefined;
         // Bind ownership before asynchronous reads or watcher creation.
-        ctx.on("dispose", () => {
-            disposed = true;
-            block?.dispose();
-        });
+        if (options.bindDisposal !== false)
+            ctx.on("dispose", () => {
+                disposed = true;
+                block?.dispose();
+            });
         try {
             const fileStats = await stat(filePath);
             if (disposed) throw new Error("核心记忆服务已停止");
@@ -171,7 +177,7 @@ export class MemoryBlock {
             // logger.debug(`加载实例 | 标签: "${data.label}", 路径: "${filePath}"`);
             block = new MemoryBlock(ctx, filePath, blockData, fileStats.mtimeMs, logging);
 
-            await block.startWatching();
+            if (options.watch !== false) await block.startWatching();
             if (disposed) {
                 block.dispose();
                 throw new Error("核心记忆服务已停止");

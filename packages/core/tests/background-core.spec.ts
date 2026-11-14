@@ -41,6 +41,10 @@ function fixture(wake = true, gain = 60) {
     };
     const core: any = Object.create(AgentCore.prototype);
     Object.assign(core, {
+        activeTurnSettlements: new Map(),
+        resettingHistory: new Set(),
+        historyTargets: new Map(),
+        resetStimuli: new Map(),
         ctx,
         config,
         willing,

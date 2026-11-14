@@ -9,6 +9,7 @@ import { TableName } from "../shared/constants";
 import { AppError, ErrorDefinitions } from "../shared/errors";
 import { isEmpty } from "../shared/utils";
 import { HistoryConfig } from "./config";
+import { registerHistoryResetParticipant } from "./history-reset";
 import { InteractionManager } from "./interaction-manager";
 import { MemoryTarget, SemanticMemoryManager } from "./l2-semantic-memory";
 import { diaryDateKey, diaryDayRange } from "./memory-date";
@@ -23,6 +24,7 @@ export class ArchivalMemoryManager {
     private pendingDiaries = new Map<string, Promise<DiaryEntryData | undefined>>();
     private pendingWrites = new Set<Promise<unknown>>();
     private controllers = new Set<AbortController>();
+    private readonly failures = new Map<string, { attempts: number; nextAttempt: number }>();
     private thresholdChecks = new Map<string, { dirty: boolean; done: Promise<void> }>();
 
     constructor(
@@ -34,6 +36,11 @@ export class ArchivalMemoryManager {
         private semanticMemory?: SemanticMemoryManager,
     ) {
         this.logger = logging.getLogger("[L3-长期记忆]");
+        registerHistoryResetParticipant(ctx, {
+            prepare: () => {
+                this.failures.clear();
+            },
+        });
     }
 
     public start() {
@@ -89,7 +96,10 @@ export class ArchivalMemoryManager {
         }
         const check = { dirty: true, done: Promise.resolve() };
         this.thresholdChecks.set(key, check);
-        check.done = this.checkMessageThreshold(message, date, threshold, generation, lifecycle, check, key);
+        check.done = this.checkMessageThreshold(message, date, threshold, generation, lifecycle, check, key).catch((error) => {
+            if (!this.stopped && this.lifecycle === lifecycle && this.semanticMemory?.getHistoryGeneration(message) === generation)
+                this.logger.warn(`L3 自动日记暂未完成，冷却后再试：${String(error)}`);
+        });
         return check.done;
     }
 
@@ -115,7 +125,7 @@ export class ArchivalMemoryManager {
                 ]);
                 if (!active()) return;
                 if (messageCount < 5 || messageCount - (previousCount ?? 0) < threshold) continue;
-                const generated = await this.generateDiaryForChannel(message.platform, message.channelId, date, undefined, true);
+                const generated = await this.generateDiaryForChannel(message.platform, message.channelId, date, undefined, true, true);
                 if (generated) check.dirty = true;
             }
         } finally {
@@ -177,7 +187,7 @@ export class ArchivalMemoryManager {
         for (const channel of uniqueChannels) {
             if (this.stopped || this.lifecycle !== lifecycle) return;
             try {
-                await this.generateDiaryForChannel(channel.platform, channel.channelId, diaryDate, uniqueChannels, incremental);
+                await this.generateDiaryForChannel(channel.platform, channel.channelId, diaryDate, uniqueChannels, incremental, true);
             } catch (error) {
                 this.logger.warn(`频道 ${channel.platform}:${channel.channelId} 日记生成失败，继续处理其他频道：${String(error)}`);
             }
@@ -191,6 +201,7 @@ export class ArchivalMemoryManager {
         date: Date,
         knownChannels?: MemoryTarget[],
         incremental = false,
+        automatic = false,
     ): Promise<DiaryEntryData | undefined> {
         if (this.stopped || !this.config.l3_memory.enabled || !this.chatModel) return Promise.resolve(undefined);
         const target = { platform, channelId };
@@ -198,9 +209,25 @@ export class ArchivalMemoryManager {
         const lifecycle = this.lifecycle;
         const diaryDate = new Date(date);
         const key = JSON.stringify([platform, channelId, diaryDateKey(diaryDate), lifecycle, generation, incremental]);
+        if (automatic && Date.now() < (this.failures.get(key)?.nextAttempt ?? 0)) return Promise.resolve(undefined);
         const existing = this.pendingDiaries.get(key);
         if (existing) return existing;
-        const task = this.generateDiary(target, diaryDate, lifecycle, generation, knownChannels, incremental);
+        const task = this.generateDiary(target, diaryDate, lifecycle, generation, knownChannels, incremental, automatic).then(
+            (result) => {
+                if (result) this.failures.delete(key);
+                return result;
+            },
+            (error) => {
+                if (automatic && !this.stopped && this.lifecycle === lifecycle && this.semanticMemory?.getHistoryGeneration(target) === generation) {
+                    const base = Math.max(1, Math.min(3600, this.config.l3_memory.failureCooldownSeconds ?? 30));
+                    const maximum = Math.max(base, Math.min(3600, this.config.l3_memory.failureMaxCooldownSeconds ?? 300));
+                    const attempts = (this.failures.get(key)?.attempts ?? 0) + 1;
+                    if (this.failures.size >= 256 && !this.failures.has(key)) this.failures.delete(this.failures.keys().next().value!);
+                    this.failures.set(key, { attempts, nextAttempt: Date.now() + Math.min(maximum, base * 2 ** Math.min(10, attempts - 1)) * 1000 });
+                }
+                throw error;
+            },
+        );
         this.pendingDiaries.set(key, task);
         const finish = () => {
             if (this.pendingDiaries.get(key) === task) this.pendingDiaries.delete(key);
@@ -216,6 +243,7 @@ export class ArchivalMemoryManager {
         generation?: number,
         knownChannels?: MemoryTarget[],
         incremental = false,
+        automatic = false,
     ): Promise<DiaryEntryData | undefined> {
         const { platform, channelId } = target;
         const dateKey = diaryDateKey(date);
@@ -223,6 +251,10 @@ export class ArchivalMemoryManager {
             !this.stopped && this.lifecycle === lifecycle && (!this.semanticMemory || this.semanticMemory.getHistoryGeneration(target) === generation);
         const controller = new AbortController();
         this.controllers.add(controller);
+        const unwatch = this.semanticMemory?.watchHistory(target, () => {
+            controller.abort(new Error("日记来源历史已清除"));
+            this.failures.clear();
+        });
         try {
             await this.semanticMemory?.waitForHistoryClear(target);
             if (!active()) return;
@@ -289,10 +321,11 @@ export class ArchivalMemoryManager {
             }
         } catch (error) {
             if (active()) {
-                this.logger.error(`为频道 ${platform}:${channelId} 生成日记失败`, error);
-                if (incremental) throw error;
+                if (!automatic) this.logger.error(`为频道 ${platform}:${channelId} 生成日记失败`, error);
+                if (incremental || automatic) throw error;
             }
         } finally {
+            unwatch?.();
             this.controllers.delete(controller);
         }
     }

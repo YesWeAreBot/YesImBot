@@ -2,17 +2,21 @@ import { Context, Schema, h, type Session } from "koishi";
 import * as core from "koishi-plugin-yesimbot";
 
 import { PeopleCatalog } from "./catalog";
-import { claimParameters, executeClaimTool, visibleClaims } from "./claim-tools";
+import { executeClaimTool, visibleClaims } from "./claim-tools";
 import type { ClaimChange } from "./claims";
-import { describePeopleCommand } from "./command-help";
+import { describePeopleCommand, parsePeopleProfile } from "./command-help";
 import { identityWarning, renderPeople } from "./context";
+import { PersonHistoryReset, readPersonAction } from "./history-reset";
+import { personToolContract } from "./person-tool-schema";
 import type { ProfileDocument } from "./profile";
 import { DEFAULT_PROFILE_SYSTEM_PROMPT, mainProfilePolicy } from "./profile-prompt";
-import { catalogParameters, catalogProfile, catalogRequest, profileInputSchema, visibleProfile, visibleLegacyProfile } from "./profile-tools";
+import { catalogProfile, catalogRequest, visibleProfile, visibleLegacyProfile } from "./profile-tools";
 import { applySharedMemory } from "./shared-runtime";
+import { personSnapshotGuard } from "./snapshot-guard";
 import { summarySourceAllowed } from "./source-policy";
 import { PersonStore, registerModels, sceneKey, type Audit, type LinkProposal, type Mode, type Person, type Proposal, type SceneInput } from "./store";
 import { registerSummaryQueueModels, SummaryQueue } from "./summary-queue";
+import { personMemoryFailure as Failed } from "./tool-result";
 import { SummaryWorker, summaryResponseText, type SummaryModel, type WorkerConfig } from "./worker";
 
 declare module "koishi" {
@@ -136,7 +140,7 @@ export interface Dependencies {
     };
 }
 const Success = (result: unknown) => ({ status: "success", result });
-const Failed = (error: unknown) => ({ status: "error", error: { name: "PersonMemoryError", message: error instanceof Error ? error.message : String(error) } });
+
 const key = (session: Session) => sceneKey(session as unknown as SceneInput);
 function profileView(p: Person) {
     return {
@@ -243,12 +247,13 @@ export function apply(ctx: Context, config: Config) {
     }
     registerModels(ctx);
     if (config.modelGroup) registerSummaryQueueModels(ctx);
+    const reset = new PersonHistoryReset(ctx);
     const logger = ctx.logger(name),
-        store = new PersonStore(ctx.database, config.mode);
+        store = new PersonStore(ctx.database, config.mode, { domain: reset.domain, active: () => active && reset.available() });
     let active = true;
     const modes = new Map<string, Mode>(),
         generations = new Map<string, number>();
-    const allowed = (session: Session) => active && ctx.filter(session) && deps.yesimbot.world.isChannelAllowed(session);
+    const allowed = (session: Session) => active && reset.available() && ctx.filter(session) && deps.yesimbot.world.isChannelAllowed(session);
     let model: SummaryModel | undefined;
     if (config.modelGroup)
         model = async (messages, signal, attribution) => {
@@ -277,6 +282,10 @@ export function apply(ctx: Context, config: Config) {
         sourceAllowed: (scope, _userId, evidence) => summarySourceAllowed(ctx, evidence, scope, false, allowed, key),
     };
     const worker = new SummaryWorker(store, model, workerConfig, (error) => logger.warn(`后台人物总结未接受：${String(error)}`));
+    reset.install(store, worker, key, false, () => {
+        modes.clear();
+        generations.clear();
+    });
     if (model) {
         const getScope = (core as unknown as { getPersistentInstanceScope?: (ctx: Context, options?: { owner?: Context }) => string })
             .getPersistentInstanceScope;
@@ -309,86 +318,69 @@ export function apply(ctx: Context, config: Config) {
             : "";
     });
 
-    ctx.on("yesimbot/before-user-stimulus", async (session: Session) => {
-        if (
-            !allowed(session) ||
-            !session.userId ||
-            session.author?.isBot ||
-            session.userId === session.bot.selfId ||
-            (session as any).__commandHandled ||
-            !session.messageId ||
-            !session.content?.trim()
-        )
-            return;
-        try {
-            const scope = key(session);
-            const mode = (await store.read(scope)).settings.mode;
-            modes.set(scope, mode);
-            if (mode === "off") return;
-            const generation = generations.get(scope) ?? 0,
-                current = () => active && generation === (generations.get(scope) ?? 0) && modes.get(scope) !== "off";
-            const identity = await store.recognize(scope, session.userId, session.author?.nick || session.author?.name || session.userId, current);
-            if (!active) return;
-            await store.capture(
-                scope,
-                {
-                    id: session.messageId,
-                    userId: session.userId,
-                    name: session.author?.nick || session.author?.name || session.userId,
-                    text: typeof core.normalizeOneBotMessageContent === "function" ? await core.normalizeOneBotMessageContent(session) : session.content,
-                    timestamp: Number(session.timestamp) || Date.now(),
-                    provenance: {
-                        guildId: session.guildId,
-                        platform: session.platform,
-                        selfId: session.selfId || session.bot.selfId,
-                        channelId: session.channelId!,
-                        messageId: session.messageId,
-                        personId: identity.person.id,
-                        accountRevision: identity.account.bindingRevision ?? 0,
-                        scene: scope,
-                    },
-                },
-                current,
-            );
-            if (active) await worker.observe(scope, session.userId);
-        } catch (error) {
-            logger.warn(`人物资料记录失败：${String(error)}`);
-        }
-    });
+    ctx.on("yesimbot/before-user-stimulus", (session: Session) =>
+        reset.track(
+            (async () => {
+                const resetEpoch = reset.epoch();
+                if (
+                    !allowed(session) ||
+                    !session.userId ||
+                    session.author?.isBot ||
+                    session.userId === session.bot.selfId ||
+                    (session as any).__commandHandled ||
+                    !session.messageId ||
+                    !session.content?.trim()
+                )
+                    return;
+                try {
+                    const scope = key(session);
+                    const mode = (await store.read(scope)).settings.mode;
+                    modes.set(scope, mode);
+                    if (mode === "off") return;
+                    const generation = generations.get(scope) ?? 0,
+                        current = () =>
+                            active &&
+                            reset.available() &&
+                            reset.epoch() === resetEpoch &&
+                            generation === (generations.get(scope) ?? 0) &&
+                            modes.get(scope) !== "off";
+                    const identity = await store.recognize(scope, session.userId, session.author?.nick || session.author?.name || session.userId, current);
+                    if (!active) return;
+                    await store.capture(
+                        scope,
+                        {
+                            id: session.messageId,
+                            userId: session.userId,
+                            name: session.author?.nick || session.author?.name || session.userId,
+                            text:
+                                typeof core.normalizeOneBotMessageContent === "function" ? await core.normalizeOneBotMessageContent(session) : session.content,
+                            timestamp: Number(session.timestamp) || Date.now(),
+                            provenance: {
+                                guildId: session.guildId,
+                                platform: session.platform,
+                                selfId: session.selfId || session.bot.selfId,
+                                channelId: session.channelId!,
+                                messageId: session.messageId,
+                                personId: identity.person.id,
+                                accountRevision: identity.account.bindingRevision ?? 0,
+                                scene: scope,
+                            },
+                        },
+                        current,
+                    );
+                    if (active) await worker.observe(scope, session.userId);
+                } catch (error) {
+                    logger.warn(`人物资料记录失败：${String(error)}`);
+                }
+            })(),
+        ),
+    );
 
     const catalog = new PeopleCatalog();
     const tool = {
         name: "person_memory",
-        description:
-            "仅操作当前场景。claims 列出逐条认识及版本，claim_evidence 读取原始证据，propose_claim 补证/反证/修订/停用；已有逐条认识后请用该入口维护，不能整段覆盖。list 列出可查询人物；read_many 用 account_ids 多选或 all=true 全选，fields 选 overview/structured/full，cursor 继续分页。read(account_id) 读取账号 ID 或人物 UUID 的画像与版本；search(query) 最多返回 5 个摘要；history(account_id) 读取该账号或人物最近 10 次修改的元数据和有限变更摘要，详细证据由管理员核对。propose 提交完整画像，需 account_id、profile、message_ids、person_id、person_revision、account_revision；auto 模式可接受画像。propose_link 提交账号关联建议，另需 target_person_id、target_revision、confidence、reason；即使 auto 模式也始终待管理员审核。两种候选都需 1–10 个当前账号的实际消息 ID 和最新版本。资料是可修正信念，确信度不代表身份认证。不能跨群、直接关联、合并、审批或覆盖人工锁定。",
-        parameters: Schema.object({
-            action: Schema.union([
-                Schema.const("read"),
-                Schema.const("list"),
-                Schema.const("read_many"),
-                Schema.const("search"),
-                Schema.const("history"),
-                Schema.const("propose"),
-                Schema.const("propose_link"),
-                Schema.const("claims"),
-                Schema.const("claim_evidence"),
-                Schema.const("propose_claim"),
-            ]).required(),
-            account_id: Schema.string().description("read/history 必填；当前场景的平台账号 ID 或人物 UUID；候选须平台账号 ID"),
-            query: Schema.string().description("search 必填；1–80 字的关键词"),
-            profile: profileInputSchema(),
-            ...catalogParameters(),
-            ...claimParameters(),
-            offset: Schema.natural().description("claims/claim_evidence 分页位置"),
-            message_ids: Schema.array(Schema.string()).description("两种候选必填；实际来源消息 ID，1 到 10 个"),
-            person_id: Schema.string().description("两种候选必填；来源人物 UUID"),
-            person_revision: Schema.number().min(0).step(1).description("两种候选必填；读到的来源画像 revision"),
-            account_revision: Schema.number().min(0).step(1).description("两种候选必填；读到的账号关联 revision"),
-            target_person_id: Schema.string().description("propose_link 必填；当前场景目标人物 UUID"),
-            target_revision: Schema.number().min(0).step(1).description("propose_link 必填；目标人物画像 revision"),
-            confidence: Schema.number().min(0).max(1).description("propose_link 必填；0–1 的关联确信度"),
-            reason: Schema.string().description("propose_link 必填；不超过 500 字的关联依据"),
-        }),
+        readOnly: readPersonAction,
+        ...personToolContract(false),
         isSupported: (session: Session) => !!session && allowed(session) && (modes.get(key(session)) ?? config.mode) !== "off",
         execute: async (args: {
             session: Session;
@@ -585,7 +577,14 @@ export function apply(ctx: Context, config: Config) {
             }
         },
     };
-    const removeTool = deps.yesimbot.tool.registerTool(tool);
+    const guardSnapshot = personSnapshotGuard(ctx, async (session: Session) => {
+        if (!allowed(session)) throw new Error("当前场景未启用人物记忆");
+        const scope = key(session),
+            state = await store.read(scope);
+        if (state.settings.mode === "off") throw new Error("人物记忆已关闭");
+        return [reset.epoch(), scope, state.people, state.accounts, state.settings.mode];
+    });
+    const removeTool = deps.yesimbot.tool.registerTool(guardSnapshot({ ...tool, execute: (args: any) => reset.track(tool.execute(args)) }));
     ctx.on("dispose", async () => {
         active = false;
         const stopped = worker.stop();
@@ -607,7 +606,7 @@ export function apply(ctx: Context, config: Config) {
                     const authority =
                         (session.user as { authority?: number } | undefined)?.authority ?? (await session.observeUser<"authority">(["authority"])).authority;
                     if (authority < 3) throw new Error("仅管理员可以管理人物记忆（authority ≥ 3）");
-                    const result = await action(key(session), `admin:${session.platform}:${session.userId}`, args, session, options || {});
+                    const result = await reset.track(action(key(session), `admin:${session.platform}:${session.userId}`, args, session, options || {}));
                     if (result.length <= 1800) return h.escape(result);
                     for (let start = 0; start < Math.min(result.length, 36000); start += 1800) await session.send(h.escape(result.slice(start, start + 1800)));
                     return result.length > 36000 ? "输出已截断，请缩小查询范围。" : "";
@@ -663,16 +662,16 @@ export function apply(ctx: Context, config: Config) {
         "修改心中称呼（不改平台昵称）",
         async (scope, actor, [ref, name]) => `已改称呼：${(await store.rename(scope, ref, name, actor)).name}`,
     );
-    command("people.edit_json <ref:string> <profile:text>", "人工纠正完整结构画像（JSON）", async (scope, actor, [ref, profile]) => {
-        const document = JSON.parse(profile);
-        if (!document || typeof document !== "object" || Array.isArray(document)) throw new Error("请提供完整结构画像 JSON 对象");
-        const person = await store.setProfile(scope, ref, document, actor);
-        return show(person);
-    });
+    command("people.edit_json <ref:string> <profile:text>", "人工纠正完整结构画像（也可用 people.edit --format json）", async (scope, actor, [ref, profile]) =>
+        show(await store.setProfile(scope, ref, parsePeopleProfile(profile, "json"), actor)),
+    );
     command(
         "people.edit <ref:string> <profile:text>",
         "人工替换完整画像，可直接纠错并清除需复核标记",
-        async (scope, actor, [ref, profile]) => `已更新：${show(await store.setProfile(scope, ref, profile, actor))}`,
+        async (scope, actor, [ref, profile], _session, options) => {
+            const person = await store.setProfile(scope, ref, parsePeopleProfile(profile, options.format), actor);
+            return options.format === "json" ? show(person) : `已更新：${show(person)}`;
+        },
     );
     command(
         "people.clear <ref:string>",

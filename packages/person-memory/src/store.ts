@@ -1,10 +1,16 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import type { Context } from "koishi";
-import { conversationChannelId } from "koishi-plugin-yesimbot";
+import { AppError, ErrorDefinitions, conversationChannelId } from "koishi-plugin-yesimbot";
 
 import { applyClaimChanges, projectClaims, retireClaims, claimEvidence as allClaimEvidence, type Claim, type ClaimChange } from "./claims";
 import { validateProfileDocument, renderProfileDocument, type ProfileDocument } from "./profile";
+
+/** Keep version guards usable with cores predating the typed person error catalog. */
+function versionConflict(message: string): Error {
+    const definition = ErrorDefinitions.PERSON_MEMORY?.VERSION_CONFLICT;
+    return definition ? new AppError(definition, { args: [message] }) : new Error(message);
+}
 
 export type Mode = "off" | "review" | "auto";
 export interface SceneInput {
@@ -150,6 +156,7 @@ export interface Audit {
 }
 declare module "koishi" {
     interface Tables {
+        "person_memory.owners": { key: string; domain: string; scope: string };
         "person_memory.state": StateRow;
         "person_memory.sources": SourceRow;
         "person_memory.audit": Audit;
@@ -159,6 +166,7 @@ const STATE = "person_memory.state",
     SOURCE = "person_memory.sources",
     AUDIT = "person_memory.audit";
 export function registerModels(ctx: Context) {
+    ctx.model.extend("person_memory.owners", { key: "string", domain: "string", scope: "string" }, { primary: "key" });
     ctx.model.extend(STATE, { scope: "string", revision: "unsigned", state: "json" }, { primary: "scope" });
     ctx.model.extend(SOURCE, { key: "string", scope: "string", userId: "string", timestamp: "double", source: "json" }, { primary: "key" });
     ctx.model.extend(
@@ -290,13 +298,47 @@ async function serial<T>(db: object, key: string, fn: () => Promise<T>): Promise
     }
 }
 
+type ResetCoordination = WeakMap<object, { readers: Map<string, Set<Promise<unknown>>>; purging: Set<string> }>;
+const coordinationKey = Symbol.for("yesimbot.person-memory.reset.v1");
+const sharedCoordination = globalThis as typeof globalThis & { [key: symbol]: ResetCoordination | undefined };
+const resetCoordination = (sharedCoordination[coordinationKey] ??= new WeakMap());
+function resetGuard(db: Context["database"]) {
+    let guard = resetCoordination.get(db.tables);
+    if (!guard) resetCoordination.set(db.tables, (guard = { readers: new Map(), purging: new Set() }));
+    return guard;
+}
 export class PersonStore {
+    private purgeSummary = { cleared: 0, retained: 0 };
+    purgeReport() {
+        return { ...this.purgeSummary };
+    }
+    private reading = new Set<Promise<unknown>>();
     constructor(
         private db: Context["database"],
         private defaultMode: Mode,
-        private options: { autoLinks?: boolean; active?: () => boolean; onCommit?: (audit: Audit) => Promise<void> } = {},
+        private options: { domain?: () => string; autoLinks?: boolean; active?: () => boolean; onCommit?: (audit: Audit) => Promise<void> } = {},
     ) {}
     private async snapshot(scope: string): Promise<StateRow & { firstCommit: boolean }> {
+        const guard = resetGuard(this.db);
+        if (this.options.active?.() === false || guard.purging.has(scope)) throw new Error("任务已取消");
+        const operation = this.snapshotRows(scope);
+        this.reading.add(operation);
+        let readers = guard.readers.get(scope);
+        if (!readers) guard.readers.set(scope, (readers = new Set()));
+        readers.add(operation);
+        try {
+            return await operation;
+        } finally {
+            this.reading.delete(operation);
+            readers.delete(operation);
+            if (!readers.size) guard.readers.delete(scope);
+        }
+    }
+    private async snapshotRows(scope: string): Promise<StateRow & { firstCommit: boolean }> {
+        if (this.options.domain) {
+            const domain = this.options.domain();
+            await this.db.upsert("person_memory.owners", [{ key: digest(JSON.stringify([domain, scope])), domain, scope }]);
+        }
         const cached = (await this.db.get(STATE, { scope }))[0];
         const first = (await this.db.get(AUDIT, { scope, format: 1 }, { sort: { revision: "asc" }, limit: 1 }))[0];
         const baseline = first?.baseline;
@@ -320,6 +362,36 @@ export class PersonStore {
         row.firstCommit = !first && !commits.length;
         if (row.revision && (!cached || cached.revision !== row.revision)) await this.cache({ scope, revision: row.revision, state: row.state });
         return row;
+    }
+    async purgeOwned(extraScopes: string[] = []) {
+        const domain = this.options.domain?.();
+        if (!domain) throw new Error("人物资料缺少可证明的实例归属，拒绝清理");
+        await Promise.allSettled(this.reading);
+        const owned = await this.db.get("person_memory.owners", { domain });
+        const scopes = [...new Set([...owned.map((row) => row.scope), ...extraScopes])];
+        const removed: string[] = [];
+        for (const scope of scopes)
+            await serial(this.db.tables, scope, async () => {
+                const guard = resetGuard(this.db);
+                guard.purging.add(scope);
+                try {
+                    await Promise.allSettled(guard.readers.get(scope) ?? []);
+                    const owners = await this.db.get("person_memory.owners", { scope });
+                    if (owners.some((owner) => owner.domain !== domain)) return;
+                    await this.db.remove(SOURCE, { scope });
+                    // Audit baselines can reconstruct state, so delete them before the cache.
+                    await this.db.remove(AUDIT, { scope });
+                    await this.db.remove(STATE, { scope });
+                    for (const table of ["person_memory.experiences", "person_memory.scenes"] as const)
+                        if (this.db.tables[table]) await this.db.remove(table, { scope });
+                    await this.db.remove("person_memory.owners", { scope, domain });
+                    removed.push(scope);
+                } finally {
+                    guard.purging.delete(scope);
+                }
+            });
+        this.purgeSummary = { cleared: removed.length, retained: scopes.length - removed.length };
+        return removed;
     }
     async read(scope: string): Promise<State> {
         return (await this.snapshot(scope)).state;
@@ -488,7 +560,11 @@ export class PersonStore {
             try {
                 const old = await this.db.get(SOURCE, { scope }, { sort: { timestamp: "desc", key: "desc" }, offset: 200, limit: 2000 });
                 const expired = old.filter((row) => row.timestamp < Date.now() - 7 * 86400000);
-                if (expired.length) await this.db.remove(SOURCE, { key: { $in: expired.map((r) => r.key) } });
+                // Bound SQL text: the WASM SQLite driver copies prepared SQL onto a small stack.
+                for (let offset = 0; offset < expired.length; offset += 128) {
+                    if (!active() || this.options.active?.() === false) break;
+                    await this.db.remove(SOURCE, { scope, key: { $in: expired.slice(offset, offset + 128).map((row) => row.key) } });
+                }
             } catch {
                 /* Retry cleanup on the next captured source. */
             }
@@ -831,7 +907,7 @@ export class PersonStore {
                 if (p.locked) throw new Error("画像已被管理员锁定");
                 if (p.claims?.length) throw new Error("已有主张记录，请使用主张修订而非整篇覆写");
                 if (expected && (p.id !== expected.personId || p.revision !== expected.personRevision || a.revision !== expected.accountRevision))
-                    throw new Error("总结期间发生人工修改或身份变更，候选已过期");
+                    throw versionConflict("总结期间发生人工修改或身份变更，候选已过期");
                 const ids = new Set(messageIds);
                 const sources =
                     typeof input === "string"
@@ -904,7 +980,7 @@ export class PersonStore {
                     p = state.people[a.personId];
                 if (p.locked) throw new Error("画像已被管理员锁定");
                 if (!expected || p.id !== expected.personId || p.revision !== expected.personRevision || a.revision !== expected.accountRevision)
-                    throw new Error("身份或画像版本已变化");
+                    throw versionConflict("身份或画像版本已变化");
                 const sources = await this.currentProfileSources(scope, state, userId, 0);
                 const evidence = claimChanges.map((change) => {
                     if (!Array.isArray(change.messageIds) || change.messageIds.length > 10 || (change.action !== "retire" && !change.messageIds.length))

@@ -165,3 +165,45 @@ for (const overlap of [false, true]) {
         }
     }
 }
+
+it.each(["duplicate-entry", "SQLITE_IOERR", undefined])("only feeds derived memories after a persisted L1 message (%s)", async (code) => {
+    const logs: string[] = [];
+    const logger = { ...log, warn: (text: string) => logs.push(text), error: (text: string) => logs.push(text) };
+    const ctx = stubCtx(
+        { logging: { getLogger: () => logger } },
+        {
+            database: {
+                create: async () => {
+                    if (code) throw Object.assign(new Error("storage error"), { code });
+                },
+            },
+        },
+    );
+    const l1 = new InteractionManager(ctx, {} as any, ctx.yesimbot.logging);
+    let buffered = 0;
+    let observed = 0;
+    const world = Object.assign(Object.create(WorldStateService.prototype), {
+        config: { l2_memory: { enabled: true }, l3_memory: { messageThreshold: 1 } },
+        l1_manager: l1,
+        l2_manager: {
+            getHistoryGeneration: () => 0,
+            async writeMemory(_target: unknown, _generation: unknown, write: () => Promise<void>) {
+                await write();
+                return true;
+            },
+            addMessageToBuffer: () => {
+                buffered++;
+            },
+        },
+        l3_manager: {
+            observeMessage: async () => {
+                observed++;
+            },
+        },
+    });
+    const result = await world.recordMessage({ id: "one", platform: "onebot", channelId: "room" });
+    expect(result).toBe(code === "duplicate-entry" ? "duplicate" : code ? "failed" : "stored");
+    expect(buffered).toBe(code ? 0 : 1);
+    expect(observed).toBe(code ? 0 : 1);
+    if (code === "SQLITE_IOERR") expect(logs[0]).toContain("SQLITE_IOERR");
+});

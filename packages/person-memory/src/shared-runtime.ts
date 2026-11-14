@@ -5,23 +5,24 @@ import * as core from "koishi-plugin-yesimbot";
 import { conversationChannelId } from "koishi-plugin-yesimbot";
 
 import { PeopleCatalog } from "./catalog";
-import { claimParameters, executeClaimTool, visibleClaims } from "./claim-tools";
-import { describePeopleCommand } from "./command-help";
+import { executeClaimTool, visibleClaims } from "./claim-tools";
+import { describePeopleCommand, parsePeopleProfile } from "./command-help";
 import { escapeContext } from "./context";
 import { ContinuityStore, registerContinuityModels, sourceRef, summaryUnsafeIn, type RecallTarget } from "./continuity";
+import { PersonHistoryReset, readPersonAction } from "./history-reset";
 import type { Config, Dependencies } from "./index";
+import { personToolContract } from "./person-tool-schema";
 import { mainProfilePolicy } from "./profile-prompt";
-import { catalogParameters, catalogProfile, catalogRequest, profileInputSchema, visibleProfile, visibleLegacyProfile } from "./profile-tools";
+import { catalogProfile, catalogRequest, visibleProfile, visibleLegacyProfile } from "./profile-tools";
+import { personSnapshotGuard } from "./snapshot-guard";
 import { summarySourceAllowed } from "./source-policy";
 import { PersonStore, accountRef, mindScope, registerModels, sceneKey, type Audit, type Mode, type SceneInput } from "./store";
 import { registerSummaryQueueModels, SummaryQueue } from "./summary-queue";
+import { personMemoryFailure as failed } from "./tool-result";
 import { SummaryWorker, summaryResponseText, type SummaryModel, type WorkerConfig } from "./worker";
 
 const success = (result: unknown) => ({ status: "success", result });
-const failed = (error: unknown) => ({
-    status: "error",
-    error: { name: "PersonMemoryError", message: error instanceof Error ? error.message : String(error) },
-});
+
 const boundedData = (value: unknown, size: number) => {
     const escaped = escapeContext(JSON.stringify(value));
     return escaped.length > size ? escaped.slice(0, size) + "…（内容已截断）" : escaped;
@@ -71,15 +72,17 @@ export function applySharedMemory(ctx: Context, config: Config) {
     registerModels(ctx);
     if (config.modelGroup) registerSummaryQueueModels(ctx);
     registerContinuityModels(ctx);
+    const reset = new PersonHistoryReset(ctx);
     let active = true;
     const modes = new Map<string, Mode>();
     const generations = new Map<string, number>();
 
     const scopeOf = (session: Session) => mindScope(session as unknown as SceneInput, config.memoryDomain || "");
-    const baseAllowed = (session: Session) => active && ctx.filter(session) && world.isChannelAllowed(session);
+    const baseAllowed = (session: Session) => active && reset.available() && ctx.filter(session) && world.isChannelAllowed(session);
     const store = new PersonStore(ctx.database, config.mode, {
+        domain: reset.domain,
         autoLinks: true,
-        active: () => active,
+        active: () => active && reset.available(),
         onCommit: async (audit) => {
             if (audit.actor !== "summary-model") return;
             const sources = audit.changes.flatMap((c) => (c.after as any)?.evidence || []),
@@ -111,6 +114,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
     const memories = new ContinuityStore(ctx.database, store);
     const pending = new Set<Promise<unknown>>();
     const track = <T>(promise: Promise<T>) => {
+        reset.track(promise);
         pending.add(promise);
         void promise.finally(() => pending.delete(promise)).catch(() => {});
         return promise;
@@ -155,10 +159,12 @@ export function applySharedMemory(ctx: Context, config: Config) {
             logger.warn(`记忆已接受，事件投递失败：${String(error)}`);
         }
     };
-    const writingStore = (session: Session) =>
-        new PersonStore(ctx.database, config.mode, {
+    const writingStore = (session: Session) => {
+        const epoch = reset.epoch();
+        return new PersonStore(ctx.database, config.mode, {
+            domain: reset.domain,
             autoLinks: true,
-            active: () => active,
+            active: () => active && reset.available() && reset.epoch() === epoch,
             onCommit: async (audit: Audit) => {
                 if (audit.action === "recognize") return;
                 await event(
@@ -175,6 +181,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
                 );
             },
         });
+    };
     const assertEnabled = async (session: Session) => {
         if (!baseAllowed(session)) throw new Error("当前会话未启用共同记忆");
         const scope = scopeOf(session),
@@ -343,6 +350,10 @@ export function applySharedMemory(ctx: Context, config: Config) {
         sourceAllowed: (scope, _userId, evidence) => summarySourceAllowed(ctx, evidence, scope, true, baseAllowed, scopeOf),
     };
     const worker = new SummaryWorker(store, model, workerConfig, (error) => logger.warn(String(error)));
+    reset.install(store, worker, scopeOf, true, () => {
+        modes.clear();
+        generations.clear();
+    });
     if (model) {
         const getScope = (core as unknown as { getPersistentInstanceScope?: (ctx: Context, options?: { owner?: Context }) => string })
             .getPersistentInstanceScope;
@@ -371,6 +382,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
                 )
                     return;
                 try {
+                    const resetEpoch = reset.epoch();
                     const scope = scopeOf(session),
                         target = sessionTargetKey(session),
                         generation = generations.get(scope) ?? 0;
@@ -378,6 +390,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
                     // permission after each async phase and at every store commit.
                     const current = () =>
                         baseAllowed(session) &&
+                        reset.epoch() === resetEpoch &&
                         scopeOf(session) === scope &&
                         sessionTargetKey(session) === target &&
                         generation === (generations.get(scope) ?? 0) &&
@@ -483,10 +496,25 @@ export function applySharedMemory(ctx: Context, config: Config) {
             ? text
             : "";
     });
+    const guardSnapshot = personSnapshotGuard(
+        ctx,
+        async (session: Session) => {
+            const { scope, state } = await assertEnabled(session);
+            const targets = await targetsFor(session, scope);
+            return [reset.epoch(), scope, state.people, state.accounts, state.settings.mode, targets];
+        },
+        false,
+    );
     ctx.on("yesimbot/filter-recalled-memory", async (session: Session, state: any) => {
-        if (!baseAllowed(session)) return;
+        if (!baseAllowed(session)) {
+            await guardSnapshot.project(session, state);
+            return;
+        }
         const scope = scopeOf(session);
-        if ((await modeOf(scope)).settings.mode === "off") return;
+        if ((await modeOf(scope)).settings.mode === "off") {
+            await guardSnapshot.project(session, state);
+            return;
+        }
         try {
             const ambiguous = await ambiguousChannels(scope);
             if (ambiguous.has(JSON.stringify([session.platform, conversationChannelId(session)]))) {
@@ -524,42 +552,16 @@ export function applySharedMemory(ctx: Context, config: Config) {
             state.l3_diary_entries = [];
             filterRecallObservations(state, () => false);
             logger.warn(`旧摘要校验失败：${String(error)}`);
+        } finally {
+            await guardSnapshot.project(session, state);
         }
     });
     const catalog = new PeopleCatalog();
     const personTool = {
         name: "person_memory",
-        description:
-            "共同域人物记忆。claims 列出逐条认识，claim_evidence 读取原始证据，propose_claim 补证/反证/修订/停用；有逐条认识后不能整段覆盖。list 列出可查询人物；read_many 用 account_ids 多选或 all=true 全选，fields 选 overview/structured/full，cursor 继续分页。read/search/history 查资料；propose 提交画像；propose_link 提交账号关联。review 等管理员确认，auto 可自动接受；锁定、暂停与版本校验始终生效。account_id 可为当前平台 ID、人物 UUID 或 JSON [平台,ID]；消息证据使用当前场景消息 ID，跨场景证据使用 people.sources 或 read 返回的来源编号。",
+        readOnly: readPersonAction,
+        ...personToolContract(true),
         isSupported: readable,
-        parameters: Schema.object({
-            action: Schema.union([
-                "list",
-                "read_many",
-                "read",
-                "search",
-                "history",
-                "propose",
-                "propose_link",
-                "claims",
-                "claim_evidence",
-                "propose_claim",
-            ]).required(),
-            account_id: Schema.string(),
-            query: Schema.string(),
-            profile: profileInputSchema(),
-            ...catalogParameters(),
-            ...claimParameters(),
-            offset: Schema.natural(),
-            message_ids: Schema.array(Schema.string()),
-            person_id: Schema.string(),
-            person_revision: Schema.number(),
-            account_revision: Schema.number(),
-            target_person_id: Schema.string(),
-            target_revision: Schema.number(),
-            confidence: Schema.number(),
-            reason: Schema.string(),
-        }),
         execute: async (args: any) => {
             try {
                 const session = args.session as Session;
@@ -759,6 +761,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
     };
     const recallTool = {
         name: "person_recall",
+        readOnly: true,
         description: "按关键词、人物和日期回忆当前配置允许的旧经历与 L2/L3 摘要。返回原始来源，不代表内容已核实；不改变事实或身份。",
         isSupported: readable,
         parameters: Schema.object({
@@ -777,8 +780,8 @@ export function applySharedMemory(ctx: Context, config: Config) {
         },
     };
     const removers = [
-        toolService.registerTool({ ...personTool, execute: (args: any) => track(personTool.execute(args)) }),
-        toolService.registerTool({ ...recallTool, execute: (args: any) => track(recallTool.execute(args)) }),
+        toolService.registerTool(guardSnapshot({ ...personTool, execute: (args: any) => track(personTool.execute(args)) })),
+        toolService.registerTool(guardSnapshot({ ...recallTool, execute: (args: any) => track(recallTool.execute(args)) })),
     ];
     function command(
         declaration: string,
@@ -798,7 +801,7 @@ export function applySharedMemory(ctx: Context, config: Config) {
                 const authority = (session.user as any)?.authority ?? (await session.observeUser(["authority"])).authority;
                 if (authority < 3) throw new Error("仅管理员可管理共同记忆");
                 const scope = scopeOf(session),
-                    result = await fn(session, writingStore(session), scope, args, options);
+                    result = await reset.track(fn(session, writingStore(session), scope, args, options));
                 await modeOf(scope);
                 const output = typeof result === "string" ? result : (JSON.stringify(result, null, 2) ?? "操作未返回结果，请执行 people.status 检查状态。");
                 return h.escape(output.slice(0, 12000));
@@ -828,14 +831,12 @@ export function applySharedMemory(ctx: Context, config: Config) {
         return `画像版本 ${found.person.revision}\n${JSON.stringify(found, null, 2)}`;
     });
     command("people.create <name:text>", "建立共同人物档案", async (s, w, scope, [name]) => w.create(scope, name, actor(s)));
-    command("people.edit <ref:string> <profile:text>", "人工纠正完整画像", async (s, w, scope, [ref, profile]) =>
-        w.setProfile(scope, refOf(s, ref), profile, actor(s)),
+    command("people.edit <ref:string> <profile:text>", "人工纠正完整画像", async (s, w, scope, [ref, profile], options) =>
+        w.setProfile(scope, refOf(s, ref), parsePeopleProfile(profile, options?.format), actor(s)),
     );
-    command("people.edit_json <ref:string> <profile:text>", "人工纠正完整结构画像（JSON）", async (s, w, scope, [ref, profile]) => {
-        const document = JSON.parse(profile);
-        if (!document || typeof document !== "object" || Array.isArray(document)) throw new Error("请提供完整结构画像 JSON 对象");
-        return w.setProfile(scope, refOf(s, ref), document, actor(s));
-    });
+    command("people.edit_json <ref:string> <profile:text>", "人工纠正完整结构画像（也可用 people.edit --format json）", async (s, w, scope, [ref, profile]) =>
+        w.setProfile(scope, refOf(s, ref), parsePeopleProfile(profile, "json"), actor(s)),
+    );
     command("people.rename <ref:string> <name:text>", "修改共同称呼", async (s, w, scope, [ref, name]) => w.rename(scope, refOf(s, ref), name, actor(s)));
     command("people.clear <ref:string>", "清空画像，保留来源与审计", async (s, w, scope, [ref]) => w.setProfile(scope, refOf(s, ref), "", actor(s)));
     command("people.bind <account:string> <target:string> [confidence:number]", "纠正账号归属", async (s, w, scope, [account, target, confidence = 1]) =>

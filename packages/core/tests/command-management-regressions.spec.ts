@@ -74,11 +74,32 @@ describe("configuration commands", () => {
         });
         await ctx.start();
         for (const key of ["missing.leaf", "providers[999].apiKey", "missing"]) {
-            expect(await run(ctx, "conf.get", key)).toBe("未找到配置");
+            expect(await run(ctx, "conf.get", key)).toContain("未找到配置");
         }
         expect(errors).toEqual([]);
         expect(await run(ctx, "conf.get")).toBe("请输入有效的配置键");
     });
+});
+
+it("lists five tools by default and rejects a page size of zero", async () => {
+    const ctx = app();
+    const manager = service(ctx);
+    manager.register(
+        extension(
+            ctx,
+            "page-test",
+            Array.from({ length: 6 }, (_, i) => tool(`item_${i}`)),
+        ),
+        true,
+        {},
+    );
+    (manager as any).registerCommands();
+    const first = await run(ctx, "tool.list");
+    expect(first).toContain("第 1/2 页");
+    expect(first).toContain("item_4");
+    expect(first).not.toContain("item_5");
+    expect(await run(ctx, "tool.list", "--page 2")).toContain("item_5");
+    expect(await run(ctx, "tool.list", "--size 0")).not.toContain("item_0");
 });
 
 describe("extension management", () => {
@@ -106,7 +127,9 @@ describe("extension management", () => {
         ctx.plugin(Parent, initial);
         await ctx.start();
         expect(live!.getTool("ban")).toBeTruthy();
-        expect(await run(ctx, "extension.disable", "qmanager")).toBe("禁用成功");
+        expect(await run(ctx, "extension.set", "qmanager invalid")).toContain("on 或 off");
+        expect(starts).toBe(1);
+        expect(await run(ctx, "extension.set", "qmanager off")).toBe("禁用成功");
         expect(current!.heartbeat).toBe(7);
         expect(current!.providers).toEqual(initial.providers);
         expect(current!.extra?.qmanager).toEqual({ enabled: false, custom: 42 });
@@ -343,4 +366,36 @@ it("the decorator passes instance identity when disposing an older colliding ext
     expect(replacement).toBeTruthy();
     old.dispose();
     expect(manager.getTool("decorated_shared")).toBe(replacement);
+});
+
+it("validates conf paths and model references and masks credentials before displaying configuration", async () => {
+    const ctx = app();
+    let live: Config;
+    function Parent(c: Context, config: Config) {
+        live = config;
+        c.plugin(ConfigCommands, config);
+    }
+    ctx.plugin(
+        Parent,
+        Config({
+            providers: [{ name: "test", type: "OpenAI Compatible", apiKey: "probe-secret-value", models: [{ modelId: "old" }] }],
+            modelGroups: [{ name: "primary", models: [{ providerName: "test", modelId: "old" }] }],
+        }),
+    );
+    await ctx.start();
+    const initial = live!;
+    for (const input of ["providers[0].models[0].modelld other", "providers[1].models[1].modelId new", "__proto__.x true", "heartbeat nope"]) {
+        expect(await run(ctx, "conf.set", input)).not.toBe("设置成功");
+        expect(live!).toBe(initial);
+    }
+    expect(String(await run(ctx, "conf.set", "providers[0].models[0].modelId 123"))).toContain("modelGroups[0].models[0]");
+    expect(live!).toBe(initial);
+    const detail = String(await run(ctx, "conf.get", "providers[0]"));
+    expect(detail).toContain("已隐藏");
+    expect(detail).not.toContain("probe-secret-value");
+    expect(String(await run(ctx, "conf.list", "providers[0].models[0]"))).toContain("modelId");
+
+    expect(await run(ctx, "conf.set", 'providers[0].models [{"modelId":"old"},{"modelId":"another"}]')).toBe("设置成功");
+    expect(await run(ctx, "conf.set", "providers[0].models[1].modelId 123")).toBe("设置成功");
+    expect(live!.providers[0].models[1].modelId).toBe("123");
 });

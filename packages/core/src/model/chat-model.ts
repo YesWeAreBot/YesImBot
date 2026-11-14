@@ -4,13 +4,14 @@ import type { ChatOptions, CompletionStep, CompletionToolCall, CompletionToolRes
 import { Context } from "koishi";
 
 import { budgetContext } from "../agent/context-budget";
-import { generateText, streamText } from "../dependencies/xsai";
+import { chat as requestChat, generateText, streamText } from "../dependencies/xsai";
 import type { LoggerService } from "../logger";
 import { AppError, ErrorDefinitions } from "../shared/errors";
 import { isEmpty, JsonParser, toBoolean } from "../shared/utils";
 import { BaseModel, formatModelIdentity } from "./base-model";
 import { ModelAbility, ModelConfig } from "./config";
 import { parseContextLimit } from "./context-limit";
+import { observeModelReportRequest, withModelConversationReport } from "./conversation-capture";
 import { StreamDiagnostics } from "./stream-diagnostics";
 import { observeUsageFetch, withUsageScope } from "./usage";
 import type { UsageOwner } from "./usage-owner";
@@ -133,6 +134,8 @@ export class ChatModel extends BaseModel implements IChatModel {
         const useStream = options.stream ?? this.config.parameters?.stream ?? true;
         const requestId = `chat-${++ChatModel.requestSequence}`;
         const chatOptions = this.buildChatOptions(options);
+        const fetch = chatOptions.fetch!;
+        chatOptions.fetch = observeModelReportRequest((input, init) => fetch(input as URL, init ?? {}));
         const capacity =
             this.config.contextLimit?.mode === "custom"
                 ? parseContextLimit(this.config.contextLimit.value ?? "")
@@ -140,24 +143,37 @@ export class ChatModel extends BaseModel implements IChatModel {
         const budget = budgetContext(chatOptions, capacity);
         chatOptions.messages = budget.messages;
 
-        this.logger.info(`🚀 [请求开始] [${requestId}] [${useStream ? "流式" : "非流式"}] 模型: ${this.id} | 用途: ${options.requestPurpose ?? "未标注"}`);
+        const imageCount = budget.messages.reduce(
+            (sum, message) => sum + (Array.isArray(message.content) ? message.content.filter((part) => part.type === "image_url").length : 0),
+            0,
+        );
+        this.logger.info(
+            `[${requestId}] 模型请求 · ${useStream ? "流式" : "非流式"} · ${options.requestPurpose ?? "用途未标注"}${imageCount ? ` · 附带 ${imageCount} 张图片` : ""}`,
+        );
 
+        let streamDiagnostics: (() => Record<string, unknown>) | undefined;
         try {
-            return await withUsageScope({ contextBudget: budget.report }, () =>
-                useStream
-                    ? this._executeStream(chatOptions, options.onStreamStart, options.validation, requestId)
-                    : this._executeNonStream(chatOptions, options.singleStep, options.validation, requestId),
+            return await withModelConversationReport(
+                { requestId, provider: this.config.providerName, model: this.id, purpose: options.requestPurpose ?? "对话" },
+                () =>
+                    withUsageScope({ contextBudget: budget.report }, () =>
+                        useStream
+                            ? this._executeStream(chatOptions, options.onStreamStart, options.validation, requestId, options.singleStep, (read) => {
+                                  streamDiagnostics = read;
+                              })
+                            : this._executeNonStream(chatOptions, options.singleStep, options.validation, requestId),
+                    ),
             );
         } catch (error) {
             this.logger.debug(
-                `[${requestId}] 请求异常 | 类型: ${error.name} | 错误码: ${error.code ?? "未知"} | 已取消: ${options.abortSignal?.aborted ?? false}`,
+                `[${requestId}] 请求异常 | 类型: ${error?.name ?? typeof error} | 错误码: ${error?.code ?? "未知"} | 已取消: ${options.abortSignal?.aborted ?? false}`,
             );
             if (options.abortSignal?.aborted && options.abortSignal.reason?.name !== "TimeoutError") {
                 this.logger.debug(`[${requestId}] 调用方已取消请求 | 用途: ${options.requestPurpose ?? "未标注"} | 不作为服务商故障重试`);
                 throw options.abortSignal.reason ?? error;
             }
             const timeoutReason = options.abortSignal?.reason;
-            return await this._wrapAndThrow(timeoutReason?.name === "TimeoutError" ? timeoutReason : error, chatOptions);
+            return await this._wrapAndThrow(timeoutReason?.name === "TimeoutError" ? timeoutReason : error, requestId, useStream, streamDiagnostics?.());
         }
     }
 
@@ -216,20 +232,27 @@ export class ChatModel extends BaseModel implements IChatModel {
     ): Promise<GenerateTextResult> {
         const stime = Date.now();
         let result: GenerateTextResult;
-        try {
-            result = await generateText({
-                ...chatOptions,
-                ...(singleStep
-                    ? {
-                          onStepFinish: (step: CompletionStep) => {
-                              throw new SingleStepComplete(step);
-                          },
-                      }
-                    : {}),
-            });
-        } catch (error) {
-            if (!(error instanceof SingleStepComplete)) throw error;
-            result = { ...error.step, steps: [error.step], messages: [], text: error.step.text ?? "" } as GenerateTextResult;
+        if (singleStep) {
+            // The framework owns validation and execution. Never let the SDK parse
+            // arguments or look up a tool before the caller can issue a correction.
+            const response = await requestChat({ ...chatOptions, maxSteps: undefined, stream: false });
+            const data = await response.json();
+            chatOptions.abortSignal?.throwIfAborted();
+            const choice = data.choices?.[0];
+            if (!choice?.message) throw new Error("模型未返回有效回复");
+            const message = choice.message;
+            const calls = rawToolCalls(message.tool_calls ?? []);
+            const step = {
+                text: message.content ?? "",
+                toolCalls: calls,
+                toolResults: [],
+                finishReason: choice.finish_reason,
+                usage: data.usage,
+                stepType: "initial",
+            } as CompletionStep;
+            result = { ...step, messages: [message], steps: [step] } as GenerateTextResult;
+        } else {
+            result = await generateText(chatOptions);
         }
         if (isEmpty(result.text) && !result.toolCalls?.length) {
             throw new AppError(ErrorDefinitions.LLM.OUTPUT_EMPTY_CONTENT, {
@@ -250,7 +273,7 @@ export class ChatModel extends BaseModel implements IChatModel {
         const logMessage = result.toolCalls?.length
             ? `工具调用: "${result.toolCalls.map((tc) => tc.toolName).join(", ")}"`
             : `文本长度: ${result.text?.length ?? 0}`;
-        this.logger.success(`✅ [传输完成] [${requestId}] [非流式] ${logMessage} | 耗时: ${duration}ms | 结束原因: ${result.finishReason ?? "未知"}`);
+        this.logger.debug(`[传输完成] [${requestId}] [非流式] ${logMessage} | 耗时: ${duration}ms | 结束原因: ${result.finishReason ?? "未知"}`);
         return result;
     }
 
@@ -262,6 +285,8 @@ export class ChatModel extends BaseModel implements IChatModel {
         onStreamStart?: () => void,
         validation?: ValidationOptions,
         requestId = "stream",
+        singleStep = false,
+        reportDiagnostics?: (read: () => Record<string, unknown>) => void,
     ): Promise<GenerateTextResult> {
         const stime = Date.now();
         let streamStarted = false;
@@ -274,19 +299,38 @@ export class ChatModel extends BaseModel implements IChatModel {
         let finalUsage: any = undefined;
         let finalFinishReason: GenerateTextResult["finishReason"] = "unknown";
 
+        const completedResponses: StreamCompletion[] = [];
         let completion = new StreamCompletion();
         let buffer: string[] = [];
         let diagnostics = new StreamDiagnostics(stime);
+        reportDiagnostics?.(() => diagnostics.summary());
         const markStreamStarted = () => {
             if (streamStarted) return;
             onStreamStart?.();
             streamStarted = true;
-            this.logger.debug(`🌊 流式传输已开始 | 延迟: ${Date.now() - stime}ms`);
+            this.logger.debug(`[${requestId}] 首次有效输出 · ${Date.now() - stime}ms`);
         };
         const originalFetch = chatOptions.fetch as (url: any, init: any) => Promise<Response>;
         const streamOptions = {
             ...chatOptions,
             fetch: async (url: URL, init: RequestInit) => {
+                // xsai builds its own continuation messages; restore metadata on the
+                // actual wire request, not merely on the final returned result.
+                if (typeof init.body === "string" && completedResponses.length) {
+                    const payload = JSON.parse(init.body);
+                    for (const message of payload.messages ?? []) {
+                        if (message.role !== "assistant" || !message.tool_calls?.length) continue;
+                        const ids = message.tool_calls.map((call: any) => call.id);
+                        const matches = completedResponses
+                            .map((item) => item.assistantMessage(item.rawCalls()))
+                            .filter(
+                                (item: any) =>
+                                    item?.tool_calls?.length === ids.length && item.tool_calls.every((call: any, index: number) => call.id === ids[index]),
+                            );
+                        if (matches.length === 1) Object.assign(message, matches[0]);
+                    }
+                    init = { ...init, body: JSON.stringify(payload) };
+                }
                 const response = await originalFetch(url, init);
                 // 多步工具响应每次都必须有自己的终止信号。
                 diagnostics = new StreamDiagnostics(stime);
@@ -305,7 +349,8 @@ export class ChatModel extends BaseModel implements IChatModel {
                     if (validationResult.parsedData) finalContentParts.splice(0, finalContentParts.length, JSON.stringify(validationResult.parsedData));
                 }, markStreamStarted));
                 diagnostics.recordResponse(response);
-                this.logger.debug(`[${requestId}] HTTP 响应 | ${JSON.stringify(diagnostics.summary())}`);
+                const headers = diagnostics.summary();
+                this.logger.debug(`[${requestId}] HTTP 响应头 · ${response.status} · ${headers.contentType ?? "无 Content-Type"} · ${headers.headersMs}ms`);
                 if (response.ok) {
                     const contentType = response.headers.get("content-type");
                     // 缺少类型头时保留原有兼容行为；明确返回其他格式时不能静默判空。
@@ -354,6 +399,7 @@ export class ChatModel extends BaseModel implements IChatModel {
                                         context: { streamDiagnostics: summary },
                                     });
                                 }
+                                if (completed && responseCompletion.hasTools) completedResponses.push(responseCompletion);
                             },
                         }),
                     );
@@ -364,55 +410,81 @@ export class ChatModel extends BaseModel implements IChatModel {
         };
 
         try {
-            const stream = await streamText({
-                ...streamOptions,
-                streamOptions: { includeUsage: true },
-                onEvent: (event) => {
-                    if (!streamStarted && (event.type === "tool-call-streaming-start" || event.type === "tool-call-delta")) {
-                        onStreamStart?.();
-                        streamStarted = true;
+            if (singleStep) {
+                const response = await requestChat({ ...streamOptions, maxSteps: undefined, stream: true, streamOptions: { include_usage: true } } as any);
+                if (!response.body) throw new Error("模型返回空流");
+                const reader = response.body.getReader();
+                try {
+                    while (!(await reader.read()).done) {
+                        /* completion observes the guarded transport */
                     }
-                },
-            });
-
-            // SDK 的各个结果 Promise 可能一起拒绝，均附加处理避免未处理异常。
-            for (const promise of [stream.steps, stream.usage, stream.messages]) void promise.catch(() => {});
-
-            // xsai 0.3.5 的结果 Promise 可能丢失异常，fullStream 仍保留原始错误。
-            // 文本继续由 onEvent 实时处理，此处只确认整条流成功完成。
-            const reader = stream.fullStream.getReader();
-            try {
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    if (value.type === "error") {
-                        throw new AppError(ErrorDefinitions.LLM.REQUEST_FAILED, {
-                            args: [String(value.error)],
-                            cause: value.error instanceof Error ? value.error : undefined,
-                        });
-                    }
+                } finally {
+                    reader.releaseLock();
                 }
-            } finally {
-                reader.releaseLock();
+                finalToolCalls = completion.rawCalls();
+                finalUsage = completion.usage;
+                finalFinishReason = completion.finishReason;
+                finalSteps = [
+                    {
+                        text: finalContentParts.join(""),
+                        toolCalls: finalToolCalls,
+                        toolResults: [],
+                        usage: finalUsage,
+                        finishReason: finalFinishReason,
+                        stepType: "initial",
+                    } as CompletionStep,
+                ];
+            } else {
+                const stream = await streamText({
+                    ...streamOptions,
+                    streamOptions: { includeUsage: true },
+                    onEvent: (event) => {
+                        if (!streamStarted && (event.type === "tool-call-streaming-start" || event.type === "tool-call-delta")) {
+                            onStreamStart?.();
+                            streamStarted = true;
+                        }
+                    },
+                });
+
+                // SDK 的各个结果 Promise 可能一起拒绝，均附加处理避免未处理异常。
+                for (const promise of [stream.steps, stream.usage, stream.messages]) void promise.catch(() => {});
+
+                // xsai 0.3.5 的结果 Promise 可能丢失异常，fullStream 仍保留原始错误。
+                // 文本继续由 onEvent 实时处理，此处只确认整条流成功完成。
+                const reader = stream.fullStream.getReader();
+                try {
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        if (value.type === "error") {
+                            throw new AppError(ErrorDefinitions.LLM.REQUEST_FAILED, {
+                                args: [String(value.error)],
+                                cause: value.error instanceof Error ? value.error : undefined,
+                            });
+                        }
+                    }
+                } finally {
+                    reader.releaseLock();
+                }
+
+                // 仅等待元数据（如 usage, finishReason）处理完成
+                // 文本部分已在 onEvent 中实时处理
+                await (async () => {
+                    for await (const step of await stream.steps) {
+                        finalSteps.push(step);
+                        if (step.toolCalls?.length) finalToolCalls.push(...step.toolCalls);
+                        if (step.toolResults?.length) finalToolResults.push(...step.toolResults);
+                        if (step.usage) finalUsage = step.usage;
+                        if (step.finishReason) finalFinishReason = step.finishReason;
+                    }
+                })();
             }
-
-            // 仅等待元数据（如 usage, finishReason）处理完成
-            // 文本部分已在 onEvent 中实时处理
-            await (async () => {
-                for await (const step of await stream.steps) {
-                    finalSteps.push(step);
-                    if (step.toolCalls?.length) finalToolCalls.push(...step.toolCalls);
-                    if (step.toolResults?.length) finalToolResults.push(...step.toolResults);
-                    if (step.usage) finalUsage = step.usage;
-                    if (step.finishReason) finalFinishReason = step.finishReason;
-                }
-            })();
         } catch (error) {
-            this.logger.debug(`[${requestId}] 流式异常 | 类型: ${error.name} | ${JSON.stringify(diagnostics.summary())}`);
+            this.logger.debug(`[${requestId}] 流式异常 · ${error?.name ?? typeof error}`);
             const summary = diagnostics.summary();
             if (!(error instanceof AppError) && (summary.errorFrames || summary.malformedFrames)) {
                 throw new AppError(ErrorDefinitions.LLM.REQUEST_FAILED, {
-                    args: [error.message],
+                    args: [error?.message || "SSE 协议异常"],
                     cause: error,
                     context: { streamDiagnostics: summary },
                 });
@@ -421,13 +493,11 @@ export class ChatModel extends BaseModel implements IChatModel {
         } finally {
             const summary = diagnostics.summary();
             this.logger.debug(
-                `[${requestId}] 响应概况 | 耗时: ${summary.elapsedMs}ms | 首包: ${summary.firstChunkMs ?? "未知"}ms | 正文: ${summary.contentChars}字 | 推理: ${summary.reasoningChars}字 | 结束原因: ${summary.finishReason ?? "未知"} | 结束帧: ${summary.done ? "已收到" : "未收到"}`,
+                `[${requestId}] SSE 统计 · 首块数据 ${summary.firstChunkMs == null ? "未收到" : `${summary.firstChunkMs}ms`} · ${JSON.stringify(summary)}`,
             );
-            this.logger.debug(`[${requestId}] 流式汇总 | ${JSON.stringify(summary)}`);
         }
 
         chatOptions.abortSignal?.throwIfAborted();
-        const duration = Date.now() - stime;
         const finalText = finalContentParts.join("");
 
         if (completion.hasUnterminatedData()) {
@@ -438,21 +508,26 @@ export class ChatModel extends BaseModel implements IChatModel {
         }
 
         if (isEmpty(finalText) && finalToolCalls.length === 0) {
-            this.logger.warn(`💬 [流式] 模型未输出有效内容`);
+            const summary = diagnostics.summary();
+            const emptyOutput = summary.reasoningChars
+                ? "reasoning_only"
+                : summary.contentChars
+                  ? "blank_text"
+                  : summary.frames
+                    ? "no_output_frames"
+                    : "no_frames";
+            this.logger.debug(`[${requestId}] SSE 无有效正文或工具调用 · ${emptyOutput}`);
             throw new AppError(ErrorDefinitions.LLM.OUTPUT_EMPTY_CONTENT, {
-                context: { rawResponse: finalText, details: "模型未输出有效内容", streamDiagnostics: diagnostics.summary() },
+                context: { rawResponse: finalText, details: "模型未输出有效内容", emptyOutput, streamDiagnostics: summary },
             });
         }
-
-        /* prettier-ignore */
-        this.logger.debug(`🏁 [流式] 传输完成 | 总耗时: ${duration}ms | 输入: ${finalUsage?.prompt_tokens || "N/A"} | 输出: ${finalUsage?.completion_tokens || `~${finalText.length / 4}`}`);
 
         // 对最终拼接的完整内容进行最后一次验证
         if (validator && finalToolCalls.length === 0) {
             const finalValidation = validator(finalText, true);
             if (!finalValidation.valid) {
                 const errorMsg = finalValidation.error || "格式不匹配或模型未输出有效内容";
-                this.logger.warn(`⚠️ 最终内容验证失败 | 错误: ${errorMsg}`);
+                this.logger.debug(`[${requestId}] 输出结构校验失败`);
                 throw new AppError(ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED, {
                     context: { rawResponse: finalText, details: errorMsg },
                 });
@@ -461,7 +536,10 @@ export class ChatModel extends BaseModel implements IChatModel {
 
         return {
             steps: finalSteps as Array<CompletionStep<true>>,
-            messages: [],
+            messages: completedResponses.flatMap((response) => {
+                const message = response.assistantMessage(finalToolCalls);
+                return message ? [message] : [];
+            }),
             text: finalText,
             toolCalls: finalToolCalls,
             toolResults: finalToolResults,
@@ -489,13 +567,14 @@ export class ChatModel extends BaseModel implements IChatModel {
         return null;
     }
 
-    private async _wrapAndThrow(error: any, options: ChatOptions): Promise<never> {
+    private async _wrapAndThrow(error: any, requestId: string, isStream: boolean, streamDiagnostics?: Record<string, unknown>): Promise<never> {
         // 始终附加基础上下文信息
         const context: Record<string, any> = {
             modelId: this.id,
             provider: this.config.providerName,
-            baseURL: options.baseURL,
-            isStream: options.stream,
+            requestId,
+            isStream,
+            ...(streamDiagnostics ? { streamDiagnostics, httpStatus: streamDiagnostics.httpStatus } : {}),
         };
 
         // 1. 如果错误已经是我们自定义的 AppError，直接附加上下文并重新抛出
@@ -504,8 +583,8 @@ export class ChatModel extends BaseModel implements IChatModel {
             throw error;
         }
 
-        // 2. 处理 AbortError，通常由超时引起
-        if (error.name === "AbortError" || error.name === "TimeoutError" || error.message === "timeout") {
+        // An upstream AbortError alone does not indicate a request timeout.
+        if (error?.name === "TimeoutError" || /^(?:request )?(?:timeout|timed out)$/i.test(error?.message ?? "")) {
             const seconds = typeof error.duration === "number" && Number.isFinite(error.duration) && error.duration > 0 ? error.duration : undefined;
             const duration = seconds === undefined ? "（上游未提供时限）" : ` (${seconds}s)`;
             if (seconds !== undefined) context.timeoutSeconds = seconds;
@@ -513,9 +592,13 @@ export class ChatModel extends BaseModel implements IChatModel {
             throw new AppError(ErrorDefinitions.LLM.TIMEOUT, { args: [seconds], cause: error, context });
         }
 
-        if (error.name === "XSAIError" && error.response) {
-            const { status, url } = error.response;
-            context["url"] = url;
+        if (error?.name === "AbortError") {
+            this.logger.debug(`[${requestId}] 上游连接中断`);
+            throw new AppError(ErrorDefinitions.LLM.REQUEST_FAILED, { args: ["上游连接中断"], cause: error, context });
+        }
+
+        if (error?.name === "XSAIError" && error.response) {
+            const { status } = error.response;
             context["httpStatus"] = status;
             const retryAfter = error.response.headers?.get("retry-after");
             if (retryAfter) {
@@ -531,24 +614,23 @@ export class ChatModel extends BaseModel implements IChatModel {
             else definition = ErrorDefinitions.LLM.REQUEST_FAILED;
 
             this.logger.error(`🛑 [错误] API 请求失败 | 状态码: ${status} | 模型: ${this.id}`);
-            throw new AppError(definition, { args: [`HTTP ${status}: ${error.message}`], cause: error, context });
+            throw new AppError(definition, { args: [`HTTP ${status}: ${error?.message ?? "无异常描述"}`], cause: error, context });
         }
 
-        if (error.message === "fetch failed") {
+        if (error?.message === "fetch failed") {
             this.logger.error(`🛑 [错误] 网络请求失败 (fetch failed) | 模型: ${this.id}`);
             throw new AppError(ErrorDefinitions.NETWORK.REQUEST_FAILED, { cause: error, context });
         }
 
-        this.logger.error(`🛑 [错误] 未知或网络错误 | ${error.message}`);
+        this.logger.error(`🛑 [错误] 未知或网络错误 | ${error?.message ?? "无异常描述"}`);
         throw new AppError(ErrorDefinitions.NETWORK.REQUEST_FAILED, { cause: error, context });
     }
 }
 
-/** 单步调用交回框架；真实工具只在模型请求完整成功后执行。 */
-class SingleStepComplete extends Error {
-    constructor(public readonly step: CompletionStep) {
-        super("Single step complete");
-    }
+function rawToolCalls(calls: any[]): CompletionToolCall[] {
+    return calls.map(
+        (call) => ({ toolCallId: call.id, toolCallType: call.type, toolName: call.function?.name, args: call.function?.arguments }) as CompletionToolCall,
+    );
 }
 
 /** 协议授权独立于有长度限制的诊断。与 SDK 一样逐行解析，完整帧后立即释放正文。 */
@@ -558,6 +640,36 @@ class StreamCompletion {
     completed = false;
     hasTools = false;
     earlyExit = false;
+    private reasoningContent: string | undefined;
+    private text = "";
+    private readonly toolIds = new Map<number, string>();
+    private readonly toolDeltas = new Map<number, any>();
+    usage: any;
+    finishReason: any = "unknown";
+    rawCalls(): CompletionToolCall[] {
+        return rawToolCalls([...this.toolDeltas.entries()].sort(([a], [b]) => a - b).map(([, call]) => call));
+    }
+
+    assistantMessage(calls: CompletionToolCall[]): Message | undefined {
+        const ids = [...this.toolIds.entries()].sort(([left], [right]) => left - right).map(([, id]) => id);
+        if (!this.completed || !ids.length || new Set(ids).size !== ids.length) return;
+        const matched = ids.map((id) => {
+            const candidates = calls.filter((call) => call.toolCallId === id);
+            return candidates.length === 1 ? candidates[0] : undefined;
+        });
+        if (matched.some((call) => !call)) return;
+        return {
+            role: "assistant",
+            content: this.text,
+            ...(this.reasoningContent === undefined ? {} : { reasoning_content: this.reasoningContent }),
+            tool_calls: matched.map((call, index) => ({
+                index,
+                id: call!.toolCallId,
+                type: "function",
+                function: { name: call!.toolName, arguments: call!.args },
+            })),
+        };
+    }
 
     constructor(
         private readonly onContent?: (text: string) => void,
@@ -588,17 +700,38 @@ class StreamCompletion {
             }
             let choice: any;
             try {
-                choice = JSON.parse(data)?.choices?.[0];
-            } catch {
-                // SDK 保留原始解析错误；这里不把畸形帧当作完成信号。
-                continue;
+                const frame = JSON.parse(data);
+                if (frame.error) throw new AppError(ErrorDefinitions.LLM.REQUEST_FAILED, { args: [String(frame.error.message ?? frame.error)] });
+                if (frame.usage) this.usage = frame.usage;
+                choice = frame.choices?.[0];
+            } catch (error) {
+                throw new AppError(ErrorDefinitions.LLM.REQUEST_FAILED, { args: ["模型返回无效 SSE 帧"], cause: error });
             }
+            if (choice?.finish_reason) this.finishReason = choice.finish_reason;
             if (typeof choice?.finish_reason === "string" && choice.finish_reason.length > 0) this.completed = true;
             if (choice?.delta?.yib_native_activity === true) {
                 this.hasTools = true;
                 this.onNativeActivity?.();
             }
-            if (choice?.delta?.tool_calls?.length) this.hasTools = true;
+            if (typeof choice?.delta?.reasoning_content === "string") this.reasoningContent = (this.reasoningContent ?? "") + choice.delta.reasoning_content;
+            if (typeof choice?.delta?.content === "string") this.text += choice.delta.content;
+            if (choice?.delta?.tool_calls?.length) {
+                this.hasTools = true;
+                for (const call of choice.delta.tool_calls) {
+                    if (!Number.isSafeInteger(call.index) || call.index < 0) throw new Error("工具调用索引无效");
+                    if (typeof call.id === "string") this.toolIds.set(call.index, call.id);
+                    const prior = this.toolDeltas.get(call.index);
+                    this.toolDeltas.set(call.index, {
+                        ...prior,
+                        ...call,
+                        function: {
+                            ...prior?.function,
+                            ...call.function,
+                            arguments: (prior?.function?.arguments ?? "") + (call.function?.arguments ?? ""),
+                        },
+                    });
+                }
+            }
             // Match the SDK's first-choice text path; validator failures must propagate.
             else if (typeof choice?.delta?.content === "string") this.onContent?.(choice.delta.content);
         }

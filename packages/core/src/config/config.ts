@@ -35,30 +35,18 @@ export type Config = ModelServiceConfig &
         readonly version: string | number;
     };
 
-export const Config: Schema<Config> = Schema.intersect(
-    [
-        Schema.object({
-            version: Schema.union([Schema.string(), Schema.number()]).hidden(),
-        }),
-
-        ModelServiceConfigSchema.description("模型服务"),
-        AgentBehaviorConfigSchema,
-        PromptServiceConfigSchema,
-
-        MemoryConfigSchema.description("核心记忆文件"),
-        HistoryConfigSchema,
-        ToolServiceConfigSchema.description("工具与扩展"),
-
-        AssetServiceConfigSchema.collapse().description("资源存储与处理"),
-        //TelemetryConfigSchema,
-        SystemConfigSchema.collapse().description("系统设置"),
-    ].map(configSection),
-);
-
-// Preserve flat configuration fields. Only top-level presentation metadata changes.
-function configSection(schema: Schema): Schema {
-    if (schema.type === "intersect" && !schema.meta.description) {
-        return Schema.intersect((schema.list ?? []).map(configSection));
-    }
-    return schema.meta.description ? schema.role("yib-section") : schema;
-}
+// Layout is a client view over this unchanged runtime schema. Dynamic extension
+// schemas remain owned by ToolService and are resolved live by the console.
+export const Config: Schema<Config> = Schema.intersect([
+    Schema.object({
+        version: Schema.union([Schema.string(), Schema.number()]).hidden(),
+    }),
+    ModelServiceConfigSchema.description("模型服务"),
+    AgentBehaviorConfigSchema,
+    PromptServiceConfigSchema,
+    MemoryConfigSchema.description("核心记忆文件"),
+    HistoryConfigSchema,
+    ToolServiceConfigSchema.description("工具与扩展"),
+    AssetServiceConfigSchema.collapse().description("资源存储与处理"),
+    SystemConfigSchema.collapse().description("系统设置"),
+]).role("yib-settings");

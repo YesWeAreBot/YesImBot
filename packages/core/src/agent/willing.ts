@@ -364,6 +364,14 @@ export class WillingnessManager {
         this.backgroundCredits.delete(chatId);
     }
 
+    public resetAll(): void {
+        this.willingnessScores.clear();
+        this.lastMessageTimestamps.clear();
+        this.sessions.clear();
+        this.participation.clear();
+        this.backgroundCredits.clear();
+    }
+
     public getCurrentWillingness(chatId: string): number {
         return this.willingnessScores.get(chatId) || 0;
     }

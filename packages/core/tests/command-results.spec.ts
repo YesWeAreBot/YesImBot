@@ -152,3 +152,24 @@ it("does not guess between same-session same-scope invocations or unrelated send
         await f.stop();
     }
 });
+
+it("records config command status without copying its input or reply to history", async () => {
+    const f = await fixture();
+    try {
+        const source = f.session("discord", "config-in");
+        const outbound = f.session("discord", "config-out");
+        source.scope = outbound.scope = "commands.conf.set.messages";
+        outbound.content = "sensitive-config-reply";
+        const record = vi.fn();
+        Object.assign(f.service, { recordMessage: record });
+        await f.manager.handleCommandInvocation({ session: source, command: { name: "conf.set" }, source: "conf.set providers[0].apiKey new-secret" });
+        await f.manager.matchCommandResult(outbound, { session: source });
+        await f.manager.recordBotSentMessage(outbound);
+        expect(f.events[0].payload).toMatchObject({ operation: "conf.set", status: "response-observed" });
+        expect(f.events[0].payload.source).toBeUndefined();
+        expect(f.events[0].payload.result).toBeUndefined();
+        expect(record).not.toHaveBeenCalled();
+    } finally {
+        await f.stop();
+    }
+});

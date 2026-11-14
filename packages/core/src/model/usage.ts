@@ -516,7 +516,7 @@ export function observeUsageFetch(ctx: Context, metadata: UsageMetadata, fetch: 
                 },
                 async cancel(reason) {
                     output = streaming && !overflow ? text : undefined;
-                    complete(failureStatus("cancelled"));
+                    complete(failureStatus(response.ok ? "cancelled" : `http-${response.status}`));
                     await reader.cancel(reason);
                 },
             });

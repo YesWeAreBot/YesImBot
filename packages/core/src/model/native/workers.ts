@@ -80,7 +80,6 @@ function chatBody(body: Json): Json {
 }
 function validateChoice(selected: unknown, calls: Json[]): void {
     if (selected === "none" && calls.length) throw new Error("Workers AI tool_choice none 不允许工具调用");
-    if (selected === "required" && !calls.length) throw new Error("Workers AI tool_choice required 未返回工具调用");
     if (selected && typeof selected === "object" && "type" in selected && selected.type === "function") {
         const name = (selected as Json).function.name;
         if (!calls.length || calls.some((call) => call.function.name !== name)) throw new Error("Workers AI tool_choice 未返回指定的工具调用");

@@ -3,7 +3,9 @@ import { expect, it } from "vitest";
 import { AgentCore } from "../src/agent/agent-core";
 import { DecisionRecords } from "../src/agent/decision-record";
 import { ReplyControl } from "../src/agent/reply-control";
+import { StimulusScheduler } from "../src/agent/scheduler";
 import { WillingnessManager } from "../src/agent/willing";
+import { LogLevel, LoggerService } from "../src/logger";
 import { loggingStub, stubCtx } from "./helpers/yesimbot";
 
 function setup() {
@@ -31,6 +33,10 @@ function setup() {
     const scheduled: any[] = [];
     const decisions = new DecisionRecords();
     Object.assign(core, {
+        activeTurnSettlements: new Map(),
+        resettingHistory: new Set(),
+        historyTargets: new Map(),
+        resetStimuli: new Map(),
         config,
         stopped: false,
         decisions,
@@ -47,6 +53,7 @@ function setup() {
         async () => {},
     );
     Object.defineProperty(core, "logger", {
+        configurable: true,
         value: { debug: (message: string) => logs.push(message), info: (message: string) => logs.push(message), warn: (message: string) => logs.push(message) },
     });
     Object.defineProperty(core, "ctx", { value: ctx });
@@ -112,8 +119,7 @@ it.each(["observe", "adjust"] as const)("records semantic results and applies th
     expect(record.calculation?.after).toBe(mode === "adjust" ? 18 : 12);
     t.core.queryDecision(t.session);
     expect(evaluations).toBe(1);
-    expect(t.logs.join("\n")).toContain(mode === "adjust" ? "实际应用: 1.500" : "实际应用: 1.000");
-    expect(t.logs.join("\n")).toContain(mode);
+    expect(t.logs.join("\n")).toContain(mode === "adjust" ? "TypeSafe 1.500（参与计分）" : "TypeSafe 1.500（仅观察）");
 });
 
 it("explains direct-message bypass without starting a semantic request", () => {
@@ -130,11 +136,14 @@ it("records suppression and muting without scheduling a reply", async () => {
     await t.core.replyControl.set(t.target, ["all"], 1000);
     t.core.receiveStimulus({ type: "user_message", session: t.session });
     expect(t.decisions.latest(t.target)?.reason).toBe("reply_suppressed");
+    expect(t.logs.join("\n")).toContain("管理员暂停回复 · 抑制类别 all");
+    expect(t.logs.join("\n")).not.toContain("private-text-marker");
     expect(t.core.willing.getCurrentWillingness(JSON.stringify(["qq", "bot", "g"]))).toBe(0);
     await t.core.replyControl.resume(t.target);
     t.core.worldState.isBotMuted = () => true;
     t.core.receiveStimulus({ type: "user_message", session: t.session });
     expect(t.decisions.latest(t.target)?.reason).toBe("muted");
+    expect(t.logs.join("\n")).toContain("机器人被禁言");
     expect(t.scheduled).toHaveLength(0);
 });
 
@@ -271,4 +280,122 @@ it("does not revive a read admitted before a mute and immediate unmute", async (
     await nextTick();
     expect(t.scheduled).toHaveLength(0);
     expect(t.decisions.latest(t.target)?.stage).toBe("cancelled");
+});
+
+it("retains topic willingness across mentions and failed assessment", async () => {
+    const t = setup();
+    t.core.config.topics = { enabled: true, model: { providerName: "test", modelId: "test" } };
+    const topic = { id: "a", label: "A", scoreKey: "topic-A", share: 1, interest: 0.5, multiplier: 1 };
+    t.core.topics = {
+        noteMessage() {},
+        getCurrent: () => undefined,
+        getTopics: () => [topic],
+        getFocus: () => topic,
+        chooseFocus: () => topic,
+        assess: async () => undefined,
+    };
+    t.core.willing.addBackgroundWillingness(t.session, topic.scoreKey, 80);
+    t.core.willing.handlePostReply(t.session, topic.scoreKey);
+    t.core.receiveStimulus({ type: "user_message", session: t.session });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(t.decisions.latest(t.target)?.calculation?.before).toBe(45);
+    const remaining = t.core.willing.getCurrentWillingness(topic.scoreKey);
+    t.session.elements = [{ type: "at", attrs: { id: "bot" } }];
+    t.session.stripped = { atSelf: true };
+    t.core.receiveStimulus({ type: "user_message", session: t.session });
+    expect(t.decisions.latest(t.target)?.calculation?.before).toBe(remaining);
+    expect(t.scheduled.at(-1).scoringTopic.scoreKey).toBe(topic.scoreKey);
+    expect(t.decisions.latest(t.target)?.scoreKey).toBe(topic.scoreKey);
+});
+it("keeps continuation source context separate while retaining topic score", async () => {
+    const t = continuationSetup("willingness");
+    t.core.config.lifecycle.probabilityThreshold = 10;
+    t.core.config.topics = { enabled: true, model: { providerName: "test", modelId: "test" } };
+    const topic = { id: "a", label: "A", scoreKey: "topic-A", share: 1, interest: 0.5, multiplier: 1 };
+    t.core.topics = {
+        noteMessage() {},
+        getCurrent: () => topic,
+        getTopics: () => [topic],
+        getFocus: () => topic,
+        chooseFocus: () => topic,
+        assess: async () => topic,
+    };
+    t.core.willing.addBackgroundWillingness(t.session, topic.scoreKey, 45);
+    t.core.receiveStimulus({ type: "user_message", session: t.session });
+    await nextTick();
+    expect(t.decisions.latest(t.target)?.calculation?.before).toBe(45);
+    expect(t.scheduled[0].topic).toBeUndefined();
+    expect(t.scheduled[0].scoringTopic.scoreKey).toBe(topic.scoreKey);
+});
+it("fallback preserves unrelated topic scores and disabled topics use the ordinary pool", () => {
+    const t = setup();
+    t.core.config.topics = { enabled: true, model: { providerName: "test", modelId: "test" } };
+    const topics = ["a", "b"].map((id) => ({ id, label: id, scoreKey: "topic-" + id, share: 0.5, interest: 0.5, multiplier: 1 }));
+    t.core.topics = { noteMessage() {}, getCurrent: () => undefined, getTopics: () => topics, getFocus: () => topics[0], chooseFocus() {} };
+    const key = JSON.stringify(["qq", "bot", "g"]);
+    t.core.topicScores.set(key, new Set(topics.map((topic) => topic.scoreKey)));
+    for (const topic of topics) t.core.willing.addBackgroundWillingness(t.session, topic.scoreKey, 45);
+    t.session.stripped = { atSelf: true };
+    t.core.receiveStimulus({ type: "user_message", session: t.session });
+    expect(t.core.willing.getCurrentWillingness("topic-b")).toBe(45);
+    expect(t.decisions.latest(t.target)?.scoreKey).toBe("topic-a");
+    t.core.config.topics.enabled = false;
+    t.core.receiveStimulus({ type: "user_message", session: t.session });
+    expect(t.decisions.latest(t.target)?.scoreKey).toBe(key);
+    expect(t.decisions.latest(t.target)?.calculation?.before).toBe(0);
+});
+
+it("separates normal, muted, paused and busy group messages in interleaved logs", async () => {
+    const t = setup();
+    const ctx = stubCtx(
+        {},
+        {
+            logger: () => ({ debug: (line: string) => t.logs.push(line) }),
+            debounce: (run: (value: any) => unknown) => Object.assign((value: any) => run(value), { dispose() {} }),
+        },
+    );
+    const logging = new LoggerService(ctx, { logging: { level: LogLevel.DEBUG }, errorReporting: {} } as any);
+    Object.defineProperty(t.core, "logger", { value: logging.getLogger("agent") });
+    let release!: () => void;
+    const barrier = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    const scheduler = new StimulusScheduler(
+        ctx,
+        { debounceMs: 0, newMessageStrategy: "immediate" } as any,
+        async ({ session }) => {
+            if (session.messageId === "prior") await barrier;
+        },
+        logging,
+    );
+    t.core.scheduler = scheduler;
+    t.core.worldState.isBotMuted = (cid: string) => cid === "qq:b";
+    await t.core.replyControl.set({ ...t.target, channelId: "c" }, ["all"], 60_000);
+    const message = (channelId: string, messageId: string) => ({
+        ...t.session,
+        channelId,
+        messageId,
+        stripped: { atSelf: true },
+    });
+    t.core.config.prioritizeMentions = true;
+    try {
+        for (const [channelId, id] of [
+            ["d", "prior"],
+            ["a", "101"],
+            ["b", "102"],
+            ["c", "103"],
+            ["d", "104"],
+        ])
+            t.core.receiveStimulus({ type: "user_message", session: message(channelId, id) });
+
+        expect(t.logs.some((line) => /\[qq\/bot\/群聊 a\] \[消息 101\].*意愿.*提交调度/u.test(line))).toBe(true);
+        expect(t.logs.filter((line) => line.includes("[消息 102]"))).toEqual([expect.stringContaining("跳过意愿判定 · 机器人被禁言")]);
+        expect(t.logs.filter((line) => line.includes("[消息 103]"))).toEqual([expect.stringContaining("跳过意愿判定 · 管理员暂停回复")]);
+        expect(t.logs.some((line) => /\[qq\/bot\/群聊 d\] \[消息 104\].*回复正在执行 · 已排队/u.test(line))).toBe(true);
+        expect(t.logs.join("\n")).not.toMatch(/跳过辅助模型评估|private-text-marker/);
+    } finally {
+        scheduler.dispose();
+        release();
+        await logging.stop();
+    }
 });

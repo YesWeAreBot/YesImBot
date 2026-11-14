@@ -12,6 +12,8 @@ _✨机器壳，人类心。✨_
 
 ## 👋 欢迎使用 Athena
 
+配置项按用途分组，入口及字段说明见[核心插件配置](../../docs/configuration.md)。
+
 欢迎来到 Athena (YesImBot) 项目！这是一个让 AI 大模型自然融入群聊的 Koishi 插件，让你的机器人拥有更加人性化的交流体验。无论你是开发者还是普通用户，我们都希望这个项目能为你带来价值。
 
 ## 🎐 简介
@@ -19,6 +21,8 @@ _✨机器壳，人类心。✨_
 YesImBot / Athena 是一个 [Koishi](https://koishi.chat/zh-CN/) 插件，旨在让人工智能大模型能够自然地参与到群聊讨论中，模拟真实的人类互动体验。插件基于中间件架构设计，具有高度的可扩展性和灵活性。
 
 _新的文档站已上线：[https://docs.yesimbot.chat/](https://docs.yesimbot.chat/)_
+
+自定义系统预设、原生工具协议及扩展内容的用法见[提示词模板说明](../../docs/prompt-templates.md)。
 
 ### 错误上报与本地诊断
 

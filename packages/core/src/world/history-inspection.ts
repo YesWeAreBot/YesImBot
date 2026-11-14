@@ -1,11 +1,18 @@
 import { Argv, Context, h } from "koishi";
 
 import type { ContextBudgetReport } from "../agent/context-budget";
+import type { MemoryService } from "../memory/service";
 import { getContextSnapshots } from "../model/context-snapshot";
+import type { ModelService } from "../model/service";
 import { estimateTokens, getUsageLedger, TokenUsage, UsageRecord } from "../model/usage";
 import { TableName } from "../shared/constants";
 import { parseConversationChannelId } from "../shared/utils/conversation-scope";
 import { HISTORY_CHANNELS } from "./channel-metadata";
+
+export interface HistoryInspectionDependencies {
+    model: Pick<ModelService, "usageOwner" | "peekContextLimit">;
+    memory?: Pick<MemoryService, "getMemoryBlocksForRendering">;
+}
 
 const dimensions = ["adapter", "bot", "provider", "model", "target"] as const;
 type Dimension = (typeof dimensions)[number];
@@ -239,7 +246,7 @@ function visibleTarget(ctx: Context, platform: string, channelId: string, channe
     });
 }
 
-async function contextLines(ctx: Context, options: InspectionOptions): Promise<string[]> {
+async function contextLines(ctx: Context, options: InspectionOptions, deps?: HistoryInspectionDependencies): Promise<string[]> {
     const lines = [
         "本地历史按平台/目标共享保存，旧记录没有机器人或实例标识。这里只显示当前实例可见目标。",
         "存储容量为文本估算，不等于实际请求长度；图片、嵌入向量不计入文本容量。",
@@ -321,7 +328,7 @@ async function contextLines(ctx: Context, options: InspectionOptions): Promise<s
                 );
             lines.push(...details);
         }
-        const blocks = ctx.yesimbot?.memory?.getMemoryBlocksForRendering() || [];
+        const blocks = deps?.memory?.getMemoryBlocksForRendering() || [];
         const memoryTokens = estimateTokens(blocks);
         lines.push(
             `【实例核心记忆】${blocks.length} 个区块 · 文本 ${memoryTokens === null ? "未知" : `≈${(memoryTokens / 1000).toFixed(2)}K`}（共享记忆，不归属单个目标）`,
@@ -331,7 +338,7 @@ async function contextLines(ctx: Context, options: InspectionOptions): Promise<s
         else storedTokens += memoryTokens;
         lines.unshift(`【本地保存容量】已知文本合计 ≈${(storedTokens / 1000).toFixed(2)}K · 无法估算 ${unknownText} 项`);
     }
-    const snapshots = getContextSnapshots(ctx, options.traceId).filter((row) =>
+    const snapshots = getContextSnapshots(ctx, options.traceId, deps?.model.usageOwner).filter((row) =>
         matchesUsage({ platform: row.adapter, botId: row.bot, target: row.target, provider: row.provider, model: row.model } as any, options),
     );
     if (options.full) {
@@ -359,7 +366,7 @@ async function contextLines(ctx: Context, options: InspectionOptions): Promise<s
             `输入文本 ${row.inputTokens === undefined ? "未知" : `≈${(row.inputTokens / 1000).toFixed(2)}K`}`,
         );
         if (row.traceId) lines.push(`Trace ID：${row.traceId}`);
-        const capacity = ctx.yesimbot?.model?.peekContextLimit(row.provider, row.model);
+        const capacity = deps?.model.peekContextLimit(row.provider, row.model);
         if (capacity)
             lines.push(
                 `最大上下文：${capacity.tokens === undefined ? "未知" : `${capacity.tokens / 1000}K`} · ${capacity.mode} · ${capacity.source || capacity.reason || capacity.status}${capacity.checkedAt ? ` · ${new Date(capacity.checkedAt).toISOString()}` : ""}`,
@@ -376,7 +383,7 @@ async function contextLines(ctx: Context, options: InspectionOptions): Promise<s
     return lines;
 }
 
-export function registerHistoryInspection(ctx: Context, historyCmd: any): void {
+export function registerHistoryInspection(ctx: Context, historyCmd: any, deps?: HistoryInspectionDependencies): void {
     const cache = new InspectionPages();
     for (const kind of ["tokens", "context"] as const) {
         const command = historyCmd.subcommand(`.${kind}`, kind === "tokens" ? "查询实例用量统计" : "只读查看实例上下文", { authority: 3 });
@@ -395,13 +402,13 @@ export function registerHistoryInspection(ctx: Context, historyCmd: any): void {
         command.example?.(`history.${kind} -h`);
         for (const name of dimensions) command.option(name, `--${name} <value:string> ${labels[name]}（可重复）`);
         command.option("page", "--page <page:posint> 页码").option("full", "--full 按类别展开");
-        if (kind === "tokens") command.option("reset", "--reset 重置整个实例统计").option("restart", "--restart 重置整个实例统计");
+        if (kind === "tokens") command.option("reset", "--reset 重置整个实例统计", { aliases: ["restart"] });
         else command.option("details", "--details 展示完整存储内容和请求快照").option("trace", "--trace <id:string> 精确筛选决策/回复轮 ID");
         command.action(async (argv: any) => {
             try {
                 const options = parseInspectionOptions(argv.source || argv.session?.argv?.source || "", argv.options || {});
                 if (kind !== "context" && options.traceId !== undefined) return "仅 history.context 支持 --trace；用量聚合不按 trace 拆分。";
-                const ledger = getUsageLedger(ctx);
+                const ledger = getUsageLedger(ctx, deps?.model.usageOwner);
                 if (options.reset) {
                     if (kind !== "tokens") return "仅 history.tokens 支持重置。";
                     const actor = `${argv.session.platform}:${argv.session.userId}`;
@@ -426,7 +433,7 @@ export function registerHistoryInspection(ctx: Context, historyCmd: any): void {
                                   snapshot.records.filter((row) => matchesUsage(row, options)),
                                   options,
                               )
-                            : await contextLines(ctx, options);
+                            : await contextLines(ctx, options, deps);
                     if (fullScope.length > 256) lines.push("【完整筛选条件】", fullScope);
                     cache.set(key, snapshot.period, lines);
                 }

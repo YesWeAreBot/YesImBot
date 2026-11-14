@@ -4,15 +4,19 @@ import { AssetService } from "../asset";
 import { Config } from "../config";
 import { ToolService } from "../extension";
 import type { LoggerService } from "../logger";
+import { withConversationLog } from "../logger/conversation";
+import { recordConversationReport, withConversationReport } from "../logger/conversation-report";
 import { MemoryService } from "../memory";
 import { ChatModelSwitcher, ModelService, TaskType } from "../model";
 import { loadTemplate, PromptService } from "../prompt";
-import { getInstanceDirectory, guardReplySession, withReplyTurn } from "../shared";
+import { awaitReplyTurn, getInstanceDirectory, guardReplySession, withReplyTurn } from "../shared";
 import { AppError, handleError } from "../shared/errors";
 import { ErrorDefinitions } from "../shared/errors/definitions";
 import { YesImBotService } from "../shared/service";
 import { conversationChannelId, conversationCid } from "../shared/utils/conversation-scope";
 import { AgentStimulus, WorldStateService } from "../world";
+import { sessionChannelType } from "../world/channel-metadata";
+import { registerHistoryResetParticipant, type HistoryResetScope } from "../world/history-reset";
 import { PromptContextBuilder } from "./context-builder";
 import { matchContinuation, sameContinuation, type ContinuationMatch } from "./continuation";
 import { registerDecisionCommands } from "./decision-commands";
@@ -27,7 +31,14 @@ import { TopicManager, TopicSnapshot } from "./topics";
 import { TypeSafeEvaluator } from "./typesafe";
 import { WillingnessManager } from "./willing";
 
-type TracedStimulus = AgentStimulus<any> & { decisionId?: string; topic?: TopicSnapshot; continuation?: ContinuationMatch; continuationRequired?: boolean };
+type TracedStimulus = AgentStimulus<any> & {
+    decisionId?: string;
+    historyGeneration?: number;
+    topic?: TopicSnapshot;
+    scoringTopic?: TopicSnapshot;
+    continuation?: ContinuationMatch;
+    continuationRequired?: boolean;
+};
 
 declare module "koishi" {
     interface Tables {
@@ -41,6 +52,7 @@ declare module "koishi" {
 export class AgentCore extends YesImBotService<Config> {
     // 依赖的服务
     private readonly logger: Logger;
+    private readonly logging: LoggerService;
     private readonly worldState: WorldStateService;
     private readonly modelService: ModelService;
     private readonly promptService: PromptService;
@@ -55,10 +67,16 @@ export class AgentCore extends YesImBotService<Config> {
     private topicScores = new Map<string, Set<string>>();
 
     private activeTurns = new Map<string, AbortController>();
+    private readonly activeTurnSettlements = new Map<string, Promise<void>>();
     private replyControl: ReplyControl;
     private modelSwitcher: ChatModelSwitcher;
     private readonly pendingAssessments = new Map<string, { controller: AbortController; stimulus: AgentStimulus<any>; token: number }>();
     private stopped = false;
+    private stimulusReady = false;
+    private startupStimuli: Array<{ stimulus: AgentStimulus<any>; ownerId?: string; generation?: number }> = [];
+    private readonly historyTargets = new Map<string, { platform: string; channelId: string; channelType?: "private" | "guild" }>();
+    private readonly resetStimuli = new Map<string, { stimulus: AgentStimulus<any>; ownerId?: string; generation?: number }>();
+    private readonly resettingHistory = new Set<HistoryResetScope>();
     private continuationReads = new Map<string, Promise<void>>();
     private continuationEpochs = new Map<string, object>();
     private decisionJournal?: DecisionJournal;
@@ -78,7 +96,9 @@ export class AgentCore extends YesImBotService<Config> {
     private readonly activeDecisionIds = new Map<string, string>();
 
     private recordDecision(stimulus: AgentStimulus<any>, update: Partial<DecisionRecord>): void {
-        this.decisions?.update((stimulus as TracedStimulus).decisionId, update);
+        const decisionId = (stimulus as TracedStimulus).decisionId;
+        this.decisions?.update(decisionId, update);
+        if (stimulus.reportTrace) withConversationReport(stimulus.reportTrace, () => recordConversationReport("decision", { decisionId, ...update }));
     }
 
     public queryDecision(session: Session): string {
@@ -127,25 +147,63 @@ export class AgentCore extends YesImBotService<Config> {
         pending.controller.abort();
         this.recordDecision(pending.stimulus, { assessment: { mode: this.config.typesafe?.mode ?? "off", multiplier: null, status: "cancelled" } });
         if (settle && this.replyControl.valid(this.replyTarget(pending.stimulus.session), pending.token)) {
-            this.logger.debug(
-                `[${channelCid}] 评估等待已取消 | 原因: ${reason === "new_message" ? "同群新消息到来，保留已成立的回复触发" : "仅结算意愿，不恢复旧任务"}`,
+            withConversationReport(pending.stimulus.reportTrace, () =>
+                withConversationLog(pending.stimulus.session, (pending.stimulus as TracedStimulus).decisionId, () => {
+                    this.logger.debug(`辅助评估已取消 · ${reason === "new_message" ? "同会话收到新消息，继续判定旧消息" : "仅结算意愿"}`);
+                    this.processStimulus(pending.stimulus, 1, reason === "new_message");
+                }),
             );
-            this.processStimulus(pending.stimulus, 1, reason === "new_message");
         } else this.recordDecision(pending.stimulus, { stage: "cancelled", reason });
     }
 
     private receiveStimulus(stimulus: TracedStimulus): void {
-        if (this.stopped) return;
+        if (this.stopped || this.historyResetting(stimulus.session)) return;
         const { session, type } = stimulus;
         const channelCid = replyKey(this.replyTarget(session));
-        stimulus = { ...stimulus, channelCid, decisionId: this.decisions?.begin(this.replyTarget(session), type, session.messageId) };
+        if (this.historyTargets.size >= 1024 && !this.historyTargets.has(channelCid)) this.historyTargets.delete(this.historyTargets.keys().next().value!);
+        this.historyTargets.set(channelCid, {
+            platform: session.platform,
+            channelId: conversationChannelId(session)!,
+            channelType: sessionChannelType(session),
+        });
+        stimulus = {
+            ...stimulus,
+            historyGeneration: this.stimulusGeneration(stimulus),
+            channelCid,
+            decisionId: this.decisions?.begin(this.replyTarget(session), type, session.messageId),
+        };
+        stimulus.reportTrace = this.logging?.startConversationReport?.(session, stimulus.decisionId);
+        withConversationReport(stimulus.reportTrace, () =>
+            withConversationLog(session, stimulus.decisionId, () => {
+                if (stimulus.reportTrace)
+                    recordConversationReport("stimulus", {
+                        type,
+                        content: session.content,
+                        userId: session.userId,
+                        messageId: session.messageId,
+                        quoteId: session.quote?.id,
+                        channelId: session.channelId,
+                        guildId: session.guildId,
+                        selfId: session.selfId,
+                        platform: session.platform,
+                        isDirect: session.isDirect,
+                    });
+                this.assessStimulus(stimulus, channelCid);
+            }),
+        );
+    }
+
+    private assessStimulus(stimulus: TracedStimulus, channelCid: string): void {
+        const { session, type } = stimulus;
         if (!this.allowedCategories(stimulus).length) {
-            this.logger.debug(`[${channelCid}] 跳过意愿评估 | 原因: 回复类别已抑制 | 消息ID: ${session.messageId ?? "未知"}`);
+            const rule = this.replyControl.peek(this.replyTarget(session));
+            const expiry = rule?.expiresAt ? new Date(rule.expiresAt).toISOString() : "无到期时间";
+            this.logger.debug(`跳过意愿判定 · 管理员暂停回复 · 抑制类别 ${rule?.blocked.join(", ") || "未知"} · ${expiry}`);
             this.recordDecision(stimulus, { stage: "blocked", reason: "reply_suppressed", allowed: [] });
             return;
         }
         if (this.worldState.isBotMuted(conversationCid(session), session.selfId)) {
-            this.logger.debug(`[${channelCid}] 跳过意愿评估 | 原因: 机器人被禁言 | 消息ID: ${session.messageId ?? "未知"}`);
+            this.logger.debug("跳过意愿判定 · 机器人被禁言");
             this.recordDecision(stimulus, { stage: "blocked", reason: "muted" });
             return;
         }
@@ -159,19 +217,8 @@ export class AgentCore extends YesImBotService<Config> {
         const useTypeSafe = config && config.mode !== "off" && config.evaluationModel?.providerName && config.evaluationModel.modelId;
         const useTopics = this.config.topics?.enabled && this.config.topics.model?.providerName && this.config.topics.model.modelId;
         if (type !== "user_message" || addressed || this.scheduler.isBusy(channelCid) || (!useTypeSafe && !useTopics)) {
-            const reason =
-                type !== "user_message"
-                    ? "系统事件"
-                    : session.isDirect
-                      ? "私聊"
-                      : addressed
-                        ? "明确 @ 机器人"
-                        : this.scheduler.isBusy(channelCid)
-                          ? "回复忙碌"
-                          : "功能关闭或未选有效模型";
-            this.logger.debug(
-                `[${channelCid}] 跳过本次模型评估 | 原因: ${reason} | TypeSafe: ${config?.mode ?? "off"} / ${useTypeSafe ? "已配置" : "未启用或缺模型"} | 话题: ${useTopics ? "已配置" : "未启用或缺模型"} | 消息ID: ${session.messageId ?? "未知"}`,
-            );
+            if (type === "user_message" && (useTypeSafe || useTopics) && addressed)
+                this.logger.debug(`跳过辅助模型评估 · ${session.isDirect ? "私聊" : "明确 @ 机器人"}`);
             this.recordDecision(stimulus, { assessment: { mode: config?.mode ?? "off", multiplier: null, status: "bypassed" } });
             const cachedTopic = type === "user_message" && !addressed && useTopics ? this.topics?.getCurrent(channelCid) : undefined;
             this.processStimulus(cachedTopic ? { ...stimulus, topic: cachedTopic } : stimulus);
@@ -190,18 +237,34 @@ export class AgentCore extends YesImBotService<Config> {
         const topic = useTopics ? this.topics!.assess(session, channelCid, pending.controller.signal, false) : Promise.resolve(undefined);
         void Promise.all([semantic, topic]).then(
             ([multiplier, snapshot]) => {
-                if (this.stopped || this.pendingAssessments.get(channelCid) !== pending || !this.replyControl.valid(target, pending.token)) return;
+                if (
+                    this.stopped ||
+                    !this.stimulusCurrent(stimulus) ||
+                    this.pendingAssessments.get(channelCid) !== pending ||
+                    !this.replyControl.valid(target, pending.token)
+                )
+                    return;
                 this.pendingAssessments.delete(channelCid);
                 this.recordDecision(stimulus, {
                     assessment: { mode: config?.mode ?? "off", multiplier, answers, status: multiplier === null ? "unavailable" : "completed" },
                 });
-                this.logger.info(
-                    `[${channelCid}] 意愿评估完成 | TypeSafe: ${config?.mode ?? "off"} | 结果倍率: ${multiplier?.toFixed(3) ?? "不可用"} | 实际应用: ${(config?.mode === "adjust" ? (multiplier ?? 1) : 1).toFixed(3)} | 话题倍率: ${snapshot?.multiplier.toFixed(3) ?? "无，沿用普通意愿"} | 决策ID: ${stimulus.decisionId ?? "未记录"}`,
-                );
+                const details: string[] = [];
+                if (useTypeSafe) {
+                    const factor = multiplier?.toFixed(3) ?? "结果不可用";
+                    details.push(`TypeSafe ${factor}${config?.mode === "adjust" ? "（参与计分）" : "（仅观察）"}`);
+                }
+                if (useTopics) details.push(snapshot ? `话题倍率 ${snapshot.multiplier.toFixed(3)}` : "话题评估无结果");
+                this.logger.debug(`辅助评估结束 · ${details.join(" · ")}`);
                 this.processStimulus({ ...stimulus, topic: snapshot }, config?.mode === "adjust" ? (multiplier ?? 1) : 1);
             },
             () => {
-                if (this.pendingAssessments.get(channelCid) !== pending || this.stopped || !this.replyControl.valid(target, pending.token)) return;
+                if (
+                    this.pendingAssessments.get(channelCid) !== pending ||
+                    this.stopped ||
+                    !this.stimulusCurrent(stimulus) ||
+                    !this.replyControl.valid(target, pending.token)
+                )
+                    return;
                 this.pendingAssessments.delete(channelCid);
                 this.processStimulus(stimulus);
             },
@@ -222,10 +285,13 @@ export class AgentCore extends YesImBotService<Config> {
         },
     ) {
         super(ctx, config);
+        this.logging = deps.logging;
         this.logger = deps.logging.getLogger("[智能体核心]");
-        this.logger.info(
-            `意愿评估配置 | TypeSafe: ${config.typesafe?.mode ?? "off"} / ${config.typesafe?.evaluationModel?.providerName && config.typesafe.evaluationModel.modelId ? "已选评估模型" : "未选评估模型"} | 话题分析: ${config.topics?.enabled ? "启用" : "关闭"} / ${config.topics?.model?.providerName && config.topics.model.modelId ? "已选对话模型" : "未选对话模型"} | 私聊、明确 @ 和忙碌时跳过新评估`,
-        );
+        const evaluation = config.typesafe?.evaluationModel;
+        const topicModel = config.topics?.model;
+        if (config.typesafe && config.typesafe.mode !== "off" && (!evaluation?.providerName || !evaluation.modelId))
+            this.logger.warn("TypeSafe 已启用，但未指定评估模型");
+        if (config.topics?.enabled && (!topicModel?.providerName || !topicModel.modelId)) this.logger.warn("话题评估已启用，但未指定评估模型");
         this.worldState = deps.world;
         this.modelService = deps.model;
         this.promptService = deps.prompt;
@@ -282,11 +348,14 @@ export class AgentCore extends YesImBotService<Config> {
                 this.cancelAssessment(key, false);
                 this.activeTurns.get(key)?.abort(new Error("聊天任务已取消"));
                 this.decisions.update(this.activeDecisionIds.get(key), { stage: "cancelled", reason, success: false });
-                this.resetWillingness(key);
+                this.resetWillingness(key, reason);
                 this.scheduler?.cancel(key);
             },
             async (target, reason, rule, actor) => {
                 const names: Record<string, string> = { pause: "暂停", replace: "替换暂停规则", resume: "解除暂停", expired: "暂停到期自动解除" };
+                withConversationLog(target, undefined, () =>
+                    this.logger.info(`回复控制 · ${names[reason]}${rule ? ` · 抑制类别 ${rule.blocked.join(", ")}` : ""}`),
+                );
                 await this.worldState.recordSystemEvent({
                     id: `reply_control_${Random.id()}`,
                     platform: target.platform,
@@ -321,11 +390,17 @@ export class AgentCore extends YesImBotService<Config> {
                 const channelCid = replyKey(target);
                 // 在首个异步等待前登记，禁言后立即解禁也不能恢复旧任务。
                 const controller = new AbortController();
+                let finishLocal!: () => void;
+                const localSettlement = new Promise<void>((resolve) => {
+                    finishLocal = resolve;
+                });
+                this.activeTurnSettlements.set(channelCid, localSettlement);
                 this.activeTurns.set(channelCid, controller);
                 this.activeDecisionIds.set(channelCid, (stimulus as TracedStimulus).decisionId!);
                 let success = false;
                 const valid = () =>
                     !controller.signal.aborted &&
+                    this.stimulusCurrent(stimulus as TracedStimulus) &&
                     this.replyControl.valid(target, token) &&
                     !this.worldState.isBotMuted(conversationCid(stimulus.session), target.selfId) &&
                     (stimulus.type !== "background_task_completion" ||
@@ -354,7 +429,9 @@ export class AgentCore extends YesImBotService<Config> {
                         valid,
                         async () => {
                             const session = guardReplySession(stimulus.session);
-                            return this.processor.runCycle({ ...stimulus, session });
+                            // Release local scheduling on cancellation even if a remote
+                            // implementation ignores abort. Its late promise stays observed.
+                            return awaitReplyTurn(() => this.processor.runCycle({ ...stimulus, session }));
                         },
                         controller.signal,
                         (destination) => {
@@ -375,9 +452,11 @@ export class AgentCore extends YesImBotService<Config> {
                 } finally {
                     if (this.activeTurns.get(channelCid) === controller) this.activeTurns.delete(channelCid);
                     this.activeDecisionIds.delete(channelCid);
+                    if (this.activeTurnSettlements.get(channelCid) === localSettlement) this.activeTurnSettlements.delete(channelCid);
+                    finishLocal();
                 }
 
-                const replyTopic = (stimulus as TracedStimulus).topic;
+                const replyTopic = (stimulus as TracedStimulus).scoringTopic ?? (stimulus as TracedStimulus).topic;
                 if (success && valid() && (!replyTopic || this.topicScores.get(channelCid)?.has(replyTopic.scoreKey))) {
                     const scoreKey = replyTopic?.scoreKey ?? channelCid;
                     const willingnessBeforeReply = this.willing.getCurrentWillingness(scoreKey);
@@ -385,14 +464,16 @@ export class AgentCore extends YesImBotService<Config> {
                     const willingnessAfterReply = this.willing.getCurrentWillingness(scoreKey);
 
                     /* prettier-ignore */
-                    this.logger.debug(`[${channelCid}] 回复成功，意愿值已更新 | 计分键: ${scoreKey} | ${willingnessBeforeReply.toFixed(2)} -> ${willingnessAfterReply.toFixed(2)}`);
+                    this.logger.debug(`已发送回复 · 意愿 ${willingnessBeforeReply.toFixed(2)} → ${willingnessAfterReply.toFixed(2)}`);
                 }
                 const completed = valid();
                 this.recordDecision(stimulus, {
                     stage: completed ? "completed" : "cancelled",
                     reason: !completed ? "invalid_generation" : success ? undefined : "no_reply",
                     success: success && completed,
-                    score: this.willing.getCurrentWillingness((stimulus as TracedStimulus).topic?.scoreKey ?? channelCid),
+                    score: this.willing.getCurrentWillingness(
+                        (stimulus as TracedStimulus).scoringTopic?.scoreKey ?? (stimulus as TracedStimulus).topic?.scoreKey ?? channelCid,
+                    ),
                     participation: this.willing.getParticipation(channelCid),
                 });
             },
@@ -401,12 +482,130 @@ export class AgentCore extends YesImBotService<Config> {
         );
 
         this.ctx.on("agent/bot-muted", (target) => {
+            withConversationLog(target, undefined, () => this.logger.info("机器人被禁言 · 取消当前回复与待处理任务"));
             const key = replyKey(target);
             this.cancelAssessment(key, false, "muted");
             this.activeTurns.get(key)?.abort(new Error("机器人已被禁言"));
             this.decisions.update(this.activeDecisionIds.get(key), { stage: "cancelled", reason: "muted", success: false });
-            this.resetWillingness(key);
+            this.resetWillingness(key, "muted");
             this.scheduler.cancel(key, "muted");
+        });
+
+        // World starts receiving events before reply-rule loading finishes.
+        // Subscribe before service startup, but defer all decisions until ready.
+        this.ctx.on("agent/stimulus", (stimulus, ownerId) => {
+            if (this.stopped || !this.acceptsStimulus(stimulus, ownerId)) return;
+            if (this.historyResetting(stimulus.session)) {
+                this.resetStimuli.set(replyKey(this.replyTarget(stimulus.session)), { stimulus, ownerId, generation: this.stimulusGeneration(stimulus) });
+                return;
+            }
+            if (!this.stimulusReady) this.startupStimuli.push({ stimulus, ownerId, generation: this.stimulusGeneration(stimulus) });
+            else this.receiveStimulus(stimulus);
+        });
+        registerHistoryResetParticipant(ctx, {
+            prepare: (scope) => {
+                const token = { ...scope };
+                this.resettingHistory.add(token);
+                const ready = this.resetHistory(scope);
+                return {
+                    ready,
+                    release: () => {
+                        this.resettingHistory.delete(token);
+                        this.releaseResetStimuli();
+                    },
+                };
+            },
+        });
+        this.ctx.on("dispose", () => {
+            this.stopped = true;
+            this.startupStimuli.length = 0;
+        });
+    }
+
+    private matchesHistory(session: Session, scope: HistoryResetScope): boolean {
+        if (!("type" in scope)) return session.platform === scope.platform && conversationChannelId(session) === scope.channelId;
+        return scope.type === "all" || sessionChannelType(session) === scope.type;
+    }
+
+    private historyResetting(session: Session): boolean {
+        return [...this.resettingHistory].some((scope) => this.matchesHistory(session, scope));
+    }
+
+    private stimulusCurrent(stimulus: TracedStimulus): boolean {
+        return (
+            !this.historyResetting(stimulus.session) &&
+            (stimulus.historyGeneration === undefined || stimulus.historyGeneration === this.stimulusGeneration(stimulus))
+        );
+    }
+
+    private resetHistory(scope: HistoryResetScope): Promise<void> {
+        const settling: Array<Promise<void>> = [];
+        const all = "type" in scope && scope.type === "all";
+        this.logging?.clearConversationReports?.((platform, channelId, isDirect) =>
+            "type" in scope ? all || scope.type === (isDirect ? "private" : "guild") : platform === scope.platform && channelId === scope.channelId,
+        );
+        const keys = new Set([
+            ...this.historyTargets.keys(),
+            ...this.pendingAssessments.keys(),
+            ...this.activeTurns.keys(),
+            ...this.topicScores.keys(),
+            ...this.continuationEpochs.keys(),
+        ]);
+        this.startupStimuli = this.startupStimuli.filter(({ stimulus }) => !this.matchesHistory(stimulus.session, scope));
+        this.scheduler.cancelMatching((stimulus) => this.matchesHistory(stimulus.session, scope), "history_cleared");
+        for (const key of keys) {
+            const target = this.historyTargets.get(key);
+            const pendingSession = this.pendingAssessments.get(key)?.stimulus.session;
+            if (
+                !all &&
+                !(target
+                    ? !("type" in scope)
+                        ? target.platform === scope.platform && target.channelId === scope.channelId
+                        : target.channelType === scope.type
+                    : pendingSession && this.matchesHistory(pendingSession, scope))
+            )
+                continue;
+            this.cancelAssessment(key, false, "history_cleared");
+            const settlement = this.activeTurnSettlements.get(key);
+            if (settlement) settling.push(settlement);
+            this.activeTurns.get(key)?.abort(new Error("历史已清除"));
+            this.decisions.update(this.activeDecisionIds.get(key), { stage: "cancelled", reason: "history_cleared", success: false });
+            this.resetWillingness(key, "history_cleared");
+            this.continuationReads.delete(key);
+            this.historyTargets.delete(key);
+        }
+        if (all) {
+            this.willing.resetAll();
+            this.topics?.resetAll();
+            this.continuationReads.clear();
+            this.continuationEpochs.clear();
+        }
+        return Promise.allSettled(settling).then(() => {});
+    }
+
+    private releaseResetStimuli(): void {
+        for (const [key, pending] of this.resetStimuli) {
+            if (this.historyResetting(pending.stimulus.session)) continue;
+            this.resetStimuli.delete(key);
+            if (this.stopped || pending.generation !== this.stimulusGeneration(pending.stimulus) || !this.acceptsStimulus(pending.stimulus, pending.ownerId))
+                continue;
+            if (this.stimulusReady) this.receiveStimulus(pending.stimulus);
+            else this.startupStimuli.push(pending);
+        }
+    }
+
+    private acceptsStimulus(stimulus: AgentStimulus<any>, ownerId?: string): boolean {
+        return (
+            (ownerId === undefined || ownerId === this.worldState.stimulusOwnerId) &&
+            this.ctx.filter(stimulus.session) &&
+            this.worldState.isChannelAllowed(stimulus.session)
+        );
+    }
+
+    private stimulusGeneration(stimulus: AgentStimulus<any>): number | undefined {
+        return this.worldState.l2_manager?.getHistoryGeneration({
+            platform: stimulus.session.platform,
+            channelId: conversationChannelId(stimulus.session)!,
         });
     }
 
@@ -428,6 +627,7 @@ export class AgentCore extends YesImBotService<Config> {
             { primary: "id" },
         );
         await this.replyControl.initialize();
+        if (this.stopped) return;
         this.ctx.setInterval(() => this.replyControl.expire(), 1000);
         registerReplyCommands(this.ctx, this.replyControl, (this.config.replySuppression?.defaultDurationSeconds ?? 60) * 1000);
         registerDecisionCommands(
@@ -437,18 +637,17 @@ export class AgentCore extends YesImBotService<Config> {
         );
         this._registerPromptTemplates();
 
-        this.ctx.on("agent/stimulus", (stimulus, ownerId) => {
-            if (ownerId !== undefined && ownerId !== this.worldState.stimulusOwnerId) return;
-            // Unowned extension events remain compatible, with the same scope
-            // checks as normal messages before any decision or assessment work.
-            if (!this.ctx.filter(stimulus.session) || !this.worldState.isChannelAllowed(stimulus.session)) return;
-            this.receiveStimulus(stimulus);
-        });
-
         this.willing.startDecayCycle();
+        this.stimulusReady = true;
+        const pending = this.startupStimuli.splice(0);
+        for (const { stimulus, ownerId, generation } of pending) {
+            if (this.stopped) break;
+            if (generation === this.stimulusGeneration(stimulus) && this.acceptsStimulus(stimulus, ownerId)) this.receiveStimulus(stimulus);
+        }
     }
 
     private processStimulus(stimulus: TracedStimulus, assessmentMultiplier = 1, allowSchedule = true): void {
+        if (!this.stimulusCurrent(stimulus)) return;
         if (stimulus.type !== "user_message" || !this.config.continuation?.enabled) {
             this.processResolvedStimulus(stimulus, assessmentMultiplier, allowSchedule);
             return;
@@ -522,13 +721,14 @@ export class AgentCore extends YesImBotService<Config> {
         const allowed = this.allowedCategories(stimulus);
         if (!allowed.length) {
             this.recordDecision(stimulus, { stage: "blocked", reason: "reply_suppressed", allowed: [] });
+            this.logger.debug("跳过意愿判定 · 管理员暂停回复");
             return;
         }
         const channelCid = replyKey(this.replyTarget(session));
 
         if (this.worldState.isBotMuted(conversationCid(session), session.selfId)) {
             this.recordDecision(stimulus, { stage: "blocked", reason: "muted" });
-            this.logger.warn(`[${channelCid}] 机器人已被禁言，响应终止。`);
+            this.logger.debug("跳过意愿判定 · 机器人被禁言");
             return;
         }
 
@@ -536,9 +736,14 @@ export class AgentCore extends YesImBotService<Config> {
 
         if (type === "user_message") {
             try {
-                const topic = (stimulus as TracedStimulus).topic;
-                const candidates = topic ? (this.topics?.getTopics(channelCid) ?? []) : [];
-                if (topic) this.trackTopicScores(channelCid, candidates);
+                const inputTopic = stimulus.topic;
+                const retained = this.config.topics?.enabled ? (this.topics?.getTopics(channelCid) ?? []) : [];
+                const focusId = retained.length ? this.topics?.getFocus(channelCid)?.id : undefined;
+                const fallback = retained.find((item) => item.id === focusId) ?? retained[0];
+                // Retain score ownership without injecting a stale inferred topic into source-anchored context.
+                const topic = inputTopic ?? (fallback ? { ...fallback, multiplier: 1 } : undefined);
+                const candidates = inputTopic ? retained : topic ? [topic] : [];
+                if (topic) this.trackTopicScores(channelCid, retained);
                 const willingnessBefore = this.willing.getCurrentWillingness(topic?.scoreKey ?? channelCid);
                 const replyRule = this.replyControl.get(this.replyTarget(session));
                 const categories = replyRule ? allowed : undefined;
@@ -564,7 +769,7 @@ export class AgentCore extends YesImBotService<Config> {
                     const focus = candidates.find((candidate) => candidate.scoreKey === scoreKey);
                     if (focus) {
                         this.topics?.chooseFocus(channelCid, focus.id);
-                        stimulus = { ...stimulus, topic: focus } as TracedStimulus;
+                        stimulus = { ...stimulus, scoringTopic: focus, ...(inputTopic ? { topic: focus } : {}) } as TracedStimulus;
                     }
                 }
                 const forcedMention = this.config.prioritizeMentions && !replyRule && isBotMention(session) && allowed.includes("at");
@@ -581,6 +786,7 @@ export class AgentCore extends YesImBotService<Config> {
                     roll: result.roll,
                     calculation: result.calculation,
                     score: willingnessAfter,
+                    scoreKey,
                     participation: this.willing.getParticipation?.(channelCid),
                     reason: forcedMention
                         ? "forced_reply_by_mention"
@@ -591,14 +797,20 @@ export class AgentCore extends YesImBotService<Config> {
                             : "probability_roll",
                 });
 
-                if (result.calculation) {
-                    const c = result.calculation;
-                    this.logger.debug(
-                        `[${channelCid}] 意愿增益明细 | 消息ID: ${session.messageId ?? "未知"} | 关键词/兴趣倍率: ${c.interestMultiplier} | 语义评估倍率: ${assessmentMultiplier} | 话题倍率: ${topic?.multiplier ?? 1} | 本次评分合成倍率: ${c.assessmentMultiplier} | 动态倍率: ${c.dynamicMultiplier} | 最终增益: ${c.effectiveGain} | 抽签值: ${result.roll ?? "未抽签"}`,
-                    );
-                }
-                /* prettier-ignore */
-                this.logger.debug(`[${channelCid}] 意愿计算: ${(result.calculation?.before ?? willingnessBefore).toFixed(2)} -> ${willingnessAfter.toFixed(2)} | 回复概率: ${(result.probability * 100).toFixed(1)}% | 初步决策: ${decision} | 处理: ${!allowSchedule ? "仅结算，不调度" : decision ? "准备提交调度" : "未达到回复条件"} | 消息ID: ${session.messageId ?? "未知"}`);
+                const scoreBefore = result.calculation?.before ?? willingnessBefore;
+                const reason = forcedMention
+                    ? "明确 @ 机器人"
+                    : continued
+                      ? "会话续接"
+                      : decision
+                        ? "抽中回复"
+                        : result.probability === 0
+                          ? "未达阈值"
+                          : "未抽中";
+                const action = decision && allowSchedule ? " · 提交调度" : !allowSchedule ? " · 仅结算" : "";
+                this.logger.debug(
+                    `意愿 ${scoreBefore.toFixed(2)} → ${willingnessAfter.toFixed(2)} · 回复概率 ${(result.probability * 100).toFixed(1)}% · ${reason}${action}`,
+                );
             } catch (error) {
                 this.recordDecision(stimulus, { stage: "failed", reason: "exception" });
                 handleError(
@@ -607,7 +819,7 @@ export class AgentCore extends YesImBotService<Config> {
                         cause: error as Error,
                         context: { channelCid },
                     }),
-                    `Willingness calculation (Channel: ${channelCid})`,
+                    "计算回复意愿",
                 );
                 return;
             }
@@ -621,7 +833,6 @@ export class AgentCore extends YesImBotService<Config> {
         } else {
             decision = true;
             this.recordDecision(stimulus, { stage: "calculated", decision, allowed });
-            this.logger.info(`[${channelCid}] 接收到系统刺激 [${type}]，自动触发响应。`);
         }
 
         if (!decision || !allowSchedule) {
@@ -635,6 +846,9 @@ export class AgentCore extends YesImBotService<Config> {
 
     public async stop(): Promise<void> {
         this.stopped = true;
+        this.startupStimuli.length = 0;
+        this.resetStimuli.clear();
+        this.historyTargets.clear();
         for (const channelCid of this.pendingAssessments.keys()) this.cancelAssessment(channelCid, false);
         this.activeTurns.forEach((controller) => controller.abort(new Error("插件已停止")));
         this.activeTurns.clear();
@@ -653,11 +867,19 @@ export class AgentCore extends YesImBotService<Config> {
     }
 
     private clearTopicScores(channelKey: string): void {
-        for (const key of this.topicScores.get(channelKey) ?? []) this.willing.reset(key);
+        for (const key of this.topicScores.get(channelKey) ?? []) {
+            this.logger.debug(
+                `[${channelKey}] 清除话题意愿 | 计分键: ${key} | 原因: 话题重置或到期 | 清除前: ${this.willing.getCurrentWillingness(key).toFixed(2)}`,
+            );
+            this.willing.reset(key);
+        }
         this.topicScores.delete(channelKey);
     }
 
-    private resetWillingness(channelKey: string): void {
+    private resetWillingness(channelKey: string, reason = "reset"): void {
+        this.logger.debug(
+            `[${channelKey}] 清除意愿状态 | 原因: ${reason} | 普通意愿: ${this.willing.getCurrentWillingness(channelKey).toFixed(2)} | 话题数: ${this.topicScores.get(channelKey)?.size ?? 0}`,
+        );
         this.continuationEpochs?.delete(channelKey);
         this.topics?.reset(channelKey);
         this.clearTopicScores(channelKey);
@@ -666,7 +888,13 @@ export class AgentCore extends YesImBotService<Config> {
 
     private trackTopicScores(channelKey: string, snapshots: TopicSnapshot[]): void {
         const keys = new Set(snapshots.map((topic) => topic.scoreKey));
-        for (const old of this.topicScores.get(channelKey) ?? []) if (!keys.has(old)) this.willing.reset(old);
+        for (const old of this.topicScores.get(channelKey) ?? [])
+            if (!keys.has(old)) {
+                this.logger.debug(
+                    `[${channelKey}] 清除话题意愿 | 计分键: ${old} | 原因: 话题移出候选 | 清除前: ${this.willing.getCurrentWillingness(old).toFixed(2)}`,
+                );
+                this.willing.reset(old);
+            }
         this.topicScores.set(channelKey, keys);
     }
 

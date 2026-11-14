@@ -76,6 +76,7 @@ export class BackgroundTaskRegistry {
         tool: string,
         execute: (signal: AbortSignal, report: (progress: string) => void) => Promise<unknown>,
         valid?: () => boolean,
+        toolTimeoutMs?: number,
     ): TaskSnapshot {
         if (this.disposed) throw new Error("Background task registry is disposed");
         this.refresh();
@@ -104,7 +105,11 @@ export class BackgroundTaskRegistry {
         this.tasks.set(task.snapshot.id, task);
         group.tasks.add(task.snapshot.id);
         this.active++;
-        task.timeout = setTimeout(() => this.requestCancellation(task, "Background task timeout", "failed"), this.options.timeoutMs);
+        const timeoutMs =
+            typeof toolTimeoutMs === "number" && Number.isFinite(toolTimeoutMs) && toolTimeoutMs > 0
+                ? Math.min(this.options.timeoutMs, toolTimeoutMs)
+                : this.options.timeoutMs;
+        task.timeout = setTimeout(() => this.requestCancellation(task, `Background task timeout (${timeoutMs}ms)`, "failed"), timeoutMs);
         task.timeout.unref?.();
         // Both synchronous execution errors and asynchronous rejections use the same settlement path.
         void Promise.resolve()

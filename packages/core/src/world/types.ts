@@ -99,6 +99,7 @@ export interface AgentResponse {
 /** 交互日志中 Agent 思考事件的结构 */
 export interface AgentThoughtLog {
     consumedRecallIds?: string[];
+    consumedSourceIds?: string[];
     type: "agent_thought";
     id: string; // 思考事件的唯一ID
     turnId: string; // 关联的 Agent 回合ID
@@ -109,6 +110,7 @@ export interface AgentThoughtLog {
 /** 交互日志中 Agent 动作事件的结构 */
 export interface AgentActionLog {
     consumedRecallIds?: string[];
+    consumedSourceIds?: string[];
     type: "agent_action";
     id: string; // 动作的唯一ID
     turnId: string; // 关联的 Agent 回合ID
@@ -209,6 +211,7 @@ export interface ContextualMessage {
     elements: Element[];
     timestamp: Date;
     quoteId?: string;
+    wasConsumed?: boolean;
     is_new?: boolean; // 是否是自上次 Agent 响应以来的新消息
 }
 
@@ -219,6 +222,7 @@ export interface ContextualSystemEvent {
     eventDetails?: string;
     message?: string; // 直接可读的事件描述
     timestamp: Date;
+    wasConsumed?: boolean;
     is_new?: boolean; // 是否是自上次 Agent 响应以来的新事件
 }
 
@@ -226,6 +230,7 @@ export interface ContextualSystemEvent {
 /** 上下文中的 Agent 思考对象 */
 export interface ContextualAgentThought {
     consumedRecallIds?: string[];
+    consumedSourceIds?: string[];
     type: "agent_thought";
     turnId: string;
     timestamp: Date;
@@ -237,7 +242,9 @@ export interface ContextualAgentThought {
 
 /** 上下文中的 Agent 动作对象 */
 export interface ContextualAgentAction {
+    actionId?: string;
     consumedRecallIds?: string[];
+    consumedSourceIds?: string[];
     type: "agent_action";
     turnId: string;
     timestamp: Date;
@@ -248,6 +255,8 @@ export interface ContextualAgentAction {
 
 /** 上下文中的 Agent 观察对象 */
 export interface ContextualAgentObservation {
+    /** Exact persisted tool action identity for receipt projection. */
+    actionId?: string;
     error?: string;
     type: "agent_observation";
     turnId: string;
@@ -349,6 +358,7 @@ export interface AgentStimulus<T> {
     session: Session;
     priority: number;
     payload: T;
+    reportTrace?: import("../logger/conversation-report").ConversationReportTrace;
 }
 
 // #endregion

@@ -103,9 +103,9 @@ export function captureContextSnapshot(
     }
 }
 
-export function getContextSnapshots(ctx: Context, traceIdOrOwner?: string | UsageOwner): ContextSnapshot[] {
+export function getContextSnapshots(ctx: Context, traceIdOrOwner?: string | UsageOwner, ownerOverride?: UsageOwner): ContextSnapshot[] {
     const traceId = typeof traceIdOrOwner === "string" ? traceIdOrOwner : undefined;
-    const explicitOwner = typeof traceIdOrOwner === "object" ? traceIdOrOwner : undefined;
+    const explicitOwner = ownerOverride ?? (typeof traceIdOrOwner === "object" ? traceIdOrOwner : undefined);
     return [...(stores.get(owner(ctx, explicitOwner))?.values() ?? [])]
         .filter((snapshot) => traceId === undefined || snapshot.traceId === traceId)
         .map((snapshot) => ({ ...snapshot }));

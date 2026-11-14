@@ -38,7 +38,15 @@ async function fixture() {
         world.isBotMuted = () => false;
         world.peekBotMuted = () => false;
         const config = Config({ base: { text: 100 }, lifecycle: { probabilityThreshold: 0 }, typesafe: { mode: "off" } });
-        const core: any = Object.create(AgentCore.prototype);
+        const core: any = new AgentCore(scope, config, {
+            logging: ctx.yesimbot.logging,
+            world,
+            model: { useChatGroup: () => ({}) } as any,
+            prompt: { registerTemplate() {}, registerSnippet() {} } as any,
+            tool: {} as any,
+            asset: ctx.yesimbot.asset as any,
+            memory: {} as any,
+        });
         const scheduled: any[] = [];
         Object.defineProperty(core, "ctx", { value: scope });
         Object.defineProperty(core, "logger", { value: logger });

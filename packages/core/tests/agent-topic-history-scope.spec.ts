@@ -41,7 +41,7 @@ for (const mode of ["typesafe", "topics"]) {
                     return { answers: { addressed: { noul: 1 }, interested: { noul: 0 }, others: { noul: 0 } } };
                 },
             }),
-            getChatModel: () => ({
+            useChatModel: () => ({
                 chat: async (options: any) => {
                     inputs.push(JSON.parse(options.messages.at(-1).content));
                     return { text: JSON.stringify({ topics: [{ id: "t", label: "t", share: 1, interest: 0.5 }], currentTopicId: "t" }) };
@@ -123,6 +123,7 @@ it("binds heartbeat clear watches and all interaction writes to canonical topic 
                 return { status: "success" };
             },
         },
+        contextBuilder: { commitMultimodalUsage() {} },
         _prepareLlmRequest: async () => ({ messages: [], manualRecallIds: [] }),
     });
     for (const guildId of ["-10001", "-10002"]) {

@@ -79,7 +79,7 @@ test("topic requests use the selected history count above thirty", async () => {
             idleTimeoutSeconds: 60,
             influence: 0.5,
         },
-        { logging: loggingStub(), model: { getChatModel: () => ({ chat }) } as any },
+        { logging: loggingStub(), model: { useChatModel: () => ({ chat }) } as any },
     );
     try {
         await manager.assess(

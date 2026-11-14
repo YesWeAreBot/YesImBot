@@ -130,7 +130,7 @@ for (const stream of [false, true]) {
         });
         expect(result.toolCalls).toHaveLength(1);
         expect(result.toolCalls[0].toolName).toBe("lookup");
-        expect(calls).toBe(1);
+        expect(calls).toBe(0);
     });
 }
 it("Workers ChatModel never executes buffered tool on truncated stream", async () => {
@@ -304,14 +304,14 @@ for (const stream of [false, true]) {
                         },
                     })),
                 });
-                const rejected = returned === "none" || (typeof selected !== "string" && returned !== "lookup");
+                const rejected = typeof selected !== "string" && returned !== "lookup";
                 const outcome = await request.then(
                     (value) => ({ toolCalls: value.toolCalls.length, error: "" }),
                     (error) => ({ toolCalls: 0, error: String(error) }),
                 );
-                expect(outcome.toolCalls).toBe(rejected ? 0 : 1);
+                expect(outcome.toolCalls).toBe(rejected || returned === "none" ? 0 : 1);
                 expect(outcome.error).toMatch(rejected ? /tool_choice|网络请求失败/ : /^$/);
-                expect(calls).toBe(rejected ? 0 : 1);
+                expect(calls).toBe(0);
                 expect(t.calls).toHaveLength(1);
                 expect(t.calls[0].body).not.toHaveProperty("tool_choice");
             });

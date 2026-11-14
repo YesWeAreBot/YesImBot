@@ -18,6 +18,7 @@ interface PendingCommand {
     invokerId: string;
     timestamp: number;
     session: Session;
+    configCommand?: boolean;
 }
 
 export class EventListenerManager {
@@ -25,6 +26,7 @@ export class EventListenerManager {
     private readonly pendingCommands = new Map<string, PendingCommand[]>();
     private cleanupTimer?: () => void;
     private generation = 0;
+    private readonly configReplies = new WeakSet<Session>();
     private logger: Logger;
 
     constructor(
@@ -82,6 +84,11 @@ export class EventListenerManager {
 
                 if (session.author?.isBot) return next();
 
+                // Configuration command arguments may contain a new credential. Keep
+                // the command audit event, but never write the command message body.
+                const parsed = session.argv;
+                const command = parsed?.command ?? (parsed ? this.ctx.$commander.inferCommand({ ...parsed, tokens: parsed.tokens?.slice() }) : undefined);
+                if (isConfigCommand(command?.name)) return next();
                 await this.recordUserMessage(session);
                 const result = await next();
 
@@ -136,34 +143,38 @@ export class EventListenerManager {
     }
 
     private async handleNotice(session: Session): Promise<void> {
+        const target = {
+            platform: session.platform,
+            channelId: conversationChannelId(session)!,
+            channelType: session.isDirect ? ("private" as const) : ("guild" as const),
+        };
+        const generation = this.service.l2_manager?.getHistoryGeneration(target);
         await this.service.observeChannel(session);
-        switch (session.subtype) {
-            case "poke":
-                const authorId = session.event._data.user_id;
-                const targetId = session.event._data.target_id;
-                const action = session.event._data.action;
-                const suffix = session.event._data.suffix;
+        if (session.subtype !== "poke") return;
 
-                const payload: Partial<SystemEventData> = {
-                    type: "notice-poke",
-                    payload: {
-                        details: { authorId, targetId, action, suffix },
+        const raw = session.event._data;
+        const authorId = raw?.user_id ?? session.userId;
+        const targetId = raw?.target_id;
+        const action = typeof raw?.action === "string" ? raw.action.trim() : "";
+        const suffix = typeof raw?.suffix === "string" ? raw.suffix.trim() : "";
+        await this.service.recordSystemEvent(
+            {
+                id: `sysevt_poke_${Random.id()}`,
+                ...target,
+                type: "notice-poke",
+                timestamp: new Date(),
+                payload: {
+                    details: {
+                        ...(authorId !== undefined && { authorId }),
+                        ...(targetId !== undefined && { targetId }),
+                        ...(action && { action }),
+                        ...(suffix && { suffix }),
                     },
-                    message: `系统提示：${authorId} ${action} ${targetId} ${suffix}`,
-                };
-                this.service.recordSystemEvent({
-                    id: `sysevt_poke_${Random.id()}`,
-                    platform: session.platform,
-                    channelId: conversationChannelId(session),
-                    channelType: session.isDirect ? "private" : "guild",
-                    timestamp: new Date(),
-                    ...payload,
-                } as SystemEventData);
-
-                break;
-            default:
-                break;
-        }
+                },
+                message: `系统提示：${authorId ?? "有人"} ${action || "戳了戳"} ${targetId ?? "一位用户"}${suffix ? ` ${suffix}` : ""}`,
+            },
+            generation,
+        );
     }
 
     private async handleGuildMember(session: Session): Promise<void> {
@@ -235,6 +246,7 @@ export class EventListenerManager {
         const { session, command, source } = argv;
         if (!session || !command) return;
         const generation = this.generation;
+        const configCommand = isConfigCommand(command.name);
 
         this.logger.info(`记录指令调用 | 用户: ${session.author.name || session.userId} | 指令: ${command.name} | 频道: ${conversationCid(session)}`);
         const commandEventId = `cmd_invoked_${session.messageId || "call"}_${Random.id()}`;
@@ -256,7 +268,7 @@ export class EventListenerManager {
                 target: { platform: session.platform, selfId: session.selfId, channelId: session.channelId },
                 invokedAt: new Date().toISOString(),
                 name: command.name,
-                source,
+                ...(configCommand ? {} : { source }),
                 invoker: { pid: session.userId, name: session.author.nick || session.author.name },
             },
             message: `系统提示：用户 "${session.author.name || session.userId}" 调用了指令 "${command.name}"`,
@@ -274,6 +286,7 @@ export class EventListenerManager {
             invokerId: session.userId ?? "",
             timestamp: Date.now(),
             session,
+            configCommand,
         });
         this.pendingCommands.set(key, pendingList);
     }
@@ -299,15 +312,26 @@ export class EventListenerManager {
         const [pendingCmd] = pendingInChannel.splice(pendingIndex, 1);
         if (!pendingInChannel.length) this.pendingCommands.delete(key);
         this.logger.debug(`匹配到指令结果 | 事件ID: ${pendingCmd.commandEventId}`);
+        if (pendingCmd.configCommand) this.configReplies.add(session);
 
         const [existingEvent] = await this.ctx.database.get(TableName.SystemEvents, { id: pendingCmd.commandEventId });
         if (existingEvent) {
-            const updatedPayload = { ...existingEvent.payload, status: "response-observed", returnedAt: new Date().toISOString(), result: session.content };
+            const updatedPayload = {
+                ...existingEvent.payload,
+                status: "response-observed",
+                returnedAt: new Date().toISOString(),
+                ...(pendingCmd.configCommand ? {} : { result: session.content }),
+            };
             await this.ctx.database.set(TableName.SystemEvents, { id: pendingCmd.commandEventId }, { payload: updatedPayload });
         }
     }
 
     private async recordUserMessage(session: Session): Promise<void> {
+        const generation = this.service.l2_manager?.getHistoryGeneration({
+            platform: session.platform,
+            channelId: conversationChannelId(session)!,
+            channelType: session.isDirect ? "private" : "guild",
+        });
         await this.service.observeChannel(session);
         /* prettier-ignore */
         this.logger.info(`用户消息 | ${session.author.name} | 频道: ${conversationCid(session)} | 内容: ${truncate(session.content ?? "").replace(/\n/g, " ")}`);
@@ -350,12 +374,26 @@ export class EventListenerManager {
             timestamp: new Date(session.timestamp),
             quoteId: session.quote?.id,
         };
-        await this.service.recordMessage(message);
+        await this.service.recordMessage(message, generation);
     }
 
     private async recordBotSentMessage(session: Session): Promise<void> {
-        if (!session.content || !session.messageId) return;
+        if (
+            this.configReplies.has(session) ||
+            session.scope === "commands.conf" ||
+            session.scope?.startsWith("commands.conf.") ||
+            (typeof this.ctx.filter === "function" && !this.ctx.filter(session)) ||
+            !session.content ||
+            !session.messageId
+        )
+            return;
 
+        // Bind the event before channel lookup or media processing can outlive a reset.
+        const generation = this.service.l2_manager?.getHistoryGeneration({
+            platform: session.platform,
+            channelId: conversationChannelId(session)!,
+            channelType: session.isDirect ? "private" : "guild",
+        });
         await this.service.observeChannel(session);
         this.logger.debug(`记录机器人消息 | 频道: ${conversationCid(session)} | 消息ID: ${session.messageId}`);
 
@@ -371,7 +409,7 @@ export class EventListenerManager {
             timestamp: new Date(session.timestamp),
             quoteId: session.quote?.id,
         };
-        await this.service.recordMessage(message);
+        await this.service.recordMessage(message, generation);
     }
 
     private async updateMemberInfo(session: Session): Promise<void> {
@@ -402,4 +440,8 @@ export class EventListenerManager {
 /** 兼容旧适配器的角色 ID 数组及新版 Satori 的角色对象数组。 */
 function roleIds(roles?: ReadonlyArray<string | { id: string }>): string[] | undefined {
     return roles?.map((role) => (typeof role === "string" ? role : role.id));
+}
+
+function isConfigCommand(name?: string): boolean {
+    return name === "conf" || name?.startsWith("conf.") === true;
 }

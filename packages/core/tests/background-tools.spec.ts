@@ -1,7 +1,9 @@
 import { Bot, Context, Schema } from "koishi";
-import { expect, it, onTestFinished } from "vitest";
+import { expect, it, onTestFinished, vi } from "vitest";
 
 import { withReplyTurn, guardReplySession } from "../src/agent/reply-turn";
+import CoreUtilExtension from "../src/extension/builtin/core-util";
+import { CoreUtilConfigSchema } from "../src/extension/builtin/core-util/config";
 import { ToolService } from "../src/extension/service";
 import { loggingStub } from "./helpers/yesimbot";
 
@@ -63,6 +65,7 @@ async function fixture(enabled = true) {
         await ctx.stop();
     });
     return {
+        ctx,
         tools,
         session,
         bot,
@@ -93,6 +96,37 @@ function add(f: Awaited<ReturnType<typeof fixture>>, execute: any, background = 
         background,
     } as any);
 }
+it("rechecks auxiliary vision permission after background pixel reading before model dispatch", async () => {
+    const f = await fixture();
+    const pixels = deferred();
+    const model = { isVisionModel: () => true, chat: vi.fn<() => Promise<{ text: string }>>(async () => ({ text: "description" })) };
+    const read = vi.fn<() => Promise<unknown>>(() => pixels.promise);
+    (f.ctx as any).yesimbot = {
+        tool: f.tools,
+        logging: loggingStub(),
+        asset: { getInfo: async () => ({ mime: "image/png" }), read },
+        model: { getChatModel: () => model, useChatModel: () => model },
+    };
+    const config = CoreUtilConfigSchema({ vision: { model: { providerName: "provider", modelId: "vision" }, allowAuxiliary: true } });
+    const extension = new CoreUtilExtension(f.ctx, config);
+    for (const definition of (extension as any).tools.values()) f.tools.registerTool(definition);
+    f.config.backgroundTools.allowedTools = ["get_image_description"];
+    const start = await f.tools.invoke(
+        "background_task_start",
+        { tool: "get_image_description", params: { image_id: "image", question: "what?" } },
+        f.session,
+        { attachedImageIds: ["image"] },
+    );
+    expect(start).toMatchObject({ status: "success" });
+    await drain();
+    expect(read).toHaveBeenCalledTimes(1);
+    config.vision.allowAuxiliary = false;
+    pixels.resolve("data:image/jpeg;base64,AA==");
+    await drain();
+    expect(model.chat).not.toHaveBeenCalled();
+    expect(() => f.tools.background!.query(f.session, (start as any).result.id)).toThrow("Background task not found");
+});
+
 it("hides background management when disabled and keeps direct execution serial", async () => {
     const f = await fixture(false),
         d = deferred();
@@ -402,4 +436,171 @@ it("keeps other instances' tool choices when a shared schema owner stops", async
     await fork.dispose();
     expect(names()).not.toContain("other_read");
     expect(names()).toContain("read_slow");
+});
+it("transforms background input exactly once through the ordinary invocation path", async () => {
+    const f = await fixture();
+    let calls = 0;
+    f.tools.registerTool({
+        name: "read_slow",
+        description: "read",
+        background: true,
+        parameters: Schema.object({ value: Schema.transform(Schema.string(), JSON.parse) }),
+        execute: async ({ value }) => {
+            calls++;
+            return { status: "success", result: value };
+        },
+    });
+    const started = await f.tools.invoke("background_task_start", { tool: "read_slow", params: { value: '{"answer":42}' } }, f.session);
+    await drain();
+    const task: any = await f.tools.invoke("background_task_query", { id: started.result.id }, f.session);
+    expect(task.result).toMatchObject({ state: "succeeded", result: { result: { answer: 42 } } });
+    expect(calls).toBe(1);
+});
+
+it("rechecks an extension owner's filter for discovery, execution and completed background reads", async () => {
+    const f = await fixture(),
+        d = deferred();
+    let allowed = true,
+        calls = 0;
+    f.tools.registerTool(
+        {
+            name: "read_slow",
+            description: "read",
+            background: true,
+            parameters: Schema.object({}),
+            execute: async () => {
+                calls++;
+                return d.promise;
+            },
+        },
+        f.bot.ctx.intersect(() => allowed),
+    );
+    const task = f.tools.background!.start(f.session, "read_slow", {});
+    await drain();
+    allowed = false;
+    expect(f.tools.getAvailableTools(f.session).some((tool) => tool.name === "read_slow")).toBe(false);
+    expect((await f.tools.invoke("read_slow", {}, f.session)).status).toBe("error");
+    d.resolve({ status: "success", result: "restricted" });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await drain();
+    expect(calls).toBe(1);
+    expect(() => f.tools.background!.query(f.session, task.id)).toThrow(Error);
+    expect(f.completions).toHaveLength(0);
+});
+
+it("rejects stale background result reads while keeping result-free task listings", async () => {
+    const f = await fixture();
+    let current = true;
+    f.tools.registerTool({
+        name: "read_slow",
+        description: "read",
+        background: true,
+        parameters: Schema.object({}),
+        isResultCurrent: async () => current,
+        execute: async () => ({ status: "success", result: "restricted", metadata: { personMemorySnapshot: "old" } }),
+    });
+    const start = await f.tools.invoke("background_task_start", { tool: "read_slow", params: {} }, f.session);
+    await vi.waitFor(() => expect(f.tools.background!.query(f.session, start.result.id)).toMatchObject({ state: "succeeded" }));
+    expect((await f.tools.invoke("background_task_query", { id: start.result.id }, f.session)).status).toBe("success");
+    current = false;
+    const read = await f.tools.invoke("background_task_query", { id: start.result.id }, f.session);
+    expect(read.status).toBe("error");
+    expect(JSON.stringify(read)).not.toContain("restricted");
+    const list = await f.tools.invoke("background_task_query", {}, f.session);
+    expect(list.status).toBe("success");
+    expect(JSON.stringify(list)).not.toContain("restricted");
+});
+
+it("invalidates an already published completion after its extension owner is filtered out", async () => {
+    const f = await fixture();
+    let allowed = true;
+    f.tools.registerTool(
+        {
+            name: "read_slow",
+            description: "read",
+            background: true,
+            parameters: Schema.object({}),
+            execute: async () => ({ status: "success", result: "private result" }),
+        },
+        f.bot.ctx.intersect(() => allowed),
+    );
+    const task = f.tools.background!.start(f.session, "read_slow", {});
+    await vi.waitFor(() => expect(f.completions).toHaveLength(1));
+    const payload = f.completions[0].s.payload;
+    expect(f.tools.background!.isCompletionCurrent(f.session, payload)).toBe(true);
+    allowed = false;
+    expect(f.tools.background!.isCompletionCurrent(f.session, payload)).toBe(false);
+    expect(f.tools.background!.consumeCompletion(f.session, payload)).toBeUndefined();
+    expect(() => f.tools.background!.query(f.session, task.id)).toThrow(/permission|authorization|not found|权限|失效|不存在/i);
+});
+
+it("preserves attached-image evidence without inheriting a foreground cancellation signal", async () => {
+    const f = await fixture();
+    const job = deferred();
+    let signal!: AbortSignal, imageIds: readonly string[] | undefined;
+    const foreground = new AbortController();
+    f.tools.registerTool({
+        name: "read_slow",
+        description: "read",
+        background: true,
+        parameters: Schema.object({}),
+        execute: async (args) => {
+            signal = args.toolContext!.signal!;
+            imageIds = args.toolContext?.attachedImageIds;
+            return job.promise;
+        },
+    });
+    const receipt = await f.tools.invoke("background_task_start", { tool: "read_slow", params: {} }, f.session, {
+        attachedImageIds: ["actual-image"],
+        signal: foreground.signal,
+    });
+    await drain();
+    foreground.abort();
+    expect(signal.aborted).toBe(false);
+    expect(imageIds).toEqual(["actual-image"]);
+    job.resolve({ status: "success", result: "done" });
+    await vi.waitFor(() => expect(f.tools.background!.query(f.session, receipt.result.id)).toMatchObject({ state: "succeeded" }));
+});
+
+it("cannot bypass a request-specific vision policy through background_task_start or its tool listing", async () => {
+    const f = await fixture();
+    let calls = 0;
+    f.tools.registerTool({
+        name: "read_slow",
+        description: "read",
+        background: true,
+        parameters: Schema.object({}),
+        isAvailable: (context) => !context?.attachedImageIds?.length,
+        execute: async () => {
+            calls++;
+            return { status: "success" };
+        },
+    });
+    const context = { attachedImageIds: ["actual-image"] };
+    expect((await f.tools.invoke("background_task_start", { tool: "read_slow", params: {} }, f.session, context)).status).toBe("error");
+    const listing = await f.tools.invoke("background_task_query", {}, f.session, context);
+    expect(listing.result.tools).not.toContain("read_slow");
+    expect(calls).toBe(0);
+});
+
+it("applies a dedicated background budget while retaining the occupied execution slot", async () => {
+    const f = await fixture();
+    vi.useFakeTimers();
+    onTestFinished(() => vi.useRealTimers());
+    f.config.advanced = { toolTimeouts: { read_slow: 15 } };
+    f.config.backgroundTools.maxConcurrent = 1;
+    const job = deferred();
+    let signal!: AbortSignal;
+    add(f, async (args: any) => {
+        signal = args.toolContext.signal;
+        return job.promise;
+    });
+    const receipt = await f.tools.invoke("background_task_start", { tool: "read_slow", params: {} }, f.session);
+    await vi.advanceTimersByTimeAsync(16);
+    expect(signal.aborted).toBe(true);
+    expect(f.tools.background!.query(f.session, receipt.result.id)).toMatchObject({ state: "cancelling" });
+    expect((await f.tools.invoke("background_task_start", { tool: "read_slow", params: {} }, f.session)).status).toBe("error");
+    job.resolve({ status: "success", result: "late" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(f.tools.background!.query(f.session, receipt.result.id)).toMatchObject({ state: "failed", error: "Background task timeout (15ms)" });
 });

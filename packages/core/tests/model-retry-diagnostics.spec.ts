@@ -1,5 +1,7 @@
 import { expect, it } from "vitest";
 
+import { ChatModel } from "../src/model/chat-model";
+import { ModelAbility } from "../src/model/config";
 import { ChatModelSwitcher } from "../src/model/service";
 import { AppError, ErrorDefinitions } from "../src/shared/errors";
 import { loggingStub, stubCtx } from "./helpers/yesimbot";
@@ -119,4 +121,58 @@ it("shows failover and recovery through the next candidate at ordinary log level
     const recovery = visible.findIndex((line) => line.includes("请求成功"));
     expect(transition).toBeGreaterThanOrEqual(0);
     expect(recovery).toBeGreaterThan(transition);
+});
+
+it.each([400, 401, 403, 404, 413, 422])("does not replay deterministic HTTP %s requests before failover", async (httpStatus) => {
+    let calls = 0;
+    const { switcher, logs } = setup(
+        async () => {
+            calls++;
+            throw new AppError(ErrorDefinitions.LLM.REQUEST_FAILED, {
+                args: [httpStatus === 400 ? 'HTTP 400: {"code":"1301","message":"content filtered"}' : `HTTP ${httpStatus}`],
+                context: { httpStatus },
+            });
+        },
+        1,
+        async () => success,
+    );
+    expect(await switcher.chat({ messages: [] })).toBe(success);
+    expect(calls).toBe(1);
+    expect(logs.some((line) => line.includes("确定性请求错误") && line.includes("不重复"))).toBe(true);
+});
+
+it("still retries a timed-out model within the configured bound", async () => {
+    let calls = 0;
+    const { switcher } = setup(async () => {
+        if (++calls === 1) throw new AppError(ErrorDefinitions.LLM.TIMEOUT, { args: [1] });
+        return success;
+    });
+    expect(await switcher.chat({ messages: [] })).toBe(success);
+    expect(calls).toBe(2);
+});
+
+it("does not replay an actual HTTP 400 content-filtered transport response", async () => {
+    const logger: any = { extend: () => logger, debug() {}, info() {}, warn() {}, error() {}, success() {} };
+    const ctx = stubCtx({ logging: { getLogger: () => logger } });
+    let requests = 0;
+    const model = new ChatModel(
+        ctx,
+        () => ({ model: "filtered", baseURL: "https://test.invalid/v1/" }),
+        {
+            modelId: "filtered",
+            abilities: [ModelAbility.Chat],
+            parameters: { stream: false },
+            retryPolicy: { maxRetries: 2 },
+        },
+        async () => {
+            requests++;
+            return Response.json({ error: { code: "1301", message: "content filtered" } }, { status: 400 });
+        },
+        loggingStub(logger),
+    );
+    const switcher = new ChatModelSwitcher(ctx, { name: "test", models: [{ providerName: "p", modelId: "filtered" }] }, () => model, loggingStub(logger));
+    const error = await switcher.chat({ messages: [] }).catch((error) => error);
+    expect(requests).toBe(1);
+    expect(error.context.accumulatedErrors[0].error.context.httpStatus).toBe(400);
+    expect(error.context.accumulatedErrors[0].error.message).toContain("1301");
 });

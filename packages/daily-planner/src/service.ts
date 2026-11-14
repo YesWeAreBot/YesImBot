@@ -1,5 +1,7 @@
+import { createHash } from "node:crypto";
+
 import { Context } from "koishi";
-import { IChatModel, MemoryBlockData, MemoryService } from "koishi-plugin-yesimbot";
+import { conversationChannelId, getInstanceScope, IChatModel, MemoryBlockData, MemoryService } from "koishi-plugin-yesimbot";
 
 import { DailyPlannerConfig } from ".";
 
@@ -12,6 +14,8 @@ interface TimeSegment {
 
 // 日程数据结构
 interface DailySchedule {
+    instance: string;
+    sourceFingerprint: string;
     date: string; // YYYY-MM-DD
     segments: TimeSegment[]; // 时间段数组
     memoryContext?: string[]; // 关联的记忆ID
@@ -19,7 +23,7 @@ interface DailySchedule {
 
 declare module "koishi" {
     interface Tables {
-        "yesimbot.daily_schedules": DailySchedule;
+        "yesimbot.daily_schedules_v2": DailySchedule;
     }
 }
 
@@ -37,7 +41,7 @@ export class DailyPlannerService {
             this.disposed = true;
         });
         this.memoryService = ctx.yesimbot.memory;
-        this.chatModel = ctx.yesimbot.model.getChatModel(this.config.model.providerName, config.model.modelId);
+        this.chatModel = ctx.yesimbot.model.useChatModel(this.config.model.providerName, config.model.modelId);
         this.registerDatabaseModel();
         this.registerPromptSnippet();
         this.ctx.logger.info("日程服务已初始化");
@@ -45,14 +49,16 @@ export class DailyPlannerService {
 
     private registerDatabaseModel() {
         this.ctx.model.extend(
-            "yesimbot.daily_schedules",
+            "yesimbot.daily_schedules_v2",
             {
+                instance: "string(24)",
+                sourceFingerprint: "string(64)",
                 date: "string(10)",
                 segments: "json",
                 memoryContext: "list",
             },
             {
-                primary: "date",
+                primary: ["instance", "date"],
             },
         );
     }
@@ -82,6 +88,10 @@ export class DailyPlannerService {
         });
     }
 
+    private get instance() {
+        return getInstanceScope(this.ctx, undefined, { owner: this.ctx });
+    }
+
     // 生成今日日程
     public async generateDailySchedule(): Promise<DailySchedule> {
         const today = formatDate(new Date());
@@ -99,41 +109,83 @@ export class DailyPlannerService {
     }
 
     private async generateScheduleForDate(today: string): Promise<DailySchedule> {
-        // 1. 获取核心记忆和近期事件
-        const coreMemories = await this.getCoreMemories();
-
-        const recentEvents = await this.ctx.yesimbot.world.l2_manager.search("我");
-
-        // 2. 构建提示词
+        const sources = await this.readSources();
         const prompt = this.buildSchedulePrompt(
-            coreMemories,
-            recentEvents.map((e) => e.content),
+            sources.coreMemories,
+            sources.recentEvents.map((e) => e.content),
         );
-
-        // 3. 调用模型生成日程
         if (this.disposed) throw new Error("日程服务已停止");
         const generatedSchedule = await this.generateWithModel(prompt);
-
-        // 4. 解析并存储日程
-        const parsedSchedule = this.parseScheduleOutput(generatedSchedule);
+        // A model response is a derived snapshot: never commit it after revocation,
+        // correction, history clearing, or a change to its configured sources.
+        if ((await this.readSources()).fingerprint !== sources.fingerprint) throw new Error("日程依据或读取权限已改变，请重新生成");
         const fullSchedule: DailySchedule = {
+            instance: this.instance,
+            sourceFingerprint: sources.fingerprint,
             date: today,
-            segments: parsedSchedule,
-            memoryContext: [...coreMemories.map((m) => m.label), ...recentEvents.map((e) => e.id)],
+            segments: this.parseScheduleOutput(generatedSchedule),
+            memoryContext: [...sources.coreMemories.map((m) => m.label), ...sources.recentEvents.map((e) => e.id)],
         };
-
         await this.saveSchedule(fullSchedule);
+        if ((await this.readSources()).fingerprint !== sources.fingerprint) throw new Error("日程依据或读取权限已改变，请重新生成");
         return fullSchedule;
     }
 
-    // 获取今日日程
+    /** Only explicit, currently authorized sources may contribute to a plan. */
+    private async readSources() {
+        const coreMemories = await this.getCoreMemories();
+        const configured = structuredClone(this.config.memorySources ?? []);
+        const recentEvents: any[] = [];
+        const pages: unknown[] = [];
+        const validateSources: Array<() => void> = [];
+        for (const source of configured) {
+            const bot = this.ctx.bots.find((bot) => bot.platform === source.platform && bot.selfId === source.selfId);
+            if (!bot) continue;
+            const session = bot.session({
+                platform: source.platform,
+                selfId: source.selfId,
+                channel: { id: source.channelId, type: source.isDirect ? 1 : 0 },
+                user: { id: source.userId },
+                guild: source.guildId ? { id: source.guildId } : undefined,
+            });
+            if (!this.ctx.filter(session) || !this.ctx.yesimbot.world.isChannelAllowed(session)) continue;
+            const binding = () => JSON.stringify([session.platform, session.selfId, session.channelId, session.userId, session.guildId, session.isDirect]);
+            const originalBinding = binding();
+            const target = { platform: session.platform, channelId: conversationChannelId(session)! };
+            const world = this.ctx.yesimbot.world;
+            const page = await world.recallContext(session, { kind: "l2", limit: 20 });
+            const validate = () => {
+                if (
+                    this.disposed ||
+                    this.ctx.yesimbot.world !== world ||
+                    binding() !== originalBinding ||
+                    !this.ctx.filter(session) ||
+                    !world.isChannelAllowed(session) ||
+                    world.l2_manager.getHistoryGeneration(target) !== page.historyGeneration
+                )
+                    throw new Error("日程来源权限、身份或历史已改变");
+            };
+            validate();
+            validateSources.push(validate);
+            pages.push([source, page]);
+            recentEvents.push(...page.records);
+        }
+        // A later source may suspend after an earlier source has returned. Check
+        // every captured source again, synchronously, after the final await.
+        if (JSON.stringify(this.config.memorySources ?? []) !== JSON.stringify(configured)) throw new Error("日程来源配置已改变");
+        for (const validate of validateSources) validate();
+        const fingerprint = createHash("sha256")
+            .update(JSON.stringify([configured, coreMemories, pages]))
+            .digest("hex");
+        return { coreMemories, recentEvents, fingerprint };
+    }
+
+    // 获取今日日程（每次投影重新核对来源，审计记录保留不改写）
     public async getTodaysSchedule(): Promise<DailySchedule> {
         if (this.disposed) throw new Error("日程服务已停止");
         const today = formatDate(new Date());
-        const schedule = await this.ctx.database.get("yesimbot.daily_schedules", { date: today });
-
-        if (!schedule.length) {
-            this.ctx.logger.info("今日日程未生成，正在创建...");
+        const schedule = await this.ctx.database.get("yesimbot.daily_schedules_v2", { instance: this.instance, date: today });
+        if (!schedule.length || schedule[0].sourceFingerprint !== (await this.readSources()).fingerprint) {
             return this.generateDailySchedule();
         }
         return schedule[0];
@@ -456,7 +508,7 @@ export class DailyPlannerService {
     private async saveSchedule(schedule: DailySchedule): Promise<void> {
         if (this.disposed) throw new Error("日程服务已停止");
         this.validateSegments(schedule.segments);
-        await this.ctx.database.upsert("yesimbot.daily_schedules", [schedule], ["date"]);
+        await this.ctx.database.upsert("yesimbot.daily_schedules_v2", [schedule], ["instance", "date"]);
     }
 }
 

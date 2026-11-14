@@ -18,7 +18,7 @@ export const Config: Schema<Config> = Schema.object({
 });
 interface ToolRegistry {
     capabilities?: { trustedToolSession?: number };
-    registerTool(tool: unknown): void | (() => void);
+    registerTool(tool: unknown, ownerContext?: Context): void | (() => void);
 }
 interface Services {
     yesimbot: {
@@ -113,7 +113,7 @@ export function apply(ctx: Context, config: Config) {
         for (const remove of removers) remove();
     });
     const register = (tool: { name: string } & Record<string, unknown>) => {
-        const remove = tools.registerTool(tool);
+        const remove = tools.registerTool(tool, ctx);
         if (typeof remove !== "function") throw new Error("持久提醒需要支持按注册实例注销工具的 core");
         removers.push(remove);
     };

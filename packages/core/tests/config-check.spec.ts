@@ -8,6 +8,7 @@ function check(config: any) {
         command: (definition: string) => {
             const command: any = {
                 option: () => command,
+                usage: () => command,
                 action: (action: Function) => {
                     actions.set(definition.split(" ")[0], action);
                     return command;

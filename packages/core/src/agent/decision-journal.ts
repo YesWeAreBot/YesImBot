@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { chmod, lstat, mkdir, open, rename, unlink } from "node:fs/promises";
+import { chmod, lstat, mkdir, open, readlink, rename, unlink } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
+import { hostname } from "node:os";
 import path from "node:path";
 
 import type { DecisionRecord } from "./decision-record";
@@ -105,6 +106,7 @@ export function sanitizeDecisionRecord(value: unknown): DecisionRecord | undefin
         stimulusType: stimuli.has(value.stimulusType) ? value.stimulusType : "unknown",
         startedAt: finite(value.startedAt) ? value.startedAt : value.time,
     };
+    if (identifier(value.scoreKey)) result.scoreKey = value.scoreKey;
     if (identifier(value.messageId)) result.messageId = value.messageId;
     if (typeof value.reason === "string" && reasons.has(value.reason)) result.reason = value.reason;
     for (const field of ["decision", "success", "forcedReply"] as const) if (typeof value[field] === "boolean") result[field] = value[field];
@@ -283,6 +285,98 @@ export class DecisionJournal {
         return entry;
     }
 
+    private async lockIdentity(): Promise<{ hostname: string; pidNamespace?: string }> {
+        // A hostname alone cannot distinguish containers with different PID views.
+        const pidNamespace = process.platform === "linux" ? await readlink("/proc/self/ns/pid").catch(() => undefined) : undefined;
+        return { hostname: hostname(), pidNamespace };
+    }
+
+    private async acquireLock(): Promise<boolean> {
+        const create = () => open(this.lockPath, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+        try {
+            this.lock = await create();
+            return true;
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+        }
+        let owner = "无法确认锁归属";
+        const guardPath = path.join(this.directory, ".decisions.recovery.lock");
+        let guard: FileHandle | undefined;
+        try {
+            // Serialize the inspect/unlink/create sequence. Never reclaim this guard
+            // automatically: a crash during recovery must prefer exclusion over data loss.
+            guard = await open(guardPath, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+            let file: FileHandle | undefined;
+            try {
+                file = await open(this.lockPath, constants.O_RDONLY | constants.O_NOFOLLOW);
+                const stat = await file.stat();
+                if (stat.isFile() && stat.size <= 1024) {
+                    owner = "锁文件元数据无效或缺少 PID";
+                    const metadata = JSON.parse(await file.readFile("utf8"));
+                    const { pid } = metadata;
+                    if (Number.isSafeInteger(pid) && pid > 0) {
+                        owner = `PID=${pid}，当前进程中的其他实例或重载任务占用`;
+                        if (pid !== process.pid) {
+                            try {
+                                process.kill(pid, 0);
+                                owner = `PID=${pid}，进程仍存在`;
+                            } catch (error) {
+                                const exited = error.code === "ESRCH";
+                                owner = `PID=${pid}，${exited ? "进程已退出，可能为遗留锁" : "无法确认进程状态"}`;
+                                const identity = await this.lockIdentity();
+                                const verified =
+                                    exited &&
+                                    identity.pidNamespace &&
+                                    metadata.hostname === identity.hostname &&
+                                    metadata.pidNamespace === identity.pidNamespace;
+                                if (exited && !verified) {
+                                    const why =
+                                        !metadata.hostname || !metadata.pidNamespace
+                                            ? "旧版锁缺少主机或 PID 命名空间"
+                                            : metadata.hostname !== identity.hostname
+                                              ? "主机名不一致"
+                                              : !identity.pidNamespace
+                                                ? "当前环境无法读取 PID 命名空间"
+                                                : "PID 命名空间不同";
+                                    owner = `PID=${pid}，本地未见该进程，但无法验证遗留锁：${why}`;
+                                }
+                                if (verified) {
+                                    const current = await lstat(this.lockPath);
+                                    if (current.isFile() && !current.isSymbolicLink() && current.dev === stat.dev && current.ino === stat.ino) {
+                                        await unlink(this.lockPath);
+                                        this.lock = await create();
+                                        this.warning("已安全恢复同主机、同进程命名空间中已退出进程的决策记录锁。");
+                                        return true;
+                                    }
+                                    owner = `PID=${pid}，检查期间锁文件已变化`;
+                                }
+                            }
+                        }
+                    }
+                } else owner = "锁文件类型或大小异常";
+            } finally {
+                await file?.close();
+            }
+        } catch (error) {
+            // Once acquired, initialization failures must reach the cleanup path.
+            if (this.lock) throw error;
+            // Unknown/legacy/unsafe locks and racing acquisitions remain read-only.
+            if (!guard && error.code === "EEXIST") owner = "恢复锁 .decisions.recovery.lock 已存在，其他进程正在恢复或上一次恢复被中断";
+            else if (error.code === "ELOOP") owner = "锁路径为符号链接，未读取该文件";
+            else if (error.code === "ENOENT") owner = "检查期间锁文件已变化";
+            else if (error.code === "EACCES" || error.code === "EPERM") owner = "没有检查锁文件的权限";
+        } finally {
+            if (guard) {
+                await guard.close();
+                await unlink(guardPath).catch(() => {});
+            }
+        }
+        this.warning(
+            `决策记录目录被锁定 | ${owner} | 本实例的持久化记录与查询不可用，普通回复继续。多实例请分别配置目录；遗留锁仅在停止所有实例后手动清理 .decisions.lock 与确认遗留的 .decisions.recovery.lock。`,
+        );
+        return false;
+    }
+
     private async recover(): Promise<void> {
         await mkdir(this.directory, { recursive: true, mode: 0o700 });
         const directoryStat = await lstat(this.directory);
@@ -290,41 +384,8 @@ export class DecisionJournal {
         await chmod(this.directory, 0o700);
         // Acquire before reading or compacting: even recovery can rewrite history.
         // O_EXCL provides the same exclusion for separate objects and processes.
-        try {
-            this.lock = await open(this.lockPath, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
-        } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-            let owner = "归属未知";
-            try {
-                const file = await open(this.lockPath, constants.O_RDONLY | constants.O_NOFOLLOW);
-                try {
-                    const stat = await file.stat();
-                    if (stat.isFile() && stat.size <= 1024) {
-                        const { pid } = JSON.parse(await file.readFile("utf8"));
-                        if (Number.isSafeInteger(pid) && pid > 0) {
-                            if (pid === process.pid) owner = `PID=${pid}，当前进程中的其他实例或重载任务占用`;
-                            else {
-                                try {
-                                    process.kill(pid, 0);
-                                    owner = `PID=${pid}，进程仍存在`;
-                                } catch (error) {
-                                    owner = `PID=${pid}，${error.code === "ESRCH" ? "进程已退出，可能为遗留锁" : "无法确认进程状态"}`;
-                                }
-                            }
-                        }
-                    }
-                } finally {
-                    await file.close();
-                }
-            } catch {
-                /* A malformed or unsafe lock must never be reclaimed automatically. */
-            }
-            this.warning(
-                `决策记录目录被锁定 | ${owner} | 本实例的持久化记录与查询不可用，普通回复继续。多实例请分别配置目录；遗留锁仅在停止所有实例后手动清理 .decisions.lock。`,
-            );
-            return;
-        }
-        await this.lock.writeFile(JSON.stringify({ pid: process.pid }) + "\n");
+        if (!(await this.acquireLock())) return;
+        await this.lock!.writeFile(JSON.stringify({ pid: process.pid, ...(await this.lockIdentity()) }) + "\n");
         try {
             const stat = await lstat(this.filePath);
             if (!stat.isFile() || stat.isSymbolicLink()) throw new Error("unsafe journal");

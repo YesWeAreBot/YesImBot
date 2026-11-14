@@ -16,6 +16,14 @@ export function manualRecallOwners(history: L1HistoryItem[]): Map<L1HistoryItem,
 /** Pending admin input must survive ordinary history limits, including a process restart. */
 export function retainPendingRecalls(history: L1HistoryItem[], limit: number): L1HistoryItem[] {
     const pending = new Set([...manualRecallOwners(history)].filter(([, owner]) => owner === undefined).map(([item]) => item));
+    let latestTurn: string | undefined;
+    const seen = new Set<string>();
+    const owners = manualRecallOwners(history);
+    for (const item of history) {
+        if (!("turnId" in item) || owners.has(item) || seen.has(item.turnId)) continue;
+        seen.add(item.turnId);
+        latestTurn = item.turnId;
+    }
     const recent = new Set(history.filter((item) => !pending.has(item)).slice(-limit));
-    return history.filter((item) => pending.has(item) || recent.has(item));
+    return history.filter((item) => pending.has(item) || recent.has(item) || ("turnId" in item && item.turnId === latestTurn));
 }

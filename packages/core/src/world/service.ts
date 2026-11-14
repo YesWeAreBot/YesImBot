@@ -5,6 +5,7 @@ import { Context, Logger, Session } from "koishi";
 import { AssetService } from "../asset";
 import { Config } from "../config";
 import type { LoggerService } from "../logger";
+import type { MemoryService } from "../memory/service";
 import { ModelService } from "../model";
 import { TableName } from "../shared/constants";
 import { sanitizeDiagnostic } from "../shared/diagnostic-sanitizer";
@@ -55,6 +56,7 @@ export class WorldStateService extends YesImBotService<Config> {
             memoryCorrectionFilter: 1 as const,
             memoryRecall: 1 as const,
             frameworkEventDetails: 1 as const,
+            historyReset: 1 as const,
         });
     }
 
@@ -73,7 +75,7 @@ export class WorldStateService extends YesImBotService<Config> {
 
     private clearTimer: ReturnType<Context["setInterval"]> | null = null;
 
-    constructor(ctx: Context, config: Config, deps: { logging: LoggerService; asset: AssetService; model: ModelService }) {
+    constructor(ctx: Context, config: Config, deps: { logging: LoggerService; asset: AssetService; model: ModelService; memory?: MemoryService }) {
         super(ctx, config);
         this.logger = deps.logging.getLogger("[世界状态]");
 
@@ -83,7 +85,7 @@ export class WorldStateService extends YesImBotService<Config> {
         this.l3_manager = new ArchivalMemoryManager(ctx, config, this.l1_manager, deps.logging, deps.model, this.l2_manager);
         this.contextBuilder = new ContextBuilder(ctx, config, this.l1_manager, this.l2_manager, this.l3_manager, deps.logging);
         this.eventListenerManager = new EventListenerManager(ctx, this, config, deps.logging, deps.asset);
-        this.commandManager = new HistoryCommandManager(ctx, this, config, deps.logging);
+        this.commandManager = new HistoryCommandManager(ctx, this, config, deps.logging, { model: deps.model, memory: deps.memory });
     }
 
     public async start(): Promise<void> {
@@ -312,17 +314,21 @@ export class WorldStateService extends YesImBotService<Config> {
         await this.ctx.database.upsert(HISTORY_CHANNELS, [{ ...target, channelType }]);
     }
 
-    public async recordMessage(message: MessageData): Promise<void> {
+    public async recordMessage(message: MessageData, expectedGeneration?: number): Promise<"stored" | "duplicate" | "failed" | "invalidated"> {
         if (message.channelType) this.l2_manager.observeChannel(message, message.channelType);
         // 在 L1 异步写入之前登记代次与在途任务，清除必须等待已接受的写入。
-        const generation = this.l2_manager.getHistoryGeneration(message);
-        const recorded = await this.l2_manager.writeMemory(message, generation, () => this.l1_manager.recordMessage(message));
-        if (recorded && this.l2_manager.getHistoryGeneration(message) === generation && this.config.l3_memory?.messageThreshold) {
+        const generation = expectedGeneration ?? this.l2_manager.getHistoryGeneration(message);
+        const result: { outcome: Awaited<ReturnType<InteractionManager["recordMessage"]>> } = { outcome: "failed" };
+        const recorded = await this.l2_manager.writeMemory(message, generation, async () => {
+            result.outcome = await this.l1_manager.recordMessage(message);
+        });
+        if (!recorded || this.l2_manager.getHistoryGeneration(message) !== generation) return "invalidated";
+        if (result.outcome !== "stored") return result.outcome;
+        if (this.config.l3_memory?.messageThreshold) {
             void this.l3_manager.observeMessage(message).catch((error) => this.logger.warn(`L3 消息触发失败：${String(error)}`));
         }
-        if (recorded && this.l2_manager.getHistoryGeneration(message) === generation && this.config.l2_memory.enabled) {
-            this.l2_manager.addMessageToBuffer(message);
-        }
+        if (this.config.l2_memory.enabled) this.l2_manager.addMessageToBuffer(message);
+        return result.outcome;
     }
 
     public isChannelAllowed(session: Session): boolean {

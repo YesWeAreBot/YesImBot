@@ -325,8 +325,8 @@ for (const stream of [false, true]) {
         });
         expect(result.toolCalls).toHaveLength(1);
         expect(result.toolCalls[0].toolName).toBe("lookup");
-        // Existing xsai execution behavior is unchanged; the native bridge itself adds no execution.
-        expect(calls).toBe(1);
+        // Single-step returns calls for framework validation and execution.
+        expect(calls).toBe(0);
         expect(result.usage).toMatchObject({ prompt_tokens: 3, completion_tokens: 4 });
     });
 }
@@ -517,7 +517,7 @@ for (const protocol of ["gemini-native", "anthropic-native"]) {
             );
             expect(outcome.error === null).toBe(complete);
             expect(outcome.result?.toolCalls?.length ?? 0).toBe(complete ? 1 : 0);
-            expect(executions).toBe(complete ? 1 : 0);
+            expect(executions).toBe(0);
             expect(outcome.error === null ? "" : String(outcome.error)).toMatch(complete ? /^$/ : /失败|截断|结束|EOF/);
             expect(observed).toBe(true);
             expect(starts).toBe(1);

@@ -6,6 +6,7 @@ import { embed, embedMany } from "../dependencies/xsai";
 import type { LoggerService } from "../logger";
 import { BaseModel, formatModelIdentity } from "./base-model";
 import { ModelConfig } from "./config";
+import { modelReportRequestId, observeModelReportRequest, withModelConversationReport } from "./conversation-capture";
 import { observeUsageFetch } from "./usage";
 import type { UsageOwner } from "./usage-owner";
 
@@ -31,20 +32,26 @@ export class EmbedModel extends BaseModel implements IEmbedModel {
         //this.logger.debug(`正在为文本生成嵌入向量："${truncate(text, 50)}"`);
         const embedOptions: EmbedOptions = {
             ...this.embedProvider(this.config.modelId),
-            fetch: this.fetch,
+            fetch: observeModelReportRequest(this.fetch),
             input: text,
         };
-        return embed(embedOptions);
+        return withModelConversationReport(
+            { requestId: modelReportRequestId("embedding"), provider: this.config.providerName, model: this.id, purpose: "嵌入" },
+            () => embed(embedOptions),
+        );
     }
 
     public async embedMany(texts: string[]): Promise<EmbedManyResult> {
         this.logger.debug(`Embedding ${texts.length} texts.`);
         const embedManyOptions: EmbedManyOptions = {
             ...this.embedProvider(this.config.modelId),
-            fetch: this.fetch,
+            fetch: observeModelReportRequest(this.fetch),
             input: texts,
         };
-        return embedMany(embedManyOptions);
+        return withModelConversationReport(
+            { requestId: modelReportRequestId("embedding"), provider: this.config.providerName, model: this.id, purpose: "嵌入" },
+            () => embedMany(embedManyOptions),
+        );
     }
 }
 

@@ -20,7 +20,7 @@ it("missing embedding assignment is left unset without an embedding provider", (
     );
     s.validateConfig();
     expect(s.config.task.embed).toBeUndefined();
-    expect(logs.join("\n")).toContain("嵌入");
+    expect(logs.join("\n")).not.toContain("嵌入");
 });
 it("embedding fallback selects a capable group instead of the first chat group", () => {
     const { s } = service(
@@ -64,7 +64,12 @@ it("decision journal closes even if reply-control persistence fails during stop"
     const core: any = Object.create(AgentCore.prototype);
     let closed = false;
     Object.assign(core, {
+        activeTurnSettlements: new Map(),
+        resettingHistory: new Set(),
+        historyTargets: new Map(),
+        resetStimuli: new Map(),
         pendingAssessments: new Map(),
+        startupStimuli: [],
         activeTurns: new Map(),
         activeDecisionIds: new Map(),
         topics: { dispose() {} },

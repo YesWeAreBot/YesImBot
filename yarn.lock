@@ -1462,6 +1462,37 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@minatojs/driver-sqlite@npm:^4.7.0":
+  version: 4.7.0
+  resolution: "@minatojs/driver-sqlite@npm:4.7.0"
+  dependencies:
+    "@minatojs/sql-utils": "npm:^5.6.0"
+    "@minatojs/sql.js": "npm:^3.1.0"
+    cosmokit: "npm:^1.6.3"
+  peerDependencies:
+    minato: ^3.7.0
+  checksum: 10c0/ef1059ba9a921e1c5739027f74f2e4b661755f11e9649138c14cfe55fc25de884e26fb204a9fac1dafa5b64a4a6f6f2606c680601dc41fc5e6f2b3b59f459b2a
+  languageName: node
+  linkType: hard
+
+"@minatojs/sql-utils@npm:^5.6.0":
+  version: 5.6.0
+  resolution: "@minatojs/sql-utils@npm:5.6.0"
+  dependencies:
+    cosmokit: "npm:^1.6.3"
+  peerDependencies:
+    minato: ^3.7.0
+  checksum: 10c0/7b97a6ce110e74d2b1d906bf34b79c5fcd784de49da7fb7172595ae695a694db2b7d6e54d224dd17256cc30cf58a669d041bfe37ea365148d54a50b68a247962
+  languageName: node
+  linkType: hard
+
+"@minatojs/sql.js@npm:^3.1.0":
+  version: 3.1.0
+  resolution: "@minatojs/sql.js@npm:3.1.0"
+  checksum: 10c0/3a61cd868d848a008d89ccdf27411a392d690831b6c5508dd04d84bf002bbfb2e1934e8979b0f6c14ab16523b708bff2fdb7004e564dbe186d7812f1c383f066
+  languageName: node
+  linkType: hard
+
 "@modelcontextprotocol/sdk@npm:^1.13.0":
   version: 1.32.1
   resolution: "@modelcontextprotocol/sdk@npm:1.32.1"
@@ -3406,7 +3437,6 @@ __metadata:
   dependencies:
     koishi: "npm:^4.18.7"
     koishi-plugin-yesimbot: "npm:^3.0.2"
-    pyodide: "npm:0.28.2"
   peerDependencies:
     koishi: ^4.18.7
     koishi-plugin-yesimbot: ^3.0.2
@@ -6157,7 +6187,9 @@ __metadata:
   dependencies:
     "@koishijs/plugin-database-memory": "npm:^3.7.0"
     "@koishijs/plugin-mock": "npm:^2.6.6"
+    "@minatojs/driver-sqlite": "npm:^4.7.0"
     koishi: "npm:^4.18.7"
+    minato: "npm:^3.7.0"
   peerDependencies:
     koishi: ^4.18.7
     koishi-plugin-yesimbot: ^3.0.4
@@ -7451,15 +7483,6 @@ __metadata:
   version: 1.1.1
   resolution: "puppeteer-finder@npm:1.1.1"
   checksum: 10c0/2df149ad2635888a609bd750a8297a49b26965be0e7ad0351a8d18b92b87ac8dfb36cedcb67c06fbf61c06f060f10b6683227ad851bf6a8589ad967801305b35
-  languageName: node
-  linkType: hard
-
-"pyodide@npm:0.28.2":
-  version: 0.28.2
-  resolution: "pyodide@npm:0.28.2"
-  dependencies:
-    ws: "npm:^8.5.0"
-  checksum: 10c0/751260ca329ee45665ed61c77f5ad278d8f17248e57a0a560171ed77a238286eec0bfa4ab96993dbc052f3ae9fa0126b4fda96f608cace35de1a2976d4199b26
   languageName: node
   linkType: hard
 
@@ -9114,7 +9137,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"ws@npm:^8.16.0, ws@npm:^8.18.0, ws@npm:^8.5.0":
+"ws@npm:^8.16.0, ws@npm:^8.18.0":
   version: 8.22.0
   resolution: "ws@npm:8.22.0"
   peerDependencies:

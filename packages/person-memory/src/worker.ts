@@ -1,6 +1,7 @@
 import { conversationChannelId } from "koishi-plugin-yesimbot";
 
 import { claimCategories, type ClaimChange } from "./claims";
+import { validateProfileDocument } from "./profile";
 import { buildProfileMessages } from "./profile-prompt";
 import { visibleProfile } from "./profile-tools";
 import { type Evidence, type PersonStore, type Provenance } from "./store";
@@ -49,6 +50,8 @@ interface Job {
 }
 export class SummaryWorker {
     private stopped = false;
+    private suspended = false;
+    private epoch = 0;
     private recovering = false;
     private persistence = new Set<Promise<SummaryJob>>();
     private retryTimers = new Set<ReturnType<typeof setTimeout>>();
@@ -66,10 +69,12 @@ export class SummaryWorker {
         private report: (error: unknown) => void,
     ) {}
     async init() {
-        if (!this.model || this.stopped || !this.config.durableQueue) return;
+        const epoch = this.epoch;
+        if (!this.model || this.stopped || this.suspended || !this.config.durableQueue) return;
         this.recovering = true;
         try {
             for (const durable of await this.config.durableQueue.pending()) {
+                if (this.suspended || epoch !== this.epoch) return;
                 const delay = Math.max(0, durable.nextAttempt - Date.now());
                 if (delay) this.schedule(durable, delay);
                 else this.summarize(durable.scope, durable.userId, durable).catch(this.report);
@@ -79,16 +84,18 @@ export class SummaryWorker {
         }
     }
     private schedule(durable: SummaryJob, delay: number) {
-        if (this.stopped) return;
+        const epoch = this.epoch;
+        if (this.stopped || this.suspended) return;
         const timer = setTimeout(() => {
             this.retryTimers.delete(timer);
-            if (!this.stopped) this.summarize(durable.scope, durable.userId, durable).catch(this.report);
+            if (!this.stopped && !this.suspended && epoch === this.epoch) this.summarize(durable.scope, durable.userId, durable).catch(this.report);
         }, delay);
         timer.unref?.();
         this.retryTimers.add(timer);
     }
     async observe(scope: string, userId: string) {
-        if (!this.model || this.stopped) return;
+        const epoch = this.epoch;
+        if (!this.model || this.stopped || this.suspended) return;
         const key = JSON.stringify([scope, userId]);
         let usage = this.usage.get(key);
         if (!usage) {
@@ -98,14 +105,14 @@ export class SummaryWorker {
         usage.count++;
         if (usage.count < this.config.threshold || Date.now() - usage.last < this.config.cooldownMs || this.jobs.has(key)) return;
         const state = await this.store.read(scope);
-        if (state.settings.paused || state.settings.mode === "off") return;
+        if (epoch !== this.epoch || this.suspended || state.settings.paused || state.settings.mode === "off") return;
         usage.count = 0;
         usage.last = Date.now(); // Errors also have cooldown: avoid repeated failing model calls.
         this.summarize(scope, userId).catch((error) => this.report(error));
     }
     summarize(scope: string, userId: string, resumed?: SummaryJob): Promise<string> {
         if (!this.model) return Promise.reject(new Error("请先在插件配置中指定总结模型组"));
-        if (this.stopped) return Promise.reject(new Error("任务已取消"));
+        if (this.stopped || this.suspended) return Promise.reject(new Error("任务已取消"));
         const key = JSON.stringify([scope, userId]);
         const existing = this.jobs.get(key);
         if (existing) return existing.promise;
@@ -339,6 +346,14 @@ export class SummaryWorker {
             ? { platform: first.platform, botId: first.selfId, target: conversationChannelId(first), purpose: "人物记忆摘要" }
             : { purpose: "人物记忆摘要" };
         if (saved) messages = saved.messages;
+        if (durable?.validationError)
+            messages = [
+                ...messages,
+                {
+                    role: "system",
+                    content: `上次总结候选未通过结构验证：${durable.validationError}。保留原有写作策略、身份与证据限制，仅纠正上述格式错误，重新提交完整合法候选。`,
+                },
+            ];
         if (durable && !saved)
             await durableQueue!.patch(durable, {
                 input: {
@@ -372,6 +387,21 @@ export class SummaryWorker {
         if (durable && !(await durableQueue!.valid(durable))) throw new Error("任务已取消或失效");
         if (this.stopped || controller.signal.aborted) throw new Error("任务已取消");
         if (!inputsAllowed()) throw new Error("人物总结输入来源权限已失效");
+        if (durable?.output && !claimMode && typeof (durable.output as any).profile !== "string") {
+            try {
+                validateProfileDocument((durable.output as any).profile);
+            } catch (error) {
+                const validationError = String(error).slice(0, 400);
+                await durableQueue!.patch(durable, { output: undefined, validationError });
+                messages = [
+                    ...messages,
+                    {
+                        role: "system",
+                        content: `上次总结候选未通过结构验证：${validationError}。保留原有写作策略、身份与证据限制，仅修正结构后重新提交完整候选。`,
+                    },
+                ];
+            }
+        }
         const timer = setTimeout(() => controller.abort(new Error("总结模型超时")), this.config.timeoutMs);
         let abort!: () => void;
         const cancelled = new Promise<never>((_, reject) => {
@@ -451,15 +481,56 @@ export class SummaryWorker {
             parsed.messageIds.some((id: unknown) => typeof id !== "string" || !evidenceIds.has(id))
         )
             throw new Error("人物总结必须引用 1 到 10 个输入中的不同证据 ID，未创建候选");
+        // Cache only a candidate that passed structural validation. A malformed
+        // model response must be regenerated on a bounded retry, never replayed.
+        try {
+            if (!claimMode && typeof parsed.profile !== "string") validateProfileDocument(parsed.profile);
+        } catch (error) {
+            if (durable) await durableQueue!.patch(durable, { output: undefined, validationError: String(error).slice(0, 400) });
+            throw error;
+        }
         if (durable && !durable.output) await durableQueue!.patch(durable, { output: parsed });
         if (durable && !(await durableQueue!.valid(durable))) throw new Error("任务已取消或失效");
         const active = () => !this.stopped && !controller.signal.aborted && inputsAllowed();
         if (!active()) throw new Error("人物总结输入来源权限已失效");
-        const proposal = claimMode
-            ? await this.store.proposeClaims(scope, userId, parsed.changes, "summary-model", saved?.expected ?? expected, active, durable?.id)
-            : await this.store.propose(scope, userId, parsed.profile, parsed.messageIds, "summary-model", saved?.expected ?? expected, active, durable?.id);
+        let proposal;
+        try {
+            proposal = claimMode
+                ? await this.store.proposeClaims(scope, userId, parsed.changes, "summary-model", saved?.expected ?? expected, active, durable?.id)
+                : await this.store.propose(scope, userId, parsed.profile, parsed.messageIds, "summary-model", saved?.expected ?? expected, active, durable?.id);
+        } catch (error) {
+            if (durable && /画像列表|画像字段|画像文本|画像版本|画像场景|结构画像/.test(String(error)))
+                await durableQueue!.patch(durable, { output: undefined, validationError: String(error).slice(0, 400) });
+            throw error;
+        }
         this.checkpoints.set(job.key, saved?.sourceCursor ?? sourceCursor);
         return proposal.id;
+    }
+    async reset() {
+        this.suspended = true;
+        this.epoch++;
+        for (const timer of this.retryTimers) clearTimeout(timer);
+        this.retryTimers.clear();
+        this.current?.controller.abort(new Error("任务已取消"));
+        for (const job of this.queue) {
+            this.jobs.delete(job.key);
+            job.reject(new Error("任务已取消"));
+        }
+        this.queue = [];
+        this.usage.clear();
+        this.results.clear();
+        this.checkpoints.clear();
+        await Promise.allSettled(this.persistence);
+        await this.idle();
+        const scopes = ((await this.config.durableQueue?.list()) ?? []).map((job) => job.scope);
+        await this.config.durableQueue?.purge();
+        return scopes;
+    }
+    resume() {
+        if (!this.stopped) this.suspended = false;
+    }
+    async scopes() {
+        return ((await this.config.durableQueue?.list()) ?? []).map((job) => job.scope);
     }
     cancel(scope: string) {
         const pending = [...this.persistence];

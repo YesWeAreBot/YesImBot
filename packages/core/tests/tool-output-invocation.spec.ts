@@ -66,22 +66,22 @@ describe("long tool invocation receipts", () => {
         const receipt = await tools.invoke("probe", {}, session);
         await expect(tools.readToolOutput({ ...session, userId: "someone-else" }, { uri: receipt.result.uri })).rejects.toThrow(/scope/);
     });
-    it("rejects clear, revocation, identity mutation in flight without retrying completed execution", async () => {
-        for (const change of ["clear", "revoke", "identity"]) {
-            const f = await fixture();
-            const execute = vi.fn(async () => {
-                await Promise.resolve();
-                if (change === "identity") f.session.channelId = "elsewhere";
-                else f[change]();
-                return { status: "success", result: "x".repeat(30000), metadata: { receipt: "done" } };
-            });
-            register(f.tools, execute);
-            const result = await f.tools.invoke("probe", {}, f.session);
-            expect(result.status).toBe("success");
-            expect(result.result.kind).toBe("tool-output-unavailable");
-            expect(result.metadata.payloadError.retryable).toBe(false);
-            expect(execute).toHaveBeenCalledTimes(1);
-        }
+    it.each([
+        { change: "clear", expected: { status: "success", result: { kind: "tool-output-unavailable" }, metadata: { payloadError: { retryable: false } } } },
+        { change: "revoke", expected: { status: "error", error: { name: "ToolInvalidatedError", retryable: false } } },
+        { change: "identity", expected: { status: "success", result: { kind: "tool-output-unavailable" }, metadata: { payloadError: { retryable: false } } } },
+    ])("rejects $change in flight without retrying completed execution", async ({ change, expected }) => {
+        const f = await fixture();
+        const execute = vi.fn(async () => {
+            await Promise.resolve();
+            if (change === "identity") f.session.channelId = "elsewhere";
+            else f[change]();
+            return { status: "success", result: "x".repeat(30000), metadata: { receipt: "done" } };
+        });
+        register(f.tools, execute);
+        const result = await f.tools.invoke("probe", {}, f.session);
+        expect(result).toMatchObject(expected);
+        expect(execute).toHaveBeenCalledTimes(1);
     });
     it("reports cyclic and non-JSON result serialization separately from execution status", async () => {
         const { tools, session } = await fixture();

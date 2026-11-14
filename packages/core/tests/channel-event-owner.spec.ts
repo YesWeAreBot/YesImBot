@@ -2,7 +2,9 @@ import { executeQuery } from "minato";
 import { expect, it } from "vitest";
 
 import { TableName } from "../src/shared/constants";
+import { EventListenerManager } from "../src/world/event-listener";
 import { InteractionManager } from "../src/world/interaction-manager";
+import { loggingStub, stubCtx } from "./helpers/yesimbot";
 
 it("keeps bot-targeted channel events within both bot and channel", async () => {
     const rows = [
@@ -14,7 +16,7 @@ it("keeps bot-targeted channel events within both bot and channel", async () => 
     const manager: any = Object.create(InteractionManager.prototype);
     Object.assign(manager, {
         config: { l1_memory: {} },
-        getAgentHistoryFromFile: async () => [],
+        getAgentHistoryFromFile: async () => ({ events: [], consumedSourceIds: new Set() }),
         ctx: {
             database: {
                 get: async (table: string, query: any) => (table === TableName.SystemEvents ? rows.filter((row) => executeQuery(row, query, "row")) : []),
@@ -41,4 +43,18 @@ it("propagates a failed system-event write instead of acknowledging persistence"
         logger: { error() {}, debug() {} },
     });
     await expect(manager.recordSystemEvent({ id: "task", platform: "qq", channelId: "room" })).rejects.toBe(failure);
+});
+
+it("records usable OneBot poke text when the adapter omits the rendering fields", async () => {
+    const recorded: any[] = [];
+    const listener: any = new EventListenerManager(
+        stubCtx({}) as any,
+        { observeChannel: async () => {}, recordSystemEvent: async (event: unknown) => recorded.push(event) } as any,
+        {} as any,
+        loggingStub(),
+        {} as any,
+    );
+    await listener.handleNotice({ platform: "onebot", channelId: "group", subtype: "poke", event: { _data: { user_id: 10, target_id: 11 } } });
+    expect(recorded[0].message).toBe("系统提示：10 戳了戳 11");
+    expect(recorded[0].payload.details).toEqual({ authorId: 10, targetId: 11 });
 });

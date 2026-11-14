@@ -248,11 +248,11 @@ export class MCPManager {
 
                     parameters: convertJsonSchemaToSchemastery(tool.inputSchema),
                     execute: async (args: Infer<any>) => {
-                        const { session: _session, ...cleanArgs } = args;
+                        const { session: _session, toolContext: _toolContext, ...cleanArgs } = args;
                         return await this.executeTool(client, tool.name, cleanArgs);
                     },
                 };
-                const unregister = this.toolService.registerTool(definition);
+                const unregister = this.toolService.registerTool(definition, this.ctx);
                 this.toolDisposers.push(
                     typeof unregister === "function"
                         ? unregister

@@ -18,6 +18,10 @@ async function setup() {
     const key = '["qq","bot","group"]';
     const model = { getEvaluationModel: () => ({ evaluate: async () => response }) };
     Object.assign(core, {
+        activeTurnSettlements: new Map(),
+        resettingHistory: new Set(),
+        historyTargets: new Map(),
+        resetStimuli: new Map(),
         stopped: false,
         pendingAssessments: new Map(),
         // 构造注入后 AgentCore 通过 this.modelService 取接话评估模型。

@@ -10,6 +10,7 @@ export interface DailyPlannerConfig {
     coreMemoryLabel: string[];
     characterName: string;
     coreMemoryWeight: number;
+    memorySources?: Array<{ platform: string; selfId: string; channelId: string; userId: string; isDirect: boolean; guildId?: string }>;
 }
 
 @Extension({
@@ -26,6 +27,18 @@ export default class DailyPlannerExtension {
         scheduleGenerationTime: Schema.string().default("03:00").description("每日生成日程的时间 (HH:mm 格式)"),
         characterName: Schema.string().required().description("日程的主体，也就是 Bot 的名称"),
         coreMemoryLabel: Schema.array(String).default(["persona"]).description("用于生成日程的描述 Bot 的核心记忆"),
+        memorySources: Schema.array(
+            Schema.object({
+                platform: Schema.string().required(),
+                selfId: Schema.string().required(),
+                channelId: Schema.string().required(),
+                userId: Schema.string().required(),
+                isDirect: Schema.boolean().default(false),
+                guildId: Schema.string(),
+            }),
+        )
+            .default([])
+            .description("允许日程读取的会话来源；留空时只使用核心记忆。仅添加可向所有日程读者公开的来源。"),
         model: Schema.dynamic("modelService.selectableModels").description("用于生成日程表的模型"),
         coreMemoryWeight: Schema.number().default(0.7).min(0).max(1).description("核心记忆在日程生成中的权重"),
     });
@@ -57,11 +70,11 @@ export default class DailyPlannerExtension {
 
             ctx.on(
                 "dispose",
-                promptService.inject("daily_plan", 0, async () => {
+                promptService.inject("daily_plan", 0, async (view) => {
                     if (this.disposed) return "";
                     const currentSchedule = await this.getCurrentSchedule();
 
-                    return `现在是 {{ date.now }}，当前时段的安排为：${currentSchedule}。`;
+                    return `现在是 ${view.date?.now ?? new Date().toISOString()}，当前时段的安排为：${currentSchedule}。`;
                 }),
             );
 

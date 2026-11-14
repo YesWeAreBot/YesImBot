@@ -51,6 +51,13 @@ describe("provider configuration", () => {
         const instance = new ProviderInstance({ yesimbot: {} } as any, value, client, { getLogger: () => logger } as any);
         expect(instance.getChatModel("local")?.config.disableNativeToolCalling).toBe(true);
     });
+    it("keeps Workers models on JSON actions until native tool history can be replayed", () => {
+        const value = config("Workers AI", { accountId: "account123", models: [{ modelId: "local", disableNativeToolCalling: false }] });
+        const client = ProviderFactoryRegistry.get(value.type)!.createClient(value);
+        const logger = { debug() {}, info() {}, warn() {}, error() {} };
+        const instance = new ProviderInstance({ yesimbot: {} } as any, value, client, { getLogger: () => logger } as any);
+        expect(instance.getChatModel("local")?.config.disableNativeToolCalling).toBe(true);
+    });
     it("requires a Cloudflare account ID and preserves it for the factory", () => {
         expect(() => config("Workers AI")).toThrow(/expected|required/);
         const value = config("Workers AI", { apiKey: "test-key", accountId: "account123" });

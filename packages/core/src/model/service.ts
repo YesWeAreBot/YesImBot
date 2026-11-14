@@ -1,7 +1,8 @@
 import { GenerateTextResult } from "@xsai/generate-text";
-import { Awaitable, Context, Logger, Schema } from "koishi";
+import { Context, Logger, Schema } from "koishi";
 
 import { ContextBudgetError } from "../agent/context-budget";
+import { isModelReference } from "../commands/config-check";
 import { Config } from "../config";
 import type { LoggerService } from "../logger";
 import { AppError, ErrorDefinitions } from "../shared/errors";
@@ -16,6 +17,16 @@ import { EvaluationModel } from "./evaluation-model";
 import { ProviderFactoryRegistry } from "./factories";
 import { ProviderInstance } from "./provider-instance";
 import { getUsageLedger, UsageScope, withUsageScope } from "./usage";
+import { bindUsageOwner } from "./usage-owner";
+
+const withoutImages = (request: ChatRequestOptions): ChatRequestOptions => ({
+    ...request,
+    messages: request.messages.map((message) => {
+        if (!Array.isArray(message.content) || !message.content.some((part) => part.type === "image_url")) return message;
+        const content = message.content.filter((part) => part.type !== "image_url");
+        return { ...message, content: content.length ? content : "[图片：当前模型不支持识图]" } as typeof message;
+    }),
+});
 
 enum CircuitBreakerState {
     CLOSED, // 允许请求
@@ -107,6 +118,7 @@ export class ModelService extends YesImBotService<Config> {
     ) {
         super(ctx, config);
         this.usageOwner = { context: ctx };
+        bindUsageOwner(ctx, this.usageOwner);
         this.logger = logging.getLogger("[模型服务]");
 
         try {
@@ -165,6 +177,25 @@ export class ModelService extends YesImBotService<Config> {
         return instance ? instance.getChatModel(modelId) : null;
     }
 
+    /** Fixed selection with the same cancellation, timeout, retry and breaker policy as groups. */
+    public useChatModel(providerName: string, modelId: string): IChatModel | null {
+        const model = this.getChatModel(providerName, modelId);
+        if (!model) return null;
+        const switcher = new ChatModelSwitcher(
+            this.ctx,
+            { name: `${providerName}/${modelId}`, models: [{ providerName, modelId }] },
+            () => model,
+            this.logging,
+        );
+        return new Proxy(model, {
+            get(target, key) {
+                if (key === "chat") return switcher.chat.bind(switcher);
+                const value = Reflect.get(target, key, target);
+                return typeof value === "function" ? value.bind(target) : value;
+            },
+        });
+    }
+
     public getEmbedModel(providerName: string, modelId: string): IEmbedModel | null {
         const instance = this.providerInstances.get(providerName);
         return instance ? instance.getEmbedModel(modelId) : null;
@@ -175,7 +206,7 @@ export class ModelService extends YesImBotService<Config> {
         const groupName = this.resolveGroupName(name);
         if (!groupName) return undefined;
 
-        const group = this.config.modelGroups.find((g) => g.name === groupName);
+        const group = this.config.modelGroups.find((g) => g?.name === groupName);
         if (!group) {
             this.logger.warn(`查找模型组失败 | 组名不存在: ${groupName}`);
             return undefined;
@@ -204,9 +235,14 @@ export class ModelService extends YesImBotService<Config> {
             });
         }
 
-        for (const providerConfig of this.config.providers) {
-            if (providerConfig.models.length === 0) {
-                throw new Error(`配置错误: 提供商 ${providerConfig.name} 至少需要配置一个模型`);
+        for (const [index, provider] of this.config.providers.entries()) {
+            if (!provider || typeof provider.name !== "string" || !provider.name.trim() || !Array.isArray(provider.models) || !provider.models.length) {
+                throw new AppError(ErrorDefinitions.CONFIG.INVALID, { args: [`providers[${index}] 缺少提供商名称或模型列表`] });
+            }
+            for (const [modelIndex, model] of provider.models.entries()) {
+                if (!model || typeof model.modelId !== "string" || !model.modelId.trim()) {
+                    throw new AppError(ErrorDefinitions.CONFIG.INVALID, { args: [`providers[${index}].models[${modelIndex}].modelId 缺少有效的模型 ID`] });
+                }
             }
         }
 
@@ -220,9 +256,15 @@ export class ModelService extends YesImBotService<Config> {
             modified = true;
         }
 
-        for (const group of this.config.modelGroups) {
-            if (group.models.length === 0) {
-                throw new Error(`配置错误: 模型组 ${group.name} 至少需要包含一个模型`);
+        const names = new Set<string>();
+        for (const [index, group] of this.config.modelGroups.entries()) {
+            if (!group || typeof group.name !== "string" || !group.name.trim() || !Array.isArray(group.models) || !group.models.length) {
+                throw new AppError(ErrorDefinitions.CONFIG.INVALID, { args: [`modelGroups[${index}] 缺少名称或有效模型列表`] });
+            }
+            if (names.has(group.name)) throw new AppError(ErrorDefinitions.CONFIG.INVALID, { args: [`模型组名称重复: ${group.name}`] });
+            names.add(group.name);
+            for (const [modelIndex, ref] of group.models.entries()) {
+                if (!isModelReference(ref)) this.logger.warn(`忽略无效的模型引用：modelGroups[${index}].models[${modelIndex}]`);
             }
         }
 
@@ -230,9 +272,10 @@ export class ModelService extends YesImBotService<Config> {
 
         const supportsEmbedding = (group: NonNullable<typeof defaultGroup>) =>
             group.models.some((descriptor) => {
+                if (!isModelReference(descriptor)) return false;
                 const provider = this.config.providers.find((p) => p.name === descriptor.providerName);
                 const model = provider?.models.find((m) => m.modelId === descriptor.modelId);
-                if (!provider || !model?.abilities.includes(ModelAbility.Embedding)) return false;
+                if (!provider || !model?.abilities?.includes(ModelAbility.Embedding)) return false;
                 try {
                     return !!ProviderFactoryRegistry.get(provider.type)?.createClient(provider).embed;
                 } catch {
@@ -253,8 +296,8 @@ export class ModelService extends YesImBotService<Config> {
                     if (groupName !== undefined) {
                         delete (this.config.task as Record<string, string | undefined>)[task];
                         modified = true;
+                        this.logger.warn(`嵌入任务的模型组 ${groupName} 不可用 · 已移除该任务分配`);
                     }
-                    this.logger.warn("未配置可用的嵌入模型组；L2 语义检索暂不可用，普通聊天不受影响。请为 embed 分配支持嵌入的提供商与模型。");
                 }
             } else if (!selected) {
                 (this.config.task as Record<string, string | undefined>)[task] = defaultGroup!.name;
@@ -275,7 +318,7 @@ export class ModelService extends YesImBotService<Config> {
             Schema.union([
                 ...this.config.providers.flatMap((p) =>
                     p.models
-                        .filter((m) => m.abilities.includes(ModelAbility.Evaluation))
+                        .filter((m) => m.abilities?.includes(ModelAbility.Evaluation))
                         .map((m) => Schema.const({ providerName: p.name, modelId: m.modelId }).description(`${p.name} / ${m.modelId}`)),
                 ),
                 Schema.object({ providerName: Schema.string(), modelId: Schema.string() }).description("自定义评估模型"),
@@ -323,11 +366,11 @@ export class ModelService extends YesImBotService<Config> {
     }
 
     public useEmbeddingGroup(name: string): ModelSwitcher<IEmbedModel> | undefined {
-        if (name === TaskType.Embedding && !this.config.task[name] && !this.config.modelGroups.some((group) => group.name === name)) return undefined;
+        if (name === TaskType.Embedding && !this.config.task[name] && !this.config.modelGroups.some((group) => group?.name === name)) return undefined;
         const groupName = this.resolveGroupName(name);
         if (!groupName) return undefined; // resolveGroupName 内部会记录日志
 
-        const group = this.config.modelGroups.find((g) => g.name === groupName);
+        const group = this.config.modelGroups.find((g) => g?.name === groupName);
         if (!group) {
             this.logger.warn(`查找模型组失败 | 组名不存在: ${groupName}`);
             return undefined;
@@ -345,7 +388,7 @@ export class ModelService extends YesImBotService<Config> {
         if (Object.hasOwn(this.config.task, name) && (this.config.task as Record<string, string>)[name]) {
             return (this.config.task as Record<string, string>)[name];
         }
-        if (this.config.modelGroups.some((group) => group.name === name)) return name;
+        if (this.config.modelGroups.some((group) => group?.name === name)) return name;
 
         this.logger.warn(`[切换器] ⚠ 无效的任务或模型组名称 | 名称: ${String(name)}`);
         return undefined;
@@ -356,6 +399,7 @@ export class ModelService extends YesImBotService<Config> {
 // 职责：封装单次请求的全部执行逻辑，包括重试、超时、断路器检查和故障转移。
 class RequestExecutor {
     private readonly logger: Logger;
+    private attempts = 0;
     private readonly accumulatedErrors: Array<{ providerName?: string; modelId: string; error: Error }> = [];
 
     constructor(
@@ -369,12 +413,14 @@ class RequestExecutor {
     }
 
     public async execute(options: ChatRequestOptions, onFirstAttempt?: (model: IChatModel) => void): Promise<GenerateTextResult> {
+        let unavailable = 0;
         for (const model of this.candidateModels) {
             options.abortSignal?.throwIfAborted();
             const breaker = this.circuitBreakers.get(model);
             const generation = breaker?.tryAcquire();
             if (breaker && generation === undefined) {
-                this.logger.info(`[跳过] 模型 ${formatModelIdentity({ ...model.config, modelId: model.id })} (断路器开启)`);
+                unavailable++;
+                this.logger.debug(`模型 ${formatModelIdentity({ ...model.config, modelId: model.id })} · 熔断或已有恢复探测 · 已跳过`);
                 continue;
             }
             // Advance selection once, after atomic breaker admission and before any asynchronous model work.
@@ -403,7 +449,7 @@ class RequestExecutor {
         }
 
         // 所有模型都尝试失败后
-        this.logger.error("所有可用模型均未能成功处理请求");
+        this.logger.error(`模型组请求失败 · 模型调用 ${this.attempts} 次 · 候选 ${this.candidateModels.length} 个 · 熔断或探测中跳过 ${unavailable} 个`);
         const individualErrors = this.accumulatedErrors.map((e) => e.error);
         throw new AppError(ErrorDefinitions.MODEL.ALL_FAILED_IN_GROUP, {
             args: [this.groupName],
@@ -482,11 +528,12 @@ class RequestExecutor {
 
             try {
                 //attemptLogger.info("发送请求...");
+                this.attempts++;
                 const result = await model.chat(options_copy);
                 clearTimeout(timeoutId);
                 clearTimeout(firstTokenTimeoutId);
                 attemptLogger.info(
-                    `请求成功 | 耗时: ${Date.now() - startedAt}ms | Tokens: ${result.usage?.total_tokens ?? "未知"} (输入: ${result.usage?.prompt_tokens ?? "未知"}, 输出: ${result.usage?.completion_tokens ?? "未知"}) | 结束原因: ${result.finishReason ?? "未知"}`,
+                    `模型请求成功 | 耗时: ${Date.now() - startedAt}ms | Tokens: ${result.usage?.total_tokens ?? "未知"} (输入: ${result.usage?.prompt_tokens ?? "未知"}, 输出: ${result.usage?.completion_tokens ?? "未知"}) | 结束原因: ${result.finishReason ?? "未知"}`,
                 );
                 return { success: true, data: result };
             } catch (error) {
@@ -508,51 +555,21 @@ class RequestExecutor {
                 if (error instanceof AppError && error.code === ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED.code) {
                     if (retryPolicy.onContentFailure === ContentFailureAction.AugmentAndRetry && attempt < retryPolicy.maxRetries) {
                         const rawResponse = error.context?.rawResponse;
-
-                        // 简单判断是否是有效内容
-                        if (rawResponse) {
-                            const keywords = ["thoughts", "observe", "analyze_infer", "plan", "actions", "function", "params"];
-                            const isValid = keywords.every((keyword) => rawResponse.includes(keyword));
-                            if (isValid) {
-                                attemptLogger.warn("内容无效，尝试使用LLM进行修复");
-                                const systemPrompt = `You are a JSON formatter. Your task is to fix the formatting of the given JSON string. The output must be a valid JSON string. Do not add any extra text or commentary.
-### 1. Format Rules
-- Your entire output MUST be a single, raw \`\`\`json ... \`\`\` code block.
-- No text, spaces, or newlines before \` \`\`\`json \` or after \` \`\`\` \`.
-
-### 2. JSON Structure
-\`\`\`json
-{
-  "thoughts": {
-    "observe": "...",
-    "analyze_infer": "...",
-    "plan": "..."
-  },
-  "actions": [
-    {
-      "function": "function_name",
-      "params": {
-        "inner_thoughts": "Your commentary on this specific action.",
-        "...": "..."
-      }
-    }
-  ],
-  "request_heartbeat": false
-}
-\`\`\`
-                                `;
-                                // 使用LLM修正JSON
-                                // 直接修改原始消息，下一次循环时会发送到模型
-                                attemptLogger.info("下一步: 修复内容并重试 | 等待: 0ms");
-                                options.messages = [
-                                    { role: "system", content: systemPrompt },
-                                    { role: "user", content: rawResponse },
-                                ];
-                                continue;
-                            }
-                        }
+                        const failedOutput = typeof rawResponse === "string" ? rawResponse.slice(0, 8000) : "";
+                        attemptLogger.warn("内容校验失败，保留原上下文并请求纠正；无效响应未执行工具");
+                        options.messages = [
+                            ...originalMessages,
+                            ...(failedOutput ? [{ role: "assistant" as const, content: failedOutput }] : []),
+                            {
+                                role: "system",
+                                content:
+                                    "The previous response failed output validation. No actions from that invalid response were executed. Regenerate a complete response following the original task, persona, tool definitions and required output format. Correct the format instead of commenting on this validation feedback.",
+                            },
+                        ];
+                        attemptLogger.info("下一步: 修正响应并重试 | 等待: 0ms");
+                        continue;
                     } else {
-                        attemptLogger.error(
+                        attemptLogger.warn(
                             `内容无效，放弃重试 | 错误码: ${appError?.code ?? "未知"} | HTTP: ${appError?.context?.httpStatus ?? "未知"} | 耗时: ${Date.now() - startedAt}ms | 错误: ${error.message}`,
                         );
                         attemptLogger.info("下一步: 放弃当前模型 | 内容校验失败或重试已耗尽");
@@ -561,9 +578,17 @@ class RequestExecutor {
                 }
 
                 // 其他错误（网络，API限流等）
-                attemptLogger.error(
-                    `请求失败 | 错误码: ${appError?.code ?? "未知"} | HTTP: ${appError?.context?.httpStatus ?? "未知"} | 耗时: ${Date.now() - startedAt}ms | 错误: ${error.message}`,
+                attemptLogger.warn(
+                    `本次尝试失败 | 错误码: ${appError?.code ?? "未知"} | HTTP: ${appError?.context?.httpStatus ?? "未知"} | 耗时: ${Date.now() - startedAt}ms | 错误: ${error.message}`,
                 );
+                const status = appError?.context?.httpStatus;
+                const deterministicStatus = typeof status === "number" && status >= 400 && status < 500 && ![408, 425, 429].includes(status);
+                const deterministicCategory =
+                    appError && ["invalid_input", "configuration", "permission_denied", "not_found", "conflict", "source_invalid"].includes(appError.category);
+                if (deterministicStatus || deterministicCategory) {
+                    attemptLogger.info("下一步: 放弃当前模型 | 确定性请求错误，不重复发送相同请求");
+                    return { success: false, error, providerFailure: false };
+                }
                 if (attempt >= retryPolicy.maxRetries) {
                     attemptLogger.info("下一步: 放弃当前模型 | 重试次数已耗尽");
                     return { success: false, error };
@@ -608,7 +633,8 @@ export class ModelSwitcher<T extends BaseModel> {
         this.logger = logging.getLogger(`[模型组][${groupConfig.name}]`);
 
         const breakersByIdentity = new Map<string, CircuitBreaker>();
-        this._models = groupConfig.models
+        this._models = (groupConfig.models ?? [])
+            .filter(isModelReference)
             .map((desc) => {
                 const model = modelGetter(desc.providerName, desc.modelId);
                 if (model?.config.circuitBreakerPolicy) {
@@ -681,11 +707,15 @@ export class ChatModelSwitcher extends ModelSwitcher<IChatModel> {
 
         if (hasImages) {
             if (this.visionModels.length > 0) {
-                this.logger.info("检测到图片内容，将使用视觉模型");
+                this.logger.debug("请求包含图片 · 限定视觉候选模型");
                 candidateModels = this.visionModels;
             } else {
                 this.logger.warn("检测到图片内容，但组内无视觉模型，将忽略图片按纯文本处理");
                 candidateModels = this.nonVisionModels;
+                options = {
+                    ...withoutImages(options),
+                    nativeToolCallingFallback: options.nativeToolCallingFallback ? withoutImages(options.nativeToolCallingFallback) : undefined,
+                };
             }
         } else {
             candidateModels = this._models; // 无图片，使用所有模型

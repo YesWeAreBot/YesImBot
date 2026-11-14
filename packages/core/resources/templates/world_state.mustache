@@ -1,6 +1,5 @@
-{{#triggerContext.length}}
+{{#triggerContext}}
 <trigger_context>
-  {{#triggerContext}}
   {{#isSystemEvent}}
   <system_alert priority="medium">
     <reason>SYSTEM EVENT DETECTED</reason>
@@ -10,12 +9,15 @@
     <event_details>
       <type>{{event.eventType}}</type>
       <message>{{event.message}}</message>
+      <data>{{details}}</data>
     </event_details>
   </system_alert>
   {{/isSystemEvent}}
-  {{/triggerContext}}
+  {{#isScheduledTask}}
+  <scheduled_task>{{details}}</scheduled_task>
+  {{/isScheduledTask}}
 </trigger_context>
-{{/triggerContext.length}}
+{{/triggerContext}}
 
 <world_state>
   <channel id="{{channel.id}}" type="{{channel.type}}" platform="{{channel.platform}}">

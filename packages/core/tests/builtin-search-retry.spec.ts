@@ -87,7 +87,7 @@ it("does not turn a permanent HTTP error mentioning timeout into a retryable sea
     const f = await fixture(async () => new Response("invalid configuration", { status: 400, statusText: "invalid timeout parameter" }), 2);
     const result = await f.invoke();
     expect(f.requests).toHaveLength(1);
-    expect(result).toMatchObject({ status: "error", error: { message: expect.stringContaining("invalid timeout parameter") } });
+    expect(result).toMatchObject({ status: "error", error: { message: expect.stringContaining("HTTP 400") } });
     expect(result.error?.retryable).not.toBe(true);
     expectReceipt(f.events, result);
 });
@@ -105,4 +105,20 @@ it("forwards the background cancellation signal and reports actual search stages
     expect(result.status).toBe("error");
     expect(progress).toContain("正在请求搜索服务");
     expect(f.requests).toHaveLength(1);
+});
+
+it("reports status without leaking a provider response and can retry a 503 on a read-only search", async () => {
+    const f = await fixture(async (attempt) => (attempt === 1 ? new Response("private response", { status: 503 }) : Response.json({ results: [] })));
+    const result = await f.invoke();
+    expect(f.requests).toHaveLength(2);
+    expect(result).toMatchObject({ status: "success", result: expect.stringContaining("没有找到") });
+    expectReceipt(f.events, result);
+});
+
+it("distinguishes an invalid response body from a successful empty result", async () => {
+    const f = await fixture(async () => Response.json({ error: "private response" }));
+    const result = await f.invoke();
+    expect(f.requests).toHaveLength(1);
+    expect(result).toMatchObject({ status: "error", error: { message: "搜索服务解码失败：未返回可用的搜索结果", retryable: false } });
+    expectReceipt(f.events, result);
 });

@@ -64,7 +64,7 @@ it("reads operation events only from the requested platform into the visible con
                     : [],
         },
     };
-    manager.getAgentHistoryFromFile = async () => [];
+    manager.getAgentHistoryFromFile = async () => ({ events: [], consumedSourceIds: new Set() });
     const context = await manager.getL1History("onebot", "same", 10);
     expect(context).toHaveLength(1);
     expect(context[0].message).toBe("暂停 at 到期时间");

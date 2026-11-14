@@ -1,4 +1,4 @@
-import { Context, Schema } from "koishi";
+import { Context, Logger, Schema } from "koishi";
 import {} from "koishi-plugin-puppeteer";
 
 import { Extension, Tool, withInnerThoughts } from "../../../extension/decorators";
@@ -45,19 +45,30 @@ export default class SearchExtension {
         optional: ["puppeteer"],
     };
 
+    private readonly logger: Logger;
+
     constructor(
         public ctx: Context,
         public config: SearchConfig,
     ) {
+        this.logger = ctx.yesimbot?.logging?.getLogger("[网页工具]") ?? ctx.logger;
         // 检查Puppeteer服务是否可用
         if (config.usePuppeteer && !ctx.puppeteer) {
-            ctx.logger.warn("配置要求使用Puppeteer，但Puppeteer服务未安装。请安装puppeteer插件。");
+            this.logger.warn("配置要求使用Puppeteer，但Puppeteer服务未安装。请安装puppeteer插件。");
         }
     }
 
     @Tool({
         name: "fetch_webpage",
         background: true,
+        readOnly: true,
+        timeout(this: SearchExtension, params) {
+            const dynamic = params.use_dynamic === true || this.config.usePuppeteer;
+            return (
+                (dynamic ? this.config.puppeteerTimeout + Math.max(0, this.config.puppeteerWaitTime) : this.config.httpTimeout + this.config.puppeteerTimeout) +
+                5000
+            );
+        },
         description: `获取指定网页的内容。支持动态渲染页面。
   - 将网页URL添加到url参数来获取网页内容
   - 可以获取HTML内容或纯文本内容
@@ -68,8 +79,8 @@ export default class SearchExtension {
             url: Schema.string().required().description("要获取的网页URL"),
             format: Schema.union(["html", "text"]).default("text").description("返回格式：html(原始HTML) 或 text(纯文本)"),
             max_length: Schema.number().default(5000).description("返回内容的最大长度，默认5000字符"),
-            include_links: Schema.boolean().default(true).description("是否包含网页中的其他链接"),
-            max_links: Schema.number().default(10).description("最多显示的链接数量，默认10个"),
+            max_links: Schema.number().min(0).step(1).default(10).description("最多返回的链接数量，默认 10；设为 0 时不返回链接"),
+            include_links: Schema.boolean().hidden(),
             use_dynamic: Schema.boolean().default(false).description("是否强制使用无头浏览器获取动态内容"),
         }),
         isSupported: (session) => {
@@ -82,7 +93,7 @@ export default class SearchExtension {
             url: string;
             format: "html" | "text";
             max_length: number;
-            include_links: boolean;
+            include_links?: boolean;
             max_links: number;
             use_dynamic: boolean;
         }>,
@@ -101,13 +112,14 @@ export default class SearchExtension {
             }
 
             args.toolContext?.reportProgress?.("正在读取网页");
-            this.ctx.logger.info(`Bot正在获取网页: ${url}`);
+            this.logger.debug("开始读取网页");
 
             // 决定是否使用动态加载模式
             const useDynamicLoading = use_dynamic || this.config.usePuppeteer;
 
             // 使用统一的Puppeteer方法获取和解析内容
-            const { title, content, textContent, links } = await this._fetchAndExtractWithPuppeteer(url, useDynamicLoading, include_links ? max_links : 0);
+            const linkLimit = include_links === false ? 0 : max_links;
+            const { title, content, textContent, links } = await this._fetchAndExtractWithPuppeteer(url, useDynamicLoading, linkLimit);
 
             args.toolContext?.reportProgress?.("网页已读取，正在提取正文");
             let resultContent = format === "text" ? textContent : content;
@@ -124,17 +136,17 @@ export default class SearchExtension {
             let result = `网页标题: ${title}\n网页URL: ${url}\n内容:\n${resultContent}`;
 
             // 添加链接信息
-            if (include_links && links.length > 0) {
+            if (linkLimit > 0 && links.length > 0) {
                 result += `\n\n网页中的其他链接 (${links.length}个):\n`;
                 links.forEach((link, index) => {
                     result += `${index + 1}. ${link.text || "(无标题)"}\n   ${link.url}\n`;
                 });
             }
 
-            this.ctx.logger.info(`Bot成功获取网页内容，长度: ${resultContent.length}, 链接数: ${links.length}`);
+            this.logger.debug(`网页正文已提取 · ${resultContent.length} 字 · ${links.length} 个链接`);
             return Success(result);
         } catch (error: any) {
-            this.ctx.logger.error(`Bot获取网页失败: ${url} - `, error.message);
+            this.logger.debug(`读取网页失败 · ${error.response?.status ?? error.name ?? "未知错误"}`);
             if (error.name === "TimeoutError" || error.message.includes("timeout")) {
                 return Failed("请求超时，网页响应时间过长或无法加载");
             } else if (error.message.includes("net::ERR_")) {
@@ -166,7 +178,7 @@ export default class SearchExtension {
             await page.setDefaultNavigationTimeout(this.config.puppeteerTimeout);
 
             if (isDynamic) {
-                this.ctx.logger.info(`使用动态模式加载: ${url}`);
+                this.logger.debug("使用浏览器动态加载");
                 const response = await page.goto(url, {
                     waitUntil: "networkidle2",
                     timeout: this.config.puppeteerTimeout,
@@ -178,7 +190,7 @@ export default class SearchExtension {
                     await new Promise((resolve) => setTimeout(resolve, this.config.puppeteerWaitTime));
                 }
             } else {
-                this.ctx.logger.info(`使用静态模式加载: ${url}`);
+                this.logger.debug("读取静态页面");
                 const html = await this.ctx.http.get(url, {
                     headers: { "User-Agent": this.config.customUA },
                     timeout: this.config.httpTimeout,
@@ -250,13 +262,17 @@ export default class SearchExtension {
 
             return extractedData;
         } finally {
-            await page.close().catch((error) => this.ctx.logger.warn(`关闭Puppeteer页面时出错: ${error.message}`));
+            await page.close().catch((error) => this.logger.warn(`关闭Puppeteer页面时出错: ${error.message}`));
         }
     }
 
     @Tool({
         name: "web_search",
         background: true,
+        readOnly: true,
+        timeout(this: SearchExtension) {
+            return this.config.httpTimeout + 5000;
+        },
         description: "搜索网络内容，获取相关信息和链接。可以多次搜索。在你搜索完之后，可以先访问具体内容",
         parameters: withInnerThoughts({
             query: Schema.string().required().description("搜索关键词或查询内容。"),
@@ -267,6 +283,7 @@ export default class SearchExtension {
 
         if (isEmpty(query)) return Failed("query is required");
 
+        let stage: "请求" | "解码" | "整理" = "请求";
         try {
             const endpoint = this.config.endpoint;
             const engines = this.config.sources.join(",");
@@ -274,7 +291,7 @@ export default class SearchExtension {
             const limit = this.config.limit;
             const searchUrl = `${endpoint}?q=${encodeURIComponent(query)}&engines=${engines}&format=${format}&limit=${limit}`;
 
-            this.ctx.logger.info(`正在搜索: ${query}, 使用URL: ${searchUrl}`);
+            this.logger.debug("请求搜索服务");
 
             args.toolContext?.reportProgress?.("正在请求搜索服务");
             // 使用 Koishi 的 HTTP 服务发送请求
@@ -288,9 +305,12 @@ export default class SearchExtension {
             });
 
             args.toolContext?.reportProgress?.("搜索服务已返回，正在整理结果");
+            stage = "解码";
             // 处理响应
             const data = typeof response === "string" ? JSON.parse(response) : response;
 
+            if (!data || !Array.isArray(data.results)) throw new TypeError("invalid search response");
+            stage = "整理";
             // 格式化搜索结果
             if (!data.results || data.results.length === 0) {
                 return Success(`没有找到关于"${query}"的搜索结果。`);
@@ -318,7 +338,7 @@ export default class SearchExtension {
                 resultText += `\n`;
             });
 
-            this.ctx.logger.info(`返回搜索结果: ${topResults.length}项`);
+            this.logger.debug(`搜索服务返回 ${topResults.length} 项结果`);
 
             // 如果启用了Puppeteer，添加提示信息
             if (this.ctx.puppeteer) {
@@ -326,12 +346,27 @@ export default class SearchExtension {
             }
 
             return Success(resultText);
-        } catch (error: any) {
-            if (!error.response && error.message.includes("timeout")) {
-                return Failed({ name: "TimeoutError", message: "搜索请求超时", retryable: true });
-            }
-            this.ctx.logger.error(`网络搜索失败: `, error);
-            return Failed(`搜索过程中发生错误: ${error.message}`);
+        } catch (error) {
+            const status = error?.response?.status;
+            const code = error?.code ?? error?.cause?.code;
+            const timedOut = typeof status !== "number" && (code === "ETIMEDOUT" || error?.name === "TimeoutError");
+            const retryableStatus = typeof status === "number" && (status === 408 || status === 429 || (status >= 500 && status < 600));
+            const networkCodes = ["EAI_AGAIN", "ECONNREFUSED", "ECONNRESET", "ENOTFOUND", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_SOCKET"];
+            const networkCode = typeof code === "string" && networkCodes.includes(code) ? code : undefined;
+            if (error instanceof SyntaxError) stage = "解码";
+            const detail = args.toolContext?.signal?.aborted
+                ? "已取消"
+                : timedOut
+                  ? "搜索请求超时"
+                  : typeof status === "number"
+                    ? `HTTP ${status}`
+                    : (networkCode ?? "未返回可用的搜索结果");
+            this.logger.debug(`搜索服务 · ${stage}失败 · ${detail}`);
+            return Failed({
+                name: timedOut ? "TimeoutError" : "SearchError",
+                message: timedOut ? detail : `搜索服务${stage}失败：${detail}`,
+                retryable: !args.toolContext?.signal?.aborted && (timedOut || retryableStatus || !!networkCode),
+            });
         }
     }
 }

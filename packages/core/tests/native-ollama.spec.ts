@@ -148,7 +148,7 @@ for (const stream of [false, true]) {
                 (error) => error,
             );
             expect(error === null).toBe(reason === "stop");
-            expect(executions).toBe(reason === "stop" ? 1 : 0);
+            expect(executions).toBe(0);
         });
 }
 it("rejects incomplete NDJSON before tool execution", async () => {
@@ -251,7 +251,7 @@ it("signals real native tool activity before EOF and withholds execution", async
     await pending;
     expect(observed).toBe(true);
     expect(count).toBe(1);
-    expect(executions).toBe(1);
+    expect(executions).toBe(0);
 });
 it("preserves NDJSON business errors", async () => {
     const { f } = fixture(() => ndjson([{ error: "model unavailable" }]));

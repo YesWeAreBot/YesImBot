@@ -206,3 +206,16 @@ test("empty directory headers and adapter errors return escaped Koishi text", as
         true,
     );
 });
+
+test("combined contacts command preserves the legacy member query and group-list privacy", async (t) => {
+    const { session, commands } = await setup(t);
+    session.bot.internal.getGroupMemberList = async () => [{ user_id: 42, nickname: "Member" }];
+    const sent = [];
+    session.send = async (message) => sent.push(String(message));
+    const query = commands["onebot.contacts [kind:string]"];
+    await query({ session, options: {} }, "members");
+    assert.equal(sent.length, 1);
+    assert.match(sent[0], /42 Member/);
+    assert.match(String(await query({ session, options: {} }, "groups")), /管理员私聊/);
+    assert.match(String(await query({ session, options: { groupId: "g" } }, "friends")), /群成员/);
+});

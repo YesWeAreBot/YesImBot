@@ -1,9 +1,16 @@
+import memory from "@koishijs/plugin-database-memory";
 import { Bot, Context, MessageEncoder, h } from "koishi";
+import { OneBotMessageEncoder } from "koishi-plugin-adapter-onebot";
 import { describe, expect, it } from "vitest";
 
 import { withReplyTurn } from "../src/agent/reply-turn";
 import CoreUtilExtension from "../src/extension/builtin/core-util";
+import { TableName } from "../src/shared/constants";
 import { MessageDeliveryError } from "../src/shared/message-delivery";
+import { EventListenerManager } from "../src/world/event-listener";
+import { readMessageWindowPage } from "../src/world/message-window";
+import { WorldStateService } from "../src/world/service";
+import { loggingStub } from "./helpers/yesimbot";
 
 function setup(send: (...args: any[]) => Promise<string[]> = async () => ["sent"]) {
     const events: any[] = [];
@@ -134,7 +141,7 @@ describe("send_message delivery", () => {
         expect(result.error?.retryable).toBe(false);
         expect(result.metadata?.delivery.messageIds).toEqual(["text-sent"]);
         expect(events).toHaveLength(1);
-        expect(events[0][1].event.message).toMatchObject({ id: "text-sent", content: "text only" });
+        expect(events[0][2].event.message).toMatchObject({ id: "text-sent", content: "text only" });
     });
 
     it("does not record the full attempted body when a partial encoder receipt has no content", async () => {
@@ -143,7 +150,7 @@ describe("send_message delivery", () => {
         });
         const result = await tool.sendMessage({ session, message: 'text<img src="file:///not-sent.png"/>' } as any);
         expect(result.metadata?.delivery.messageIds).toEqual(["text-sent"]);
-        expect(events[0][1].event.message.content).toBe("");
+        expect(events[0][2].event.message.content).toBe("");
     });
 
     it("retains nested errors and ordinary errors", async () => {
@@ -199,7 +206,7 @@ describe("send_message delivery", () => {
         expect(result.error?.retryable).toBe(false);
         expect(result.error?.message).toContain("已完整发送 1/3 段");
         expect(events.length).toBe(1);
-        expect(events[0][1].event.message.id).toBe("first-sent");
+        expect(events[0][2].event.message.id).toBe("first-sent");
     });
 
     for (const error of ["plain rejection", new Error("ordinary error"), Object.assign(new Error("wrapper"), { cause: new Error("root cause") }), null]) {
@@ -332,7 +339,7 @@ describe("send_message adapter routing", () => {
             expect(route.messageId).toBeUndefined();
             expect(route.seq).toBeUndefined();
             expect(f.session.seq).toBe(4);
-            expect(f.events[0][1].event.channel).toMatchObject({ id: nativeId, type: 1 });
+            expect(f.events[0][2].event.channel).toMatchObject({ id: nativeId, type: 1 });
         });
     }
 
@@ -342,13 +349,13 @@ describe("send_message adapter routing", () => {
         f.session.isDirect = true;
         f.session.event.channel = { id: "raw-user-id" };
         expect((await f.tool.sendMessage({ session: f.session, message: "hello" } as any)).status).toBe("success");
-        expect(f.events[0][1].event.channel.type).toBe(1);
+        expect(f.events[0][2].event.channel.type).toBe(1);
     });
 
     it("records every returned message ID once for a split adapter response", async () => {
         const f = setup(async () => ["text-part", "image-part", "text-part"]);
         expect((await f.tool.sendMessage({ session: f.session, message: "hello" } as any)).status).toBe("success");
-        expect(f.events.map((event) => event[1].event.message.id)).toEqual(["text-part", "image-part"]);
+        expect(f.events.map((event) => event[2].event.message.id)).toEqual(["text-part", "image-part"]);
     });
 });
 
@@ -365,6 +372,52 @@ it("preserves the direct destination category when resolving a private tool targ
 });
 
 for (const guarded of [false, true]) {
+    it(`records and reads back one successful ID-only encoder receipt with reply guard ${guarded}`, async () => {
+        const app = new Context();
+        app.plugin(memory);
+        (WorldStateService.prototype as any).registerModels.call({ ctx: app });
+        let bot!: Bot;
+        class Sender extends Bot {
+            static MessageEncoder = OneBotMessageEncoder;
+        }
+        app.plugin((ctx) => {
+            bot = new Sender(ctx, {} as any, "onebot");
+            bot.user = { id: "bot" };
+            bot.internal = { sendGroupMsg: async () => "confirmed" };
+        });
+        await app.start();
+        await app.database.prepared();
+        try {
+            const f = setup();
+            f.ctx.bots = [bot];
+            f.ctx.yesimbot.asset.encode = async () => h.parse("actual encoded paragraph");
+            const session = bot.session({ channel: { id: "room", type: 0 }, message: { id: "incoming" } });
+            const send = () => f.tool.sendMessage({ session, message: "before encoding" } as any);
+            const result = guarded ? await withReplyTurn(() => true, send) : await send();
+            expect(result).toMatchObject({ status: "success", metadata: { delivery: { messageIds: ["confirmed"], sentMessages: 1 } } });
+            const listener: any = new EventListenerManager(
+                app,
+                {
+                    observeChannel: async () => {},
+                    recordMessage: async (row: any) => app.database.create(TableName.Messages, row),
+                } as any,
+                {} as any,
+                loggingStub(),
+                { transform: async (text: string) => text } as any,
+            );
+            for (const event of f.events) await listener.recordBotSentMessage(event[2]);
+            const page = await readMessageWindowPage(
+                app.database,
+                { platform: "onebot", selfId: "bot", channelId: "room", channelType: "guild" },
+                { messageId: "confirmed" },
+            );
+            expect(page.anchor.content).toBe("actual encoded paragraph");
+            expect(page.anchor.sender.id).toBe("bot");
+        } finally {
+            await app.stop();
+        }
+    });
+
     it(`records successful encoder split content with reply guard ${guarded}`, async () => {
         const ctx = new Context();
         class Encoder extends MessageEncoder {
@@ -384,7 +437,7 @@ for (const guarded of [false, true]) {
         const send = () => f.tool.sendMessage({ session, message: "hello" } as any);
         const result = guarded ? await withReplyTurn(() => true, send) : await send();
         expect(result.status).toBe("success");
-        expect(f.events.map((event) => event[1].event.message)).toMatchObject([
+        expect(f.events.map((event) => event[2].event.message)).toMatchObject([
             { id: "text", content: "hello" },
             { id: "image", content: '<img src="https://test.invalid/a.png"/>' },
         ]);
@@ -392,8 +445,37 @@ for (const guarded of [false, true]) {
     });
 }
 
+for (const partial of [false, true])
+    it(`does not assign the attempted paragraph to OneBot split receipts with partial failure ${partial}`, async () => {
+        const app = new Context();
+        class Sender extends Bot {
+            static MessageEncoder = OneBotMessageEncoder;
+        }
+        const bot = new Sender(app, {} as any, "onebot");
+        bot.user = { id: "bot" };
+        let requests = 0;
+        bot.internal = {
+            sendGroupMsg: async () => {
+                requests++;
+                if (partial && requests === 2) throw new Error("second request refused");
+                return `confirmed-${requests}`;
+            },
+        };
+        const f = setup();
+        f.ctx.bots = [bot];
+        const session = bot.session({ channel: { id: "room", type: 0 }, message: { id: "incoming" } });
+        const result = await withReplyTurn(
+            () => true,
+            () => f.tool.sendMessage({ session, message: "<message>first</message><message>second</message>" } as any),
+        );
+        expect(result.status).toBe(partial ? "error" : "success");
+        expect(requests).toBe(2);
+        expect(f.events.map((event) => event[2].event.message.content)).toEqual(partial ? [""] : ["", ""]);
+        await app.stop();
+    });
+
 it("leaves split receipt content unknown when an adapter returns only IDs", async () => {
     const f = setup(async () => ["text", "image"]);
     expect((await f.tool.sendMessage({ session: f.session, message: 'hello<img src="https://test.invalid/a.png"/>' } as any)).status).toBe("success");
-    expect(f.events.map((event) => event[1].event.message.content)).toEqual(["", ""]);
+    expect(f.events.map((event) => event[2].event.message.content)).toEqual(["", ""]);
 });

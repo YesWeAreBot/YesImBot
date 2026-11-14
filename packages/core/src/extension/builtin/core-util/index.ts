@@ -1,44 +1,20 @@
 import { Bot, Context, h, Logger, Schema, Session, sleep, Universal } from "koishi";
 
-import { assertReplyDestination, guardReplyBot, replyTurnSignal, sendMessageWithReceipts } from "../../../agent/reply-turn";
+import { assertReplyDestination, assertReplyTurn, guardReplyBot, replyTurnSignal, sendMessageWithReceipts } from "../../../agent/reply-turn";
 import { AssetService } from "../../../asset";
 import { Extension, Tool, withInnerThoughts } from "../../../extension/decorators";
 import { Failed, Success } from "../../../extension/helpers";
 import { Infer } from "../../../extension/types";
-import { IChatModel, ModelDescriptor } from "../../../model";
+import { formatLogTarget } from "../../../logger/conversation";
+import { IChatModel } from "../../../model";
 import { withUsageScope } from "../../../model/usage";
 import { MessageDeliveryError, type ConfirmedMessage } from "../../../shared/message-delivery";
 import { isEmpty, parseConversationChannelId } from "../../../shared/utils";
+import { CoreUtilConfigSchema, type CoreUtilConfig } from "./config";
 
 function sendErrorScalar(key: string, value: unknown): string {
     return (typeof value === "string" || typeof value === "number") && String(value).trim() ? `${key}=${String(value).slice(0, 512)}` : "";
 }
-
-interface CoreUtilConfig {
-    typing: {
-        baseDelay: number;
-        charPerSecond: number;
-        minDelay: number;
-        maxDelay: number;
-    };
-    vision: {
-        model: ModelDescriptor;
-        detail: "low" | "high" | "auto";
-    };
-}
-
-const CoreUtilConfigSchema: Schema<CoreUtilConfig> = Schema.object({
-    typing: Schema.object({
-        baseDelay: Schema.number().default(500).description("基础延迟 (毫秒)"),
-        charPerSecond: Schema.number().default(5).description("每秒字符数"),
-        minDelay: Schema.number().default(800).description("最小延迟 (毫秒)"),
-        maxDelay: Schema.number().default(4000).description("最大延迟 (毫秒)"),
-    }),
-    vision: Schema.object({
-        model: Schema.dynamic("modelService.selectableModels").description("用于图片描述的多模态模型"),
-        detail: Schema.union(["low", "high", "auto"]).default("low").description("图片细节程度"),
-    }),
-});
 
 @Extension({
     name: "core_util",
@@ -69,6 +45,12 @@ export default class CoreUtilExtension {
 
     @Tool({
         name: "send_message",
+        timeout(this: CoreUtilExtension, params) {
+            if (this.config.deliveryTimeoutMs && this.config.deliveryTimeoutMs > 0) return this.config.deliveryTimeoutMs;
+            const parts = typeof params.message === "string" ? params.message.split("<sep/>").filter((part) => part.trim()).length : 1;
+            const typing = Math.max(this.config.typing.maxDelay, this.config.typing.minDelay, 0);
+            return Math.max(30000, parts * (typing + 30000) + Math.max(0, parts - 1) * 2500);
+        },
         description: "发送消息",
         parameters: withInnerThoughts({
             message: Schema.string().required().description(`**Visible message content to the user.**
@@ -100,25 +82,42 @@ export default class CoreUtilExtension {
             return Failed("缺少会话对象");
         }
 
+        if (typeof message !== "string") return Failed("message 必须是字符串");
         const messages = message.split("<sep/>").filter((msg) => msg.trim() !== "");
         if (messages.length === 0) {
-            this.logger.warn("💬 待发送内容为空 | 原因: 消息分割后无有效内容");
-            return Failed("消息内容为空");
+            this.logger.debug("空消息 · 本轮保持沉默");
+            return Success(undefined, { intentionalSilence: true });
         }
 
-        const delivery = { messageIds: [] as string[], sentMessages: 0, totalMessages: messages.length };
+        const delivery = { messageIds: [] as string[], sentMessages: 0, totalMessages: messages.length, inFlight: false, deliveryUnknown: false };
+        const publish = () => args.toolContext?.reportMetadata?.({ delivery });
+        publish();
+        let destination: string | undefined;
         try {
             const { bot, channelId, channel, userId, guild } = await this.determineTarget(session, target, self_id, target_type, guild_id);
 
-            await this.sendMessagesWithHumanLikeDelay(messages, bot, channelId, session, channel, userId, guild, delivery);
+            destination = formatLogTarget({
+                platform: bot.platform,
+                selfId: bot.selfId,
+                channelId,
+                guildId: guild?.id ?? (bot === session.bot && channelId === session.channelId ? session.guildId : undefined),
+                isDirect: channel?.type === Universal.Channel.Type.DIRECT || (bot === session.bot && channelId === session.channelId && session.isDirect),
+            });
+            await this.sendMessagesWithHumanLikeDelay(messages, bot, channelId, session, channel, userId, guild, delivery, publish);
 
+            publish();
+            this.logger.info(`发送目标 ${destination} · 适配器已确认 ${delivery.messageIds.length} 条消息`);
             return Success(undefined, { delivery });
         } catch (error) {
             const partial = delivery.messageIds.length > 0;
+            publish();
+            this.logger.warn(
+                `发送目标 ${destination ?? "未解析"} · ${partial ? `已确认 ${delivery.messageIds.length} 条消息，未完成全部发送` : delivery.deliveryUnknown ? "发送结果未知" : "发送失败"}`,
+            );
             return Failed(
                 {
                     name: partial ? "PartialDeliveryError" : "ToolError",
-                    message: `${partial ? `消息未全部发送：已完整发送 ${delivery.sentMessages}/${delivery.totalMessages} 段（确认 ${delivery.messageIds.length} 条消息），请勿重复发送已送达内容` : "发送消息失败"}。错误: ${this.getSendErrorMessage(error) || "未知发送错误"}`,
+                    message: `${partial ? `消息未全部发送：已完整发送 ${delivery.sentMessages}/${delivery.totalMessages} 段（确认 ${delivery.messageIds.length} 条消息），请勿重复发送已送达内容` : delivery.deliveryUnknown ? "消息已提交但送达结果未知，请勿自动重发" : "发送消息失败"}。错误: ${this.getSendErrorMessage(error) || "未知发送错误"}`,
                     retryable: false,
                 },
                 { delivery },
@@ -128,6 +127,27 @@ export default class CoreUtilExtension {
 
     @Tool({
         name: "get_image_description",
+        readOnly: true,
+        isAvailable(this: CoreUtilExtension, context) {
+            const selected = this.config.vision?.model;
+            if (!selected?.providerName || !selected.modelId) return "辅助识图尚未配置可用的视觉模型，请依据已有信息回答并说明无法辨认的部分";
+            if (context?.attachedImageIds?.length && !this.config.vision.allowAuxiliary)
+                return "图片已随本轮主请求提供，请直接依据图片回答；辅助识图仅按管理员策略可用，不要重复请求同图识别";
+            try {
+                const model = this.ctx.yesimbot.model?.getChatModel?.(selected.providerName, selected.modelId);
+                return !!model?.isVisionModel();
+            } catch {
+                return false;
+            }
+        },
+        timeout(this: CoreUtilExtension) {
+            if (this.config.vision.timeoutMs && this.config.vision.timeoutMs > 0) return this.config.vision.timeoutMs;
+            const selected = this.config.vision.model;
+            const model = selected && this.ctx.yesimbot.model.getChatModel?.(selected.providerName, selected.modelId);
+            const seconds = model?.config?.timeoutPolicy?.totalTimeout ?? 90;
+            const retries = model?.config?.retryPolicy?.maxRetries ?? 0;
+            return Math.max(120000, seconds * 1000 * (retries + 1) + retries * 300000 + 30000);
+        },
         background: true,
         description: "使用外部视觉模型获取图片描述，当你无法查看图片，或者此图片数据在上下文中丢失时使用此工具",
         parameters: withInnerThoughts({
@@ -137,6 +157,12 @@ export default class CoreUtilExtension {
     })
     async getImageDescription(args: Infer<{ image_id: string; question: string }>) {
         const { image_id, question, session } = args;
+        if (!this.config.vision.allowAuxiliary && args.toolContext?.attachedImageIds?.includes(image_id)) {
+            return Success({
+                status: "already_visible",
+                message: "本图像素已直接提供给当前聊天模型，请直接查看并回答；不要重复请求辅助识图。如无法辨认，请明确说明不确定。",
+            });
+        }
 
         args.toolContext?.reportProgress?.("正在读取图片资源");
         const imageInfo = await this.assetService.getInfo(image_id);
@@ -155,7 +181,7 @@ export default class CoreUtilExtension {
         let model: IChatModel | null = null;
 
         try {
-            model = this.ctx.yesimbot.model.getChatModel(visionModel.providerName, visionModel.modelId);
+            model = this.ctx.yesimbot.model.useChatModel(visionModel.providerName, visionModel.modelId);
             if (!model) {
                 this.logger.warn(`✖ 模型未找到 | 模型: ${visionModel.providerName}:${visionModel.modelId}`);
                 return Failed(`模型未找到`);
@@ -181,8 +207,9 @@ export default class CoreUtilExtension {
             args.toolContext?.reportProgress?.("正在请求视觉模型");
             const response = await withUsageScope(
                 { platform: session?.platform, botId: session?.selfId, target: session?.channelId, purpose: "图片描述" },
-                () =>
-                    model.chat({
+                () => {
+                    assertReplyTurn();
+                    return model.chat({
                         abortSignal: replyTurnSignal(),
                         messages: [
                             {
@@ -194,7 +221,8 @@ export default class CoreUtilExtension {
                             },
                         ],
                         temperature: 0.2,
-                    }),
+                    });
+                },
             );
             return Success(response.text);
         } catch (error) {
@@ -351,7 +379,8 @@ export default class CoreUtilExtension {
         channel?: Universal.Channel,
         userId?: string,
         guild?: Universal.Guild,
-        delivery = { messageIds: [] as string[], sentMessages: 0, totalMessages: messages.length },
+        delivery = { messageIds: [] as string[], sentMessages: 0, totalMessages: messages.length, inFlight: false, deliveryUnknown: false },
+        publish: () => void = () => {},
     ): Promise<void> {
         const sameSession =
             bot === originalSession.bot &&
@@ -385,7 +414,7 @@ export default class CoreUtilExtension {
                     : msg;
             const content = await this.assetService.encode(quoted);
 
-            this.logger.debug(`发送消息 | 延迟: ${Math.round(delay)}ms`);
+            this.logger.debug(`发送第 ${i + 1}/${messages.length} 段 · 等待 ${Math.round(delay)}ms`);
 
             await sleep(delay);
 
@@ -403,15 +432,23 @@ export default class CoreUtilExtension {
             let receipts: ConfirmedMessage[] | undefined;
             let partialError: MessageDeliveryError | undefined;
             try {
+                delivery.inFlight = true;
+                delivery.deliveryUnknown = true;
+                publish();
                 const sent = await sendMessageWithReceipts(
                     bot,
                     channelId,
                     content,
                     sameSession ? originalSession.event.referrer : undefined,
                     sameSession ? { session: originalSession } : routingSession ? { session: routingSession } : undefined,
+                    (confirmed) => {
+                        for (const receipt of confirmed) if (!delivery.messageIds.includes(receipt.id)) delivery.messageIds.push(receipt.id);
+                        publish();
+                    },
                 );
                 messageIds = sent.ids;
                 receipts = sent.messages;
+                delivery.inFlight = false;
             } catch (error) {
                 if (!(error instanceof MessageDeliveryError)) throw error;
                 partialError = error;
@@ -423,16 +460,21 @@ export default class CoreUtilExtension {
                 throw new Error("适配器未返回消息 ID，无法确认发送结果");
             }
             for (const id of confirmedIds) if (!delivery.messageIds.includes(id)) delivery.messageIds.push(id);
-            if (!partialError) delivery.sentMessages++;
+            if (!partialError) {
+                delivery.sentMessages++;
+                delivery.deliveryUnknown = false;
+            }
+            delivery.inFlight = false;
+            publish();
 
             // Preserve confirmed external effects even if a later encoder request failed.
             for (const messageId of confirmedIds) {
                 const confirmed = partialError?.messages ?? receipts;
-                const sentContent = confirmed
-                    ? (confirmed.find((message) => message.id === messageId)?.content ?? "")
-                    : confirmedIds.length === 1
-                      ? quoted
-                      : "";
+                // A fully successful single-ID send maps to this one submitted paragraph.
+                // Split/partial results require per-ID content from the adapter itself.
+                const sentContent =
+                    confirmed?.find((message) => message.id === messageId)?.content ||
+                    (!partialError && confirmedIds.length === 1 ? h.normalize(content).join("") : "");
                 await this.emitAfterSendEvent(bot, channelId, sentContent, messageId, originalSession, channel, guild);
             }
             if (partialError) throw partialError;
@@ -505,6 +547,6 @@ export default class CoreUtilExtension {
             guild,
         });
         session.content = content;
-        this.ctx.emit("after-send", session as Session);
+        this.ctx.emit(session, "after-send", session as Session);
     }
 }

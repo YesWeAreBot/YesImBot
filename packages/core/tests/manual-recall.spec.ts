@@ -217,3 +217,51 @@ for (const mode of ["json", "stream", "native", "native-tools"]) {
         }
     });
 }
+
+it("preserves every pending manual recall through actual journal pruning and restart", async () => {
+    const f = await fixture();
+    try {
+        for (let page = 0; page < 3; page++)
+            await f.world.injectRecall(f.incoming, { kind: "l3", historyGeneration: 0, records: [{ content: `pending-pruned-${page}` }] });
+        await f.manager.recordHeartbeat("last-turn", "onebot", f.incoming.channelId, 1, 1);
+        (f.manager as any).config.logLengthLimit = 1;
+        await f.manager.pruneOldData();
+        const restarted = new InteractionManager(f.app, (f.manager as any).config, loggingStub(logger));
+        const events = await restarted.getL1History("onebot", f.incoming.channelId, 1, "bot");
+        expect(events.filter((event: any) => event.manualRecall).map((event: any) => event.result.records[0].content)).toEqual([
+            "pending-pruned-0",
+            "pending-pruned-1",
+            "pending-pruned-2",
+        ]);
+        const history = (f.builder as any).applyGracefulDegradation(events);
+        expect(history.filter((event: any) => event.manualRecall)).toHaveLength(3);
+    } finally {
+        await f.close();
+    }
+});
+
+it("retains the first consuming turn when pruning keeps a previously consumed manual page", async () => {
+    const f = await fixture();
+    try {
+        await f.world.injectRecall(f.incoming, { kind: "l3", historyGeneration: 0, records: [{ content: "consumed-page" }] });
+        const original = (await f.manager.getL1History("onebot", f.incoming.channelId, 20, "bot"))[0] as any;
+        // Persist the acknowledgment before the page to exercise receipt survival
+        // independently of append order (e.g. restored histories).
+        const filename = (f.manager as any).getLogFilePath("onebot", f.incoming.channelId);
+        const { readFile, writeFile } = await import("node:fs/promises");
+        const pageLine = await readFile(filename, "utf8");
+        await f.manager.recordThought("first-consumer", "onebot", f.incoming.channelId, { observe: "read", analyze_infer: "", plan: "" }, [original.turnId]);
+        const receiptLine = (await readFile(filename, "utf8")).slice(pageLine.length);
+        await writeFile(filename, receiptLine + pageLine);
+        (f.manager as any).config.logLengthLimit = 1;
+        await f.manager.pruneOldData();
+        const reopened = new InteractionManager(f.app, (f.manager as any).config, loggingStub(logger));
+        const events = await reopened.getL1History("onebot", f.incoming.channelId, 20, "bot");
+        const { manualRecallOwners } = await import("../src/world/manual-recall");
+        expect([...manualRecallOwners(events).values()]).toEqual(["first-consumer"]);
+        await reopened.pruneOldData();
+        expect([...manualRecallOwners(await reopened.getL1History("onebot", f.incoming.channelId, 20, "bot")).values()]).toEqual([]);
+    } finally {
+        await f.close();
+    }
+});

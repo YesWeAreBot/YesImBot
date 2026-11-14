@@ -111,6 +111,30 @@ it("preserves the supplied outer message ID and forward resource ID through the 
     expect(recorded[0].content).toContain(`<forward id="${root}"/>`);
 });
 
+it("removes stringified inline payloads from recorded forward elements while keeping their resource handle", async () => {
+    const recorded: any[] = [];
+    const listener: any = new EventListenerManager(
+        stubCtx({}) as any,
+        { observeChannel: async () => {}, recordMessage: async (message: unknown) => recorded.push(message) } as any,
+        {} as any,
+        loggingStub({ debug() {}, info() {} }),
+        { transform: async (value: string) => value } as any,
+    );
+    const content = `before<forward id="${root}" content="[object Object],[object Object]"/>after`;
+    await listener.recordUserMessage({
+        platform: "onebot",
+        userId: "user",
+        channelId: "private:user",
+        isDirect: true,
+        messageId: "outer",
+        timestamp: 1,
+        author: { name: "sender" },
+        content,
+        toJSON: () => ({ message: { content } }),
+    });
+    expect(recorded[0].content).toBe(`before<forward id="${root}"/>after`);
+});
+
 it("pages every sibling without automatically fetching nested packages", async () => {
     const f = setup(Array.from({ length: 125 }, (_, i) => node(text(`row-${i};`), { type: "forward", data: { id: `child-${i}` } })));
     const contents: string[] = [];

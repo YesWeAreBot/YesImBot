@@ -15,6 +15,7 @@ import type { IProviderClient } from "../src/model/factories";
 import { ProviderInstance } from "../src/model/provider-instance";
 import { ModelService } from "../src/model/service";
 import { getUsageLedger, observeUsageFetch } from "../src/model/usage";
+import { bindUsageOwner, resolveUsageOwner } from "../src/model/usage-owner";
 import type { UsageOwner } from "../src/model/usage-owner";
 import { loggingStub } from "./helpers/yesimbot";
 
@@ -64,6 +65,7 @@ test("explicit telemetry owner avoids model service lookup and shares history/re
         const ledger = getUsageLedger(commandCtx, ownerA);
         assert.equal((await ledger.snapshot()).records.length, 1);
         const facadeCtx = { yesimbot: { model: { usageOwner: ownerA } } } as unknown as Context;
+        bindUsageOwner(facadeCtx, ownerA);
         assert.equal(getUsageLedger(facadeCtx), ledger);
         assert.equal(getContextSnapshots(facadeCtx).length, 1);
         assert.equal(getContextSnapshots(commandCtx, ownerA).length, 1);
@@ -170,4 +172,11 @@ test("model service startup and its providers share an explicit owner before fac
         await ledger.close();
         await rm(dir, { recursive: true, force: true });
     }
+});
+
+test("an unbound telemetry context never probes an undeclared facade", () => {
+    const ctx = telemetryContext("/tmp/unused", "unbound", () => {
+        throw new Error("undeclared service lookup");
+    });
+    assert.equal(resolveUsageOwner(ctx), undefined);
 });

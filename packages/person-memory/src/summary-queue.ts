@@ -29,6 +29,7 @@ export interface SummaryJob {
     attempts: number;
     nextAttempt: number;
     reason?: string;
+    validationError?: string;
     input?: SummaryInput;
     output?: SummaryOutput;
     receipt?: string;
@@ -141,6 +142,9 @@ export class SummaryQueue {
             { status: "accepted", receipt, checkpoint: job.input?.sourceCursor ?? job.checkpoint, input: undefined, output: undefined, reason: undefined },
             active,
         );
+    }
+    async purge() {
+        for (const job of await this.list()) await this.serial(job.key, () => this.db.remove(TABLE, { key: job.key, domain: this.domain }));
     }
     async cancel(scope: string) {
         for (const job of (await this.list()).filter((job) => job.scope === scope)) {

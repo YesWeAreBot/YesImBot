@@ -4,6 +4,7 @@
 
 import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
+import { hostname } from "node:os";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -287,21 +288,65 @@ describe("exclusion", () => {
         expect(JSON.parse(await fs.readFile(path.join(dir, ".decisions.lock"), "utf8")).pid).toBe(process.pid);
     });
 
-    it("keeps history intact after an abnormal exit and waits for manual lock cleanup", async (t) => {
+    it.runIf(process.platform === "linux")("recovers a verified same-host exited owner's lock without losing history", async (t) => {
         const dir = await temporary(t);
-        const child = runChild(dir, "exit", [record("before-crash")]);
-        assertCleanExit(child);
-        const original = await fs.readFile(path.join(dir, "decisions.jsonl"), "utf8");
+        assertCleanExit(runChild(dir, "exit", [record("before-crash")]));
+        const restored = new DecisionJournal(dir, journalOptions);
+        t.onTestFinished(() => restored.close());
+        await restored.append(record("after-recovery"));
+        expect((await restored.list()).map((entry) => entry.id)).toStrictEqual(["before-crash", "after-recovery"]);
+    });
+
+    it.runIf(process.platform === "linux")("serializes concurrent stale-lock recovery so only one writer can claim the directory", async (t) => {
+        const dir = await temporary(t);
+        assertCleanExit(runChild(dir, "exit", [record("before-crash")]));
+        const contenders = [new DecisionJournal(dir, journalOptions), new DecisionJournal(dir, journalOptions)];
+        t.onTestFinished(() => Promise.all(contenders.map((journal) => journal.close())));
+        const histories = await Promise.all(contenders.map((journal) => journal.list()));
+        expect(histories.map((history) => history.length).sort()).toEqual([0, 1]);
+        const winner = contenders[histories.findIndex((history) => history.length === 1)];
+        await winner.append(record("winner"));
+        expect((await winner.list()).map((entry) => entry.id)).toEqual(["before-crash", "winner"]);
+        expect(JSON.parse(await fs.readFile(path.join(dir, ".decisions.lock"), "utf8")).pid).toBe(process.pid);
+    });
+
+    it.for(["legacy", "foreign-host", "foreign-namespace", "malformed", "recovery-guard"])("does not reclaim an unverified %s lock", async (kind, t) => {
+        const dir = await temporary(t);
+        assertCleanExit(runChild(dir, "exit", [record("before-crash")]));
+        const lockPath = path.join(dir, ".decisions.lock");
+        const metadata = JSON.parse(await fs.readFile(lockPath, "utf8"));
+        if (kind === "legacy") await fs.writeFile(lockPath, JSON.stringify({ pid: metadata.pid }));
+        if (kind === "foreign-host") await fs.writeFile(lockPath, JSON.stringify({ ...metadata, hostname: `${hostname()}-elsewhere` }));
+        if (kind === "foreign-namespace") await fs.writeFile(lockPath, JSON.stringify({ ...metadata, pidNamespace: "pid:[different]" }));
+        if (kind === "malformed") await fs.writeFile(lockPath, "invalid");
+        if (kind === "recovery-guard") await fs.writeFile(path.join(dir, ".decisions.recovery.lock"), "occupied");
+        const originalLock = await fs.readFile(lockPath, "utf8");
+        const originalHistory = await fs.readFile(path.join(dir, "decisions.jsonl"), "utf8");
         const log = warnings();
         const blocked = new DecisionJournal(dir, journalOptions, log.warn);
         await blocked.append(record("blocked"));
         await blocked.close();
         expect(log.collected).toContainEqual(expect.stringMatching(staleLock));
-        expect(await fs.readFile(path.join(dir, "decisions.jsonl"), "utf8")).toBe(original);
-        // The child has exited and the rejected instance is closed, so reclaiming is safe.
-        await fs.unlink(path.join(dir, ".decisions.lock"));
-        const restored = new DecisionJournal(dir, journalOptions);
-        t.onTestFinished(() => restored.close());
-        expect((await restored.list()).map((entry) => entry.id)).toStrictEqual(["before-crash"]);
+        const reason = {
+            legacy: "旧版锁缺少主机或 PID 命名空间",
+            "foreign-host": "主机名不一致",
+            "foreign-namespace": process.platform === "linux" ? "PID 命名空间不同" : "当前环境无法读取 PID 命名空间",
+            malformed: "锁文件元数据无效或缺少 PID",
+            "recovery-guard": ".decisions.recovery.lock 已存在",
+        }[kind];
+        expect(log.collected).toContainEqual(expect.stringContaining(reason!));
+        expect(await fs.readFile(lockPath, "utf8")).toBe(originalLock);
+        expect(await fs.readFile(path.join(dir, "decisions.jsonl"), "utf8")).toBe(originalHistory);
     });
+});
+
+it("persists the actual score key independently of the conversation key", async (t) => {
+    const dir = await temporary(t);
+    const journal = new DecisionJournal(dir, journalOptions);
+    t.onTestFinished(() => journal.close());
+    await journal.append(record("score-scope", { scoreKey: '["channel","topic","a"]' }));
+    await journal.close();
+    const restored = new DecisionJournal(dir, journalOptions);
+    t.onTestFinished(() => restored.close());
+    expect((await restored.list({}))[0].scoreKey).toBe('["channel","topic","a"]');
 });

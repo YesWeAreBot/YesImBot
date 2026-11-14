@@ -61,6 +61,10 @@ async function fixture() {
     let beforeCreate = noop;
     let beforeGet = noopWithTable;
     const database = {
+        eval: async (table: string, _expression: unknown, query: any) => {
+            const selected = rows.get(table)!.filter((row) => matches(row, query));
+            return table === TableName.Messages ? selected.length : Math.max(0, ...selected.map((row) => row.sourceMessageCount ?? 0));
+        },
         get: async (table: string, query: any) => {
             queries.push({ table, query });
             const snapshot = rows
@@ -542,4 +546,115 @@ it("keeps diary primary keys distinct for ambiguous platform/channel tuples", as
     expect(second).toBeDefined();
     expect(second.id).not.toBe(first.id);
     expect(f.diaries()).toHaveLength(2);
+});
+
+it("aborts an in-flight diary request synchronously when its history is cleared", async () => {
+    const f = await fixture();
+    f.seedMessages();
+    const late = deferred<{ text: string }>();
+    let signal!: AbortSignal;
+    const entered = deferred();
+    f.model(async (args) => {
+        signal = args.abortSignal;
+        entered.resolve();
+        return late.promise;
+    });
+    const request = f.memory.generateDiaryForChannel("onebot", "same", day());
+    await entered.promise;
+    expect(signal).toBeDefined();
+    const clearing = f.semantic.clearHistory({ type: "all" }, async () => {});
+    expect(signal.aborted).toBe(true);
+    late.resolve({ text: "old response" });
+    await Promise.all([request, clearing]);
+    expect(f.diaries()).toEqual([]);
+});
+
+it("backs off automatic diary failures without delaying a manual retry", async () => {
+    const f = await fixture();
+    f.seedMessages();
+    let calls = 0;
+    f.model(async () => {
+        calls++;
+        throw new Error("provider unavailable");
+    });
+    await expect(f.memory.generateDiaryForChannel("onebot", "same", day(), undefined, true, true)).rejects.toThrow("provider unavailable");
+    await f.memory.generateDiaryForChannel("onebot", "same", day(), undefined, true, true);
+    expect(calls).toBe(1);
+    await expect(f.memory.generateDiaryForChannel("onebot", "same", day(), undefined, true)).rejects.toThrow("provider unavailable");
+    expect(calls).toBe(2);
+});
+
+it("backs off once per failed automatic task even when many messages await it", async () => {
+    const f = await fixture();
+    f.seedMessages();
+    f.config.l3_memory.messageThreshold = 1;
+    const warn = vi.spyOn(log, "warn");
+    let fail!: (error: Error) => void;
+    const remote = new Promise<{ text: string }>((_resolve, reject) => {
+        fail = reject;
+    });
+    const entered = deferred();
+    let calls = 0;
+    f.model(async () => {
+        calls++;
+        entered.resolve();
+        return remote;
+    });
+    try {
+        const message = { platform: "onebot", channelId: "same", timestamp: day() } as any;
+        const pending = Array.from({ length: 20 }, () => f.memory.observeMessage(message));
+        await entered.promise;
+        fail(new Error("upstream unavailable"));
+        await Promise.all(pending);
+        expect(calls).toBe(1);
+        expect(warn).toHaveBeenCalledOnce();
+        await f.memory.observeMessage(message);
+        expect(calls).toBe(1);
+        expect(warn).toHaveBeenCalledOnce();
+    } finally {
+        warn.mockRestore();
+    }
+});
+
+it("expires automatic failure cooldown, resets it on success, and clears it with history", async () => {
+    const f = await fixture();
+    f.seedMessages();
+    f.config.l3_memory.failureCooldownSeconds = 2;
+    f.config.l3_memory.failureMaxCooldownSeconds = 4;
+    const now = Date.now();
+    vi.setSystemTime(now);
+    let fails = true;
+    let calls = 0;
+    f.model(async () => {
+        calls++;
+        if (fails) throw new Error("unavailable");
+        return { text: "fresh diary" };
+    });
+    const automatic = () => f.memory.generateDiaryForChannel("onebot", "same", day(), undefined, true, true);
+    await expect(automatic()).rejects.toThrow("unavailable");
+    vi.setSystemTime(now + 1999);
+    await automatic();
+    expect(calls).toBe(1);
+    vi.setSystemTime(now + 2000);
+    await expect(automatic()).rejects.toThrow("unavailable");
+    vi.setSystemTime(now + 5999);
+    await automatic();
+    expect(calls).toBe(2);
+    vi.setSystemTime(now + 6000);
+    fails = false;
+    await automatic();
+    expect(calls).toBe(3);
+    f.diaries().splice(0);
+    fails = true;
+    await expect(automatic()).rejects.toThrow("unavailable");
+    expect(calls).toBe(4);
+    // Successful generation resets the exponential count: retry after the base 2s.
+    vi.setSystemTime(now + 8000);
+    await expect(automatic()).rejects.toThrow("unavailable");
+    expect(calls).toBe(5);
+    await f.clear({ all: "all" });
+    f.seedMessages();
+    fails = false;
+    await automatic();
+    expect(calls).toBe(6);
 });

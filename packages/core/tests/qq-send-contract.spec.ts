@@ -117,3 +117,10 @@ for (const family of ["legacy", "current", "crack"] as const) {
         expect(f.session["seq"]).toBe(2);
     });
 }
+
+it.each(["", "  ", "<sep/> <sep/>"])("treats an explicitly empty message as intentional silence (%j)", async (message) => {
+    const f = await fixture("current");
+    const result = await f.tool.sendMessage({ session: f.session, message } as any);
+    expect(result).toMatchObject({ status: "success", metadata: { intentionalSilence: true } });
+    expect(f.requests).toEqual([]);
+});
