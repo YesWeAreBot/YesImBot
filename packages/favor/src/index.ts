@@ -146,6 +146,7 @@ export default class FavorExtension {
 
     @Tool({
         name: "add_favor",
+        modelReplacement: "favor",
         description: "为指定用户增加或减少好感度",
         parameters: withInnerThoughts({
             user_id: Schema.string().required().description("要增加好感度的用户 ID"),
@@ -176,6 +177,7 @@ export default class FavorExtension {
 
     @Tool({
         name: "set_favor",
+        modelReplacement: "favor",
         description: "为指定用户直接设置好感度，结果限制在配置的最大好感度以内。",
         parameters: withInnerThoughts({
             user_id: Schema.string().required().description("要设置好感度的用户 ID"),
@@ -195,6 +197,22 @@ export default class FavorExtension {
             this.logger.error(`为用户 ${user_id} 设置好感度失败:`, error);
             return Failed(`为用户 ${user_id} 设置好感度失败：${error.message}`);
         }
+    }
+
+    @Tool({
+        name: "favor",
+        description: "调整或设置指定用户的好感度。action=adjust 时 amount 为变化量，action=set 时 amount 为目标值。",
+        supersedes: ["add_favor", "set_favor"],
+        actionAliases: { adjust: "add_favor", set: "set_favor" },
+        parameters: withInnerThoughts({
+            action: Schema.union(["adjust", "set"]).required(),
+            user_id: Schema.string().required().description("用户 ID"),
+            amount: Schema.number().required().description("adjust 时为变化量（可为负）；set 时为目标值"),
+        }),
+        isSupported: (session) => session.isDirect,
+    })
+    async favor(_args: Infer<{ action: "adjust" | "set"; user_id: string; amount: number }>) {
+        return Failed("请通过工具服务调用好感度操作");
     }
 
     // --- 私有辅助方法 ---

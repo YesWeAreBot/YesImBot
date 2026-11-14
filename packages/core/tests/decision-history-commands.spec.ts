@@ -30,6 +30,11 @@ it("limits history queries to the invoking session and validates time bounds", a
             return "saved events";
         },
     );
+    const current = handlers.get("chat.decision [limit:natural]");
+    expect(authorities.get("chat.decision [limit:natural]")).toBe(3);
+    expect(await current({ session, options: {} })).toBe("current");
+    expect(await current({ session, options: { trace: "trace-id" } })).toContain("--history");
+    expect(calls).toHaveLength(0);
     const handler = handlers.get("chat.decisions [limit:natural]");
     expect(typeof handler).toBe("function");
     expect(authorities.get("chat.decisions [limit:natural]")).toBe(3);
@@ -38,6 +43,8 @@ it("limits history queries to the invoking session and validates time bounds", a
     expect(await handler({ session, options: { from: "bad" } }, 10)).toContain("时间");
     expect(await handler({ session, options: {} }, 101)).toContain("1 到 100");
     expect(calls).toHaveLength(1);
+    expect(await current({ session, options: { history: true, trace: "trace-id" } }, 20)).toBe("saved events");
+    expect(calls[1]).toEqual([session, { limit: 20, from: undefined, to: undefined, traceId: "trace-id" }]);
 });
 
 it("validates and forwards an exact trace id without changing session scope", async () => {

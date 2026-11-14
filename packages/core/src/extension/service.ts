@@ -6,12 +6,13 @@ import { DEFAULT_BACKGROUND_TOOLS } from "../agent/config";
 import { assertReplyTurn, awaitReplyTurn, guardReplySession, replyTurnSignal, withReplyTurnGuard } from "../agent/reply-turn";
 import { Config } from "../config";
 import type { LoggerService } from "../logger";
+import { conversationLogPrefix, withConversationLog } from "../logger/conversation";
 import { PromptService } from "../prompt";
 import { sanitizeDiagnostic } from "../shared/diagnostic-sanitizer";
 import { normalizeAppError, fromAppError } from "../shared/errors";
 import { getInstanceDirectory, getInstanceScope } from "../shared/instance-scope";
 import { YesImBotService } from "../shared/service";
-import { isEmpty, stringify, truncate } from "../shared/utils";
+import { isEmpty, stringify } from "../shared/utils";
 import { conversationChannelId } from "../shared/utils/conversation-scope";
 import type { WorldStateService } from "../world";
 import { sessionChannelType } from "../world/channel-metadata";
@@ -33,6 +34,8 @@ const backgroundToolChoices = new WeakMap<object, Map<ToolService, ToolDefinitio
 function toolEventSummary(name: string, result: ToolCallResult): string {
     const operation = name.replace(/\p{Cc}/gu, "").slice(0, 128);
     const state = result.metadata?.execution?.timedOut ? "执行超时" : result.status === "success" ? "已返回成功回执" : "已返回失败回执";
+    if (name === "send_message" && result.status === "success" && result.metadata?.intentionalSilence === true)
+        return `工具 ${operation} 已结束发送动作，本次保持沉默。`;
     const delivery = result.metadata?.delivery;
     if (name !== "send_message" || !delivery) return `工具 ${operation} ${state}。`;
     const count = Array.isArray(delivery.messageIds) ? new Set(delivery.messageIds.filter((id: unknown) => typeof id === "string" && id.trim())).size : 0;
@@ -226,6 +229,7 @@ export class ToolService extends YesImBotService<Config> {
     }
 
     private registerCommands() {
+        const defaultToolPageSize = 5;
         this.ctx.command("tool", "工具管理指令集");
         this.ctx.command("extension", "扩展管理指令集");
 
@@ -233,11 +237,11 @@ export class ToolService extends YesImBotService<Config> {
             .command("tool.list", "列出所有可用工具", { authority: 3 })
             .option("filter", "-f <keyword:string> 按名称或描述过滤工具")
             .option("page", "--page <page:natural> 指定显示的页码 (默认为 1)", { fallback: 1 })
-            .option("size", "--size <size:natural> 指定每页显示的数量 (默认为 10)", { fallback: 5 })
+            .option("size", `--size <size:posint> 每页数量（默认 ${defaultToolPageSize}）`, { fallback: defaultToolPageSize })
             .usage(`查询并展示当前所有已加载且可用的工具。\n支持通过关键词过滤和分页显示，方便在工具数量多时进行查找。`)
             .example(
                 [
-                    "tool.list                      # 显示第一页的10个工具",
+                    `tool.list                      # 显示第一页的 ${defaultToolPageSize} 个工具`,
                     `tool.list -f search            # 查找所有名称或描述中包含 "search" 的工具`,
                     "tool.list --page 2 --size 5    # 显示第 2 页，每页 5 个工具",
                     `tool.list -f memory --size 3   # 查找 "memory" 相关工具并每页显示 3 个`,
@@ -263,7 +267,7 @@ export class ToolService extends YesImBotService<Config> {
 
                 // 4. 计算分页参数
                 const page = options.page ?? 1;
-                const size = options.size ?? 20;
+                const size = options.size ?? defaultToolPageSize;
                 const totalPages = Math.ceil(totalCount / size);
 
                 if (page > totalPages) {
@@ -346,7 +350,7 @@ export class ToolService extends YesImBotService<Config> {
             .command("extension.list", "列出所有已加载的扩展", { authority: 3 })
             .usage("查询并展示当前所有已成功加载的扩展及其描述")
             .example("extension.list")
-            .action(async ({ session }) => {
+            .action(() => {
                 const extensions = this.extensions;
                 if (extensions.size === 0) {
                     return "当前没有已加载的扩展";
@@ -357,33 +361,47 @@ export class ToolService extends YesImBotService<Config> {
                 return `发现 ${extensions.size} 个已加载的扩展：\n${extList}`;
             });
 
+        const extensionToggleUsage = "内置扩展更新当前实例的 extra 配置；外部扩展更新其自身插件配置。保存后重载对应插件并保留其他设置。";
+        const setExtensionState = async (session: Session | undefined, name: string, enabled: boolean) => {
+            if (!session) return "会话不可用";
+            if (!name) return "未指定扩展名称";
+            const operation = enabled ? "enable" : "disable";
+            const label = enabled ? "启用" : "禁用";
+            try {
+                // Prefer registered instances, including disabled builtins. Retain the
+                // module lookup for external extensions that export an instance.
+                const ext = this.knownExtensions.get(name) || (enabled ? ((await import(name)) as IExtension) : undefined);
+                if (!ext?.metadata?.name || !ext.ctx?.scope) return "扩展未找到或无法定位其插件配置";
+                const scope = ext.metadata.builtin ? this.ctx.scope : ext.ctx.scope;
+                const current = scope.config;
+                const data = ext.metadata.builtin
+                    ? { ...current, extra: { ...current.extra, [ext.metadata.name]: { ...current.extra?.[ext.metadata.name], enabled } } }
+                    : { ...current, enabled };
+                // Do not pass false: it saves but suppresses both update callbacks and reload.
+                scope.update(data);
+                await this.recordFrameworkChange(session, `extension.${operation}`, ext.metadata.name, "success");
+                return `${label}成功`;
+            } catch (error) {
+                return `${label}失败: ${error.message}`;
+            }
+        };
+
+        this.ctx
+            .command("extension.set <name:string> <state:string>", "启用或禁用扩展", { authority: 3 })
+            .usage(`状态：on 启用，off 禁用。${extensionToggleUsage}`)
+            .example("extension.set search on")
+            .action(({ session }, name, state) => {
+                if (state !== "on" && state !== "off") return "请将状态指定为 on 或 off。";
+                return setExtensionState(session, name, state === "on");
+            });
+
         for (const enabled of [true, false]) {
             const operation = enabled ? "enable" : "disable";
             const label = enabled ? "启用" : "禁用";
             this.ctx
-                .command(`extension.${operation} <name:string>`, `${label}扩展`, { authority: 3 })
-                .usage("内置扩展更新当前实例的 extra 配置；外部扩展更新其自身插件配置。保存后重载对应插件并保留其他设置。")
-                .action(async ({ session }, name) => {
-                    if (!session) return "会话不可用";
-                    if (!name) return "未指定扩展名称";
-                    try {
-                        // Prefer registered instances, including disabled builtins. Retain the
-                        // module lookup for external extensions that export an instance.
-                        const ext = this.knownExtensions.get(name) || (enabled ? ((await import(name)) as IExtension) : undefined);
-                        if (!ext?.metadata?.name || !ext.ctx?.scope) return "扩展未找到或无法定位其插件配置";
-                        const scope = ext.metadata.builtin ? this.ctx.scope : ext.ctx.scope;
-                        const current = scope.config;
-                        const data = ext.metadata.builtin
-                            ? { ...current, extra: { ...current.extra, [ext.metadata.name]: { ...current.extra?.[ext.metadata.name], enabled } } }
-                            : { ...current, enabled };
-                        // Do not pass false: it saves but suppresses both update callbacks and reload.
-                        scope.update(data);
-                        await this.recordFrameworkChange(session, `extension.${operation}`, ext.metadata.name, "success");
-                        return `${label}成功`;
-                    } catch (error) {
-                        return `${label}失败: ${error.message}`;
-                    }
-                });
+                .command(`extension.${operation} <name:string>`, `${label}扩展（也可用 extension.set）`, { authority: 3 })
+                .usage(extensionToggleUsage)
+                .action(({ session }, name) => setExtensionState(session, name, enabled));
         }
     }
 
@@ -611,6 +629,18 @@ export class ToolService extends YesImBotService<Config> {
     }
 
     public async invoke(functionName: string, params: Record<string, unknown>, session?: Session, toolContext?: ToolExecutionContext): Promise<ToolCallResult> {
+        const group = this.getTool(functionName, session, toolContext);
+        if (group?.actionAliases) {
+            let validated: Record<string, unknown>;
+            try {
+                validated = group.parameters(params);
+            } catch (error) {
+                return Failed(`Parameter validation failed: ${error.message}`);
+            }
+            const { action, ...operationParams } = validated;
+            if (typeof action !== "string" || !Object.hasOwn(group.actionAliases, action)) return Failed("指定动作在当前会话不可用");
+            return this.invoke(group.actionAliases[action], operationParams, session, toolContext);
+        }
         const scopedBackground = toolContext?.backgroundExecution || functionName.startsWith("background_task_");
         const startedAt = new Date(),
             requestId = randomUUID();
@@ -620,7 +650,8 @@ export class ToolService extends YesImBotService<Config> {
                 ? ToolService.prototype.captureOutputOwner.call(this, session)
                 : undefined;
         const definition = this.getTool(functionName, session);
-        let result = await this.executeInvocation(functionName, params, session, toolContext);
+        const run = () => this.executeInvocation(functionName, params, session, toolContext);
+        let result = await (conversationLogPrefix() ? run() : withConversationLog(session, toolContext?.requestId, run));
         if (session && functionName !== "tool_output_read" && result.status === "success" && result.result !== undefined) {
             try {
                 const text = JSON.stringify(result.result, (_key, value) => {
@@ -926,15 +957,15 @@ export class ToolService extends YesImBotService<Config> {
         session?: Session,
         toolContext?: ToolExecutionContext,
     ): Promise<ToolCallResult> {
-        const stringifyParams = stringify(validatedParams);
+        const startedAt = Date.now();
         const initiallyReadOnly = isReadOnlyTool(tool, validatedParams);
-        this._logger.info(`→ 调用: ${functionName} | 参数: ${stringifyParams}`);
+        this._logger.debug(`执行工具 · ${functionName}`);
         let lastResult: ToolCallResult = Failed("Tool call did not execute.");
 
         for (let attempt = 1; attempt <= (this.config.advanced?.maxRetry ?? 0) + 1; attempt++) {
             try {
                 if (attempt > 1) {
-                    this._logger.info(`  - 重试 (${attempt - 1}/${this.config.advanced?.maxRetry ?? 0})`);
+                    this._logger.debug(`工具 ${functionName} · 重试 ${attempt - 1}/${this.config.advanced?.maxRetry ?? 0}`);
                     let timer: ReturnType<typeof setTimeout>;
                     try {
                         await awaitReplyTurn(
@@ -954,21 +985,20 @@ export class ToolService extends YesImBotService<Config> {
                 const execute = () => tool.execute({ ...validatedParams, session, toolContext });
                 lastResult = (await (toolContext?.backgroundExecution ? execute() : awaitReplyTurn(execute))) || Failed("Tool call did not execute.");
                 assertReplyTurn();
-                const resultString = truncate(stringify(lastResult), 120);
-
                 if (lastResult.status === "success") {
-                    this._logger.success(`✔ 成功 ← 返回: ${resultString}`);
+                    this._logger.info(`工具 ${functionName} · 已返回成功回执 · ${Date.now() - startedAt}ms`);
                     return lastResult;
                 }
                 if (lastResult.error) {
                     if (!lastResult.error.retryable) {
-                        this._logger.warn(`✖ 失败 (不可重试) ← 原因: ${stringify(lastResult.error)}`);
+                        this._logger.warn(`工具 ${functionName} · 失败，未重试 · ${lastResult.error.code ?? lastResult.error.name}`);
                         return lastResult;
                     } else {
                         if (!initiallyReadOnly || !isReadOnlyTool(tool, validatedParams)) {
+                            this._logger.warn(`工具 ${functionName} · 失败，有副作用的操作不自动重试 · ${lastResult.error.code ?? lastResult.error.name}`);
                             return { ...lastResult, error: { ...lastResult.error, retryable: false } };
                         }
-                        this._logger.warn(`⚠ 读取失败 (可重试) ← 原因: ${lastResult.error}`);
+                        this._logger.debug(`工具 ${functionName} · 本次读取失败 · ${lastResult.error.code ?? lastResult.error.name}`);
                         continue;
                     }
                 } else {
@@ -983,7 +1013,7 @@ export class ToolService extends YesImBotService<Config> {
                 return lastResult;
             }
         }
-        this._logger.error(`✖ 失败 (耗尽重试) | 工具: ${functionName}`);
+        this._logger.error(`工具 ${functionName} · 已用完执行次数 · ${lastResult.error?.code ?? lastResult.error?.name ?? "未知错误"}`);
         return lastResult;
     }
 
@@ -998,20 +1028,36 @@ export class ToolService extends YesImBotService<Config> {
             if (typeof owner?.filter === "function" && !owner.filter(session)) return undefined;
             if (tool.isSupported && !tool.isSupported(session)) return undefined;
         }
+        if (tool.actionAliases && !Object.values(tool.actionAliases).every((name) => this.isActionAvailable(tool, name, session, toolContext)))
+            return undefined;
         return tool;
     }
 
-    public getAvailableTools(session?: Session, toolContext?: ToolExecutionContext): ToolDefinition[] {
+    private isActionAvailable(group: ToolDefinition, name: string, session?: Session, context?: ToolExecutionContext): boolean {
+        const operation = this.tools.get(name);
+        return (
+            !!operation &&
+            !operation.actionAliases &&
+            operation.modelReplacement === group.name &&
+            group.supersedes?.includes(name) === true &&
+            this.toolOwners.get(group.name)?.context === this.toolOwners.get(name)?.context &&
+            this.getTool(name, session, context) === operation
+        );
+    }
+
+    public getAvailableTools(session?: Session, toolContext?: ToolExecutionContext, audience?: "model"): ToolDefinition[] {
         if (this.schemaStopped) return [];
-        // 如果没有 session，无法进行过滤，返回所有工具
-        if (!session) {
-            return Array.from(this.tools.values()).filter((tool) => this.getTool(tool.name, session, toolContext) === tool);
-        }
-        // 如果有 session，则过滤出支持的工具
         return Array.from(this.tools.values())
             .filter((tool) => this.getTool(tool.name, session, toolContext) === tool)
+            .filter((tool) => {
+                if (audience !== "model" || !tool.modelReplacement) return true;
+                const replacement = this.getTool(tool.modelReplacement, session, toolContext);
+                return (
+                    !replacement?.supersedes?.includes(tool.name) || this.toolOwners.get(tool.name)?.context !== this.toolOwners.get(replacement.name)?.context
+                );
+            })
             .map((tool) =>
-                this.background && tool.background
+                session && this.background && tool.background
                     ? { ...tool, description: tool.description + " [Supports background_task_start for independent work.]" }
                     : tool,
             );
@@ -1038,8 +1084,8 @@ export class ToolService extends YesImBotService<Config> {
      * @param session 可选的会话对象
      * @returns 可用工具的 Schema 数组
      */
-    public getToolSchemas(session?: Session): ToolSchema[] {
-        return this.getAvailableTools(session).map(this._toolDefinitionToSchema);
+    public getToolSchemas(session?: Session, audience?: "model"): ToolSchema[] {
+        return this.getAvailableTools(session, undefined, audience).map(this._toolDefinitionToSchema);
     }
 
     /**

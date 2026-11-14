@@ -3,7 +3,9 @@ import { expect, it } from "vitest";
 import { AgentCore } from "../src/agent/agent-core";
 import { DecisionRecords } from "../src/agent/decision-record";
 import { ReplyControl } from "../src/agent/reply-control";
+import { StimulusScheduler } from "../src/agent/scheduler";
 import { WillingnessManager } from "../src/agent/willing";
+import { LogLevel, LoggerService } from "../src/logger";
 import { loggingStub, stubCtx } from "./helpers/yesimbot";
 
 function setup() {
@@ -51,6 +53,7 @@ function setup() {
         async () => {},
     );
     Object.defineProperty(core, "logger", {
+        configurable: true,
         value: { debug: (message: string) => logs.push(message), info: (message: string) => logs.push(message), warn: (message: string) => logs.push(message) },
     });
     Object.defineProperty(core, "ctx", { value: ctx });
@@ -116,8 +119,7 @@ it.each(["observe", "adjust"] as const)("records semantic results and applies th
     expect(record.calculation?.after).toBe(mode === "adjust" ? 18 : 12);
     t.core.queryDecision(t.session);
     expect(evaluations).toBe(1);
-    expect(t.logs.join("\n")).toContain(mode === "adjust" ? "实际应用: 1.500" : "实际应用: 1.000");
-    expect(t.logs.join("\n")).toContain(mode);
+    expect(t.logs.join("\n")).toContain(mode === "adjust" ? "TypeSafe 1.500（参与计分）" : "TypeSafe 1.500（仅观察）");
 });
 
 it("explains direct-message bypass without starting a semantic request", () => {
@@ -134,14 +136,14 @@ it("records suppression and muting without scheduling a reply", async () => {
     await t.core.replyControl.set(t.target, ["all"], 1000);
     t.core.receiveStimulus({ type: "user_message", session: t.session });
     expect(t.decisions.latest(t.target)?.reason).toBe("reply_suppressed");
-    expect(t.logs.join("\n")).toContain('"blocked":["all"]');
-    expect(t.logs.join("\n")).toContain('"expiresAt":');
+    expect(t.logs.join("\n")).toContain("管理员暂停回复 · 抑制类别 all");
     expect(t.logs.join("\n")).not.toContain("private-text-marker");
     expect(t.core.willing.getCurrentWillingness(JSON.stringify(["qq", "bot", "g"]))).toBe(0);
     await t.core.replyControl.resume(t.target);
     t.core.worldState.isBotMuted = () => true;
     t.core.receiveStimulus({ type: "user_message", session: t.session });
     expect(t.decisions.latest(t.target)?.reason).toBe("muted");
+    expect(t.logs.join("\n")).toContain("机器人被禁言");
     expect(t.scheduled).toHaveLength(0);
 });
 
@@ -341,4 +343,59 @@ it("fallback preserves unrelated topic scores and disabled topics use the ordina
     t.core.receiveStimulus({ type: "user_message", session: t.session });
     expect(t.decisions.latest(t.target)?.scoreKey).toBe(key);
     expect(t.decisions.latest(t.target)?.calculation?.before).toBe(0);
+});
+
+it("separates normal, muted, paused and busy group messages in interleaved logs", async () => {
+    const t = setup();
+    const ctx = stubCtx(
+        {},
+        {
+            logger: () => ({ debug: (line: string) => t.logs.push(line) }),
+            debounce: (run: (value: any) => unknown) => Object.assign((value: any) => run(value), { dispose() {} }),
+        },
+    );
+    const logging = new LoggerService(ctx, { logging: { level: LogLevel.DEBUG }, errorReporting: {} } as any);
+    Object.defineProperty(t.core, "logger", { value: logging.getLogger("agent") });
+    let release!: () => void;
+    const barrier = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    const scheduler = new StimulusScheduler(
+        ctx,
+        { debounceMs: 0, newMessageStrategy: "immediate" } as any,
+        async ({ session }) => {
+            if (session.messageId === "prior") await barrier;
+        },
+        logging,
+    );
+    t.core.scheduler = scheduler;
+    t.core.worldState.isBotMuted = (cid: string) => cid === "qq:b";
+    await t.core.replyControl.set({ ...t.target, channelId: "c" }, ["all"], 60_000);
+    const message = (channelId: string, messageId: string) => ({
+        ...t.session,
+        channelId,
+        messageId,
+        stripped: { atSelf: true },
+    });
+    t.core.config.prioritizeMentions = true;
+    try {
+        for (const [channelId, id] of [
+            ["d", "prior"],
+            ["a", "101"],
+            ["b", "102"],
+            ["c", "103"],
+            ["d", "104"],
+        ])
+            t.core.receiveStimulus({ type: "user_message", session: message(channelId, id) });
+
+        expect(t.logs.some((line) => /\[qq\/bot\/群聊 a\] \[消息 101\].*意愿.*提交调度/u.test(line))).toBe(true);
+        expect(t.logs.filter((line) => line.includes("[消息 102]"))).toEqual([expect.stringContaining("跳过意愿判定 · 机器人被禁言")]);
+        expect(t.logs.filter((line) => line.includes("[消息 103]"))).toEqual([expect.stringContaining("跳过意愿判定 · 管理员暂停回复")]);
+        expect(t.logs.some((line) => /\[qq\/bot\/群聊 d\] \[消息 104\].*回复正在执行 · 已排队/u.test(line))).toBe(true);
+        expect(t.logs.join("\n")).not.toMatch(/跳过辅助模型评估|private-text-marker/);
+    } finally {
+        scheduler.dispose();
+        release();
+        await logging.stop();
+    }
 });

@@ -140,7 +140,14 @@ for (const mode of ["native", "json", "stream"] as const) {
         expect(f.tools.getTool("conversation_read")?.readOnly).toBe(true);
         expect(f.tools.getTool("conversation_search")?.readOnly).toBe(true);
         expect(f.tools.getTool("conversation_state_read")?.readOnly).toBe(true);
-        expect(f.tools.getTool("memory_recall")?.readOnly).toBeUndefined();
+        const recall = f.tools.getTool("memory_recall")?.readOnly;
+        expect(typeof recall).toBe("function");
+        if (typeof recall === "function") {
+            expect(recall({})).toBe(true);
+            expect(recall({ display: false })).toBe(true);
+            expect(recall({ display: true })).toBe(false);
+            expect(recall({ display: "false" })).toBe(false);
+        }
         expect(await f.run()).toBe(true);
         expect(reads).toBe(1);
         expect(f.invoked).toEqual(["send_message"]);
@@ -149,3 +156,23 @@ for (const mode of ["native", "json", "stream"] as const) {
         expect(f.seen[1][0].error.message).toContain("history unavailable");
     });
 }
+
+it("offers one history search in the model catalog while preserving old calls and fallback discovery", async () => {
+    const { default: MemoryExtension } = await import("../src/extension/builtin/memory");
+    const f = setup("native", [], 3);
+    const session = { platform: "test", channelId: "group" } as any;
+    const calls: unknown[] = [];
+    f.ctx.yesimbot = {
+        tool: f.tools,
+        world: { recallContext: async (_session, options) => (calls.push(options), { records: [] }) },
+    };
+    const extension = new MemoryExtension(f.ctx, {});
+    for (const definition of (extension as any).tools.values()) f.tools.registerTool(definition);
+    expect(f.tools.getAvailableTools(session, undefined, "model").map(({ name }) => name)).toContain("memory_recall");
+    expect(f.tools.getToolSchemas(session, "model").map(({ name }) => name)).not.toContain("conversation_search");
+    expect(f.tools.getToolSchemas(session).map(({ name }) => name)).toContain("conversation_search");
+    expect((await f.tools.invoke("conversation_search", { query: "quote" }, session)).status).toBe("success");
+    expect(calls).toEqual([{ kind: "messages", query: "quote", limit: 10, offset: 0, userId: undefined }]);
+    f.tools.unregisterTool("memory_recall");
+    expect(f.tools.getToolSchemas(session, "model").map(({ name }) => name)).toContain("conversation_search");
+});

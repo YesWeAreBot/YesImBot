@@ -216,3 +216,21 @@ it.each(["ordinary reply", '<tool_call>{"function":"send_message"}</tool_call>']
         expect(errors).not.toContain("不是有效的 JSON");
     },
 );
+
+it("ends a native turn silently without executing a tool or retrying", async () => {
+    const f = setup([{ toolCalls: [call("end_turn_without_reply", {})] }]);
+    expect(await f.run()).toBe(false);
+    expect(f.requests).toHaveLength(1);
+    expect(f.invoke).not.toHaveBeenCalled();
+    expect(f.logger.error).not.toHaveBeenCalled();
+});
+
+it("rejects silence mixed with a real action before any side effect", async () => {
+    const f = setup([
+        { toolCalls: [call("end_turn_without_reply", {}, "silent"), call("send_message", { message: "discard" }, "send")] },
+        { toolCalls: [call("end_turn_without_reply", {}, "corrected")] },
+    ]);
+    expect(await f.run()).toBe(false);
+    expect(f.requests).toHaveLength(2);
+    expect(f.invoke).not.toHaveBeenCalled();
+});

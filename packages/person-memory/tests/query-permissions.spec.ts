@@ -229,6 +229,12 @@ for (const shared of [false, true]) {
         // Koishi's real parser preserves the greedy text argument verbatim;
         // execute the registered action against the real database.
         await command._actions[0]({ session: f.session, options: {} } as any, ...argv.args!);
+        const canonical = f.app.$commander.get("people.edit")!;
+        document.preferences.push("第二项");
+        const unified = canonical.parse(Argv.parse(`--format json u ${JSON.stringify(document)}`));
+        expect(unified.options?.format).toBe("json");
+        expect(unified.args?.[1]).toBe(JSON.stringify(document));
+        await canonical._actions[0]({ session: f.session, options: unified.options } as any, ...unified.args!);
         const structured = (await f.store.find(f.scope, f.ref))!.person;
         expect(structured.structuredProfile?.preferences).toEqual(document.preferences);
         expect(structured.profile).toContain(document.preferences[0]);

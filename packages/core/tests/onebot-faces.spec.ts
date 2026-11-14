@@ -117,3 +117,14 @@ it("does not fetch detached replies or overwrite a body changed by another plugi
     session.platform = "discord";
     expect(await normalizeOneBotMessageContent(session, '<face id="1"/>')).toBe('<face id="1"/>');
 });
+
+it("deduplicates the bridge's Markdown projection while preserving a quote and a matching structured mention", async () => {
+    const quote = '<quote id="source"/>';
+    const markdown = '<markdown content="[@name](mqqapi://markdown/mention?at_type=1&amp;at_tinyid=123) hello"/>';
+    const plain = '<at id="123"/> hello';
+    expect(await normalizeOneBotMessageContent({ platform: "onebot" } as any, quote + markdown + plain)).toBe(quote + plain);
+    for (const content of [markdown, markdown + '<at id="456"/> hello', markdown + '<at id="123"/> different', markdown + plain + '<img src="test"/>']) {
+        expect(await normalizeOneBotMessageContent({ platform: "onebot" } as any, content)).toBe(content);
+    }
+    expect(await normalizeOneBotMessageContent({ platform: "qq" } as any, markdown + plain)).toBe(markdown + plain);
+});

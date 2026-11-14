@@ -11,6 +11,7 @@ const numberFields = new Set([
     "retryCount",
     "retryAfterMs",
     "timeoutMs",
+    "timeoutSeconds",
     "durationMs",
     "elapsedMs",
     "headersMs",
@@ -65,6 +66,7 @@ export function summarizeContext(value: unknown): Record<string, unknown> {
             const type = item.split(";", 1)[0].trim().toLowerCase();
             if (["application/json", "text/event-stream", "text/plain"].includes(type)) summary[key] = type;
         } else if (key === "finishReason" && ["stop", "length", "tool_calls", "function_call", "content_filter"].includes(item as string)) summary[key] = item;
+        else if (key === "emptyOutput" && ["reasoning_only", "blank_text", "no_output_frames", "no_frames"].includes(item as string)) summary[key] = item;
         else if (containerFields.has(key)) summary[key] = summarizeContext(item);
     }
     return summary;

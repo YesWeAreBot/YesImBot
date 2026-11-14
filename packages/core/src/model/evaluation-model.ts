@@ -3,6 +3,7 @@ import { Context } from "koishi";
 import type { LoggerService } from "../logger";
 import { BaseModel, formatModelIdentity } from "./base-model";
 import { ModelConfig } from "./config";
+import { modelReportRequestId, observeModelReportRequest, withModelConversationReport } from "./conversation-capture";
 import { evaluateQuestions, EvaluationQuestions, EvaluationRequestOptions, EvaluationResult } from "./evaluation-client";
 import { observeUsageFetch } from "./usage";
 import type { UsageOwner } from "./usage-owner";
@@ -21,6 +22,9 @@ export class EvaluationModel extends BaseModel {
     }
 
     public evaluate<Q extends EvaluationQuestions>(state: unknown, questions: Q, signal?: AbortSignal, timeoutMs = 3000): Promise<EvaluationResult<Q>> {
-        return evaluateQuestions(this.provider(this.id), { state, questions }, { signal, timeoutMs, fetch: this.fetch });
+        return withModelConversationReport(
+            { requestId: modelReportRequestId("evaluation"), provider: this.config.providerName, model: this.id, purpose: "评估" },
+            () => evaluateQuestions(this.provider(this.id), { state, questions }, { signal, timeoutMs, fetch: observeModelReportRequest(this.fetch) }),
+        );
     }
 }

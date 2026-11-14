@@ -1,4 +1,4 @@
-import { Context, Schema, h, type Session } from "koishi";
+import { Context, Schema, h, type Command, type Session } from "koishi";
 
 import { DirectoryStore, registerModels, type OneBotClient, type Query } from "./store";
 
@@ -50,6 +50,14 @@ function onebot(session: Session) {
     if (session.platform !== "onebot" || !session.bot?.internal) throw new Error("此功能只适用于 OneBot 会话");
     return session.bot as unknown as OneBotClient;
 }
+
+const addQueryOptions = <A extends unknown[]>(command: Command<never, never, A>) =>
+    command
+        .option("query", "-q <query:string> 按账号、昵称或群名模糊搜索")
+        .option("offset", "-o <offset:natural> 跳过条数")
+        .option("limit", "-n <limit:natural> 返回条数（默认 50）")
+        .option("all", "--all 返回完整名单")
+        .option("refresh", "-r 强制刷新");
 
 export function apply(ctx: Context, config: Config) {
     if (!config.enabled) return;
@@ -165,46 +173,50 @@ export function apply(ctx: Context, config: Config) {
         modelUsage.clear();
     });
 
-    ctx.command("onebot.contacts", "查询或刷新 OneBot 好友和群成员名单", { authority: 3 });
-    function command(kind: Query["kind"]) {
-        return ctx
-            .command(`onebot.contacts.${kind}`, kind === "friends" ? "查询好友名单" : kind === "groups" ? "查询已加入的群" : "查询群成员名单", { authority: 3 })
-            .option("groupId", "-g <groupId:string> 指定群号")
-            .option("query", "-q <query:string> 按账号、昵称或群名模糊搜索")
-            .option("offset", "-o <offset:natural> 跳过人数")
-            .option("limit", "-n <limit:natural> 返回人数（默认 50）")
-            .option("all", "--all 返回完整名单")
-            .option("refresh", "-r 强制刷新")
-            .action(async ({ session, options }) => {
-                if (!session || !options) return h.text("会话不可用");
-                try {
-                    if (kind === "groups" && !session.isDirect) throw new Error("群列表只能在管理员私聊中查询");
-                    const result = await store.query(onebot(session), {
-                        kind,
-                        groupId: groupId(session, options.groupId),
-                        query: options.query,
-                        offset: options.offset,
-                        limit: options.limit,
-                        all: options.all,
-                        refresh: options.refresh,
-                    });
-                    const unit = kind === "groups" ? "个群" : "人";
-                    const header = `${kind === "friends" ? "好友" : kind === "groups" ? "已加入的群" : `群 ${result.groupId} 成员`}：${result.total} ${unit}；本次 ${result.returned} ${unit}；缓存于 ${new Date(result.fetchedAt).toLocaleString()}（来源机器人 ${result.sourceBotId}）`;
-                    const lines = result.entries.map(
-                        (item, i) =>
-                            `${result.offset + i + 1}. ${item.userId} ${item.card || item.remark || item.nickname}${item.role ? ` (${item.role})` : ""}`,
-                    );
-                    if (!lines.length) return h.text(header);
-                    // Avoid a single huge platform message when --all is used.
-                    for (let i = 0; i < lines.length; i += 40) {
-                        await session.send(h.text(`${i === 0 ? header + "\n" : ""}${lines.slice(i, i + 40).join("\n")}`));
-                    }
-                } catch (error) {
-                    return h.text(`查询 OneBot 名单失败：${String(error)}`);
-                }
+    async function queryContacts(session: Session | undefined, kind: Query["kind"], options: Omit<Query, "kind"> = {}) {
+        if (!session) return h.text("会话不可用");
+        try {
+            if (kind === "groups" && !session.isDirect) throw new Error("群列表只能在管理员私聊中查询");
+            const result = await store.query(onebot(session), {
+                kind,
+                groupId: groupId(session, options.groupId),
+                query: options.query,
+                offset: options.offset,
+                limit: options.limit,
+                all: options.all,
+                refresh: options.refresh,
             });
+            const unit = kind === "groups" ? "个群" : "人";
+            const header = `${kind === "friends" ? "好友" : kind === "groups" ? "已加入的群" : `群 ${result.groupId} 成员`}：${result.total} ${unit}；本次 ${result.returned} ${unit}；缓存于 ${new Date(result.fetchedAt).toLocaleString()}（来源机器人 ${result.sourceBotId}）`;
+            const lines = result.entries.map(
+                (item, i) => `${result.offset + i + 1}. ${item.userId} ${item.card || item.remark || item.nickname}${item.role ? ` (${item.role})` : ""}`,
+            );
+            if (!lines.length) return h.text(header);
+            // Avoid a single huge platform message when --all is used.
+            for (let i = 0; i < lines.length; i += 40) {
+                await session.send(h.text(`${i === 0 ? header + "\n" : ""}${lines.slice(i, i + 40).join("\n")}`));
+            }
+        } catch (error) {
+            return h.text(`查询 OneBot 名单失败：${String(error)}`);
+        }
     }
-    command("friends");
-    command("members");
-    command("groups");
+
+    addQueryOptions(ctx.command("onebot.contacts [kind:string]", "查询或刷新 OneBot 好友、群列表和群成员名单", { authority: 3 }))
+        .option("groupId", "-g <groupId:string> 指定群号，仅用于 members")
+        .action(({ session, options }, kind) => {
+            if (kind !== "friends" && kind !== "groups" && kind !== "members")
+                return h.text("请指定名单类型：friends 好友、groups 已加入的群（管理员私聊）、members 群成员。群成员可用 -g 指定群号。");
+            if (options?.groupId !== undefined && kind !== "members") return h.text("-g 仅用于查询群成员（members）。");
+            return queryContacts(session, kind, options);
+        });
+
+    for (const [kind, description] of [
+        ["friends", "查询好友名单"],
+        ["members", "查询群成员名单"],
+        ["groups", "查询已加入的群"],
+    ] as const) {
+        addQueryOptions(ctx.command(`onebot.contacts.${kind}`, description, { authority: 3 }))
+            .option("groupId", kind === "members" ? "-g <groupId:string> 指定群号" : "-g <groupId:string> 旧参数，仅 members 使用群号")
+            .action(({ session, options }) => queryContacts(session, kind, options));
+    }
 }

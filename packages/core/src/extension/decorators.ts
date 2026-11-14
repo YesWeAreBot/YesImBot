@@ -129,6 +129,9 @@ export function Tool<TParams>(metadata: ToolMetadata<TParams>) {
             name: metadata.name || propertyKey,
             description: metadata.description,
             parameters: metadata.parameters,
+            modelReplacement: metadata.modelReplacement,
+            supersedes: metadata.supersedes,
+            actionAliases: metadata.actionAliases,
             execute: descriptor.value,
             isSupported: metadata.isSupported,
             background: metadata.background,
@@ -167,7 +170,7 @@ export function Tool<TParams>(metadata: ToolMetadata<TParams>) {
 
 export function withInnerThoughts(params: { [T: string]: Schema<any> }): Schema<any> {
     return Schema.object({
-        inner_thoughts: Schema.string().description("Deep inner monologue private to you only."),
+        inner_thoughts: Schema.string().hidden(),
         ...params,
     });
 }

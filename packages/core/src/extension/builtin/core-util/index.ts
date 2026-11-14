@@ -5,6 +5,7 @@ import { AssetService } from "../../../asset";
 import { Extension, Tool, withInnerThoughts } from "../../../extension/decorators";
 import { Failed, Success } from "../../../extension/helpers";
 import { Infer } from "../../../extension/types";
+import { formatLogTarget } from "../../../logger/conversation";
 import { IChatModel } from "../../../model";
 import { withUsageScope } from "../../../model/usage";
 import { MessageDeliveryError, type ConfirmedMessage } from "../../../shared/message-delivery";
@@ -81,25 +82,38 @@ export default class CoreUtilExtension {
             return Failed("缺少会话对象");
         }
 
+        if (typeof message !== "string") return Failed("message 必须是字符串");
         const messages = message.split("<sep/>").filter((msg) => msg.trim() !== "");
         if (messages.length === 0) {
-            this.logger.warn("💬 待发送内容为空 | 原因: 消息分割后无有效内容");
-            return Failed("消息内容为空");
+            this.logger.debug("空消息 · 本轮保持沉默");
+            return Success(undefined, { intentionalSilence: true });
         }
 
         const delivery = { messageIds: [] as string[], sentMessages: 0, totalMessages: messages.length, inFlight: false, deliveryUnknown: false };
         const publish = () => args.toolContext?.reportMetadata?.({ delivery });
         publish();
+        let destination: string | undefined;
         try {
             const { bot, channelId, channel, userId, guild } = await this.determineTarget(session, target, self_id, target_type, guild_id);
 
+            destination = formatLogTarget({
+                platform: bot.platform,
+                selfId: bot.selfId,
+                channelId,
+                guildId: guild?.id ?? (bot === session.bot && channelId === session.channelId ? session.guildId : undefined),
+                isDirect: channel?.type === Universal.Channel.Type.DIRECT || (bot === session.bot && channelId === session.channelId && session.isDirect),
+            });
             await this.sendMessagesWithHumanLikeDelay(messages, bot, channelId, session, channel, userId, guild, delivery, publish);
 
             publish();
+            this.logger.info(`发送目标 ${destination} · 适配器已确认 ${delivery.messageIds.length} 条消息`);
             return Success(undefined, { delivery });
         } catch (error) {
             const partial = delivery.messageIds.length > 0;
             publish();
+            this.logger.warn(
+                `发送目标 ${destination ?? "未解析"} · ${partial ? `已确认 ${delivery.messageIds.length} 条消息，未完成全部发送` : delivery.deliveryUnknown ? "发送结果未知" : "发送失败"}`,
+            );
             return Failed(
                 {
                     name: partial ? "PartialDeliveryError" : "ToolError",
@@ -400,7 +414,7 @@ export default class CoreUtilExtension {
                     : msg;
             const content = await this.assetService.encode(quoted);
 
-            this.logger.debug(`发送消息 | 延迟: ${Math.round(delay)}ms`);
+            this.logger.debug(`发送第 ${i + 1}/${messages.length} 段 · 等待 ${Math.round(delay)}ms`);
 
             await sleep(delay);
 

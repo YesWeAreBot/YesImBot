@@ -47,7 +47,7 @@ it("does not consume allowance after missing resource metadata", async () => {
 it("does not consume allowance after resource read failure", async () => {
     const f = setup();
     f.asset.read.mockRejectedValueOnce(new Error("unavailable"));
-    await expect(f.build()).rejects.toThrow("unavailable");
+    expect(await f.build()).toBe("prompt");
     expect(Array.isArray(await f.build())).toBe(true);
 });
 it("allows quoted source images after the allowance is exhausted", async () => {
@@ -99,3 +99,14 @@ it.each(["performSingleHeartbeat", "performSingleHeartbeatWithStreaming", "perfo
         expect(await f.build()).toBe("prompt");
     },
 );
+
+it("keeps healthy images when a selected image cannot be decoded", async () => {
+    const f = setup();
+    const world = state();
+    world.l1_working_memory.new_events[0].elements = h.parse('<img id="broken"/><img id="img"/>');
+    f.asset.getInfo.mockImplementation(async (id) => ({ id, mime: "image/png" }));
+    f.asset.read.mockRejectedValueOnce(new Error("decode error"));
+    const result = await f.build(world);
+    expect(f.asset.read).toHaveBeenCalledTimes(2);
+    expect(f.builder.getAttachedImageIds([{ role: "user", content: result }] as any)).toEqual(["img"]);
+});

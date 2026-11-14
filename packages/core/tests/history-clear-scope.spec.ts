@@ -20,6 +20,7 @@ async function fixture() {
     roots.push(root);
     const files = ["qq/private_alice.agent.jsonl", "qq/group.agent.jsonl", "onebot/private_bob.agent.jsonl", "onebot/group.agent.jsonl"];
     const removals: any[] = [];
+    const reads: any[] = [];
     const actions = new Map<string, Function>();
     const logger = { info() {}, error() {}, warn() {} };
     // src 依据 HISTORY_CHANNELS 表判定频道类型（history.clear -a 与 Agent 日志归属保护）。
@@ -49,8 +50,10 @@ async function fixture() {
             logger,
             command,
             database: {
-                get: async (table: string, query: { channelType?: string } = {}) =>
-                    (table === HISTORY_CHANNELS ? channels : []).filter((row) => !query.channelType || row.channelType === query.channelType),
+                get: async (table: string, query: { channelType?: string } = {}) => {
+                    reads.push({ table, query });
+                    return (table === HISTORY_CHANNELS ? channels : []).filter((row) => !query.channelType || row.channelType === query.channelType);
+                },
                 remove: async (table: string, query: any) => {
                     removals.push({ table, query });
                     return { removed: 1 };
@@ -75,7 +78,8 @@ async function fixture() {
             () => true,
             () => false,
         );
-    return { manager, invoke, exists, files, removals, logRoot };
+    const count = (options: any) => actions.get("history.count")!({ session: { platform: "qq", channelId: "group" }, options });
+    return { manager, invoke, count, exists, files, reads, removals, logRoot };
 }
 
 for (const type of ["private", "guild", "all"]) {
@@ -158,4 +162,40 @@ it("channel cleanup reports retained legacy rows instead of claiming the whole f
     expect(result).toContain("有 1 条归属不明的旧记录已保留");
     expect(result).not.toContain("Agent日志文件已删除");
     expect(await fs.readFile(path.join(logRoot, "qq/private_alice.agent.jsonl"), "utf8")).toBe('{"type":"agent_thought"}\n');
+});
+
+it.each([{ platform: "onebot" }, { channel: "group" }, { target: "onebot:group" }])(
+    "rejects a bulk clear combined with a target selector (%o)",
+    async (selector) => {
+        const { invoke, exists, files, removals } = await fixture();
+        expect(await invoke({ all: "all", ...selector })).toContain("不能与");
+        expect(removals).toHaveLength(0);
+        expect(await Promise.all(files.map(exists))).toEqual(files.map(() => true));
+    },
+);
+
+it.each([
+    [{ platform: "onebot" }, "-p 需要与 -c"],
+    [{ target: "onebot:group", platform: "qq" }, "-t 不能与"],
+    [{ target: "onebot:group", channel: "group" }, "-t 不能与"],
+    [{ target: "onebot:" }, "目标格式"],
+] as const)("rejects ambiguous history targets in count and clear (%o)", async (selector, reason) => {
+    const { invoke, count, exists, files, reads, removals } = await fixture();
+    expect(await count(selector)).toContain(reason);
+    expect(await invoke(selector)).toContain(reason);
+    expect(reads).toHaveLength(0);
+    expect(removals).toHaveLength(0);
+    expect(await Promise.all(files.map(exists))).toEqual(files.map(() => true));
+});
+
+it("validates the entire clear target list before deleting any conversation", async () => {
+    const { invoke, removals } = await fixture();
+    expect(await invoke({ target: "onebot:group,qq:" })).toContain("目标格式");
+    expect(removals).toHaveLength(0);
+});
+
+it("clears repeated targets only once", async () => {
+    const { invoke, removals } = await fixture();
+    await invoke({ target: "onebot:group,onebot:group" });
+    expect(removals.map(({ query }) => query)).toEqual(Array.from({ length: 4 }, () => ({ platform: "onebot", channelId: "group" })));
 });

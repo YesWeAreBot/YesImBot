@@ -20,7 +20,7 @@ it("missing embedding assignment is left unset without an embedding provider", (
     );
     s.validateConfig();
     expect(s.config.task.embed).toBeUndefined();
-    expect(logs.join("\n")).toContain("嵌入");
+    expect(logs.join("\n")).not.toContain("嵌入");
 });
 it("embedding fallback selects a capable group instead of the first chat group", () => {
     const { s } = service(

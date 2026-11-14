@@ -59,6 +59,7 @@ export class LocalLogWriter {
             return Promise.resolve();
         }
         this.queuedBytes += bytes;
+        let operation = "创建日志目录";
         this.tail = this.tail
             .then(async () => {
                 await fs.mkdir(this.directory, { recursive: true });
@@ -67,17 +68,20 @@ export class LocalLogWriter {
                     this.bytes = 0;
                     this.lastCleanup = 0;
                 }
+                operation = "写入日志";
                 await fs.appendFile(path.join(this.directory, this.file), line, { encoding: "utf8", mode: 0o600 });
                 this.bytes += bytes;
                 if (Date.now() - this.lastCleanup > 60000) {
+                    operation = "清理旧日志";
                     await this.cleanup();
                     this.lastCleanup = Date.now();
                 }
             })
-            .catch(() => {
+            .catch((error: NodeJS.ErrnoException) => {
                 this.file = "";
                 this.bytes = 0;
-                this.warning("本地日志写入失败，请检查日志目录权限和磁盘空间");
+                const code = typeof error?.code === "string" && /^[A-Z0-9_]{1,40}$/.test(error.code) ? ` · ${error.code}` : "";
+                this.warning(`本地日志 · ${operation}失败${code}`);
             })
             .finally(() => {
                 this.queuedBytes -= bytes;

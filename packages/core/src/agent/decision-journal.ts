@@ -299,7 +299,7 @@ export class DecisionJournal {
         } catch (error) {
             if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
         }
-        let owner = "归属未知";
+        let owner = "无法确认锁归属";
         const guardPath = path.join(this.directory, ".decisions.recovery.lock");
         let guard: FileHandle | undefined;
         try {
@@ -311,6 +311,7 @@ export class DecisionJournal {
                 file = await open(this.lockPath, constants.O_RDONLY | constants.O_NOFOLLOW);
                 const stat = await file.stat();
                 if (stat.isFile() && stat.size <= 1024) {
+                    owner = "锁文件元数据无效或缺少 PID";
                     const metadata = JSON.parse(await file.readFile("utf8"));
                     const { pid } = metadata;
                     if (Number.isSafeInteger(pid) && pid > 0) {
@@ -328,6 +329,17 @@ export class DecisionJournal {
                                     identity.pidNamespace &&
                                     metadata.hostname === identity.hostname &&
                                     metadata.pidNamespace === identity.pidNamespace;
+                                if (exited && !verified) {
+                                    const why =
+                                        !metadata.hostname || !metadata.pidNamespace
+                                            ? "旧版锁缺少主机或 PID 命名空间"
+                                            : metadata.hostname !== identity.hostname
+                                              ? "主机名不一致"
+                                              : !identity.pidNamespace
+                                                ? "当前环境无法读取 PID 命名空间"
+                                                : "PID 命名空间不同";
+                                    owner = `PID=${pid}，本地未见该进程，但无法验证遗留锁：${why}`;
+                                }
                                 if (verified) {
                                     const current = await lstat(this.lockPath);
                                     if (current.isFile() && !current.isSymbolicLink() && current.dev === stat.dev && current.ino === stat.ino) {
@@ -336,11 +348,12 @@ export class DecisionJournal {
                                         this.warning("已安全恢复同主机、同进程命名空间中已退出进程的决策记录锁。");
                                         return true;
                                     }
+                                    owner = `PID=${pid}，检查期间锁文件已变化`;
                                 }
                             }
                         }
                     }
-                }
+                } else owner = "锁文件类型或大小异常";
             } finally {
                 await file?.close();
             }
@@ -348,6 +361,10 @@ export class DecisionJournal {
             // Once acquired, initialization failures must reach the cleanup path.
             if (this.lock) throw error;
             // Unknown/legacy/unsafe locks and racing acquisitions remain read-only.
+            if (!guard && error.code === "EEXIST") owner = "恢复锁 .decisions.recovery.lock 已存在，其他进程正在恢复或上一次恢复被中断";
+            else if (error.code === "ELOOP") owner = "锁路径为符号链接，未读取该文件";
+            else if (error.code === "ENOENT") owner = "检查期间锁文件已变化";
+            else if (error.code === "EACCES" || error.code === "EPERM") owner = "没有检查锁文件的权限";
         } finally {
             if (guard) {
                 await guard.close();
@@ -355,7 +372,7 @@ export class DecisionJournal {
             }
         }
         this.warning(
-            `决策记录目录被锁定 | ${owner} | 本实例的持久化记录与查询不可用，普通回复继续。多实例请分别配置目录；遗留锁仅在停止所有实例后手动清理 .decisions.lock。`,
+            `决策记录目录被锁定 | ${owner} | 本实例的持久化记录与查询不可用，普通回复继续。多实例请分别配置目录；遗留锁仅在停止所有实例后手动清理 .decisions.lock 与确认遗留的 .decisions.recovery.lock。`,
         );
         return false;
     }

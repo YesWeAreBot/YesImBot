@@ -201,7 +201,7 @@ for (const type of ["private", "guild", "all"]) {
         const old = [message("p", "onebot", "private:u"), message("g", "onebot", "group"), message("other", "discord", "private:u")];
         f.rows.get(TableName.Messages)!.push(...old);
         for (const value of old) await f.memory.addMessageToBuffer(value);
-        await f.clear({ all: type, platform: "onebot" });
+        await f.clear({ all: type });
         await f.memory.flushBuffer("private:u");
         await f.memory.flushBuffer("group");
         const want = type === "private" ? ["g"] : type === "guild" ? ["p", "other"] : [];

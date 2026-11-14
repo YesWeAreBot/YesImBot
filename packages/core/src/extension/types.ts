@@ -59,6 +59,12 @@ export interface ToolExecutionContext {
 }
 
 export interface ToolMetadata<TParams> {
+    /** Keep the old invocation available when a replacement from the same owner is advertised. */
+    modelReplacement?: string;
+    /** Model catalog aliases this tool is designed to replace. */
+    supersedes?: readonly string[];
+    /** Dispatch an explicit action through an existing, independently authorized tool. */
+    actionAliases?: Readonly<Record<string, string>>;
     /** Explicit opt-in for independent background reads; sends and mutations remain serial. */
     background?: boolean;
     /** Explicitly safe to give failed reads back to the model for another bounded decision. */
@@ -77,6 +83,10 @@ export interface ToolMetadata<TParams> {
  * 完整的工具定义，包含了元数据和可执行函数。
  */
 export interface ToolDefinition<TParams = any> {
+    modelReplacement?: string;
+    supersedes?: readonly string[];
+    /** Dispatch an explicit action through an existing, independently authorized tool. */
+    actionAliases?: Readonly<Record<string, string>>;
     background?: boolean;
     /** Explicitly safe to give failed reads back to the model for another bounded decision. */
     readOnly?: boolean | ((params: Record<string, unknown>) => boolean);

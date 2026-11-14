@@ -5,14 +5,15 @@ import * as core from "koishi-plugin-yesimbot";
 import { conversationChannelId } from "koishi-plugin-yesimbot";
 
 import { PeopleCatalog } from "./catalog";
-import { claimParameters, executeClaimTool, visibleClaims } from "./claim-tools";
-import { describePeopleCommand } from "./command-help";
+import { executeClaimTool, visibleClaims } from "./claim-tools";
+import { describePeopleCommand, parsePeopleProfile } from "./command-help";
 import { escapeContext } from "./context";
 import { ContinuityStore, registerContinuityModels, sourceRef, summaryUnsafeIn, type RecallTarget } from "./continuity";
 import { PersonHistoryReset, readPersonAction } from "./history-reset";
 import type { Config, Dependencies } from "./index";
+import { personToolContract } from "./person-tool-schema";
 import { mainProfilePolicy } from "./profile-prompt";
-import { catalogParameters, catalogProfile, catalogRequest, profileInputSchema, visibleProfile, visibleLegacyProfile } from "./profile-tools";
+import { catalogProfile, catalogRequest, visibleProfile, visibleLegacyProfile } from "./profile-tools";
 import { personSnapshotGuard } from "./snapshot-guard";
 import { summarySourceAllowed } from "./source-policy";
 import { PersonStore, accountRef, mindScope, registerModels, sceneKey, type Audit, type Mode, type SceneInput } from "./store";
@@ -559,37 +560,8 @@ export function applySharedMemory(ctx: Context, config: Config) {
     const personTool = {
         name: "person_memory",
         readOnly: readPersonAction,
-        description:
-            "共同域人物记忆。claims 列出逐条认识，claim_evidence 读取原始证据，propose_claim 补证/反证/修订/停用；有逐条认识后不能整段覆盖。list 列出可查询人物；read_many 用 account_ids 多选或 all=true 全选，fields 选 overview/structured/full，cursor 继续分页。read/search/history 查资料；propose 提交画像；propose_link 提交账号关联。review 等管理员确认，auto 可自动接受；锁定、暂停与版本校验始终生效。account_id 可为当前平台 ID、人物 UUID 或 JSON [平台,ID]；消息证据使用当前场景消息 ID，跨场景证据使用 people.sources 或 read 返回的来源编号。",
+        ...personToolContract(true),
         isSupported: readable,
-        parameters: Schema.object({
-            action: Schema.union([
-                "list",
-                "read_many",
-                "read",
-                "search",
-                "history",
-                "propose",
-                "propose_link",
-                "claims",
-                "claim_evidence",
-                "propose_claim",
-            ]).required(),
-            account_id: Schema.string(),
-            query: Schema.string(),
-            profile: profileInputSchema(),
-            ...catalogParameters(),
-            ...claimParameters(),
-            offset: Schema.natural(),
-            message_ids: Schema.array(Schema.string()),
-            person_id: Schema.string(),
-            person_revision: Schema.number(),
-            account_revision: Schema.number(),
-            target_person_id: Schema.string(),
-            target_revision: Schema.number(),
-            confidence: Schema.number(),
-            reason: Schema.string(),
-        }),
         execute: async (args: any) => {
             try {
                 const session = args.session as Session;
@@ -859,14 +831,12 @@ export function applySharedMemory(ctx: Context, config: Config) {
         return `画像版本 ${found.person.revision}\n${JSON.stringify(found, null, 2)}`;
     });
     command("people.create <name:text>", "建立共同人物档案", async (s, w, scope, [name]) => w.create(scope, name, actor(s)));
-    command("people.edit <ref:string> <profile:text>", "人工纠正完整画像", async (s, w, scope, [ref, profile]) =>
-        w.setProfile(scope, refOf(s, ref), profile, actor(s)),
+    command("people.edit <ref:string> <profile:text>", "人工纠正完整画像", async (s, w, scope, [ref, profile], options) =>
+        w.setProfile(scope, refOf(s, ref), parsePeopleProfile(profile, options?.format), actor(s)),
     );
-    command("people.edit_json <ref:string> <profile:text>", "人工纠正完整结构画像（JSON）", async (s, w, scope, [ref, profile]) => {
-        const document = JSON.parse(profile);
-        if (!document || typeof document !== "object" || Array.isArray(document)) throw new Error("请提供完整结构画像 JSON 对象");
-        return w.setProfile(scope, refOf(s, ref), document, actor(s));
-    });
+    command("people.edit_json <ref:string> <profile:text>", "人工纠正完整结构画像（也可用 people.edit --format json）", async (s, w, scope, [ref, profile]) =>
+        w.setProfile(scope, refOf(s, ref), parsePeopleProfile(profile, "json"), actor(s)),
+    );
     command("people.rename <ref:string> <name:text>", "修改共同称呼", async (s, w, scope, [ref, name]) => w.rename(scope, refOf(s, ref), name, actor(s)));
     command("people.clear <ref:string>", "清空画像，保留来源与审计", async (s, w, scope, [ref]) => w.setProfile(scope, refOf(s, ref), "", actor(s)));
     command("people.bind <account:string> <target:string> [confidence:number]", "纠正账号归属", async (s, w, scope, [account, target, confidence = 1]) =>

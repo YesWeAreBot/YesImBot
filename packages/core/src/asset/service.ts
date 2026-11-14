@@ -61,7 +61,9 @@ export class AssetService extends YesImBotService<Config> {
     }
 
     // 缓存和常量
-    private static readonly PROCESSED_IMAGE_CACHE_SUFFIX = ".p.jpeg";
+    // Older cache entries may contain original or corrupt data marked as JPEG.
+    private static readonly PROCESSED_IMAGE_CACHE_SUFFIX = ".p.v2.jpeg";
+    private static readonly LEGACY_IMAGE_CACHE_SUFFIX = ".p.jpeg";
     private static readonly MAX_COMPRESSION_ATTEMPTS = 5; // 压缩图片时的最大尝试次数
 
     private logger: Logger;
@@ -285,32 +287,35 @@ export class AssetService extends YesImBotService<Config> {
         const asset = await this._getAssetWithUpdate(id);
         if (!asset) throw new Error(`数据库中找不到资源: ${id}`);
 
-        let finalBuffer: Buffer;
         const shouldProcess = options.image?.process && asset.mime.startsWith("image/");
-        const cacheId = id + AssetService.PROCESSED_IMAGE_CACHE_SUFFIX;
-
-        if (shouldProcess && (await this.cacheStorage.exists(cacheId))) {
-            this.logger.debug(`命中处理后图片缓存: ${cacheId}`);
-            finalBuffer = await this.cacheStorage.read(cacheId);
-        } else {
-            const originalBuffer = await this._readOriginalWithRecovery(id, asset);
-            if (shouldProcess) {
-                this.logger.debug(`无缓存，开始实时处理图片: ${id}`);
-                finalBuffer = await this._processImage(originalBuffer, asset.mime);
-                await this.cacheStorage.write(cacheId, finalBuffer);
-                this.logger.debug(`处理结果已缓存: ${cacheId}`);
-            } else {
-                finalBuffer = originalBuffer;
+        let finalBuffer: Buffer | undefined;
+        let outputMime = asset.mime;
+        if (shouldProcess) {
+            const cacheId = id + AssetService.PROCESSED_IMAGE_CACHE_SUFFIX;
+            if (await this.cacheStorage.exists(cacheId)) {
+                const cached = await this.cacheStorage.read(cacheId).catch(() => undefined);
+                if (cached && getMimeType(cached) === "image/jpeg" && cached.at(-2) === 0xff && cached.at(-1) === 0xd9) {
+                    finalBuffer = cached;
+                    outputMime = "image/jpeg";
+                    this.logger.debug(`命中处理后图片缓存: ${cacheId}`);
+                }
             }
+            if (!finalBuffer) {
+                const original = await this._readOriginalWithRecovery(id, asset);
+                finalBuffer = await this._processImage(original, asset.mime);
+                outputMime = getMimeType(finalBuffer);
+                if (outputMime === "image/jpeg") {
+                    await this.cacheStorage.write(cacheId, finalBuffer).catch(() => this.logger.debug(`无法写入处理后图片缓存: ${cacheId}`));
+                }
+            }
+        } else {
+            finalBuffer = await this._readOriginalWithRecovery(id, asset);
         }
 
-        const { format = "buffer" } = options;
-        switch (format) {
+        switch (options.format) {
             case "base64":
                 return finalBuffer.toString("base64");
             case "data-url":
-                // 处理后的图片统一为 webp 或 jpeg，需要确定MIME
-                const outputMime = shouldProcess ? "image/jpeg" : asset.mime;
                 return `data:${outputMime};base64,${finalBuffer.toString("base64")}`;
             default:
                 return finalBuffer;
@@ -542,33 +547,18 @@ export class AssetService extends YesImBotService<Config> {
     }
 
     private async _processImage(buffer: Buffer, mime: string): Promise<Buffer> {
-        try {
-            if (mime === "image/gif") {
-                try {
-                    // 验证是否为有效的GIF
-                    const gif = await GifUtil.read(buffer);
-
-                    if (this.config.image.gifProcessingStrategy === "stitch") {
-                        return await this._processGifStitch(buffer);
-                    }
-                    if (this.config.image.gifProcessingStrategy === "firstFrame") {
-                        return await this._processGifFirstFrame(gif);
-                    }
-                } catch (gifError) {
-                    this.logger.warn(`GIF处理失败，将按静态图片处理: ${gifError.message}`);
-                    // 如果GIF处理失败，按普通图片处理
-                    return await this._compressAndResizeImage(buffer);
-                }
-                // `gifProcessingStrategy` 为 'none' 或其他值，不处理
+        if (mime === "image/gif") {
+            try {
+                const gif = await GifUtil.read(buffer);
+                if (this.config.image.gifProcessingStrategy === "stitch") return await this._processGifStitch(gif);
+                if (this.config.image.gifProcessingStrategy === "firstFrame") return await this._processGifFirstFrame(gif);
+                // Legacy configurations may explicitly retain the original GIF.
                 return buffer;
+            } catch {
+                this.logger.debug("GIF 处理失败，尝试静态图片解码");
             }
-
-            return await this._compressAndResizeImage(buffer);
-        } catch (error) {
-            this.logger.error(`图片处理失败: ${error.message}`);
-            // 如果处理失败，返回原始buffer
-            return buffer;
         }
+        return this._compressAndResizeImage(buffer);
     }
 
     private async _compressAndResizeImage(buffer: Buffer): Promise<Buffer> {
@@ -636,19 +626,13 @@ export class AssetService extends YesImBotService<Config> {
 
     /**
      * 处理GIF动图，提取关键帧并拼接成静态图
-     * @param buffer
-     * @returns
      */
-    private async _processGifStitch(buffer: Buffer): Promise<Buffer> {
+    private async _processGifStitch(gif: Awaited<ReturnType<typeof GifUtil.read>>): Promise<Buffer> {
         const { gifFramesToExtract, targetSize } = this.config.image;
-
-        // 使用gifwrap读取GIF
-        const gif = await GifUtil.read(buffer);
         const totalFrames = gif.frames.length;
 
         if (totalFrames <= 1) {
-            // 如果是静态GIF，按普通图片处理
-            return this._compressAndResizeImage(buffer);
+            return this._processGifFirstFrame(gif);
         }
 
         // 限制最大帧数，防止内存溢出
@@ -793,7 +777,7 @@ export class AssetService extends YesImBotService<Config> {
             try {
                 await this.storage.delete(asset.id);
                 // 同时删除可能存在的处理后缓存
-                await this.cacheStorage.delete(asset.id + AssetService.PROCESSED_IMAGE_CACHE_SUFFIX).catch(() => {});
+                await this._deleteProcessedImageCache(asset.id);
                 deletedFileCount++;
             } catch (error) {
                 if (error.code !== "ENOENT") {
@@ -804,6 +788,12 @@ export class AssetService extends YesImBotService<Config> {
         }
 
         const { removed } = await this.ctx.database.remove(TableName.Assets, { lastUsedAt: { $lt: cutoffDate } });
+    }
+
+    private async _deleteProcessedImageCache(id: string): Promise<void> {
+        await Promise.allSettled(
+            [AssetService.PROCESSED_IMAGE_CACHE_SUFFIX, AssetService.LEGACY_IMAGE_CACHE_SUFFIX].map((suffix) => this.cacheStorage.delete(id + suffix)),
+        );
     }
 
     private async _clearOrphanedFiles() {
@@ -824,7 +814,7 @@ export class AssetService extends YesImBotService<Config> {
             (file) => path.join(this.ctx.baseDir, this.config.storagePath, file) !== path.join(this.ctx.baseDir, this.config.image.processedCachePath),
         )) {
             // 跳过处理后的缓存文件
-            if (fileName.endsWith(AssetService.PROCESSED_IMAGE_CACHE_SUFFIX)) {
+            if ([AssetService.PROCESSED_IMAGE_CACHE_SUFFIX, AssetService.LEGACY_IMAGE_CACHE_SUFFIX].some((suffix) => fileName.endsWith(suffix))) {
                 continue;
             }
 
@@ -838,7 +828,7 @@ export class AssetService extends YesImBotService<Config> {
                     await this.storage.delete(fileId);
 
                     // 删除可能存在的处理后缓存
-                    await this.cacheStorage.delete(fileId + AssetService.PROCESSED_IMAGE_CACHE_SUFFIX).catch(() => {});
+                    await this._deleteProcessedImageCache(fileId);
 
                     deletedOrphanedCount++;
                 } catch (error) {

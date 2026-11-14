@@ -220,7 +220,7 @@ export class InteractionManager {
 
     // --- 数据库系统 ---
 
-    public async recordMessage(message: MessageData): Promise<void> {
+    public async recordMessage(message: MessageData): Promise<"stored" | "duplicate" | "failed"> {
         try {
             if (message.channelType)
                 await this.ctx.database.upsert(HISTORY_CHANNELS, [
@@ -231,13 +231,16 @@ export class InteractionManager {
                     },
                 ]);
             await this.ctx.database.create(TableName.Messages, message);
+            return "stored";
         } catch (error) {
             if (error?.code === "duplicate-entry" || /^UNIQUE constraint failed: worldstate\.messages\./.test(error?.message || "")) {
-                this.logger.warn(`存在重复的消息记录: ${message.id} | 若此问题持续发生，考虑开启忽略自身消息`);
-                return;
+                this.logger.debug(`历史记录已存在 · ${message.platform}:${message.channelId} · 消息 ${message.id}`);
+                return "duplicate";
             }
-            this.logger.error(`记录消息到数据库失败 | 消息ID: ${message.id} | Error: ${error.message}`);
+            const code = typeof error?.code === "string" && /^[\w.-]{1,60}$/.test(error.code) ? error.code : "UNKNOWN";
+            this.logger.error(`写入消息历史失败 · ${message.platform}:${message.channelId} · 消息 ${message.id} · ${code}`);
             this.logger.debug(error);
+            return "failed";
         }
     }
 

@@ -87,6 +87,19 @@ for (const shared of [false, true]) {
         const result = await f.tool.execute({ session: f.session, action: "read_many", all: true, account_ids: ["u"] });
         expect(result.status).toBe("error");
     });
+    it(`${shared ? "shared" : "scene"} describes the inputs for each action with the same flat parameters`, async (t) => {
+        const { tool } = await setup(t, shared);
+        const { parameters } = tool;
+        expect(parameters.type).toBe("object");
+        expect(Object.keys(parameters.dict).filter((key) => parameters.dict[key].meta.required)).toEqual(["action"]);
+        expect(tool.description).toContain("claim_evidence(account_id, claim_id, [offset, limit])");
+        expect(tool.description).toContain("propose_claim(account_id, person_id, person_revision, account_revision, changes)");
+        expect(parameters.dict.query.meta.description).toContain("search");
+        expect(parameters.dict.query.meta.description).toContain("list");
+        expect(parameters.dict.message_ids.meta.description).toContain(shared ? "来源编号" : "当前场景");
+        expect(parameters({ action: "read_many", cursor: "next-page" }).cursor).toBe("next-page");
+        expect(parameters({ action: "propose", profile: "旧画像" }).profile).toBe("旧画像");
+    });
     it(`${shared ? "shared" : "scene"} accepts an atomic structured candidate and returns synchronized fields and overview`, async (t) => {
         const f = await setup(t, shared);
         await f.app.parallel("yesimbot/before-user-stimulus" as any, {

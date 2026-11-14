@@ -64,7 +64,7 @@ export class SemanticMemoryManager {
         } catch {
             this.embedModel = null;
         }
-        if (!this.embedModel) this.logger.warn("未找到任何可用的嵌入模型，记忆功能将受限");
+        if (!this.embedModel && this.config.l2_memory.enabled) this.logger.warn("L2 未配置可用嵌入模型 · 使用关键词与来源检索");
     }
 
     public stop(): Promise<void> {
@@ -319,7 +319,6 @@ export class SemanticMemoryManager {
                 this.logger.warn(`L2 嵌入检索失败，降级为有界关键词检索: ${error instanceof Error ? error.message : String(error)}`);
             }
         }
-        if (!this.embedModel && options.platform && options.channelId) this.logger.warn("L2 无可用嵌入模型，使用有界关键词/来源检索");
         const keywordChunks = await recallKeywordCandidates(this.ctx.database, queryText, options);
         if (!vector && !keywordChunks.length) return [];
         const semanticChunks = vector

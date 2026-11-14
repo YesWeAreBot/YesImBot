@@ -358,6 +358,7 @@ export interface AgentStimulus<T> {
     session: Session;
     priority: number;
     payload: T;
+    reportTrace?: import("../logger/conversation-report").ConversationReportTrace;
 }
 
 // #endregion

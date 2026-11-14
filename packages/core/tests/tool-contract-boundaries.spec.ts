@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { Schema } from "koishi";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 
 import { ToolService } from "../src/extension/service";
 import { loggingStub } from "./helpers/yesimbot";
@@ -48,6 +48,37 @@ it("enforces registration owner filters for discovery and execution", async () =
     expect(tools.getToolSchemas(session).map((tool) => tool.name)).toEqual(["owned"]);
     expect((await tools.invoke("owned", {}, session)).status).toBe("success");
     expect(calls).toBe(1);
+});
+
+it("advertises grouped operations only while their original tools are authorized and dispatches through those tools", async () => {
+    const { tools, session } = await fixture();
+    const set = vi.fn(async () => ({ status: "success" }));
+    const remove = vi.fn(async () => ({ status: "success" }));
+    const parameters = Schema.object({ message_id: Schema.string().required() });
+    tools.registerTool({ name: "essence_create", description: "set", parameters, execute: set, modelReplacement: "essence" });
+    tools.registerTool({ name: "essence_delete", description: "remove", parameters, execute: remove, modelReplacement: "essence" });
+    tools.registerTool({
+        name: "essence",
+        description: "set or remove",
+        supersedes: ["essence_create", "essence_delete"],
+        actionAliases: { set: "essence_create", remove: "essence_delete" },
+        parameters: Schema.object({ action: Schema.union(["set", "remove"]).required(), message_id: Schema.string().required() }),
+        execute: async () => {
+            throw new Error("must dispatch through original tool");
+        },
+    });
+    const catalog = () => tools.getAvailableTools(session, undefined, "model").map((tool) => tool.name);
+    expect(catalog()).toEqual(["essence"]);
+    expect((await tools.invoke("essence", { message_id: "001" }, session)).status).toBe("error");
+    expect((await tools.invoke("essence", { action: "set", message_id: "001" }, session)).status).toBe("success");
+    expect(set).toHaveBeenCalledWith(expect.objectContaining({ message_id: "001" }));
+    expect(remove).not.toHaveBeenCalled();
+    tools.unregisterTool("essence_create");
+    expect(catalog()).toEqual(["essence_delete"]);
+    expect((await tools.invoke("essence", { action: "set", message_id: "001" }, session)).status).toBe("error");
+    expect(set).toHaveBeenCalledTimes(1);
+    expect((await tools.invoke("essence_delete", { message_id: "001" }, session)).status).toBe("success");
+    expect(remove).toHaveBeenCalledTimes(1);
 });
 it("bounds an ordinary tool, aborts its signal and never retries a timed out side effect", async () => {
     const { tools, session } = await fixture(15);

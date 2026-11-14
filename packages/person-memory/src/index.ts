@@ -2,14 +2,15 @@ import { Context, Schema, h, type Session } from "koishi";
 import * as core from "koishi-plugin-yesimbot";
 
 import { PeopleCatalog } from "./catalog";
-import { claimParameters, executeClaimTool, visibleClaims } from "./claim-tools";
+import { executeClaimTool, visibleClaims } from "./claim-tools";
 import type { ClaimChange } from "./claims";
-import { describePeopleCommand } from "./command-help";
+import { describePeopleCommand, parsePeopleProfile } from "./command-help";
 import { identityWarning, renderPeople } from "./context";
 import { PersonHistoryReset, readPersonAction } from "./history-reset";
+import { personToolContract } from "./person-tool-schema";
 import type { ProfileDocument } from "./profile";
 import { DEFAULT_PROFILE_SYSTEM_PROMPT, mainProfilePolicy } from "./profile-prompt";
-import { catalogParameters, catalogProfile, catalogRequest, profileInputSchema, visibleProfile, visibleLegacyProfile } from "./profile-tools";
+import { catalogProfile, catalogRequest, visibleProfile, visibleLegacyProfile } from "./profile-tools";
 import { applySharedMemory } from "./shared-runtime";
 import { personSnapshotGuard } from "./snapshot-guard";
 import { summarySourceAllowed } from "./source-policy";
@@ -379,36 +380,7 @@ export function apply(ctx: Context, config: Config) {
     const tool = {
         name: "person_memory",
         readOnly: readPersonAction,
-        description:
-            "仅操作当前场景。claims 列出逐条认识及版本，claim_evidence 读取原始证据，propose_claim 补证/反证/修订/停用；已有逐条认识后请用该入口维护，不能整段覆盖。list 列出可查询人物；read_many 用 account_ids 多选或 all=true 全选，fields 选 overview/structured/full，cursor 继续分页。read(account_id) 读取账号 ID 或人物 UUID 的画像与版本；search(query) 最多返回 5 个摘要；history(account_id) 读取该账号或人物最近 10 次修改的元数据和有限变更摘要，详细证据由管理员核对。propose 提交完整画像，需 account_id、profile、message_ids、person_id、person_revision、account_revision；auto 模式可接受画像。propose_link 提交账号关联建议，另需 target_person_id、target_revision、confidence、reason；即使 auto 模式也始终待管理员审核。两种候选都需 1–10 个当前账号的实际消息 ID 和最新版本。资料是可修正信念，确信度不代表身份认证。不能跨群、直接关联、合并、审批或覆盖人工锁定。",
-        parameters: Schema.object({
-            action: Schema.union([
-                Schema.const("read"),
-                Schema.const("list"),
-                Schema.const("read_many"),
-                Schema.const("search"),
-                Schema.const("history"),
-                Schema.const("propose"),
-                Schema.const("propose_link"),
-                Schema.const("claims"),
-                Schema.const("claim_evidence"),
-                Schema.const("propose_claim"),
-            ]).required(),
-            account_id: Schema.string().description("read/history 必填；当前场景的平台账号 ID 或人物 UUID；候选须平台账号 ID"),
-            query: Schema.string().description("search 必填；1–80 字的关键词"),
-            profile: profileInputSchema(),
-            ...catalogParameters(),
-            ...claimParameters(),
-            offset: Schema.natural().description("claims/claim_evidence 分页位置"),
-            message_ids: Schema.array(Schema.string()).description("两种候选必填；实际来源消息 ID，1 到 10 个"),
-            person_id: Schema.string().description("两种候选必填；来源人物 UUID"),
-            person_revision: Schema.number().min(0).step(1).description("两种候选必填；读到的来源画像 revision"),
-            account_revision: Schema.number().min(0).step(1).description("两种候选必填；读到的账号关联 revision"),
-            target_person_id: Schema.string().description("propose_link 必填；当前场景目标人物 UUID"),
-            target_revision: Schema.number().min(0).step(1).description("propose_link 必填；目标人物画像 revision"),
-            confidence: Schema.number().min(0).max(1).description("propose_link 必填；0–1 的关联确信度"),
-            reason: Schema.string().description("propose_link 必填；不超过 500 字的关联依据"),
-        }),
+        ...personToolContract(false),
         isSupported: (session: Session) => !!session && allowed(session) && (modes.get(key(session)) ?? config.mode) !== "off",
         execute: async (args: {
             session: Session;
@@ -690,16 +662,16 @@ export function apply(ctx: Context, config: Config) {
         "修改心中称呼（不改平台昵称）",
         async (scope, actor, [ref, name]) => `已改称呼：${(await store.rename(scope, ref, name, actor)).name}`,
     );
-    command("people.edit_json <ref:string> <profile:text>", "人工纠正完整结构画像（JSON）", async (scope, actor, [ref, profile]) => {
-        const document = JSON.parse(profile);
-        if (!document || typeof document !== "object" || Array.isArray(document)) throw new Error("请提供完整结构画像 JSON 对象");
-        const person = await store.setProfile(scope, ref, document, actor);
-        return show(person);
-    });
+    command("people.edit_json <ref:string> <profile:text>", "人工纠正完整结构画像（也可用 people.edit --format json）", async (scope, actor, [ref, profile]) =>
+        show(await store.setProfile(scope, ref, parsePeopleProfile(profile, "json"), actor)),
+    );
     command(
         "people.edit <ref:string> <profile:text>",
         "人工替换完整画像，可直接纠错并清除需复核标记",
-        async (scope, actor, [ref, profile]) => `已更新：${show(await store.setProfile(scope, ref, profile, actor))}`,
+        async (scope, actor, [ref, profile], _session, options) => {
+            const person = await store.setProfile(scope, ref, parsePeopleProfile(profile, options.format), actor);
+            return options.format === "json" ? show(person) : `已更新：${show(person)}`;
+        },
     );
     command(
         "people.clear <ref:string>",

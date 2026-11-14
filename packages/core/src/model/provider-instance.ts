@@ -7,6 +7,7 @@ import { BaseModel } from "./base-model";
 import { ChatModel, IChatModel } from "./chat-model";
 import { ModelAbility, ModelConfig, ProviderConfig } from "./config";
 import { ContextLimitResult, contextMetadataURL, parseContextLimit, readContextLimitMetadata } from "./context-limit";
+import { observeModelReportTransport } from "./conversation-capture";
 import { EmbedModel, IEmbedModel } from "./embed-model";
 import { EvaluationModel } from "./evaluation-model";
 import { IProviderClient } from "./factories";
@@ -35,7 +36,7 @@ export class ProviderInstance {
 
         if (isNotEmpty(this.config.proxy)) {
             this.fetch = (async (input: any, init: any) => {
-                this.logger.debug(`🌐 使用代理 | 地址: ${this.config.proxy}`);
+                this.logger.debug("使用已配置的模型代理");
                 init = { ...init, dispatcher: new ProxyAgent(this.config.proxy!) };
                 return ufetch(input as any, init as any);
             }) as unknown as typeof globalThis.fetch;
@@ -43,7 +44,7 @@ export class ProviderInstance {
             this.fetch = ufetch as unknown as typeof globalThis.fetch;
         }
 
-        this.fetch = createNativeFetch(config, this.fetch);
+        this.fetch = createNativeFetch(config, observeModelReportTransport(this.fetch));
 
         // this.logger.info(`[初始化] 🔌 提供商实例已创建`);
     }

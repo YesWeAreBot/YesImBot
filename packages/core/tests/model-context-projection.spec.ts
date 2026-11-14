@@ -217,3 +217,38 @@ it("retains unmatched external receipts and matches repeated tool operations onl
     expect(text).toContain("FIRST_LOOKUP_RESULT");
     expect(text).not.toContain("RAW_TRANSPORT_DIAGNOSTIC");
 });
+
+it("projects textual tool definitions only into the JSON fallback request", async () => {
+    const logging = loggingStub();
+    const ctx = stubCtx({});
+    const prompt = new PromptService(ctx, {} as any, logging);
+    prompt.registerTemplate("agent.system", "{{#TOOL_DEFINITION}}TEXT_TOOL={{name}}{{/TOOL_DEFINITION}}");
+    prompt.registerTemplate("agent.user", "question");
+    const processor = new HeartbeatProcessor(ctx, { nativeToolCalling: true, contextInputBudgetTokens: 0 } as any, {
+        logging,
+        prompt,
+        model: {} as any,
+        tool: { getAvailableTools: () => [] } as any,
+        l1: {} as any,
+        world: {} as any,
+        contextBuilder: {
+            build: async () => ({
+                toolSchemas: [{ name: "lookup", description: "read", parameters: [] }],
+                memoryBlocks: [],
+                worldState: {
+                    channel: { platform: "mock", id: "room" },
+                    self: { id: "bot" },
+                    l1_working_memory: { processed_events: [], new_events: [] },
+                },
+            }),
+            buildMultimodalUserMessage: async (text: string) => text,
+        } as any,
+    });
+    const request = await (processor as any)._prepareLlmRequest({
+        type: "user_message",
+        session: { platform: "mock", selfId: "bot", channelId: "room", userId: "user" },
+        payload: { messageIds: [] },
+    });
+    expect(request.messages[0].content).not.toContain("TEXT_TOOL");
+    expect(request.fallbackMessages[0].content).toContain("TEXT_TOOL=lookup");
+});

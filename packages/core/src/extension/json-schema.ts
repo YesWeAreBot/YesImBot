@@ -9,13 +9,13 @@ export function toolJSONSchema(schema: Schema): Record<string, any> {
     switch (schema.type) {
         case "transform":
             break;
-        case "object":
+        case "object": {
+            const fields = Object.entries(schema.dict || {}).filter(([, value]) => !value.meta.hidden);
             result.type = "object";
-            result.properties = Object.fromEntries(Object.entries(schema.dict || {}).map(([key, value]) => [key, toolJSONSchema(value)]));
-            result.required = Object.entries(schema.dict || {})
-                .filter(([, value]) => value.meta.required)
-                .map(([key]) => key);
+            result.properties = Object.fromEntries(fields.map(([key, value]) => [key, toolJSONSchema(value)]));
+            result.required = fields.filter(([, value]) => value.meta.required).map(([key]) => key);
             break;
+        }
         case "array":
             result.type = "array";
             result.items = schema.inner ? toolJSONSchema(schema.inner) : {};

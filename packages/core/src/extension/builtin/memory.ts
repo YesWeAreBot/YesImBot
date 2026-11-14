@@ -106,6 +106,7 @@ export default class MemoryExtension {
 
     @Tool({
         name: "conversation_search",
+        modelReplacement: "memory_recall",
         readOnly: true,
         description:
             "Searches your raw conversation history (recall memory). Useful for finding specific keywords, names, or direct quotes from past conversations.",
@@ -213,8 +214,10 @@ export default class MemoryExtension {
 
     @Tool({
         name: "memory_recall",
+        supersedes: ["conversation_search"],
+        readOnly: (params) => params.display === undefined || params.display === false,
         description:
-            "分页读取当前频道原始消息、L2 摘要或 L3 日记并提供完整原文；不裁正文。返回 hasMore 时用 nextOffset 继续。display 仅控制是否同时发送到聊天窗口，结果始终作为观察提供给你。",
+            "用 kind=messages 和 query 在当前会话搜索原始消息，或选择 l2 摘要、l3 日记。返回完整原文，hasMore 时用 nextOffset 继续。只有 display=true 会同时向聊天窗口发送原文。",
         parameters: withInnerThoughts({
             kind: Schema.union(["messages", "l2", "l3"]).default("l3"),
             id: Schema.string().description("可选：按召回记录 ID 读取完整条目"),

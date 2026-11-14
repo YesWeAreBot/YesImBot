@@ -1,5 +1,15 @@
 import type { Command } from "koishi";
 
+import type { ProfileDocument } from "./profile";
+
+export function parsePeopleProfile(profile: string, format = "text"): string | ProfileDocument {
+    if (format === "text") return profile;
+    if (format !== "json") throw new Error("画像格式应为 text 或 json");
+    const document = JSON.parse(profile);
+    if (!document || typeof document !== "object" || Array.isArray(document)) throw new Error("请提供完整结构画像 JSON 对象");
+    return document;
+}
+
 /** Shared guidance for the scene and shared-domain command registrations. */
 export function describePeopleCommand(command: Command, declaration: string, shared: boolean): Command {
     const name = declaration.split(" ")[0];
@@ -46,6 +56,10 @@ export function describePeopleCommand(command: Command, declaration: string, sha
         notes.push("审计编号来自 people.history；不填 history 的编号时分页查看记录。--account 筛选账号，--person 筛选人物 UUID。");
     if (name === "people.archive")
         notes.push("不填 revision 仅预览。执行前先查询当前画像版本，再用 people.archive 账号ID 当前版本号确认；不能照抄其他档案的版本号。");
+    if (name === "people.edit") {
+        command.option("format", "--format <format:string> 画像格式，默认 text，可选 json");
+        notes.push("修改结构画像时，请将 --format json 放在画像正文前，再提供完整 JSON 对象。旧命令 people.edit_json 仍可使用。");
+    }
     command.usage(notes.join("\n"));
     command.example(name === "people" ? "people.list" : example);
     if (name === "people") command.example("people.show 123456");

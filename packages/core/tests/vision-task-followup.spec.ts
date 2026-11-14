@@ -253,8 +253,8 @@ it.each(["asset_metadata_failed", "asset_read_failed"])("diagnoses %s without lo
     const f = fixture();
     if (reason === "asset_metadata_failed") f.asset.getInfo.mockRejectedValue(new Error("SECRET_IMAGE_URL"));
     else f.asset.read.mockRejectedValue(new Error("SECRET_IMAGE_URL"));
-    const building = (f.processor as any)._prepareLlmRequest(f.stimulus("photo"));
-    await expect(building).rejects.toThrow("SECRET_IMAGE_URL");
+    const prepared = await (f.processor as any)._prepareLlmRequest(f.stimulus("photo"));
+    expect(typeof prepared.messages[1].content).toBe("string");
     const diagnostics = f.diagnostics.filter((line) => line.startsWith("图片上下文 |"));
     expect(diagnostics.join(" ")).toContain(reason);
     expect(diagnostics.join(" ")).not.toContain("SECRET_IMAGE_URL");

@@ -314,17 +314,21 @@ export class WorldStateService extends YesImBotService<Config> {
         await this.ctx.database.upsert(HISTORY_CHANNELS, [{ ...target, channelType }]);
     }
 
-    public async recordMessage(message: MessageData, expectedGeneration?: number): Promise<void> {
+    public async recordMessage(message: MessageData, expectedGeneration?: number): Promise<"stored" | "duplicate" | "failed" | "invalidated"> {
         if (message.channelType) this.l2_manager.observeChannel(message, message.channelType);
         // 在 L1 异步写入之前登记代次与在途任务，清除必须等待已接受的写入。
         const generation = expectedGeneration ?? this.l2_manager.getHistoryGeneration(message);
-        const recorded = await this.l2_manager.writeMemory(message, generation, () => this.l1_manager.recordMessage(message));
-        if (recorded && this.l2_manager.getHistoryGeneration(message) === generation && this.config.l3_memory?.messageThreshold) {
+        const result: { outcome: Awaited<ReturnType<InteractionManager["recordMessage"]>> } = { outcome: "failed" };
+        const recorded = await this.l2_manager.writeMemory(message, generation, async () => {
+            result.outcome = await this.l1_manager.recordMessage(message);
+        });
+        if (!recorded || this.l2_manager.getHistoryGeneration(message) !== generation) return "invalidated";
+        if (result.outcome !== "stored") return result.outcome;
+        if (this.config.l3_memory?.messageThreshold) {
             void this.l3_manager.observeMessage(message).catch((error) => this.logger.warn(`L3 消息触发失败：${String(error)}`));
         }
-        if (recorded && this.l2_manager.getHistoryGeneration(message) === generation && this.config.l2_memory.enabled) {
-            this.l2_manager.addMessageToBuffer(message);
-        }
+        if (this.config.l2_memory.enabled) this.l2_manager.addMessageToBuffer(message);
+        return result.outcome;
     }
 
     public isChannelAllowed(session: Session): boolean {

@@ -178,6 +178,7 @@ it("reports token usage in diagnostics for reasoning-only empty output", async (
     const { model, logs } = fixture(() => sse(frame({ reasoning_content: "thinking" }) + frame({}, "stop") + usageFrame + done));
     const error = await failure(model);
     expect(error.code).toBe(ErrorDefinitions.LLM.OUTPUT_EMPTY_CONTENT.code);
+    expect(error.context).toMatchObject({ httpStatus: 200, isStream: true, emptyOutput: "reasoning_only", requestId: expect.stringMatching(/^chat-/) });
     const diagnostics = logs.join("\n");
     expect(diagnostics).toMatch(/(?:prompt_tokens|输入)[^\n]*10/);
     expect(diagnostics).toMatch(/(?:completion_tokens|输出)[^\n]*5/);
@@ -412,7 +413,10 @@ it("does not trust an upstream AbortError named early_exit without validator app
                 { headers: { "content-type": "text/event-stream" } },
             ),
     );
-    expect((await failure(model)).code).toBe(ErrorDefinitions.LLM.TIMEOUT.code);
+    expect(await failure(model)).toMatchObject({
+        code: ErrorDefinitions.LLM.REQUEST_FAILED.code,
+        context: { httpStatus: 200, streamDiagnostics: { bytes: expect.any(Number) } },
+    });
 });
 
 it("routes an abnormal EOF through the existing fallback model", async () => {
@@ -834,5 +838,5 @@ it("preserves an upstream abort after approved text when tool availability requi
             validation: { format: "json" },
             tools: [{ type: "function", function: { name: "lookup", parameters: { type: "object" } }, execute: async () => "unused" }],
         }),
-    ).rejects.toMatchObject({ code: ErrorDefinitions.LLM.TIMEOUT.code });
+    ).rejects.toMatchObject({ code: ErrorDefinitions.LLM.REQUEST_FAILED.code });
 });

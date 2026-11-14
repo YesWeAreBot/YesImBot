@@ -402,7 +402,7 @@ export function registerHistoryInspection(ctx: Context, historyCmd: any, deps?: 
         command.example?.(`history.${kind} -h`);
         for (const name of dimensions) command.option(name, `--${name} <value:string> ${labels[name]}（可重复）`);
         command.option("page", "--page <page:posint> 页码").option("full", "--full 按类别展开");
-        if (kind === "tokens") command.option("reset", "--reset 重置整个实例统计").option("restart", "--restart 重置整个实例统计");
+        if (kind === "tokens") command.option("reset", "--reset 重置整个实例统计", { aliases: ["restart"] });
         else command.option("details", "--details 展示完整存储内容和请求快照").option("trace", "--trace <id:string> 精确筛选决策/回复轮 ID");
         command.action(async (argv: any) => {
             try {

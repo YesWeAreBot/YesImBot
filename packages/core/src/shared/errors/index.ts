@@ -2,8 +2,10 @@ import { Logger, Schema } from "koishi";
 import { v4 as uuidv4 } from "uuid";
 
 import type { ToolError } from "../../extension/types";
+import type { ConversationReport } from "../../logger/conversation-report";
 import { sanitizeDiagnostic, redactDiagnosticText } from "../../shared/diagnostic-sanitizer";
 import { truncate } from "../../shared/utils";
+import { conversationMask, conversationReportSecrets } from "./conversation-privacy";
 import { ErrorDefinitions, type ErrorCategory } from "./definitions";
 import { diagnosticId, diagnosticCode, summarizeContext, summarizeError } from "./report-summary";
 
@@ -13,6 +15,7 @@ export interface ErrorReporterConfig {
     enabled: boolean; // 是否启用上报
     pasteServiceUrl?: string; // 可配置的上-报链接
     includeSensitiveInfo?: boolean;
+    conversationDetails?: "off" | "masked" | "raw";
     includeCookies?: boolean;
     includeSystemInfo?: boolean; // 是否包含系统信息
 }
@@ -23,6 +26,13 @@ export const ErrorReporterConfigSchema = Schema.object({
     includeSensitiveInfo: Schema.boolean()
         .default(false)
         .description("包含详细诊断信息（可能包含对话、模型响应、错误原文和堆栈；凭据保留首尾各 4 字符，短凭据全部遮盖）"),
+    conversationDetails: Schema.union([
+        Schema.const("off").description("不附带会话"),
+        Schema.const("masked").description("附带会话并遮盖身份标识"),
+        Schema.const("raw").description("附带原始会话与身份标识"),
+    ])
+        .default("off")
+        .description("错误报告的会话信息。可包含对话、提示词、原始模型响应和相关日志，凭据始终遮盖。"),
     includeCookies: Schema.boolean().default(false).description("详细诊断中包含 Cookie（保留首尾各 4 字符，其余用 * 遮盖；短 Cookie 全部遮盖）"),
     includeSystemInfo: Schema.boolean().default(true).description("是否包含系统信息"),
 });
@@ -31,6 +41,7 @@ export interface ReportContext {
     errorId: string;
     error: Error;
     additionalInfo?: Record<string, any>;
+    conversation?: ConversationReport;
 }
 
 /**
@@ -44,8 +55,9 @@ export class ErrorReporter {
     constructor(
         config: ErrorReporterConfig,
         logger: Logger,
-        private readonly saveLocal?: (errorId: string, error: Error) => Promise<void>,
+        private readonly saveLocal?: (errorId: string, error: Error, conversation?: ConversationReport) => Promise<void>,
         private readonly knownSecrets: readonly string[] = [],
+        private readonly captureConversation?: () => ConversationReport | undefined,
     ) {
         this.config = {
             includeSensitiveInfo: false,
@@ -71,62 +83,98 @@ export class ErrorReporter {
      */
     public async report(context: ReportContext): Promise<string | null> {
         if (this.disposed) return null;
+        const reportId = diagnosticId(redactDiagnosticText(context.errorId, this.knownSecrets));
+        let conversation: ConversationReport | undefined;
+        let mask: ReturnType<typeof conversationMask> | undefined;
+        let secrets = this.knownSecrets;
+        if (this.config.conversationDetails === "raw" || this.config.conversationDetails === "masked") {
+            try {
+                const snapshot = context.conversation ?? this.captureConversation?.();
+                if (snapshot) {
+                    secrets = conversationReportSecrets([snapshot, context.error, context.additionalInfo], secrets);
+                    const cleaned: ConversationReport = sanitizeDiagnostic(snapshot, secrets);
+                    if (this.config.conversationDetails === "masked") mask = conversationMask(cleaned, context.error, context.additionalInfo);
+                    conversation = mask ? mask(cleaned) : cleaned;
+                }
+            } catch {
+                conversation = undefined;
+                mask = undefined;
+                this.logger.warn(`错误 ${reportId} · 无法生成会话诊断`);
+            }
+        }
+
         // 本地保存不依赖远程上报开关，也不等待远程服务。
         if (this.saveLocal) {
             try {
-                await this.saveLocal(context.errorId, context.error);
+                const cleanedError = conversation ? sanitizeDiagnostic(context.error, secrets) : context.error;
+                const error = mask ? mask(cleanedError) : cleanedError;
+                if (conversation) await this.saveLocal(context.errorId, error, conversation);
+                else await this.saveLocal(context.errorId, error);
             } catch {
-                this.logger.warn("本地错误报告保存失败");
+                this.logger.warn(`错误 ${reportId} · 本地报告保存失败`);
             }
         }
-        if (this.disposed || !this.config.enabled || !this.config.pasteServiceUrl) {
+        if (this.disposed || !this.config.enabled) return null;
+        if (!this.config.pasteServiceUrl) {
+            this.logger.warn(`错误 ${reportId} · 未上报，缺少服务地址`);
             return null;
         }
 
+        let dump: string;
         try {
-            const dump = this.formatErrorDump(context);
-            const url = await this.uploadToPaste(dump);
-            if (url) {
-                this.logger.info(`此错误已上报，可通过 ${url} 查看详细信息`);
-            }
-            return url;
-        } catch (uploadError) {
-            this.logger.error(`上报失败: ${(uploadError as Error).message}`);
+            dump = this.formatErrorDump({ ...context, conversation }, secrets, mask);
+        } catch {
+            this.logger.error(`错误 ${reportId} · 远程上报失败，无法生成报告`);
             return null;
         }
+        const url = await this.uploadToPaste(reportId, dump);
+        if (url) this.logger.info(`错误 ${reportId} · 已上报，可通过 ${redactDiagnosticText(url, secrets)} 查看详细信息`);
+        return url;
     }
 
-    private async uploadToPaste(content: string): Promise<string | null> {
+    private async uploadToPaste(reportId: string, content: string): Promise<string | null> {
+        const failure = (reason: string) => {
+            this.logger.error(`错误 ${reportId} · 远程上报失败，${reason}`);
+            return null;
+        };
+        const formData = new FormData();
+        formData.append("c", content);
+        const signal = AbortSignal.timeout(15_000);
         try {
-            // 在 Node.js 环境中，通常使用 FormData 或直接构建 multipart/form-data
-            const formData = new FormData();
-            formData.append("c", content);
-
-            const response = await fetch(this.config.pasteServiceUrl!, {
-                method: "POST",
-                body: formData,
-            });
-
-            if (!response.ok) {
-                this.logger.error(`上传服务返回错误: ${response.status} - ${response.statusText}`);
-                return null;
+            const response = await fetch(this.config.pasteServiceUrl!, { method: "POST", body: formData, signal, redirect: "manual" });
+            if (!response.ok) return failure(`HTTP ${response.status}`);
+            let data: unknown;
+            try {
+                data = await response.json();
+            } catch {
+                return failure(signal.aborted ? "读取上报结果超时" : "服务返回的结果不是有效 JSON");
             }
-
-            const data = await response.json();
-            return data?.url || null;
+            const link = data && typeof data === "object" && "url" in data ? data.url : undefined;
+            if (typeof link !== "string" || !/^https?:\/\//i.test(link)) return failure("服务未返回有效报告链接");
+            const url = URL.parse(link);
+            if (!url || url.username || url.password || /[\p{Cc}\p{Zl}\p{Zp}]/u.test(link)) return failure("服务未返回有效报告链接");
+            return url.href;
         } catch (error) {
-            this.logger.error(`连接上报服务失败: ${(error as Error).message}`);
-            return null;
+            const code = error?.cause?.code;
+            const reason =
+                typeof code === "string" && /^(?:EAI_AGAIN|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|UND_ERR_CONNECT_TIMEOUT)$/.test(code)
+                    ? `无法连接上报服务（${code}）`
+                    : "无法连接上报服务";
+            return failure(signal.aborted ? "连接上报服务超时" : reason);
         }
     }
 
-    private formatErrorDump(context: ReportContext): string {
+    private formatErrorDump(context: ReportContext, secrets: readonly string[], mask?: ReturnType<typeof conversationMask>): string {
         const error = normalizeAppError(context.error);
         // Credential filtering includes nested Error fields and additionalInfo before
         // applying the stricter outbound content policy. Neither step mutates inputs.
-        const detailed = !!this.config.includeSensitiveInfo;
-        const privacy = { partialCredentials: detailed, includeCookies: !!this.config.includeCookies };
-        const cleaned = sanitizeDiagnostic({ ...context, error }, this.knownSecrets, new Set(), 0, "", privacy);
+        const detailed = !!this.config.includeSensitiveInfo || !!context.conversation;
+        const privacy = { partialCredentials: !context.conversation && detailed, includeCookies: !!this.config.includeCookies };
+        const cleaned = sanitizeDiagnostic({ errorId: context.errorId, additionalInfo: context.additionalInfo, error }, secrets, new Set(), 0, "", privacy);
+        if (mask) {
+            cleaned.error = mask(cleaned.error);
+            cleaned.additionalInfo = mask(cleaned.additionalInfo);
+        }
         const packageJson = require("koishi-plugin-yesimbot/package.json");
         const dump = [
             `# 智能体错误报告\n`,
@@ -141,6 +189,7 @@ export class ErrorReporter {
                     {
                         error: detailed ? cleaned.error : summarizeError(cleaned.error),
                         additionalInfo: detailed ? cleaned.additionalInfo : summarizeContext(cleaned.additionalInfo),
+                        ...(context.conversation ? { conversation: context.conversation } : {}),
                         ...(this.config.includeSystemInfo
                             ? { systemInfo: { nodeVersion: process.version, platform: process.platform, architecture: process.arch } }
                             : {}),
@@ -149,12 +198,14 @@ export class ErrorReporter {
                     2,
                 ) +
                 "\n```",
-            detailed
-                ? `\n详细诊断已启用；凭据仅保留首尾各 4 字符，短凭据全部遮盖。Cookie ${privacy.includeCookies ? "经遮盖后包含" : "省略"}。`
-                : `\n对话、模型响应、自由文本错误信息及完整堆栈默认省略；需要完整排障信息时请检查已启用的本地日志。`,
+            context.conversation
+                ? `\n会话诊断已附带，凭据已遮盖。`
+                : detailed
+                  ? `\n详细诊断已启用；凭据仅保留首尾各 4 字符，短凭据全部遮盖。Cookie ${privacy.includeCookies ? "经遮盖后包含" : "省略"}。`
+                  : `\n对话、模型响应、自由文本错误信息及完整堆栈默认省略；需要完整排障信息时请检查已启用的本地日志。`,
         ].join("\n");
         // Defense in depth also covers identifiers and serialization escape forms.
-        return redactDiagnosticText(dump, this.knownSecrets, privacy);
+        return context.conversation ? dump : redactDiagnosticText(dump, secrets, privacy);
     }
 }
 

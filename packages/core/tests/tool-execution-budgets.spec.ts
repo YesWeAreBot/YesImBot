@@ -364,9 +364,10 @@ for (const nativeToolCalling of [false, true]) {
         expect(request.messages[1].content).toBe(originalContent);
         expect(builder.getAttachedImageIds(request.messages)).toEqual(["image"]);
         expect(request.messages[0].content).not.toContain("get_image_description");
-        expect(request.messages[0].content).toContain("send_message");
+        expect(String(request.messages[0].content).includes("send_message")).toBe(!nativeToolCalling);
         const fallback = request.fallbackMessages ?? request.messages;
         expect(fallback[0].content).not.toContain("get_image_description");
+        expect(fallback[0].content).toContain("send_message");
         expect(builder.getAttachedImageIds(fallback)).toEqual(["image"]);
         const context = { attachedImageIds: builder.getAttachedImageIds(request.messages) };
         expect(f.tools.getAvailableTools(f.session, context).map((tool) => tool.name)).not.toContain("get_image_description");

@@ -1,170 +1,119 @@
-import { Context, isEmpty } from "koishi";
+import { Context, h } from "koishi";
 
 import { Config } from "../config";
-import { checkConfiguration } from "./config-check";
+import { checkConfiguration, findBrokenModelReferences } from "./config-check";
+import { ConfigPathError, listConfigFields, parseConfigPath, parseConfigValue, resolveConfigPath, safeConfigValue, writeConfigValue } from "./config-path";
 
 export const name = "yesimbot.command.config";
+const pathHelp = "配置路径使用点号访问对象、方括号访问数组，数组索引从 0 开始，例如 providers[0].models[0].modelId。";
+const authority = { authority: 3 };
+const shortError = (error: unknown) => (error instanceof ConfigPathError ? error.message : "配置读取失败，请检查配置路径。");
+const maxPage = 1700;
+
+function formatConfigOutput(output: string): ReturnType<typeof h.text> {
+    if (output.length <= maxPage) return h.text(output);
+    return h.text(output.slice(0, maxPage) + "\n输出过长，追加子路径以缩小范围。");
+}
+
+async function waitForReload(ready: Promise<void>): Promise<boolean> {
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+        return await Promise.race([
+            ready.then(() => true),
+            new Promise<false>((resolve) => {
+                timeout = setTimeout(() => resolve(false), 5000);
+            }),
+        ]);
+    } finally {
+        clearTimeout(timeout);
+    }
+}
 
 export function apply(ctx: Context, config: Config) {
-    ctx.command("conf.check", "检查模型引用、任务分配与能力声明（不发起模型请求）", { authority: 3 }).action(() => checkConfiguration(config));
-    ctx.command("conf.get [key:string]", "读取当前插件实例的指定配置项", { authority: 3 }).action(async ({ session, options }, key) => {
-        if (isEmpty(key)) return "请输入有效的配置键";
-        let parsedKeyChain: Array<string | number>;
-        try {
-            parsedKeyChain = parseKeyChain(key);
-        } catch (error) {
-            return (error as Error).message;
-        }
-
-        const data = get(config, parsedKeyChain);
-
-        return JSON.stringify(data, null, 2) || "未找到配置";
-    });
-
-    ctx.command("conf.set [key:string] [value:string]", "修改当前插件实例的指定配置项", { authority: 3 })
-        .option("force", "-f <force:boolean>")
-        .action(async ({ session, options }, key, value) => {
-            if (isEmpty(key)) return "请输入有效的配置键";
-            if (isEmpty(value)) return "请输入有效的值";
-
-            // 新增：解析键链，支持数组索引
-            let parsedKeyChain: Array<string | number>;
+    ctx.command("conf", "查看和调整 YesImBot 配置", authority)
+        .usage(`${pathHelp}\nconf.list 列出配置项，conf.get 读取，conf.set 修改，conf.check 检查模型引用。`)
+        .action(() => "使用 conf.list [路径]、conf.get <路径>、conf.set <路径> <值> 或 conf.check。");
+    ctx.command("conf.check", "检查模型引用、任务分配与能力声明（不发起模型请求）", authority)
+        .usage("示例：conf.check。此命令只检查本地声明，不连接提供商。")
+        .action(() => checkConfiguration(config));
+    ctx.command("conf.list [key:string]", "列出可调整的配置路径、类型和状态", authority)
+        .usage(`${pathHelp}\n不填路径列出一级配置项。示例：conf.list providers[0].models[0]。`)
+        .option("page", "-p <page:posint> 查询第几页，默认第 1 页")
+        .action(({ options }, key) => {
             try {
-                parsedKeyChain = parseKeyChain(key);
+                const keys = key ? parseConfigPath(key) : [];
+                const node = resolveConfigPath(ctx, config, keys);
+                const lines = listConfigFields(ctx, node, keys);
+                if (!lines.length) return "该路径下没有子配置项，可使用 conf.get 读取。";
+                const size = 12;
+                const total = Math.ceil(lines.length / size);
+                const page = options?.page ?? 1;
+                if (page > total) return `只有 ${total} 页。`;
+                return formatConfigOutput([`配置项 · 第 ${page}/${total} 页`, ...lines.slice((page - 1) * size, page * size)].join("\n"));
             } catch (error) {
-                return (error as Error).message;
-            }
-
-            try {
-                // 确保 top-level config 是一个对象，以便可以添加属性
-                // 如果 config 是 null 或 primitive，需要将其初始化为对象
-                let mutableConfig: any = config;
-                if (typeof mutableConfig !== "object" || mutableConfig === null) {
-                    mutableConfig = {};
-                }
-
-                // 调用更新后的 set 函数
-                const data = Config(set(mutableConfig, parsedKeyChain, value));
-                ctx.scope.parent.scope.update(data, options?.force ? true : undefined);
-                config = data; // 更新全局 config 变量
-                return "设置成功";
-            } catch (error) {
-                ctx.logger.error(error);
-                return (error as Error).message;
+                return shortError(error);
             }
         });
-}
+    ctx.command("conf.get [key:string]", "读取配置值，隐藏凭据和地址", authority)
+        .usage(`${pathHelp}\n示例：conf.get heartbeat。`)
+        .action((_, key) => {
+            if (!key) return "请输入有效的配置键";
+            try {
+                const keys = parseConfigPath(key);
+                const value = safeConfigValue(ctx, resolveConfigPath(ctx, config, keys), keys);
+                if (value === undefined) return "配置项尚未设置。";
+                const output = JSON.stringify(value, null, 2);
+                // Preserve short text replies used by existing configuration scripts.
+                return output.length <= maxPage && !/[<>]/.test(output) ? output : formatConfigOutput(output);
+            } catch (error) {
+                return shortError(error);
+            }
+        });
 
-function get(data: any, keys: Array<string | number>) {
-    if (keys.length === 0) return data;
-    if (data == null) return undefined;
-
-    // 递归情况：处理键链
-    const currentKey = keys[0]; // 当前处理的键或索引
-    const restKeys = keys.slice(1); // 剩余的键链
-
-    return get(data[currentKey], restKeys);
-}
-
-function set(currentData: any, keyChain: Array<string | number>, value: any): any {
-    // 基本情况：键路径已为空，表示已到达目标位置，直接设置值
-    if (keyChain.length === 0) {
-        return tryParse(value); // 使用 tryParse 智能转换最终值
-    }
-    const currentKey = keyChain.shift()!; // 取出当前层级的键或索引
-    // 判断下一个键是数组索引还是对象键，以便决定如何初始化
-    const nextKeyIsIndex = typeof keyChain[0] === "number";
-    // 如果当前层级的数据是 null 或 undefined，或者类型不匹配，就初始化它
-    let nextSegment = currentData ? currentData[currentKey] : undefined;
-    if (nextSegment === undefined || nextSegment === null) {
-        // 如果下一个键是数字，初始化为数组；否则初始化为对象。
-        nextSegment = nextKeyIsIndex ? [] : {};
-    } else if (nextKeyIsIndex && !Array.isArray(nextSegment)) {
-        // 类型不匹配：期望数组，但现有不是数组，强制转换为数组
-        console.warn(`Path segment "${currentKey}" was not an array, converting to array.`);
-        nextSegment = [];
-    } else if (!nextKeyIsIndex && (typeof nextSegment !== "object" || Array.isArray(nextSegment))) {
-        // 类型不匹配：期望对象，但现有不是对象或却是数组，强制转换为对象
-        console.warn(`Path segment "${currentKey}" was not an object, converting to object.`);
-        nextSegment = {};
-    }
-    // 如果当前键是数字（数组索引），且当前数据是数组
-    if (typeof currentKey === "number" && Array.isArray(currentData)) {
-        // 确保数组有足够的长度来容纳指定索引。不足的部分填充 null。
-        // 这确保了像 `arr[5]` 这种直接索引的设置也能正常工作。
-        const newArray = [...currentData];
-        while (newArray.length <= currentKey) {
-            newArray.push(null);
-        }
-        newArray[currentKey] = set(nextSegment, keyChain, value);
-        return newArray;
-    } else {
-        // 如果当前键是字符串（对象键），且当前数据是对象
-        // 创建对象的拷贝以实现不可变更新
-        const newObject = { ...currentData };
-        newObject[currentKey] = set(nextSegment, keyChain, value);
-        return newObject;
-    }
-}
-
-/**
- * 解析键字符串，支持点分隔和方括号索引格式。
- * 例如 "a.b[0].c" => ["a", "b", 0, "c"]
- * @param keyString 原始键字符串
- * @returns (string | number)[] 包含字符串键和数字索引的数组
- */
-function parseKeyChain(keyString: string): Array<string | number> {
-    const parts: Array<string | number> = [];
-    // 使用正则表达式匹配 "key" 或 "key[index]" 模式
-    // 分割字符串，允许点分隔或方括号分隔
-    // 考虑 "root.items[0].name" 这样的情况
-    // 简化处理：先按点分割，再处理方括号
-    keyString.split(".").forEach((segment) => {
-        const arrayMatch = segment.match(/^(.+)\[(\d+)\]$/);
-        if (arrayMatch) {
-            // 匹配到如 'items[0]'
-            parts.push(arrayMatch[1]); // 键名 'items'
-            parts.push(parseInt(arrayMatch[2], 10)); // 索引 0
-        } else {
-            // 匹配普通键如 'name'
-            parts.push(segment);
-        }
-    });
-    // 验证解析结果，防止空字符串或不符合规范的键
-    if (parts.some((p) => typeof p === "string" && p.trim() === "")) {
-        throw new Error("配置键包含无效的空片段");
-    }
-    if (parts.length === 0) {
-        throw new Error("无法解析配置键");
-    }
-    return parts;
-}
-
-/**
- * 智能地尝试将字符串转换为最合适的原始类型或JSON对象/数组。
- */
-function tryParse(value: string): any {
-    // 1. 尝试解析为布尔值
-    const lowerValue = value.toLowerCase().trim();
-    if (lowerValue === "true") return true;
-    if (lowerValue === "false") return false;
-    // 2. 尝试解析为数字 (但排除仅包含空格或空字符串)
-    // 使用 parseFloat 确保能处理小数，同时 Number() 检查 NaN 来排除非数字字符串
-    if (!isNaN(Number(value)) && !isNaN(parseFloat(value))) {
-        return Number(value);
-    }
-    // 3. 尝试解析为JSON (对象或数组)
-    try {
-        const parsedJSON = JSON.parse(value);
-        // 确保解析出来的确实是对象或数组，而不是JSON字符串代表的原始值
-        // 例如 '123' 会被 JSON.parse 解析为数字 123，但我们已经在前面处理了数字
-        // 所以这里只关心真正的对象或数组
-        if ((typeof parsedJSON === "object" && parsedJSON !== null) || Array.isArray(parsedJSON)) {
-            return parsedJSON;
-        }
-    } catch {
-        // 解析失败，不是有效的JSON
-    }
-    // 4. Fallback: 如果都不是，则认为是普通字符串
-    return value;
+    ctx.command("conf.set [key:string] [value:text]", "校验并修改指定配置项", authority)
+        .usage(`${pathHelp}\n值按配置类型解释：字符串可直接输入，布尔值用 true 或 false，对象和数组用 JSON。示例：conf.set heartbeat 7。`)
+        .option("force", "-f <force:boolean> 强制重载插件")
+        .action(async ({ options }, key, value) => {
+            if (!key) return "请输入有效的配置键";
+            if (value === undefined) return "请输入有效的值";
+            let data: Config;
+            let keys: ReturnType<typeof parseConfigPath>;
+            try {
+                keys = parseConfigPath(key);
+                const node = resolveConfigPath(ctx, config, keys);
+                const replacement = parseConfigValue(ctx, node, value, keys);
+                data = Config(writeConfigValue(structuredClone(config), keys, replacement) as Config);
+                if (["providers", "modelGroups", "task", "topics", "typesafe", "extra"].includes(String(keys[0]))) {
+                    const existing = new Set(findBrokenModelReferences(config).map(({ signature }) => signature));
+                    const broken = findBrokenModelReferences(data).find(({ signature }) => !existing.has(signature));
+                    if (broken) return `未应用：${broken.path} ${broken.message}。请先处理该引用，详情见 conf.check。`;
+                }
+            } catch (error) {
+                if (error instanceof ConfigPathError) return error.message;
+                return "配置值未通过校验，未应用。请用 conf.list 查看相应路径要求的类型。";
+            }
+            const scope = ctx.scope.parent.scope;
+            // Hold the original owner context so command disposal during reload does not
+            // interfere with locating the newly installed plugin instance.
+            const current = ctx.yesimbot;
+            try {
+                const before = scope.config;
+                scope.update(data, options?.force ? true : undefined);
+                if (scope.config === before) return "配置未应用：框架未接受更新。";
+                if (scope.error) return "配置已写入框架，但重载失败。请查看控制台错误。";
+                config = scope.config as Config;
+                const live = scope.ctx.yesimbot;
+                if (current && (!live || live[Context.current].scope !== scope || live === current)) {
+                    return "配置已保存，运行实例尚未确认重载。请在控制台查看插件状态。";
+                }
+                if (live && live[Context.current].scope === scope) {
+                    if (!(await waitForReload(live.ready))) return "配置已保存，插件仍在启动。请在控制台查看插件状态。";
+                    if (!live.isReady) return "配置已保存，但插件重载后未就绪。请查看控制台错误。";
+                }
+                return "设置成功";
+            } catch {
+                ctx.logger.warn("配置命令更新框架作用域失败。");
+                return "配置更新失败。请查看控制台中的插件状态。";
+            }
+        });
 }

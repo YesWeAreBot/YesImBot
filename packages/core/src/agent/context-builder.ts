@@ -295,7 +295,7 @@ export class PromptContextBuilder {
 
         // 5. 返回最终的上下文对象
         return {
-            toolSchemas: this.toolService.getToolSchemas(session),
+            toolSchemas: this.toolService.getToolSchemas(session, "model"),
             memoryBlocks: this.memoryService.getMemoryBlocksForRendering(),
             worldState: worldState,
         };
@@ -543,6 +543,8 @@ export class PromptContextBuilder {
             lifecycle_expired: 0,
             count_limit: 0,
             missing_asset: 0,
+            asset_metadata_failed: 0,
+            asset_read_failed: 0,
             unsupported_mime: 0,
             invalid_image_data: 0,
             selected: 0,
@@ -615,19 +617,18 @@ export class PromptContextBuilder {
             return { images: [], usageKeys: [] };
         }
 
-        let imageDataResults: Array<Awaited<ReturnType<AssetService["getInfo"]>>>;
-        try {
-            imageDataResults = await Promise.all(Array.from(finalImageIds).map((id) => this.assetService.getInfo(id)));
-        } catch (error) {
-            this.visualDiagnostic("asset_metadata_failed");
-            throw error;
-        }
-
+        const imageDataResults = await Promise.allSettled(Array.from(finalImageIds, (id) => this.assetService.getInfo(id)));
+        assertReplyTurn();
         const finalImages: Array<ImagePart | TextPart> = [];
         const usageKeys: string[] = [];
         const allowedImageTypes = new Set(this.config.allowedImageTypes);
 
-        for (const result of imageDataResults) {
+        for (const outcome of imageDataResults) {
+            if (outcome.status === "rejected") {
+                diagnostics.asset_metadata_failed++;
+                continue;
+            }
+            const result = outcome.value;
             if (!result) {
                 diagnostics.missing_asset++;
                 continue;
@@ -636,30 +637,30 @@ export class PromptContextBuilder {
                 diagnostics.unsupported_mime++;
                 continue;
             }
-            if (result && allowedImageTypes.has(result.mime)) {
-                let imageBuffer: Awaited<ReturnType<AssetService["read"]>>;
-                try {
-                    imageBuffer = await this.assetService.read(result.id, { format: "data-url", image: { process: true, format: "jpeg" } });
-                } catch (error) {
-                    this.visualDiagnostic("asset_read_failed");
-                    throw error;
-                }
-                if (typeof imageBuffer !== "string" || !/^data:image\/[^;,]+;base64,[A-Za-z0-9+/=\s]+$/.test(imageBuffer)) {
-                    diagnostics.invalid_image_data++;
-                    continue;
-                }
-                usageKeys.push(usageKeysById.get(result.id)!);
-                // 为LLM提供更明确的图片标识
-                finalImages.push({ type: "text", text: `The following is an image with ID #${result.id}:` });
-                const image: ImagePart = { type: "image_url", image_url: { url: imageBuffer as string, detail: this.config.detail } };
-                this.attachedImages.set(image, result.id);
-                const fingerprint = createHash("sha256").update(imageBuffer).digest("hex");
-                this.attachedImageFingerprints.delete(fingerprint);
-                this.attachedImageFingerprints.set(fingerprint, result.id);
-                while (this.attachedImageFingerprints.size > 512) this.attachedImageFingerprints.delete(this.attachedImageFingerprints.keys().next().value!);
-                finalImages.push(image);
-                diagnostics.selected++;
+            let imageBuffer: Awaited<ReturnType<AssetService["read"]>>;
+            try {
+                imageBuffer = await this.assetService.read(result.id, { format: "data-url", image: { process: true, format: "jpeg" } });
+            } catch {
+                assertReplyTurn();
+                diagnostics.asset_read_failed++;
+                continue;
             }
+            assertReplyTurn();
+            if (typeof imageBuffer !== "string" || !/^data:image\/[^;,]+;base64,[A-Za-z0-9+/=\s]+$/.test(imageBuffer)) {
+                diagnostics.invalid_image_data++;
+                continue;
+            }
+            usageKeys.push(usageKeysById.get(result.id)!);
+            // 为LLM提供更明确的图片标识
+            finalImages.push({ type: "text", text: `The following is an image with ID #${result.id}:` });
+            const image: ImagePart = { type: "image_url", image_url: { url: imageBuffer, detail: this.config.detail } };
+            this.attachedImages.set(image, result.id);
+            const fingerprint = createHash("sha256").update(imageBuffer).digest("hex");
+            this.attachedImageFingerprints.delete(fingerprint);
+            this.attachedImageFingerprints.set(fingerprint, result.id);
+            while (this.attachedImageFingerprints.size > 512) this.attachedImageFingerprints.delete(this.attachedImageFingerprints.keys().next().value!);
+            finalImages.push(image);
+            diagnostics.selected++;
         }
 
         this.visualDiagnostic("image_selection", diagnostics);

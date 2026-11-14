@@ -327,6 +327,14 @@ describe("exclusion", () => {
         await blocked.append(record("blocked"));
         await blocked.close();
         expect(log.collected).toContainEqual(expect.stringMatching(staleLock));
+        const reason = {
+            legacy: "旧版锁缺少主机或 PID 命名空间",
+            "foreign-host": "主机名不一致",
+            "foreign-namespace": process.platform === "linux" ? "PID 命名空间不同" : "当前环境无法读取 PID 命名空间",
+            malformed: "锁文件元数据无效或缺少 PID",
+            "recovery-guard": ".decisions.recovery.lock 已存在",
+        }[kind];
+        expect(log.collected).toContainEqual(expect.stringContaining(reason!));
         expect(await fs.readFile(lockPath, "utf8")).toBe(originalLock);
         expect(await fs.readFile(path.join(dir, "decisions.jsonl"), "utf8")).toBe(originalHistory);
     });

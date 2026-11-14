@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { Context, h, Schema } from "koishi";
+import { Context, h, Logger, Schema } from "koishi";
 
 import { assertReplyTurn, guardReplySession } from "../../../agent/reply-turn";
 import { Extension, Tool, withInnerThoughts } from "../../../extension/decorators";
@@ -17,10 +17,14 @@ import { Infer } from "../../../extension/types";
 export default class CommandExtension {
     static readonly Config = Schema.object({});
 
+    private readonly logger: Logger;
+
     constructor(
         public ctx: Context,
         public config: any,
-    ) {}
+    ) {
+        this.logger = ctx.yesimbot?.logging?.getLogger("[平台指令]") ?? ctx.logger;
+    }
 
     @Tool({
         name: "send_platform_command",
@@ -56,16 +60,16 @@ export default class CommandExtension {
                     commandSession.event.member = await commandSession.bot.getGuildMember(commandSession.guildId, commandSession.selfId);
                 } catch {
                     // Missing membership must fail closed for native role permissions.
-                    this.ctx.logger.debug(`无法获取 Bot[${session.selfId}] 的群成员权限`);
+                    this.logger.debug(`无法获取 Bot[${session.selfId}] 的群成员权限`);
                 }
             }
             assertReplyTurn();
             await commandSession.sendQueued(h("execute", {}, command));
 
-            this.ctx.logger.info(`Bot[${session.selfId}]执行了指令: ${command}`);
+            this.logger.debug("平台指令已提交");
             return Success();
         } catch (error) {
-            this.ctx.logger.error(`Bot[${session.selfId}]执行指令失败: ${command} - `, error.message);
+            this.logger.debug(`平台指令失败 · ${error.name ?? "未知错误"}`);
             return Failed(`执行指令失败 - ${error.message}`);
         }
     }

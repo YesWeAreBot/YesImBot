@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { GenerateTextResult } from "@xsai/generate-text";
 import type { Tool } from "@xsai/shared-chat";
 import { Message } from "@xsai/shared-chat";
-import { Context, h, Logger, Session } from "koishi";
+import { Context, Schema, h, Logger, Session } from "koishi";
 import { v4 as uuidv4 } from "uuid";
 
 import { assertReplyTurn, guardReplySession, isReplyTurnCancelled, replyTurnSignal, withReplyTurnGuard } from "../agent/reply-turn";
@@ -11,6 +11,8 @@ import { Properties, ToolSchema, ToolService } from "../extension";
 import { isReadOnlyTool } from "../extension/helpers";
 import { toolJSONSchema } from "../extension/json-schema";
 import type { LoggerService } from "../logger";
+import { withConversationLog } from "../logger/conversation";
+import { isConversationReportEnabled, recordConversationReport } from "../logger/conversation-report";
 import { ChatModelSwitcher } from "../model";
 import type { ValidationOptions } from "../model/chat-model";
 import { withUsageScope } from "../model/usage";
@@ -27,8 +29,9 @@ import { PromptContextBuilder } from "./context-builder";
 import { deriveConversationFocus, FocusedWorldState, packWorldState } from "./context-packing";
 import { projectWorldForModel } from "./projection";
 
+const NATIVE_SILENCE_TOOL = "end_turn_without_reply";
 const NATIVE_SYSTEM_PROMPT =
-    "本轮启用原生工具调用。请通过工具接口执行动作，不要输出 JSON actions；需要先查询时，先调用查询工具，获得结果后下一轮再决策。使用 send_message 发送回复。";
+    "本轮启用原生工具调用。请通过工具接口执行动作，不要输出 JSON actions；需要先查询时，先调用查询工具，获得结果后下一轮再决策。使用 send_message 发送回复。决定沉默时仅调用 end_turn_without_reply，结束本轮。";
 const escapeMetadata = (value: unknown) => JSON.stringify(value).replace(/[<>&]/g, (character) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" })[character]!);
 
 /** Validate the complete model plan before any real action is admitted. */
@@ -91,8 +94,11 @@ export class HeartbeatProcessor {
             typeof decisionId === "string" && decisionId.length > 0 && decisionId.length <= 512 && !/\p{Cc}/u.test(decisionId) ? decisionId : uuidv4();
         try {
             const run = (current: AgentStimulus<any>) =>
-                withUsageScope({ traceId: turnId, platform: current.session.platform, botId: current.session.selfId, target: current.session.channelId }, () =>
-                    this.runTracedCycle(turnId, current),
+                withConversationLog(current.session, turnId, () =>
+                    withUsageScope(
+                        { traceId: turnId, platform: current.session.platform, botId: current.session.selfId, target: current.session.channelId },
+                        () => this.runTracedCycle(turnId, current),
+                    ),
                 );
             const memory = this.world?.l2_manager;
             if (!memory) return await run(stimulus);
@@ -126,7 +132,7 @@ export class HeartbeatProcessor {
             heartbeatCount++;
             try {
                 assertReplyTurn();
-                this.logger.info(`Heartbeat | 第 ${heartbeatCount}/${this.config.heartbeat} 轮`);
+                this.logger.debug(`回复轮次 · 第 ${heartbeatCount}/${this.config.heartbeat} 次模型决策`);
                 const onReplySent = () => {
                     success = true;
                 };
@@ -157,10 +163,12 @@ export class HeartbeatProcessor {
                 }
             } catch (error) {
                 if (isReplyTurnCancelled()) break;
-                handleError(this.logger, error, `Heartbeat #${heartbeatCount}`);
+                recordConversationReport("turn_failed", { turnId, heartbeat: heartbeatCount, replySent: success });
+                handleError(this.logger, error, `回复轮次 · 第 ${heartbeatCount} 次模型决策`);
                 shouldContinueHeartbeat = false;
             }
         }
+        recordConversationReport("turn_finished", { turnId, replySent: success });
         return success;
     }
 
@@ -172,7 +180,7 @@ export class HeartbeatProcessor {
         activeTurnId?: string,
     ): Promise<{ messages: Message[]; manualRecallIds: string[]; consumedSourceIds: string[]; fallbackMessages?: Message[] }> {
         // 1. 构建非消息部分的上下文
-        this.logger.debug("步骤 1/4: 构建提示词上下文...");
+        this.logger.debug("构建回复上下文");
         const promptContext = await this.contextBuilder.build(stimulus);
         assertReplyTurn();
         const focus = (promptContext.worldState as FocusedWorldState).conversationFocus ?? deriveConversationFocus(stimulus, promptContext.worldState);
@@ -191,7 +199,7 @@ export class HeartbeatProcessor {
         promptContext.worldState = initialWorld;
 
         // 2. 准备模板渲染所需的数据视图 (View)
-        this.logger.debug("步骤 2/4: 准备模板渲染视图...");
+        this.logger.debug("准备提示词渲染数据");
         const view = {
             session: stimulus.session,
             NATIVE_TOOL_CALLING: this.config.nativeToolCalling === true,
@@ -248,8 +256,10 @@ export class HeartbeatProcessor {
         };
 
         // 3. 渲染核心提示词文本
-        this.logger.debug("步骤 3/4: 渲染提示词模板...");
+        this.logger.debug("渲染提示词");
+        let textToolSchemas = promptContext.toolSchemas;
         const render = async (worldState: FocusedWorldState) => {
+            view.TOOL_DEFINITION = view.NATIVE_TOOL_CALLING ? [] : prepareDataForTemplate(textToolSchemas);
             const { memoryBudgetReport, ...modelWorld } = projectWorldForModel(worldState).world as FocusedWorldState;
             modelWorld.conversationFocus = publicFocus as typeof focus;
             modelWorld.triggerContext = { ...modelWorld.triggerContext, conversationFocus: publicFocus };
@@ -278,7 +288,7 @@ export class HeartbeatProcessor {
             return { system, user };
         };
         const nativeTools = this.config.nativeToolCalling
-            ? this.toolService.getAvailableTools(stimulus.session).map((definition) => ({
+            ? this.toolService.getAvailableTools(stimulus.session, undefined, "model").map((definition) => ({
                   type: "function",
                   function: { name: definition.name, description: definition.description, parameters: toolJSONSchema(definition.parameters) },
               }))
@@ -338,7 +348,7 @@ export class HeartbeatProcessor {
         const userPromptText = rendered.user;
 
         // 4. 条件化构建多模态上下文并组装最终的 messages
-        this.logger.debug("步骤 4/4: 构建最终消息...");
+        this.logger.debug("构建模型请求消息");
         const userMessageContent = await this.contextBuilder.buildMultimodalUserMessage(userPromptText, promptContext.worldState);
 
         const messages: Message[] = [
@@ -348,10 +358,8 @@ export class HeartbeatProcessor {
 
         const attachedImageIds = this.contextBuilder.getAttachedImageIds?.(messages) ?? [];
         if (attachedImageIds.length) {
-            view.TOOL_DEFINITION = prepareDataForTemplate(
-                promptContext.toolSchemas.filter(
-                    (schema) => !this.toolService.getTool || !!this.toolService.getTool(schema.name, stimulus.session, { attachedImageIds }),
-                ),
+            textToolSchemas = promptContext.toolSchemas.filter(
+                (schema) => !this.toolService.getTool || !!this.toolService.getTool(schema.name, stimulus.session, { attachedImageIds }),
             );
             const filtered = await render(promptContext.worldState);
             messages[0].content = filtered.system;
@@ -388,6 +396,14 @@ export class HeartbeatProcessor {
         const consumedSourceIds = [...l1.processed_events, ...l1.new_events].flatMap((item) =>
             item.type === "message" || item.type === "system_event" ? [JSON.stringify([item.type, item.id])] : [],
         );
+        if (isConversationReportEnabled()) {
+            recordConversationReport(
+                "history_sources",
+                [...l1.processed_events, ...l1.new_events].flatMap((item) =>
+                    item.type === "message" ? [{ messageId: item.id, quoteId: item.quoteId, userId: item.sender.id }] : [],
+                ),
+            );
+        }
         return { messages, manualRecallIds, consumedSourceIds, fallbackMessages };
     }
 
@@ -406,7 +422,7 @@ export class HeartbeatProcessor {
         const { messages, manualRecallIds, consumedSourceIds } = await this._prepareLlmRequest(stimulus, turnId);
 
         // 步骤 5: 调用LLM
-        this.logger.info("步骤 5/7: 调用大语言模型...");
+        this.logger.debug("调用主回复模型");
         assertReplyTurn();
         const llmRawResponse = await this.modelSwitcher.chat({
             requestPurpose: "主对话",
@@ -419,21 +435,20 @@ export class HeartbeatProcessor {
         this.contextBuilder.commitMultimodalUsage?.(messages);
         const prompt_tokens = llmRawResponse.usage?.prompt_tokens || `~${estimateTokensByRegex(messages.map((m) => m.content).join())}`;
         const completion_tokens = llmRawResponse.usage?.completion_tokens || `~${estimateTokensByRegex(llmRawResponse.text ?? "")}`;
-        this.logger.info(`💰 Token 消耗 | 输入: ${prompt_tokens} | 输出: ${completion_tokens}`);
+        this.logger.debug(`Token 用量 · 输入 ${prompt_tokens} · 输出 ${completion_tokens}`);
 
         // 步骤 6: 解析和验证响应
-        this.logger.debug("步骤 6/7: 解析并验证LLM响应...");
+        this.logger.debug("解析并校验模型输出");
         const agentResponseData = this.parseAndValidateResponse(llmRawResponse, conversationCid(session));
         if (!agentResponseData) {
-            this.logger.error("LLM响应解析或验证失败，终止本次心跳");
+            this.logger.error("模型输出解析或校验失败 · 结束本次模型决策");
             return null;
         }
 
-        this.displayThoughts(agentResponseData.thoughts);
         await this.interactionManager.recordThought(turnId, platform, channelId, agentResponseData.thoughts, manualRecallIds, consumedSourceIds);
 
         // 步骤 7: 执行动作
-        this.logger.debug(`步骤 7/7: 执行 ${agentResponseData.actions.length} 个动作...`);
+        this.logger.debug(`执行 ${agentResponseData.actions.length} 个动作`);
         const outcome = await this.executeActions(
             turnId,
             session,
@@ -443,8 +458,8 @@ export class HeartbeatProcessor {
         );
         const { replySent } = outcome;
 
-        if (replySent) this.logger.success("单次心跳成功完成");
-        else this.logger.debug("单次心跳完成，未成功发送回复");
+        if (replySent) this.logger.debug("本次模型决策已发送回复");
+        else this.logger.debug("本次模型决策结束 · 无已确认发送的回复");
         return { continue: !outcome.stop && (agentResponseData.request_heartbeat || outcome.retryRead), replySent };
     }
 
@@ -463,7 +478,7 @@ export class HeartbeatProcessor {
         // 步骤 1-4: 准备请求
         const { messages, manualRecallIds, consumedSourceIds } = await this._prepareLlmRequest(stimulus, turnId);
 
-        this.logger.info("步骤 5/7: 调用大语言模型...");
+        this.logger.debug("调用主回复模型");
         const stime = Date.now();
 
         interface ConsumerBatch {
@@ -490,10 +505,8 @@ export class HeartbeatProcessor {
             const controller = new AbortController();
             const id = batches.length + 1;
             const thoughtsPromise = (async () => {
-                for await (const chunk of parser.stream<any>("thoughts")) {
+                for await (const _ of parser.stream("thoughts")) {
                     if (controller.signal.aborted) break;
-                    const [key, value] = Object.entries(chunk)[0];
-                    this.logger.debug(`[流式思考 #${id}] 🤔 ${key}: ${value}`);
                 }
             })();
             const actionsPromise = (async () => {
@@ -507,7 +520,7 @@ export class HeartbeatProcessor {
             const heartbeatPromise = (async () => {
                 for await (const chunk of parser.stream<boolean>("request_heartbeat")) {
                     if (controller.signal.aborted) break;
-                    this.logger.debug(`[流式心跳 #${id}] ❤️ request_heartbeat: ${Boolean(chunk)}`);
+                    this.logger.debug(`[流式解析 #${id}] request_heartbeat: ${Boolean(chunk)}`);
                 }
             })();
             currentBatch = { parser, controller, promises: [thoughtsPromise, actionsPromise, heartbeatPromise] };
@@ -571,8 +584,8 @@ export class HeartbeatProcessor {
         await this.interactionManager.recordThought(turnId, platform, channelId, response.thoughts, manualRecallIds, consumedSourceIds);
         const outcome = await this.executeActions(turnId, session, response.actions, onReplySent, this.contextBuilder.getAttachedImageIds?.(messages) ?? []);
         const { replySent } = outcome;
-        if (replySent) this.logger.success("单次心跳成功完成");
-        else this.logger.debug("单次心跳完成，未成功发送回复");
+        if (replySent) this.logger.debug("本次模型决策已发送回复");
+        else this.logger.debug("本次模型决策结束 · 无已确认发送的回复");
         return { continue: !outcome.stop && (response.request_heartbeat || outcome.retryRead), replySent };
     }
 
@@ -641,14 +654,25 @@ export class HeartbeatProcessor {
             },
         ];
         const attachedImageIds = this.contextBuilder.getAttachedImageIds?.(messages) ?? [];
-        const definitions = this.toolService.getAvailableTools(session, { attachedImageIds });
-        if (!definitions.length) throw new Error("当前会话没有可用工具");
+        const silenceParameters = Schema.object({});
+        const definitions = this.toolService
+            .getAvailableTools(session, { attachedImageIds }, "model")
+            .filter((definition) => definition.name !== NATIVE_SILENCE_TOOL);
         const tools: Tool[] = definitions.map((definition) => ({
             type: "function",
             function: { name: definition.name, description: definition.description, parameters: toolJSONSchema(definition.parameters) },
             // SDK 阶段不执行任何真实工具，失败重试不会重放消息。
             execute: () => ({}),
         }));
+        tools.push({
+            type: "function",
+            function: {
+                name: NATIVE_SILENCE_TOOL,
+                description: "结束当前轮次，保持沉默。必须单独调用，不发送消息或执行其他动作。",
+                parameters: toolJSONSchema(silenceParameters),
+            },
+            execute: () => ({}),
+        });
         let actions: Array<{ function: string; params: Record<string, unknown> }> = [];
         const configuredRetries = this.config.nativeToolCorrectionRetries ?? 1;
         const correctionRetries = Number.isSafeInteger(configuredRetries) && configuredRetries >= 0 ? configuredRetries : 1;
@@ -681,7 +705,6 @@ export class HeartbeatProcessor {
                 }
                 const legacy = toolMarkup ? null : this.parseAndValidateResponse(response, conversationCid(session), false);
                 if (legacy) {
-                    this.displayThoughts(legacy.thoughts);
                     await this.interactionManager.recordThought(
                         turnId,
                         session.platform,
@@ -734,6 +757,13 @@ export class HeartbeatProcessor {
                     fail("arguments_not_object");
                     continue;
                 }
+                if (toolName === NATIVE_SILENCE_TOOL) {
+                    if (response.toolCalls.length !== 1 || Object.keys(params).length !== 0) {
+                        fail("silence_must_be_standalone");
+                        continue;
+                    }
+                    return { continue: false, replySent: false };
+                }
                 const definition = this.toolService.getTool(call.toolName, session, { attachedImageIds });
                 if (!definition) {
                     fail("tool_unavailable");
@@ -772,6 +802,9 @@ export class HeartbeatProcessor {
                     })),
                 },
             });
+            this.logger.debug(
+                `原生工具调用校验失败 | 尝试: ${attempt + 1} | 调用数: ${response.toolCalls.length} | 原因: ${failures.map((item) => item.reason).join(",")}`,
+            );
             if (attempt >= correctionRetries) throw failure;
             const calls = response.toolCalls;
             const ids = calls.map((call) => call.toolCallId);
@@ -840,6 +873,7 @@ export class HeartbeatProcessor {
             assertReplyTurn();
             if (
                 action.function === "send_message" &&
+                result.metadata?.intentionalSilence !== true &&
                 (result.status === "success" || result.metadata?.delivery?.messageIds?.some((id: unknown) => typeof id === "string" && id.trim()))
             ) {
                 replySent = true;
@@ -853,6 +887,8 @@ export class HeartbeatProcessor {
                 error: result.error,
                 metadata: result.metadata,
             });
+            if (action.function === "send_message" && result.status === "success" && result.metadata?.intentionalSilence === true)
+                return { continue: false, replySent };
             if (result.status !== "success") {
                 this.logger.warn(
                     `工具失败 | 工具: ${action.function} | 类型: ${result.error?.code ?? result.error?.name ?? "ToolError"} | ${result.error?.message ?? "未知错误"}`,
@@ -863,14 +899,17 @@ export class HeartbeatProcessor {
         return { continue: !actions.some((action) => action.function === "send_message"), replySent };
     }
 
-    private invokeAction(
+    private async invokeAction(
         turnId: string,
         action: { function: string; params: Record<string, unknown> },
         session: Session,
         attachedImageIds: readonly string[] = [],
         actionId?: string,
     ) {
-        return this.toolService.invoke(action.function, action.params, session, { requestId: turnId, actionId, attachedImageIds });
+        recordConversationReport("tool_call", { turnId, actionId, ...action });
+        const result = await this.toolService.invoke(action.function, action.params, session, { requestId: turnId, actionId, attachedImageIds });
+        recordConversationReport("tool_result", { turnId, actionId, function: action.function, result });
+        return result;
     }
 
     private isReadOnlyAction(name: string, session: Session, params: Record<string, unknown>) {
@@ -891,15 +930,6 @@ export class HeartbeatProcessor {
         }
     }
 
-    private displayThoughts(thoughts: AgentResponse["thoughts"]) {
-        if (!thoughts) return;
-        const { observe, analyze_infer, plan } = thoughts;
-        this.logger.info(`[思考过程]
-  - 观察: ${observe || "N/A"}
-  - 分析: ${analyze_infer || "N/A"}
-  - 计划: ${plan || "N/A"}`);
-    }
-
     private async executeActions(
         turnId: string,
         session: Session,
@@ -908,7 +938,7 @@ export class HeartbeatProcessor {
         attachedImageIds: readonly string[] = [],
     ): Promise<{ replySent: boolean; retryRead: boolean; stop: boolean }> {
         if (actions.length === 0) {
-            this.logger.info("无动作需要执行");
+            this.logger.debug("无动作需要执行");
             return { replySent: false, retryRead: false, stop: false };
         }
 
@@ -928,6 +958,7 @@ export class HeartbeatProcessor {
             assertReplyTurn();
             if (
                 action.function === "send_message" &&
+                result.metadata?.intentionalSilence !== true &&
                 (result.status === "success" || result.metadata?.delivery?.messageIds?.some((id: unknown) => typeof id === "string" && id.trim()))
             ) {
                 replySent = true;
@@ -941,6 +972,8 @@ export class HeartbeatProcessor {
                 error: result.error,
                 metadata: result.metadata,
             });
+            if (action.function === "send_message" && result.status === "success" && result.metadata?.intentionalSilence === true)
+                return { replySent, retryRead: false, stop: true };
             if (result.status !== "success") {
                 this.logger.warn(
                     `工具失败 | 工具: ${action.function} | 类型: ${result.error?.code ?? result.error?.name ?? "ToolError"} | ${result.error?.message ?? "未知错误"}`,

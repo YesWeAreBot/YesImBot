@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { Context, h, Schema } from "koishi";
+import { Context, h, Logger, Schema } from "koishi";
 import { CQCode } from "koishi-plugin-adapter-onebot";
 
 import { Extension, Tool, withInnerThoughts } from "../../extension/decorators";
@@ -28,6 +28,10 @@ export default class InteractionsExtension {
     static readonly Config = InteractionsConfigSchema;
     static readonly inject = ["yesimbot"];
 
+    private get logger(): Logger {
+        return this.ctx.yesimbot?.logging?.getLogger("[群内交互]") ?? this.ctx.logger;
+    }
+
     constructor(
         public ctx: Context,
         public config: InteractionsConfig,
@@ -52,16 +56,17 @@ export default class InteractionsExtension {
             });
 
             if ((result as any)["status"] === "failed") return Failed((result as any)["message"]);
-            this.ctx.logger.info(`Bot[${session.selfId}]对消息 ${message_id} 进行了表态： ${emoji_id}`);
+            this.logger.info(`Bot[${session.selfId}]对消息 ${message_id} 进行了表态： ${emoji_id}`);
             return Success(result);
         } catch (error) {
-            this.ctx.logger.error(`Bot[${session.selfId}]执行表态失败: ${message_id}, ${emoji_id} - `, error.message);
+            this.logger.error(`Bot[${session.selfId}]执行表态失败: ${message_id}, ${emoji_id} - `, error.message);
             return Failed(`对消息 ${message_id} 进行表态失败： ${error.message}`);
         }
     }
 
     @Tool({
         name: "essence_create",
+        modelReplacement: "essence",
         description: `在当前频道将一个消息设置为精华消息。常在你认为某个消息十分重要或过于典型时使用。`,
         parameters: withInnerThoughts({
             message_id: Schema.string().required().description("消息 ID"),
@@ -73,16 +78,17 @@ export default class InteractionsExtension {
         if (isEmpty(message_id)) return Failed("message_id is required");
         try {
             await session.onebot!.setEssenceMsg(message_id);
-            this.ctx.logger.info(`Bot[${session.selfId}]将消息 ${message_id} 设置为精华`);
+            this.logger.info(`Bot[${session.selfId}]将消息 ${message_id} 设置为精华`);
             return Success();
         } catch (error) {
-            this.ctx.logger.error(`Bot[${session.selfId}]设置精华消息失败: ${message_id} - `, error.message);
+            this.logger.error(`Bot[${session.selfId}]设置精华消息失败: ${message_id} - `, error.message);
             return Failed(`设置精华消息失败： ${error.message}`);
         }
     }
 
     @Tool({
         name: "essence_delete",
+        modelReplacement: "essence",
         description: `在当前频道将一个消息从精华中移除。`,
         parameters: withInnerThoughts({
             message_id: Schema.string().required().description("消息 ID"),
@@ -94,39 +100,57 @@ export default class InteractionsExtension {
         if (isEmpty(message_id)) return Failed("message_id is required");
         try {
             const result = await session.onebot!.deleteEssenceMsg(message_id);
-            this.ctx.logger.info(`Bot[${session.selfId}]将消息 ${message_id} 从精华中移除`);
+            this.logger.info(`Bot[${session.selfId}]将消息 ${message_id} 从精华中移除`);
             return Success();
         } catch (error) {
-            this.ctx.logger.error(`Bot[${session.selfId}]从精华中移除消息失败: ${message_id} - `, error.message);
+            this.logger.error(`Bot[${session.selfId}]从精华中移除消息失败: ${message_id} - `, error.message);
             return Failed(`从精华中移除消息失败： ${error.message}`);
         }
+    }
+
+    @Tool({
+        name: "essence",
+        description: "设置或取消当前会话的精华消息。action=set 设置，action=remove 取消。",
+        supersedes: ["essence_create", "essence_delete"],
+        actionAliases: { set: "essence_create", remove: "essence_delete" },
+        parameters: withInnerThoughts({
+            action: Schema.union(["set", "remove"]).required(),
+            message_id: Schema.string().required().description("消息 ID"),
+        }),
+        isSupported: (session) => session.platform === "onebot",
+    })
+    async essence(_args: Infer<{ action: "set" | "remove"; message_id: string }>) {
+        return Failed("请通过工具服务调用精华操作");
     }
 
     @Tool({
         name: "send_poke",
         description: `发送戳一戳、拍一拍消息，常用于指定你交流的对象，或提醒某位用户注意。`,
         parameters: withInnerThoughts({
-            user_id: Schema.string().required().description("用户名称"),
-            channel: Schema.string().description("要在哪个频道运行，不填默认为当前频道"),
+            user_id: Schema.string().required().description("用户账号 ID"),
+            guild_id: Schema.string().description("目标群组 ID，省略时使用当前群组"),
+            channel: Schema.string().hidden(),
         }),
         isSupported: (session) => session.platform === "onebot",
     })
-    async sendPoke({ session, user_id, channel }: Infer<{ user_id: string; channel: string }>) {
+    async sendPoke({ session, user_id, guild_id, channel }: Infer<{ user_id: string; guild_id?: string; channel?: string }>) {
         if (!session) return Failed("session 不可用");
         if (isEmpty(String(user_id))) return Failed("user_id is required");
-        const targetChannel = isEmpty(channel) ? session.channelId : channel;
+        if (!isEmpty(guild_id) && !isEmpty(channel) && guild_id !== channel) return Failed("guild_id 与旧参数 channel 指定了不同的群组");
+        const targetGuild = [guild_id, channel, session.guildId, session.isDirect ? undefined : session.channelId].find((id) => !isEmpty(id));
+        if (!targetGuild) return Failed("当前会话没有群组，请明确指定 guild_id");
         try {
             const result = await session.onebot!._request!("group_poke", {
-                group_id: targetChannel,
+                group_id: targetGuild,
                 user_id: Number(user_id),
             });
 
             if ((result as any)["status"] === "failed") return Failed((result as any)["data"]);
 
-            this.ctx.logger.info(`Bot[${session.selfId}]戳了戳 ${user_id}`);
+            this.logger.info(`Bot[${session.selfId}]戳了戳 ${user_id}`);
             return Success(result);
         } catch (error) {
-            this.ctx.logger.error(`Bot[${session.selfId}]戳了戳 ${user_id}，但是失败了 - `, error.message);
+            this.logger.error(`Bot[${session.selfId}]戳了戳 ${user_id}，但是失败了 - `, error.message);
             return Failed(`戳了戳 ${user_id} 失败： ${error.message}`);
         }
     }
@@ -257,7 +281,7 @@ export default class InteractionsExtension {
         } catch (error) {
             assertReplyTurn();
             const message = error instanceof Error ? error.message : String(error);
-            this.ctx.logger.error(`Bot[${session.selfId}]获取转发消息失败: ${id} - `, message);
+            this.logger.error(`Bot[${session.selfId}]获取转发消息失败: ${id} - `, message);
             return Failed(`获取转发消息失败： ${message}`);
         }
     }
