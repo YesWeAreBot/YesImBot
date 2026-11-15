@@ -143,10 +143,18 @@ function normalizeRow(kind: Kind, row: Row, target: BackupTarget, importing = fa
     if (kind !== "events") result.content = text(row.content, "content", true);
     if (kind === "messages") {
         if (!object(row.sender)) throw new Error("备份发送者无效");
-        if (importing) exactKeys(row.sender, ["id", "name", "roles"]);
+        if (importing) exactKeys(row.sender, ["id", "name", "roles", "discovery", "origin"]);
         result.sender = { id: identifier(row.sender.id, "sender.id") };
         if (row.sender.name) result.sender.name = text(row.sender.name, "sender.name");
         if (row.sender.roles?.length) result.sender.roles = strings(row.sender.roles);
+        if (row.sender.discovery !== undefined) {
+            if (!["onebot-periodic", "onebot-tool", "onebot-quote"].includes(row.sender.discovery)) throw new Error("消息发现方式无效");
+            result.sender.discovery = row.sender.discovery;
+        }
+        if (row.sender.origin !== undefined) {
+            if (!["model", "framework", "operator"].includes(row.sender.origin)) throw new Error("消息生成来源无效");
+            result.sender.origin = row.sender.origin;
+        }
         if (row.quoteId) result.quoteId = identifier(row.quoteId, "quoteId");
     } else if (kind === "events") {
         if (!ownEvent(row, target)) throw new Error("备份事件超出当前机器人频道范围");

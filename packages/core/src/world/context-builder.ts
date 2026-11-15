@@ -273,7 +273,7 @@ export class ContextBuilder {
             // 如果 item 不是消息，则这个条件始终为 true，也就是说只要时间戳满足，非消息类型就总是“新”的
             item.is_new =
                 item.type === "message" || item.type === "system_event"
-                    ? item.wasConsumed !== true && (item.type !== "message" || item.sender.id !== selfId)
+                    ? item.wasConsumed !== true && (item.type !== "message" || (item.sender.id !== selfId && !item.sender.discovery))
                     : item.timestamp > lastAgentTurnTime;
 
             (item as any).is_message = item.type === "message";

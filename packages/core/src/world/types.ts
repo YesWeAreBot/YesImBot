@@ -51,6 +51,8 @@ export interface MessageData {
         id: string;
         name?: string;
         roles?: string[];
+        discovery?: "onebot-periodic" | "onebot-tool" | "onebot-quote";
+        origin?: "model" | "framework" | "operator";
     };
     timestamp: Date;
     content: string;
@@ -206,7 +208,7 @@ export interface DiaryEntryData {
 /** 上下文中的消息对象 */
 export interface ContextualMessage {
     id: string;
-    sender: { id: string; name?: string; roles?: string[] };
+    sender: MessageData["sender"];
     content: string;
     elements: Element[];
     timestamp: Date;

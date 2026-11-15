@@ -166,6 +166,26 @@ export default class MemoryExtension {
     }
 
     @Tool({
+        name: "conversation_backfill",
+        readOnly: true,
+        isAvailable(this: MemoryExtension) {
+            return !!this.ctx.yesimbot?.world?.config.onebotHistory?.enabled;
+        },
+        description: "从当前 OneBot 会话补录近期平台历史，或按消息 ID 补录一条遗漏消息。补录后用 conversation_read 查询原文；不会触发旧消息的回复。",
+        parameters: withInnerThoughts({
+            message_id: Schema.string().description("可选。当前会话中的原始消息 ID；留空检查最近一页"),
+        }),
+    })
+    async conversationBackfill({ session, message_id }: Infer<{ message_id?: string }>) {
+        if (!session) return Failed("session 不可用");
+        try {
+            return Success(await this.ctx.yesimbot.world.refreshOneBotHistory(session, message_id));
+        } catch (error) {
+            return Failed(`OneBot 历史补录失败：${String(error)}`);
+        }
+    }
+
+    @Tool({
         name: "conversation_state_read",
         readOnly: true,
         description: "读取当前会话显式保存的工作话题和未决问题（不是事实断言）；无已验证来源时返回 unknown。使用返回 revision 进行替换更新。",

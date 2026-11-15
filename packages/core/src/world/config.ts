@@ -40,6 +40,7 @@ export interface HistoryConfig {
         failureMaxCooldownSeconds?: number;
     };
     ignoreSelfMessage: boolean;
+    onebotHistory?: { enabled: boolean; intervalSeconds: number; backend?: "napcat" | "snowluma" | "llbot" };
 
     /* === 清理 === */
     logLengthLimit?: number;
@@ -78,6 +79,13 @@ export const HistoryConfigSchema: Schema<HistoryConfig> = Schema.intersect([
             .collapse()
             .description("L3 长期日记"),
 
+        onebotHistory: Schema.object({
+            enabled: Schema.boolean().default(false).description("为本次运行已观察到的 OneBot 会话定期补录近期历史"),
+            backend: Schema.union(["napcat", "snowluma", "llbot"]).default("napcat").description("历史分页所用的 OneBot 后端"),
+            intervalSeconds: Schema.number().min(15).max(3600).step(1).default(60).description("补录检查间隔（秒）"),
+        })
+            .collapse()
+            .description("OneBot 历史补录"),
         ignoreSelfMessage: Schema.boolean().default(false).description("是否忽略自身发送的消息"),
     }).description("历史记录与上下文"),
     Schema.object({
