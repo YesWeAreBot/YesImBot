@@ -25,6 +25,10 @@ async function fixture(type: number) {
         async sendMessage(channelId: string, elements: any[], _referrer: unknown, options: any) {
             // Exercise Koishi's real <execute> transformation, including user observation.
             const result = await options.session.transform(elements);
+            const reply = this.session({ type: "send", channel: { id: channelId }, message: { content: result.join("") } });
+            reply.elements = result;
+            await ctx.serial(reply, "before-send", reply, options);
+            if (!result.length) return [];
             outbound.push({ channelId, content: result.join(""), actor: options.session.userId });
             return ["sent"];
         },
@@ -36,6 +40,7 @@ async function fixture(type: number) {
         const session = createSession(event);
         for (const [name, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(Object.getPrototypeOf(ctx.koishi.session)))) {
             if (name !== "constructor" && typeof descriptor.value === "function") session[name] = descriptor.value;
+            else if (name === "stripped") Object.defineProperty(session, name, descriptor);
         }
         return session;
     };
@@ -88,7 +93,10 @@ for (const [name, type] of [
                 return JSON.stringify(before);
             });
         const result = await f.extension.executeKoishiCommand({ session: f.source, command: "whoami" } as any);
-        expect(result.status).toBe("success");
+        expect(result).toMatchObject({
+            status: "success",
+            result: { status: "response-observed", output: f.outbound[0].content, delivery: "confirmed", messageIds: ["sent"] },
+        });
         expect(JSON.parse(f.outbound[0].content)).toEqual({ actor: "bot", name: "Bot account", authority: 1 });
         expect(f.outbound[0].channelId).toBe(f.source.channelId);
         expect(f.outbound[0].actor).toBe("bot");
@@ -166,4 +174,47 @@ it("does not replace a missing bot role with the triggering owner's membership",
     await f.extension.executeKoishiCommand({ session: f.source, command: "owner-only" } as any);
     expect(invoked).toBe(false);
     expect(f.outbound[0].content).toContain("权限不足");
+});
+
+it("distinguishes a silent action from a submission whose executor was not observed", async () => {
+    const f = await fixture(1);
+    const action = vi.fn<() => void>();
+    f.ctx.command("silent").action(action);
+    const run = () => f.extension.executeKoishiCommand({ session: f.source, command: "silent" } as any);
+    expect(await run()).toMatchObject({ status: "success", result: { status: "completed-no-output" } });
+    expect(action).toHaveBeenCalledTimes(1);
+    f.source.bot.sendMessage = async () => [];
+    expect(await run()).toMatchObject({ status: "success", result: { status: "submitted", delivery: "unconfirmed", messageIds: [] } });
+    expect(action).toHaveBeenCalledTimes(1);
+});
+
+it("returns command action failures instead of treating Koishi's error output as success", async () => {
+    const f = await fixture(1);
+    f.ctx.command("broken").action(() => {
+        throw new Error("fixture failure");
+    });
+    expect(await f.extension.executeKoishiCommand({ session: f.source, command: "broken" } as any)).toMatchObject({
+        status: "error",
+        error: { message: "Koishi 指令执行时出错" },
+    });
+});
+
+it("does not feed configuration output back to the model", async () => {
+    const f = await fixture(1);
+    f.ctx.command("conf.get").action(() => "sensitive-config-value");
+    const result = await f.extension.executeKoishiCommand({ session: f.source, command: "conf.get" } as any);
+    expect(result).toMatchObject({ status: "success", result: { status: "response-observed", outputHidden: true } });
+    expect(JSON.stringify(result)).not.toContain("sensitive-config-value");
+});
+
+it("returns output sent by the same command session during execution", async () => {
+    const f = await fixture(1);
+    f.ctx.command("explicit").action(async ({ session }) => {
+        await session!.send("first result");
+        return "returned result";
+    });
+    expect(await f.extension.executeKoishiCommand({ session: f.source, command: "explicit" } as any)).toMatchObject({
+        status: "success",
+        result: { status: "response-observed", output: "first result\nreturned result", delivery: "confirmed" },
+    });
 });

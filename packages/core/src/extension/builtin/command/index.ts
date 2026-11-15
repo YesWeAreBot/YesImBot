@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 
-import { Context, h, Logger, Schema } from "koishi";
+import { Argv, Context, h, Logger, Schema } from "koishi";
 
 import { assertReplyTurn, guardReplySession } from "../../../agent/reply-turn";
 import { Extension, Tool, withInnerThoughts } from "../../../extension/decorators";
 import { Failed, Success } from "../../../extension/helpers";
 import { Infer } from "../../../extension/types";
+import { truncate } from "../../../shared/utils";
 
 @Extension({
     name: "command",
@@ -43,16 +44,21 @@ export default class CommandExtension {
             // A fresh session prevents the trigger's observed user/permissions/member
             // from leaking into command execution. Keep the destination independently
             // from the actor, especially for a private conversation with another user.
-            const commandSession = guardReplySession(
-                session.bot.session({
-                    type: "message",
-                    channel: session.event.channel ? { ...session.event.channel } : undefined,
-                    guild: session.event.guild ? { ...session.event.guild } : undefined,
-                    referrer: session.event.referrer,
-                    user: { ...session.bot.user, id: session.selfId },
-                    message: { id: `bot-command-${randomUUID()}`, content: command },
-                }),
-            );
+            const freshSession = session.bot.session({
+                type: "message",
+                channel: session.event.channel ? { ...session.event.channel } : undefined,
+                guild: session.event.guild ? { ...session.event.guild } : undefined,
+                referrer: session.event.referrer,
+                user: { ...session.bot.user, id: session.selfId },
+                message: { id: `bot-command-${randomUUID()}`, content: command },
+            });
+            let executed: ReturnType<typeof Argv.parse> | undefined;
+            let response: h[] | undefined;
+            let commandFailed = false;
+            let configCommand = false;
+            let running = false;
+            let sentOutput = "";
+            const commandSession = guardReplySession(freshSession);
             // Initialize API methods from the bot, with no triggering user's raw event.
             if (commandSession.bot.internal) commandSession.setInternal(session.event._type || session.platform, {});
             if (!commandSession.isDirect && commandSession.guildId) {
@@ -64,10 +70,68 @@ export default class CommandExtension {
                 }
             }
             assertReplyTurn();
-            await commandSession.sendQueued(h("execute", {}, command));
-
-            this.logger.debug("平台指令已提交");
-            return Success();
+            // Koishi may catch an action exception and return its configured error reply.
+            const disposeError = this.ctx.on("command-error", (argv) => {
+                if (argv === executed) commandFailed = true;
+            });
+            const disposeCommand = this.ctx.on(
+                "command/before-execute",
+                (argv) => {
+                    const name = argv.command?.name;
+                    if (argv.session === commandSession && (name === "conf" || name?.startsWith("conf."))) configCommand = true;
+                },
+                true,
+            );
+            const disposeSend = this.ctx.on(
+                "before-send",
+                (outbound, options) => {
+                    if (running && options?.session === commandSession && sentOutput.length < 4000 && outbound.content) {
+                        sentOutput = truncate([sentOutput, outbound.content].filter(Boolean).join("\n"), 4000);
+                    }
+                },
+                true,
+            );
+            try {
+                // A local Satori component follows the same outbound execution path
+                // as Koishi's <execute> and retains the result for this tool call.
+                const render = async (_attrs: unknown, children: h[]) => {
+                    assertReplyTurn();
+                    if (executed) return [];
+                    executed = Argv.parse(children.join(""));
+                    running = true;
+                    try {
+                        response = await commandSession.execute(executed, true);
+                        return response;
+                    } catch (error) {
+                        commandFailed = true;
+                        throw error;
+                    } finally {
+                        running = false;
+                    }
+                };
+                const messageIds = (await commandSession.sendQueued(h("component", { is: render }, command))) ?? [];
+                assertReplyTurn();
+                const name = executed?.command?.name;
+                const output = [sentOutput, response?.join("")].filter(Boolean).join("\n");
+                const hideOutput = configCommand || name === "conf" || name?.startsWith("conf.");
+                const delivery = messageIds.length ? "confirmed" : "unconfirmed";
+                const receipt = { delivery, messageIds };
+                if (commandFailed) return Failed("Koishi 指令执行时出错", { command: receipt });
+                if (executed && !name) return Failed("Koishi 未识别该指令", { command: receipt });
+                if (output)
+                    return Success({
+                        status: "response-observed",
+                        ...receipt,
+                        ...(hideOutput ? { outputHidden: true } : { output: truncate(output, 4000) }),
+                    });
+                if (executed?.next) return Success({ status: "completed-no-output", ...receipt });
+                this.logger.debug("平台指令已提交，未观察到执行结果");
+                return Success({ status: "submitted", ...receipt });
+            } finally {
+                disposeSend();
+                disposeCommand();
+                disposeError();
+            }
         } catch (error) {
             this.logger.debug(`平台指令失败 · ${error.name ?? "未知错误"}`);
             return Failed(`执行指令失败 - ${error.message}`);
