@@ -8,6 +8,7 @@ import { TableName } from "../shared/constants";
 import { truncate } from "../shared/utils";
 import { conversationChannelId, conversationCid } from "../shared/utils/conversation-scope";
 import { HistoryConfig } from "./config";
+import { getModelMessageOrigin } from "./message-origin";
 import { normalizeOneBotMessageContent } from "./onebot-faces";
 import { WorldStateService } from "./service";
 import { AgentStimulus, MessageData, SystemEventData, SystemEventPayload, UserMessagePayload } from "./types";
@@ -239,7 +240,7 @@ export class EventListenerManager {
 
     private async handleOperatorMessage(session: Session): Promise<void> {
         this.logger.debug(`记录手动发送的消息 | 频道: ${conversationCid(session)}`);
-        await this.recordBotSentMessage(session);
+        await this.recordBotSentMessage(session, true);
     }
 
     private async handleCommandInvocation(argv: Argv): Promise<void> {
@@ -377,7 +378,7 @@ export class EventListenerManager {
         await this.service.recordMessage(message, generation);
     }
 
-    private async recordBotSentMessage(session: Session): Promise<void> {
+    private async recordBotSentMessage(session: Session, operator = false): Promise<void> {
         if (
             this.configReplies.has(session) ||
             session.scope === "commands.conf" ||
@@ -397,12 +398,13 @@ export class EventListenerManager {
         await this.service.observeChannel(session);
         this.logger.debug(`记录机器人消息 | 频道: ${conversationCid(session)} | 消息ID: ${session.messageId}`);
 
+        const origin = operator ? "operator" : session.scope?.startsWith("commands.") ? "framework" : getModelMessageOrigin();
         const message: MessageData = {
             id: session.messageId,
             platform: session.platform,
             channelId: conversationChannelId(session)!,
             channelType: session.isDirect ? "private" : "guild",
-            sender: { id: session.bot.selfId, name: session.bot.user?.nick || session.bot.user?.name || "" },
+            sender: { id: session.bot.selfId, name: session.bot.user?.nick || session.bot.user?.name || "", ...(origin ? { origin } : {}) },
             content: await this.assetService.transform(await normalizeOneBotMessageContent(session, session.toJSON().message?.content ?? session.content), {
                 session,
             }),

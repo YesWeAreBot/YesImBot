@@ -16,6 +16,7 @@ import { isEmpty, stringify } from "../shared/utils";
 import { conversationChannelId } from "../shared/utils/conversation-scope";
 import type { WorldStateService } from "../world";
 import { sessionChannelType } from "../world/channel-metadata";
+import { withModelMessageOrigin } from "../world/message-origin";
 import { BackgroundTools } from "./background-tools";
 import CommandExtension from "./builtin/command";
 import CoreUtilExtension from "./builtin/core-util";
@@ -650,7 +651,9 @@ export class ToolService extends YesImBotService<Config> {
                 ? ToolService.prototype.captureOutputOwner.call(this, session)
                 : undefined;
         const definition = this.getTool(functionName, session);
-        const run = () => this.executeInvocation(functionName, params, session, toolContext);
+        const execute = () => this.executeInvocation(functionName, params, session, toolContext);
+        const admin = session?.argv?.command?.name === "tool.invoke" || toolContext?.invocationActor === "admin";
+        const run = functionName === "send_message" && toolContext?.actionId && !admin ? () => withModelMessageOrigin(execute) : execute;
         let result = await (conversationLogPrefix() ? run() : withConversationLog(session, toolContext?.requestId, run));
         if (session && functionName !== "tool_output_read" && result.status === "success" && result.result !== undefined) {
             try {
@@ -695,7 +698,6 @@ export class ToolService extends YesImBotService<Config> {
         if (session?.platform && session.channelId && world?.recordSystemEvent) {
             const channelId = conversationChannelId(session)!;
             try {
-                const admin = session.argv?.command?.name === "tool.invoke" || toolContext?.invocationActor === "admin";
                 const summary = toolEventSummary(functionName, result);
                 const historyGeneration =
                     scopedBackground || result.result?.kind === "tool-output-resource" || result.metadata?.payloadError
