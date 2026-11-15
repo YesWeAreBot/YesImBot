@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { ImagePart, TextPart } from "@xsai/shared-chat";
 import { Context, Logger, h } from "koishi";
 
-import { AssetService } from "../asset";
+import { AssetService, isImageDataUrl } from "../asset";
 import { Config } from "../config";
 import { ToolService } from "../extension";
 import type { LoggerService } from "../logger";
@@ -543,6 +543,7 @@ export class PromptContextBuilder {
             lifecycle_expired: 0,
             count_limit: 0,
             missing_asset: 0,
+            unregistered_image: 0,
             asset_metadata_failed: 0,
             asset_read_failed: 0,
             unsupported_mime: 0,
@@ -551,21 +552,27 @@ export class PromptContextBuilder {
         };
 
         const imageTags = ["img", "image"];
+        const recordOutcome = (imageId: string | null, sourceMessageId: string, outcome: string) => {
+            this.logger.debug(`图片上下文 | ${JSON.stringify({ imageId, sourceMessageId, outcome })}`);
+        };
 
         // 2. 收集所有潜在的图片候选者，并赋予优先级
         const imageCandidates: ImageCandidate[] = allMessages.flatMap((msg) => {
-            const elements = msg.elements;
-            const imageIds = elements.filter((e) => imageTags.includes(e.type) && e.attrs.id).map((e) => e.attrs.id as string);
-
             // The referenced source carries the image, rather than the quoting message.
             const isQuotedImage = quoteIds.has(msg.id);
+            const priority = currentIds.has(msg.id) ? 3 : isQuotedImage ? 2 : relatedIds.has(msg.id) ? 1 : 0;
 
-            return imageIds.map((id) => ({
-                id,
-                sourceId: msg.id,
-                timestamp: msg.timestamp.getTime(),
-                priority: currentIds.has(msg.id) ? 3 : isQuotedImage ? 2 : relatedIds.has(msg.id) ? 1 : 0,
-            }));
+            return msg.elements
+                .filter((element) => imageTags.includes(element.type))
+                .flatMap((element) => {
+                    const id = element.attrs.id;
+                    if (!id) {
+                        diagnostics.unregistered_image++;
+                        recordOutcome(null, msg.id, "unregistered_image");
+                        return [];
+                    }
+                    return [{ id: String(id), sourceId: msg.id, timestamp: msg.timestamp.getTime(), priority }];
+                });
         });
 
         // 3. 对候选图片进行排序：优先级更高 -> 时间戳更新 -> 去重和筛选
@@ -583,12 +590,13 @@ export class PromptContextBuilder {
         );
 
         // 4. 根据生命周期和数量上限选择最终图片
-        const finalImageIds = new Set<string>();
+        const selectedCandidates: ImageCandidate[] = [];
         const usageKeysById = new Map<string, string>();
         diagnostics.candidates = sortedUniqueCandidates.length;
         for (const candidate of sortedUniqueCandidates) {
-            if (finalImageIds.size >= Math.max(0, this.config.maxImagesInContext)) {
+            if (selectedCandidates.length >= Math.max(0, this.config.maxImagesInContext)) {
                 diagnostics.count_limit++;
+                recordOutcome(candidate.id, candidate.sourceId, "count_limit");
                 continue;
             }
 
@@ -606,35 +614,42 @@ export class PromptContextBuilder {
                 (focus?.visualTaskId && this.imageTaskUsage.get(focus.visualTaskId)?.has(key)) ||
                 usageCount < this.config.imageLifecycleCount
             ) {
-                finalImageIds.add(candidate.id);
+                selectedCandidates.push(candidate);
                 usageKeysById.set(candidate.id, key);
-            } else diagnostics.lifecycle_expired++;
+            } else {
+                diagnostics.lifecycle_expired++;
+                recordOutcome(candidate.id, candidate.sourceId, "lifecycle_expired");
+            }
         }
 
         // 5. 获取图片数据并格式化输出
-        if (finalImageIds.size === 0) {
+        if (selectedCandidates.length === 0) {
             this.visualDiagnostic("no_images_selected", diagnostics);
             return { images: [], usageKeys: [] };
         }
 
-        const imageDataResults = await Promise.allSettled(Array.from(finalImageIds, (id) => this.assetService.getInfo(id)));
+        const imageDataResults = await Promise.allSettled(selectedCandidates.map(({ id }) => this.assetService.getInfo(id)));
         assertReplyTurn();
         const finalImages: Array<ImagePart | TextPart> = [];
         const usageKeys: string[] = [];
         const allowedImageTypes = new Set(this.config.allowedImageTypes);
 
-        for (const outcome of imageDataResults) {
+        for (const [index, outcome] of imageDataResults.entries()) {
+            const candidate = selectedCandidates[index];
             if (outcome.status === "rejected") {
                 diagnostics.asset_metadata_failed++;
+                recordOutcome(candidate.id, candidate.sourceId, "asset_metadata_failed");
                 continue;
             }
             const result = outcome.value;
             if (!result) {
                 diagnostics.missing_asset++;
+                recordOutcome(candidate.id, candidate.sourceId, "missing_asset");
                 continue;
             }
             if (!allowedImageTypes.has(result.mime)) {
                 diagnostics.unsupported_mime++;
+                recordOutcome(candidate.id, candidate.sourceId, "unsupported_mime");
                 continue;
             }
             let imageBuffer: Awaited<ReturnType<AssetService["read"]>>;
@@ -643,11 +658,13 @@ export class PromptContextBuilder {
             } catch {
                 assertReplyTurn();
                 diagnostics.asset_read_failed++;
+                recordOutcome(candidate.id, candidate.sourceId, "asset_read_failed");
                 continue;
             }
             assertReplyTurn();
-            if (typeof imageBuffer !== "string" || !/^data:image\/[^;,]+;base64,[A-Za-z0-9+/=\s]+$/.test(imageBuffer)) {
+            if (!isImageDataUrl(imageBuffer)) {
                 diagnostics.invalid_image_data++;
+                recordOutcome(candidate.id, candidate.sourceId, "invalid_image_data");
                 continue;
             }
             usageKeys.push(usageKeysById.get(result.id)!);
@@ -661,6 +678,7 @@ export class PromptContextBuilder {
             while (this.attachedImageFingerprints.size > 512) this.attachedImageFingerprints.delete(this.attachedImageFingerprints.keys().next().value!);
             finalImages.push(image);
             diagnostics.selected++;
+            recordOutcome(candidate.id, candidate.sourceId, "prepared");
         }
 
         this.visualDiagnostic("image_selection", diagnostics);

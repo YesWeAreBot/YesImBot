@@ -4,19 +4,25 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 import { GifUtil } from "@miaowfish/gifwrap";
-import { Jimp } from "jimp";
+import { defaultFormats, Jimp } from "jimp";
 import { Context, Element, Logger, h, type Session } from "koishi";
 import { v4 as uuidv4 } from "uuid";
 
 import { Config } from "../config";
 import type { LoggerService } from "../logger";
 import { TableName } from "../shared/constants";
+import { AppError, ErrorDefinitions } from "../shared/errors";
 import { YesImBotService } from "../shared/service";
 import { formatSize, getMimeType, truncate } from "../shared/utils";
 import { LocalStorageDriver } from "./drivers/local";
 import { AssetData, AssetInfo, AssetMetadata, FileResponse, ReadAssetOptions, StorageDriver } from "./types";
 
 const ELEMENT_TO_PROCESS = ["img", "image", "audio", "video", "file", "mface"];
+const decodableImages = new Set<string>(defaultFormats.map((format) => format().mime));
+
+export function isImageDataUrl(value: unknown): value is string {
+    return typeof value === "string" && /^data:image\/[^;,]+;base64,[A-Za-z0-9+/=\s]+$/.test(value);
+}
 
 interface AssetTransformOptions {
     session?: Pick<Session, "platform" | "bot">;
@@ -184,24 +190,24 @@ export class AssetService extends YesImBotService<Config> {
                     preparation: Promise.resolve().then(async () => {
                         const [existing] = await this.ctx.database.get(TableName.Assets, { hash });
                         signal?.throwIfAborted();
+                        const detected = type.startsWith("image/") ? getMimeType(data) : type;
+                        const mime = detected.startsWith("image/") ? detected : type;
+                        // A decoder rejection is conclusive for this pipeline only when
+                        // we have a decoder for the format. Other media can stay as originals.
+                        if (decodableImages.has(mime) && !(existing?.metadata.width && existing.metadata.height)) {
+                            const dimensions = await this._imageDimensions(data, mime);
+                            metadata = { ...metadata, ...dimensions };
+                            signal?.throwIfAborted();
+                        }
                         if (existing) {
                             await this._updateLastUsed(existing.id);
                             signal?.throwIfAborted();
                             return { id: existing.id, persisted: Promise.resolve(existing.id) };
                         }
-                        if (type.startsWith("image/")) {
-                            try {
-                                const jimp = await Jimp.read(data);
-                                metadata.width = jimp.width;
-                                metadata.height = jimp.height;
-                            } catch (error) {
-                                this.logger.warn(`无法解析图片元数据: ${error.message}`);
-                            }
-                        }
                         const id = options.id || uuidv4();
                         const asset: AssetData = {
                             id,
-                            mime: type,
+                            mime,
                             hash,
                             size: data.length,
                             createdAt: new Date(),
@@ -232,6 +238,19 @@ export class AssetService extends YesImBotService<Config> {
                 // callers reserve again using their own cancellation and metadata.
                 if (pending.get(hash) === entry) pending.delete(hash);
             }
+        }
+    }
+
+    private async _imageDimensions(data: Buffer, mime: string): Promise<{ width: number; height: number }> {
+        try {
+            const { width, height } = await Jimp.read(data);
+            return { width, height };
+        } catch (error) {
+            if (mime === "image/gif") {
+                const gif = await GifUtil.read(data).catch(() => undefined);
+                if (gif) return { width: gif.width, height: gif.height };
+            }
+            throw new AppError(ErrorDefinitions.RESOURCE.IMAGE_INVALID, { cause: error, context: { mime } });
         }
     }
 
@@ -534,6 +553,11 @@ export class AssetService extends YesImBotService<Config> {
                 this.logger.warn(`本地文件 ${id} 丢失，尝试从 ${asset.metadata.src} 恢复...`);
                 try {
                     const { data } = await this._getSourceBuffer(asset.metadata.src);
+                    if (asset.mime.startsWith("image/")) {
+                        const detected = getMimeType(data);
+                        const mime = detected.startsWith("image/") ? detected : asset.mime;
+                        if (decodableImages.has(mime)) await this._imageDimensions(data, mime);
+                    }
                     await this.storage.write(id, data); // 恢复文件
                     this.logger.success(`资源 ${id} 已成功恢复`);
                     return data;

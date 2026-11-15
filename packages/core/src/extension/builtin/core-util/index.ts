@@ -1,13 +1,14 @@
 import { Bot, Context, h, Logger, Schema, Session, sleep, Universal } from "koishi";
 
 import { assertReplyDestination, assertReplyTurn, guardReplyBot, replyTurnSignal, sendMessageWithReceipts } from "../../../agent/reply-turn";
-import { AssetService } from "../../../asset";
+import { AssetService, isImageDataUrl } from "../../../asset";
 import { Extension, Tool, withInnerThoughts } from "../../../extension/decorators";
 import { Failed, Success } from "../../../extension/helpers";
 import { Infer } from "../../../extension/types";
 import { formatLogTarget } from "../../../logger/conversation";
 import { IChatModel } from "../../../model";
 import { withUsageScope } from "../../../model/usage";
+import { AppError, ErrorDefinitions } from "../../../shared/errors";
 import { MessageDeliveryError, type ConfirmedMessage } from "../../../shared/message-delivery";
 import { isEmpty, parseConversationChannelId } from "../../../shared/utils";
 import { CoreUtilConfigSchema, type CoreUtilConfig } from "./config";
@@ -165,7 +166,10 @@ export default class CoreUtilExtension {
         }
 
         args.toolContext?.reportProgress?.("正在读取图片资源");
-        const imageInfo = await this.assetService.getInfo(image_id);
+        const imageInfo = await this.assetService.getInfo(image_id).catch((error) => {
+            assertReplyTurn();
+            throw new AppError(ErrorDefinitions.RESOURCE.IMAGE_READ_FAILED, { cause: error, context: { imageId: image_id, stage: "metadata" } });
+        });
         if (!imageInfo) {
             this.logger.warn(`✖ 图片未找到 | ID: ${image_id}`);
             return Failed(`图片未找到`);
@@ -175,7 +179,16 @@ export default class CoreUtilExtension {
             return Failed(`资源不是图片`);
         }
 
-        const image = (await this.assetService.read(image_id, { format: "data-url", image: { process: true, format: "jpeg" } })) as string;
+        const image = await this.assetService.read(image_id, { format: "data-url", image: { process: true, format: "jpeg" } }).catch((error) => {
+            assertReplyTurn();
+            throw new AppError(ErrorDefinitions.RESOURCE.IMAGE_READ_FAILED, {
+                cause: error,
+                context: { imageId: image_id, mime: imageInfo.mime, stage: "read" },
+            });
+        });
+        if (!isImageDataUrl(image)) {
+            throw new AppError(ErrorDefinitions.RESOURCE.IMAGE_READ_FAILED, { context: { imageId: image_id, mime: imageInfo.mime, stage: "data_url" } });
+        }
 
         const visionModel = this.config.vision.model;
         let model: IChatModel | null = null;
