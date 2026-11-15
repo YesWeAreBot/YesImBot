@@ -112,7 +112,7 @@ export class WorldStateService extends YesImBotService<Config> {
 
     public async stop(): Promise<void> {
         this.conversationState?.dispose();
-        this.oneBotHistory.stop();
+        this.oneBotHistory?.stop();
         this.eventListenerManager.stop();
         const stoppingDiaries = this.l3_manager.stop();
         if (this.clearTimer) {
