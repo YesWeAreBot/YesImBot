@@ -9,7 +9,7 @@ import type { LoggerService } from "../logger";
 import { conversationLogPrefix, withConversationLog } from "../logger/conversation";
 import { PromptService } from "../prompt";
 import { sanitizeDiagnostic } from "../shared/diagnostic-sanitizer";
-import { normalizeAppError, fromAppError } from "../shared/errors";
+import { normalizeAppError, fromAppError, handleError } from "../shared/errors";
 import { getInstanceDirectory, getInstanceScope } from "../shared/instance-scope";
 import { YesImBotService } from "../shared/service";
 import { isEmpty, stringify } from "../shared/utils";
@@ -1007,8 +1007,7 @@ export class ToolService extends YesImBotService<Config> {
             } catch (error) {
                 assertReplyTurn();
                 const normalized = normalizeAppError(error);
-                this._logger.error(`💥 异常 | 调用 ${functionName} 时出错`, { code: normalized.code, errorId: normalized.errorId });
-                this._logger.debug(sanitizeDiagnostic(normalized));
+                handleError(this._logger, normalized, `执行工具 ${functionName}`);
                 lastResult = Failed(fromAppError(normalized));
                 return lastResult;
             }
