@@ -303,7 +303,7 @@ export class WorldStateService extends YesImBotService<Config> {
         const target = { platform: session.platform, channelId: conversationChannelId(session)! };
         await this.l2_manager.waitForHistoryClear(target);
         const generation = this.l2_manager.getHistoryGeneration(target);
-        if (this.config.onebotHistory?.enabled && session.platform === "onebot" && session.quote?.id) {
+        if (this.config?.onebotHistory?.enabled && session.platform === "onebot" && session.quote?.id) {
             const [quote] = await this.ctx.database.get(TableName.Messages, { ...target, id: session.quote.id }, ["id"]);
             if (!quote) {
                 await this.oneBotHistory.refresh(session, session.quote.id, "onebot-quote").catch(() => this.logger.debug("OneBot 引用消息暂不可补录"));
