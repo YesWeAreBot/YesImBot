@@ -41,14 +41,18 @@
     "./package.json": "./package.json"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "4.0.78",
+    "@ai-sdk/openai": "4.0.91",
     "@miaowfish/gifwrap": "^0.10.1",
+    "ai": "7.0.137",
     "gray-matter": "^4.0.3",
     "jimp": "^1.6.0",
     "jsonrepair": "^3.12.0",
     "mustache": "^4.2.0",
     "qface": "^1.4.1",
     "semver": "^7.7.2",
-    "uuid": "^11.1.0"
+    "uuid": "^11.1.0",
+    "zod": "3.25.76"
   },
   "devDependencies": {
     "@koishijs/client": "^5.30.11",

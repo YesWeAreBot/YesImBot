@@ -10,11 +10,13 @@ export interface ConfigEntry {
     path: string[];
     schema: FormSchema;
     omit?: string[];
+    editor?: "search-engines";
 }
 export interface ConfigGroup {
     id: string;
     label: string;
     entries: ConfigEntry[];
+    fold?: boolean;
     note?: string;
 }
 export interface ConfigCategory {
@@ -131,7 +133,14 @@ const definitions: CategoryDefinition[] = [
     ],
 ];
 
+// Simple rows already have labels and controls in the native editor. A
+// surrounding fold is useful for a feature with its own settings, such as L2
+// memory or TypeSafe, but adds a second heading to standalone fields.
+const directGroups = new Set(["scope", "context", "core-memory", "vision-input", "vision-prompt", "rendering", "execution", "other"]);
+
 const projectedCoreFields = ["vision", "typing", "deliveryTimeoutMs"];
+const configuredSearchFields = ["engines", "strategy", "selectedEngines", "engineOptions"];
+const legacySearchFields = ["endpoint", "sources", "format"];
 
 // Clone only schema structure, never mutate the live console registry or change
 // defaults in the server validator. Omit both union branches, including hidden
@@ -158,6 +167,7 @@ export function createConfigLayout(schema: FormSchema, dynamicSchemas: Record<st
         groups: groups.map(([id, label, names]) => ({
             id,
             label,
+            fold: !directGroups.has(id),
             entries: names.flatMap((name) => {
                 const field = fields[name];
                 if (!field || field.meta?.hidden || used.has(name)) return [];
@@ -174,6 +184,24 @@ export function createConfigLayout(schema: FormSchema, dynamicSchemas: Record<st
         extensionGroup.entries = [];
         for (const [name, extensionSchema] of Object.entries(extensions)) {
             if (extensionSchema.meta?.hidden) continue;
+            if (name === "search") {
+                const searchFields = collectConfigFields(extensionSchema);
+                // Old registry payloads still use the original editor.
+                if (searchFields.engineSelection && searchFields.selectedEngines) {
+                    const searchConfig = config?.extra?.search;
+                    const configured = searchConfig?.engineSelection === "configured";
+                    const shown = configured && searchConfig?.enabled !== false;
+                    const omitted = configured ? [...legacySearchFields, "selectedEngines"] : configuredSearchFields;
+                    extensionGroup.entries.push({ path: ["extra", name], schema: omitSchemaFields(extensionSchema, omitted), omit: omitted });
+                    if (shown)
+                        extensionGroup.entries.push({
+                            path: ["extra", name, "selectedEngines"],
+                            schema: searchFields.selectedEngines,
+                            editor: "search-engines",
+                        });
+                    continue;
+                }
+            }
             if (name !== "core_util") {
                 extensionGroup.entries.push({ path: ["extra", name], schema: extensionSchema });
                 continue;
