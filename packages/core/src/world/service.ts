@@ -317,8 +317,8 @@ export class WorldStateService extends YesImBotService<Config> {
     }
 
     /** Channel identity comes from the adapter, never from an ID prefix. */
-    public refreshOneBotHistory(session: Session, messageId?: string) {
-        return this.oneBotHistory.refresh(session, messageId);
+    public refreshOneBotHistory(session: Session, messageId?: string, signal?: AbortSignal) {
+        return this.oneBotHistory.refresh(session, messageId, "onebot-tool", signal);
     }
 
     public async observeChannel(session: Session): Promise<void> {
@@ -333,13 +333,14 @@ export class WorldStateService extends YesImBotService<Config> {
     public async recordMessage(
         message: MessageData,
         expectedGeneration?: number,
-        options: { backfilled?: boolean } = {},
+        options: { backfilled?: boolean; signal?: AbortSignal } = {},
     ): Promise<"stored" | "duplicate" | "failed" | "invalidated"> {
         if (message.channelType) this.l2_manager.observeChannel(message, message.channelType);
         // 在 L1 异步写入之前登记代次与在途任务，清除必须等待已接受的写入。
         const generation = expectedGeneration ?? this.l2_manager.getHistoryGeneration(message);
         const result: { outcome: Awaited<ReturnType<InteractionManager["recordMessage"]>> } = { outcome: "failed" };
         const recorded = await this.l2_manager.writeMemory(message, generation, async () => {
+            options.signal?.throwIfAborted();
             result.outcome = await this.l1_manager.recordMessage(message);
         });
         if (!recorded || this.l2_manager.getHistoryGeneration(message) !== generation) return "invalidated";

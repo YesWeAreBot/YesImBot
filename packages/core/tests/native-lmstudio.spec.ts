@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import { ChatModel } from "../src/model/chat-model";
-import { ModelAbility } from "../src/model/config";
+import { ContentFailureAction, ModelAbility } from "../src/model/config";
 import { createLMStudioFetch } from "../src/model/native/lmstudio";
+import { ChatModelSwitcher } from "../src/model/service";
 import { loggingStub, stubCtx } from "./helpers/yesimbot";
 const root = "https://example.test/relay/";
 const config = { type: "LM Studio", apiKey: "token", baseURL: root } as any;
@@ -171,4 +172,39 @@ it("LM Studio bridge crosses real local HTTP with native request and response sh
         server.closeAllConnections();
         await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
     }
+});
+
+it("sends a second native request for invalid JSON without replaying an assistant turn", async () => {
+    const outputs = ["malformed", '{"ok":true}'];
+    const t = setup(() => Response.json({ output: [{ type: "message", content: outputs.shift() }] }));
+    const ctx = stubCtx();
+    const logging = loggingStub({
+        debug() {},
+        info() {},
+        warn() {},
+        error() {},
+        extend() {
+            return this;
+        },
+    });
+    const model = new ChatModel(
+        ctx,
+        () => ({ baseURL: root, apiKey: "test", model: "test" }),
+        {
+            modelId: "test",
+            abilities: [ModelAbility.Chat],
+            statelessUserInput: true,
+            parameters: { stream: false },
+            retryPolicy: { maxRetries: 1, onContentFailure: ContentFailureAction.AugmentAndRetry },
+        },
+        t.fetch,
+        logging,
+    );
+    const group = new ChatModelSwitcher(ctx, { name: "test", models: [{ providerName: "test", modelId: "test" }] }, () => model, logging);
+    await expect(group.chat({ messages: [{ role: "user", content: "original" }], validation: { format: "json" } })).resolves.toMatchObject({
+        text: '{"ok":true}',
+    });
+    expect(t.calls).toHaveLength(2);
+    expect(t.calls[1].body.input).toEqual(t.calls[0].body.input);
+    expect(t.calls[1].body.system_prompt).toContain("failed output validation");
 });

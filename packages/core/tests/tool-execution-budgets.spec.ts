@@ -330,6 +330,7 @@ for (const nativeToolCalling of [false, true]) {
         config.heartbeat = 1;
         config.nativeToolCorrectionRetries = 0;
         const mainModel = {
+            hasVisionCapability: () => true,
             chat: async (options: any) => {
                 modelRequests.push(options);
                 return nativeToolCalling

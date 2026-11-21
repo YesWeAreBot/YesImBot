@@ -82,6 +82,13 @@ export function projectWorldForModel(world: WorldState): { world: WorldState; du
                     }
                 }
             }
+            if (item.type === "message") {
+                const origin = item.sender.origin && { model: "模型回复", framework: "框架输出", operator: "人工操作" }[item.sender.origin];
+                const discovery =
+                    item.sender.discovery && { "onebot-periodic": "定时回填", "onebot-tool": "工具回填", "onebot-quote": "引用回读" }[item.sender.discovery];
+                const source = [origin, discovery].filter(Boolean).join("、");
+                if (source) return [{ ...item, sender: { ...item.sender, name: `${item.sender.name ?? item.sender.id}〔${source}〕` } }];
+            }
             return [withoutPrivateReasoning(item)];
         });
     return {

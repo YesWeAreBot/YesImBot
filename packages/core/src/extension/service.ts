@@ -16,6 +16,7 @@ import { isEmpty, stringify } from "../shared/utils";
 import { conversationChannelId } from "../shared/utils/conversation-scope";
 import type { WorldStateService } from "../world";
 import { sessionChannelType } from "../world/channel-metadata";
+import { registerHistoryResetParticipant } from "../world/history-reset";
 import { withModelMessageOrigin } from "../world/message-origin";
 import { BackgroundTools } from "./background-tools";
 import CommandExtension from "./builtin/command";
@@ -159,7 +160,7 @@ export class ToolService extends YesImBotService<Config> {
     private schemaStopped = false;
     private readonly toolOwners = new Map<string, { definition: ToolDefinition; context: Context }>();
     private readonly executions = new Set<AbortController>();
-    private readonly outputProducers = new Map<string, { definition: ToolDefinition; result: ToolCallResult; expiresAt: number }>();
+    private readonly outputProducers = new Map<string, { definition: ToolDefinition; result: ToolCallResult; expiresAt: number; owner: ToolOutputOwner }>();
     private extensions: Map<string, IExtension> = new Map();
     // Disabled instances are also retained so their own plugin scope can be re-enabled.
     private knownExtensions: Map<string, IExtension> = new Map();
@@ -176,6 +177,18 @@ export class ToolService extends YesImBotService<Config> {
         this._logger = deps.logging.getLogger("[工具管理器]");
         this.promptService = deps.prompt;
         this.updateBackgroundToolSchema();
+        registerHistoryResetParticipant(ctx, {
+            prepare: (scope) => {
+                const matches = (owner: ToolOutputOwner) =>
+                    "type" in scope
+                        ? scope.type === "all" || scope.type === owner.channelType
+                        : scope.platform === owner.platform && scope.channelId === owner.channelId;
+                for (const [uri, producer] of this.outputProducers) {
+                    if (matches(producer.owner)) this.outputProducers.delete(uri);
+                }
+                return { ready: this.getOutputStore().clear(matches, "type" in scope && scope.type === "all") };
+            },
+        });
         if (config.backgroundTools?.enabled) this.background = new BackgroundTools(ctx, config.backgroundTools, deps.world, this);
     }
 
@@ -671,7 +684,12 @@ export class ToolService extends YesImBotService<Config> {
                     capture.assertCurrent();
                     for (const [uri, producer] of this.outputProducers) if (producer.expiresAt <= Date.now()) this.outputProducers.delete(uri);
                     if (definition)
-                        this.outputProducers.set(resource.uri, { definition, result: structuredClone(result), expiresAt: Date.parse(resource.expiresAt) });
+                        this.outputProducers.set(resource.uri, {
+                            definition,
+                            result: structuredClone(result),
+                            expiresAt: Date.parse(resource.expiresAt),
+                            owner: capture.owner,
+                        });
                     result = { ...result, result: { ...resource, metadata: result.metadata } };
                 }
             } catch (error) {

@@ -16,6 +16,8 @@ function setup(responses: any[], config: Record<string, unknown> = {}) {
         success: vi.fn<(...args: any[]) => void>(),
     };
     const requests: any[] = [];
+    const onOutcome = vi.fn<(status: string) => void>();
+    const recordThought = vi.fn<(...args: unknown[]) => Promise<void>>(async () => {});
     const invoke = vi.fn<(...args: any[]) => Promise<any>>(async () => ({ status: "success" }));
     const definitions = [
         { name: "send_message", description: "send", parameters: Schema.object({ message: Schema.string().required() }) },
@@ -33,14 +35,14 @@ function setup(responses: any[], config: Record<string, unknown> = {}) {
         } as any,
         prompt: {} as any,
         tool: { getAvailableTools: () => definitions, getTool: (name) => definitions.find((tool) => tool.name === name), invoke } as any,
-        l1: { recordThought: async () => {}, recordHeartbeat: async () => {}, recordAction: async () => "action", recordObservation: async () => {} } as any,
+        l1: { recordThought, recordHeartbeat: async () => {}, recordAction: async () => "action", recordObservation: async () => {} } as any,
         contextBuilder: {} as any,
         logging: loggingStub(logger),
         world: {} as any,
     });
-    (processor as any)._prepareLlmRequest = async () => ({ messages: [] });
-    const run = () => processor.runCycle({ session: { platform: "qq", channelId: "g", cid: "qq:g" } } as any);
-    return { requests, invoke, logger, run };
+    (processor as any)._prepareLlmRequest = async () => ({ messages: [], manualRecallIds: ["recall"], consumedSourceIds: ["source"] });
+    const run = () => processor.runCycle({ session: { platform: "qq", channelId: "g", cid: "qq:g" } } as any, onOutcome);
+    return { requests, invoke, logger, run, onOutcome, recordThought };
 }
 it("feeds invalid argument paths back as paired tool responses before any batch action executes", async () => {
     const f = setup([
@@ -82,6 +84,7 @@ it("does not retry or replay a batch after actual execution has started", async 
     expect(await f.run()).toBe(true);
     expect(f.requests).toHaveLength(1);
     expect(f.invoke).toHaveBeenCalledTimes(2);
+    expect(f.onOutcome).toHaveBeenCalledWith("partial_delivery");
 });
 it("preserves successful legacy JSON responses without a native retry", async () => {
     const f = setup([
@@ -223,6 +226,8 @@ it("ends a native turn silently without executing a tool or retrying", async () 
     expect(f.requests).toHaveLength(1);
     expect(f.invoke).not.toHaveBeenCalled();
     expect(f.logger.error).not.toHaveBeenCalled();
+    expect(f.onOutcome).toHaveBeenCalledWith("explicit_silence");
+    expect(f.recordThought).toHaveBeenCalledWith(expect.any(String), "qq", "g", expect.any(Object), ["recall"], ["source"]);
 });
 
 it("rejects silence mixed with a real action before any side effect", async () => {

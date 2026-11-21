@@ -81,6 +81,8 @@ export interface ModelConfig {
     /** Declared maximum context, scoped to this provider/model. */
     contextLimit?: ContextLimitConfig;
     disableNativeToolCalling?: boolean;
+    /** Set by native providers that only accept one current user turn. */
+    statelessUserInput?: boolean;
     parameters?: {
         temperature?: number;
         topP?: number;

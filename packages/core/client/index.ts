@@ -2,8 +2,9 @@ import { Schema, store } from "@koishijs/client";
 import { computed, defineComponent, h, ref, resolveComponent, shallowRef, watch } from "vue";
 
 import { createConfigLayout, readConfigEntry, writeConfigEntry } from "./config-layout";
-import type { ConfigEntry } from "./config-layout";
+import type { ConfigEntry, ConfigGroup } from "./config-layout";
 import { ModelGroups } from "./model-groups";
+import { SearchEngineSelection } from "./search-engine-selection";
 
 import "./section.css";
 
@@ -97,22 +98,33 @@ export const PurposeConfig = defineComponent({
             const registry = store.schema?.["toolService.availableExtensions"];
             return createConfigLayout(props.schema, registry ? { "toolService.availableExtensions": new Schema(registry) } : {}, draft.value);
         });
-        const renderEntry = (entry: ConfigEntry, inline: boolean) =>
-            h(
+        const updateEntry = (entry: ConfigEntry, value: unknown) => {
+            if (props.disabled) return;
+            draft.value = writeConfigEntry(draft.value, entry, value);
+            emit("update:modelValue", draft.value);
+        };
+        const renderEntry = (entry: ConfigEntry, inline: boolean) => {
+            const modelValue = readConfigEntry(draft.value, entry);
+            if (entry.editor === "search-engines") {
+                return h(SearchEngineSelection, {
+                    key: entry.path.join("."),
+                    engines: draft.value?.extra?.search?.engines,
+                    modelValue,
+                    disabled: props.disabled,
+                    "onUpdate:modelValue": (value: string[]) => updateEntry(entry, value),
+                });
+            }
+            return h(
                 resolveComponent("k-schema"),
                 {
                     key: entry.path.join("."),
                     schema: nativeSchema(entry, inline),
-                    modelValue: readConfigEntry(draft.value, entry),
+                    modelValue,
                     initial: readConfigEntry(props.initial, entry),
                     disabled: props.disabled,
                     prefix: `${props.prefix ?? ""}${entry.path.join(".")}.`,
                     extra: inline ? { foldable: false } : undefined,
-                    "onUpdate:modelValue": (value) => {
-                        if (props.disabled) return;
-                        draft.value = writeConfigEntry(draft.value, entry, value);
-                        emit("update:modelValue", draft.value);
-                    },
+                    "onUpdate:modelValue": (value) => updateEntry(entry, value),
                 },
                 {
                     title: () => [
@@ -121,6 +133,16 @@ export const PurposeConfig = defineComponent({
                     ],
                 },
             );
+        };
+        const renderGroup = (group: ConfigGroup) => {
+            const content = () => [
+                group.note ? h("p", { class: "yib-config-note" }, group.note) : null,
+                ...group.entries.map((entry) => renderEntry(entry, group.fold !== false && group.entries.length === 1 && !entry.schema.meta?.role)),
+            ];
+            return group.fold === false
+                ? h("div", { key: group.id, class: "yib-config-direct" }, content())
+                : h(ConfigFold, { key: group.id, label: group.label, nested: true }, { default: content });
+        };
         return () =>
             h("div", { ...attrs, class: ["yib-config-layout", attrs.class] }, [
                 slots.menu ? h("details", { class: "yib-config-actions" }, [h("summary", "配置操作"), slots.menu()]) : null,
@@ -129,19 +151,7 @@ export const PurposeConfig = defineComponent({
                         ConfigFold,
                         { key: category.id, label: category.label, expanded: index === 0 },
                         {
-                            default: () =>
-                                category.groups.map((group) =>
-                                    h(
-                                        ConfigFold,
-                                        { key: group.id, label: group.label, nested: true },
-                                        {
-                                            default: () => [
-                                                group.note ? h("p", { class: "yib-config-note" }, group.note) : null,
-                                                ...group.entries.map((entry) => renderEntry(entry, group.entries.length === 1 && !entry.schema.meta?.role)),
-                                            ],
-                                        },
-                                    ),
-                                ),
+                            default: () => category.groups.map(renderGroup),
                         },
                     ),
                 ),

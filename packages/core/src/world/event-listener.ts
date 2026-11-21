@@ -4,7 +4,10 @@ import { CQCode } from "koishi-plugin-adapter-onebot";
 
 import { AssetService } from "../asset";
 import type { LoggerService } from "../logger";
+import { withConversationLog } from "../logger/conversation";
+import { isConversationReportEnabled, recordConversationReport, withConversationReport } from "../logger/conversation-report";
 import { TableName } from "../shared/constants";
+import { handleError } from "../shared/errors";
 import { truncate } from "../shared/utils";
 import { conversationChannelId, conversationCid } from "../shared/utils/conversation-scope";
 import { HistoryConfig } from "./config";
@@ -34,7 +37,7 @@ export class EventListenerManager {
         private ctx: Context,
         private service: WorldStateService,
         private config: HistoryConfig,
-        logging: LoggerService,
+        private logging: LoggerService,
         private assetService: AssetService,
     ) {
         this.logger = logging.getLogger("[世界状态]");
@@ -90,26 +93,46 @@ export class EventListenerManager {
                 const parsed = session.argv;
                 const command = parsed?.command ?? (parsed ? this.ctx.$commander.inferCommand({ ...parsed, tokens: parsed.tokens?.slice() }) : undefined);
                 if (isConfigCommand(command?.name)) return next();
-                await this.recordUserMessage(session);
-                const result = await next();
+                const trace = this.logging?.startConversationReport?.(session);
+                return withConversationReport(trace, () =>
+                    withConversationLog(session, undefined, async () => {
+                        let stored: Awaited<ReturnType<WorldStateService["recordMessage"]>>;
+                        try {
+                            if (isConversationReportEnabled()) {
+                                recordConversationReport("ingress.received", {
+                                    adapterEvent: session.event?._data,
+                                    parsed: session.toJSON(),
+                                });
+                            }
+                            stored = await this.recordUserMessage(session);
+                        } catch (error) {
+                            handleError(this.logger, error, "记录用户消息");
+                            return next();
+                        }
+                        const result = await next();
+                        if (stored === "failed" || stored === "invalidated") {
+                            this.logger.debug("消息未写入历史 · 跳过回复判定 · %s", stored);
+                            return result;
+                        }
 
-                if (result === undefined && !(session as any)["__commandHandled"]) {
-                    // 等待所有前置处理结束；单个插件失败不能提前触发回复。
-                    const hooks = this.ctx.lifecycle.filterHooks(this.ctx.lifecycle._hooks["yesimbot/before-user-stimulus"] || [], session);
-                    const results = await Promise.allSettled(hooks.map((hook) => Promise.resolve().then(() => hook.callback.call(session, session))));
-                    for (const result of results) {
-                        if (result.status === "rejected") this.logger.error("用户消息前置处理失败", result.reason);
-                    }
-                    const stimulus: AgentStimulus<UserMessagePayload> = {
-                        type: "user_message",
-                        channelCid: conversationCid(session),
-                        session,
-                        priority: 5, // Normal message priority
-                        payload: { messageIds: [session.messageId!] },
-                    };
-                    this.ctx.emit(session, "agent/stimulus", stimulus, this.service.stimulusOwnerId);
-                }
-                return result;
+                        if (result === undefined && !(session as any)["__commandHandled"]) {
+                            const hooks = this.ctx.lifecycle.filterHooks(this.ctx.lifecycle._hooks["yesimbot/before-user-stimulus"] || [], session);
+                            const results = await Promise.allSettled(hooks.map((hook) => Promise.resolve().then(() => hook.callback.call(session, session))));
+                            for (const result of results) {
+                                if (result.status === "rejected") handleError(this.logger, result.reason, "用户消息前置处理");
+                            }
+                            const stimulus: AgentStimulus<UserMessagePayload> = {
+                                type: "user_message",
+                                channelCid: conversationCid(session),
+                                session,
+                                priority: 5,
+                                payload: { messageIds: [session.messageId!] },
+                            };
+                            this.ctx.emit(session, "agent/stimulus", stimulus, this.service.stimulusOwnerId);
+                        }
+                        return result;
+                    }),
+                );
             }),
         );
 
@@ -327,7 +350,7 @@ export class EventListenerManager {
         }
     }
 
-    private async recordUserMessage(session: Session): Promise<void> {
+    private async recordUserMessage(session: Session) {
         const generation = this.service.l2_manager?.getHistoryGeneration({
             platform: session.platform,
             channelId: conversationChannelId(session)!,
@@ -375,7 +398,9 @@ export class EventListenerManager {
             timestamp: new Date(session.timestamp),
             quoteId: session.quote?.id,
         };
-        await this.service.recordMessage(message, generation);
+        const outcome = await this.service.recordMessage(message, generation);
+        recordConversationReport("ingress.history", { outcome, message });
+        return outcome;
     }
 
     private async recordBotSentMessage(session: Session, operator = false): Promise<void> {

@@ -157,6 +157,12 @@ export const ErrorDefinitions = {
     },
     // --- 系统未知错误 ---
     SYSTEM: {
+        DATABASE_ERROR: {
+            code: "SYSTEM.DATABASE_ERROR",
+            category: "internal",
+            message: (code: string) => `数据库操作失败（${code}）`,
+            suggestion: "请检查数据库连接与存储状态，并根据错误编号查看诊断",
+        },
         UNKNOWN: {
             code: "SYSTEM.UNKNOWN",
             category: "internal",

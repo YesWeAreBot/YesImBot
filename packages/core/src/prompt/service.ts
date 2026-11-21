@@ -28,6 +28,7 @@ export class PromptService extends YesImBotService<Config> {
     private readonly snippets: Map<string, Snippet> = new Map();
     private readonly injections: Injection[] = [];
     private _logger: Logger;
+    private defaultInjection?: Snippet;
 
     constructor(ctx: Context, config: Config, logging: LoggerService) {
         super(ctx, config);
@@ -125,8 +126,8 @@ export class PromptService extends YesImBotService<Config> {
             throw new Error(`未找到模板 "${templateName}"`);
         }
 
-        const scope = await this.buildScope(initialScope);
         const partials = Object.fromEntries(this.templates);
+        const scope = await this.buildScope(initialScope, templateContent, partials);
 
         return this.renderer.render(templateContent, scope, partials, { maxDepth: this.config.maxRenderDepth });
     }
@@ -135,7 +136,7 @@ export class PromptService extends YesImBotService<Config> {
      * 渲染一个原始的模板字符串，不经过注册
      */
     public async renderRaw(templateContent: string, initialScope: Record<string, any> = {}): Promise<string> {
-        const scope = await this.buildScope(initialScope);
+        const scope = await this.buildScope(initialScope, templateContent);
         return this.renderer.render(templateContent, scope, undefined, { maxDepth: this.config.maxRenderDepth });
     }
 
@@ -170,7 +171,9 @@ export class PromptService extends YesImBotService<Config> {
 
     private registerDefaultInjections(): void {
         // 注册一个特殊的片段，它的作用是处理所有通过 inject() 注册的内容
-        this.registerSnippet(this.config.injectionPlaceholder ?? "", async (scope) => {
+        const placeholder = this.config.injectionPlaceholder;
+        if (!placeholder) return;
+        this.defaultInjection = async (scope) => {
             // 按照优先级排序
             this.injections.sort((a, b) => a.priority - b.priority);
 
@@ -189,19 +192,35 @@ export class PromptService extends YesImBotService<Config> {
 
             // 过滤掉空的片段，并用换行符连接
             return renderedFragments.filter(Boolean).join("\n\n");
-        });
+        };
+        this.registerSnippet(placeholder, this.defaultInjection);
     }
 
-    private async buildScope(initialScope: Record<string, any>): Promise<Record<string, any>> {
+    private async buildScope(initialScope: Record<string, any>, template: string, partials?: Record<string, string>): Promise<Record<string, any>> {
         const scope = { ...initialScope };
 
         for (const [key, snippetFn] of this.snippets.entries()) {
+            if (snippetFn === this.defaultInjection && key === this.config.injectionPlaceholder) continue;
             try {
                 const value = await snippetFn(scope);
                 this.setNestedProperty(scope, key, value);
-            } catch {
+            } catch (error) {
+                this._logger.warn(`提示词片段 "${key}" 求值失败`, error);
                 this.setNestedProperty(scope, key, null);
             }
+        }
+        const placeholder = this.config.injectionPlaceholder;
+        const leaf = placeholder?.split(".").at(-1);
+        if (
+            placeholder &&
+            leaf &&
+            this.defaultInjection &&
+            this.snippets.get(placeholder) === this.defaultInjection &&
+            (template.includes(leaf) ||
+                // Partials can be nested or use custom Mustache delimiters.
+                (partials && Object.values(partials).some((partial) => partial.includes(leaf)) && (template.includes(">") || template.includes("="))))
+        ) {
+            this.setNestedProperty(scope, placeholder, await this.defaultInjection(scope));
         }
         return scope;
     }

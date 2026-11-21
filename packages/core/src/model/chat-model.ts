@@ -241,6 +241,12 @@ export class ChatModel extends BaseModel implements IChatModel {
             const choice = data.choices?.[0];
             if (!choice?.message) throw new Error("模型未返回有效回复");
             const message = choice.message;
+            if (choice.finish_reason === "length" || choice.finish_reason === "content_filter") {
+                throw new AppError(ErrorDefinitions.LLM.REQUEST_FAILED, {
+                    args: [`模型响应异常结束：${choice.finish_reason}`],
+                    context: { finishReason: choice.finish_reason },
+                });
+            }
             const calls = rawToolCalls(message.tool_calls ?? []);
             const step = {
                 text: message.content ?? "",
@@ -420,6 +426,12 @@ export class ChatModel extends BaseModel implements IChatModel {
                     }
                 } finally {
                     reader.releaseLock();
+                }
+                if (completion.finishReason === "length" || completion.finishReason === "content_filter") {
+                    throw new AppError(ErrorDefinitions.LLM.REQUEST_FAILED, {
+                        args: [`模型响应异常结束：${completion.finishReason}`],
+                        context: { finishReason: completion.finishReason },
+                    });
                 }
                 finalToolCalls = completion.rawCalls();
                 finalUsage = completion.usage;
@@ -646,6 +658,7 @@ class StreamCompletion {
     private readonly toolDeltas = new Map<number, any>();
     usage: any;
     finishReason: any = "unknown";
+    private done = false;
     rawCalls(): CompletionToolCall[] {
         return rawToolCalls([...this.toolDeltas.entries()].sort(([a], [b]) => a - b).map(([, call]) => call));
     }
@@ -689,6 +702,7 @@ class StreamCompletion {
     }
 
     private scan(text: string): void {
+        if (this.done) return;
         const lines = (this.pendingLine + text).split("\n");
         this.pendingLine = lines.pop() ?? "";
         for (const line of lines) {
@@ -696,7 +710,9 @@ class StreamCompletion {
             const data = line.slice(5).trim();
             if (data === "[DONE]") {
                 this.completed = true;
-                break;
+                this.done = true;
+                this.pendingLine = "";
+                return;
             }
             let choice: any;
             try {
@@ -709,14 +725,13 @@ class StreamCompletion {
             }
             if (choice?.finish_reason) this.finishReason = choice.finish_reason;
             if (typeof choice?.finish_reason === "string" && choice.finish_reason.length > 0) this.completed = true;
-            if (choice?.delta?.yib_native_activity === true) {
+            if (choice?.delta?.yib_native_activity === true || choice?.delta?.tool_calls?.length) {
                 this.hasTools = true;
                 this.onNativeActivity?.();
             }
             if (typeof choice?.delta?.reasoning_content === "string") this.reasoningContent = (this.reasoningContent ?? "") + choice.delta.reasoning_content;
             if (typeof choice?.delta?.content === "string") this.text += choice.delta.content;
             if (choice?.delta?.tool_calls?.length) {
-                this.hasTools = true;
                 for (const call of choice.delta.tool_calls) {
                     if (!Number.isSafeInteger(call.index) || call.index < 0) throw new Error("工具调用索引无效");
                     if (typeof call.id === "string") this.toolIds.set(call.index, call.id);

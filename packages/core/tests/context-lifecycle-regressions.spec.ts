@@ -255,6 +255,31 @@ it("preserves trusted injection composition without interpreting inserted data a
     }
 });
 
+it("evaluates extension partials after snippets and skips unused injections", async () => {
+    const f = await fixture();
+    try {
+        (f.prompt as any).config.injectionPlaceholder = "injected";
+        (f.prompt as any).registerDefaultInjections();
+        f.prompt.registerSnippet("profile.nick", () => "Ada");
+        f.prompt.registerTemplate("trusted.partial", "NICK: {{profile.nick}}");
+        f.prompt.registerTemplate("uses.injection", "{{injected}}");
+        f.prompt.registerTemplate("outer", "{{> uses.injection}}");
+        let calls = 0;
+        f.prompt.inject("count", 0, () => {
+            calls++;
+            return "";
+        });
+        f.prompt.injectTemplate("extension", 1, "trusted.partial");
+
+        expect(await f.prompt.renderRaw("{{profile.nick}}")).toBe("Ada");
+        expect(calls).toBe(0);
+        expect(await f.prompt.render("outer")).toContain("NICK: Ada");
+        expect(calls).toBe(1);
+    } finally {
+        await f.close();
+    }
+});
+
 it("leaves every source unconsumed when the model request fails", async () => {
     const f = await fixture();
     try {

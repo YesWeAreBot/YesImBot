@@ -49,6 +49,21 @@ function jsonPlanError(value: unknown): string | undefined {
     }
 }
 
+type ReplySilence = "explicit_silence" | "empty_send";
+export type ReplyTurnOutcome = "cancelled" | "partial_delivery" | "failed" | "sent" | "no_reply" | ReplySilence;
+
+const replyTurnOutcomeLabel: Record<ReplyTurnOutcome, string> = {
+    cancelled: "已取消",
+    partial_delivery: "部分送达后失败",
+    failed: "失败",
+    sent: "已确认发送",
+    no_reply: "无消息发送",
+    explicit_silence: "模型主动沉默",
+    empty_send: "合法空发送",
+};
+
+type HeartbeatResult = { continue: boolean; replySent: boolean; failed?: boolean; silence?: ReplySilence };
+
 /**
  * @description 负责执行 Agent 的核心“心跳”循环
  * 它协调上下文构建、LLM调用、响应解析和动作执行
@@ -88,7 +103,7 @@ export class HeartbeatProcessor {
      * 运行完整的 Agent 思考-行动周期
      * @returns 返回 true 如果至少有一次 send_message 成功
      */
-    public async runCycle(stimulus: AgentStimulus<any>): Promise<boolean> {
+    public async runCycle(stimulus: AgentStimulus<any>, onOutcome?: (status: ReplyTurnOutcome) => void): Promise<boolean> {
         const decisionId = (stimulus as AgentStimulus<any> & { decisionId?: string }).decisionId;
         const turnId =
             typeof decisionId === "string" && decisionId.length > 0 && decisionId.length <= 512 && !/\p{Cc}/u.test(decisionId) ? decisionId : uuidv4();
@@ -97,7 +112,7 @@ export class HeartbeatProcessor {
                 withConversationLog(current.session, turnId, () =>
                     withUsageScope(
                         { traceId: turnId, platform: current.session.platform, botId: current.session.selfId, target: current.session.channelId },
-                        () => this.runTracedCycle(turnId, current),
+                        () => this.runTracedCycle(turnId, current, onOutcome),
                     ),
                 );
             const memory = this.world?.l2_manager;
@@ -120,13 +135,17 @@ export class HeartbeatProcessor {
         }
     }
 
-    private async runTracedCycle(turnId: string, stimulus: AgentStimulus<any>): Promise<boolean> {
+    private async runTracedCycle(turnId: string, stimulus: AgentStimulus<any>, onOutcome?: (status: ReplyTurnOutcome) => void): Promise<boolean> {
         // Admission belongs to this cycle, not to every heartbeat or to the caller's
         // reusable stimulus. Keep the initial context check before any model call.
         const cycleStimulus = { ...stimulus } as AgentStimulus<any> & { continuationRequired?: boolean };
         let shouldContinueHeartbeat = true;
         let heartbeatCount = 0;
         let success = false;
+        let failed = false;
+        let silence: ReplySilence | undefined;
+        const startedAt = Date.now();
+        this.logger.info?.(`开始回复轮次 · ${stimulus.type}${stimulus.session.messageId ? ` · 消息 ${stimulus.session.messageId}` : ""}`);
 
         while (shouldContinueHeartbeat && heartbeatCount < this.config.heartbeat) {
             heartbeatCount++;
@@ -149,7 +168,10 @@ export class HeartbeatProcessor {
                     cycleStimulus.continuationRequired = false;
                     shouldContinueHeartbeat = result.continue;
                     success = success || result.replySent;
+                    failed = result.failed === true;
+                    silence = result.silence;
                 } else {
+                    failed = true;
                     shouldContinueHeartbeat = false;
                 }
                 if (shouldContinueHeartbeat) {
@@ -163,12 +185,25 @@ export class HeartbeatProcessor {
                 }
             } catch (error) {
                 if (isReplyTurnCancelled()) break;
+                failed = true;
                 recordConversationReport("turn_failed", { turnId, heartbeat: heartbeatCount, replySent: success });
                 handleError(this.logger, error, `回复轮次 · 第 ${heartbeatCount} 次模型决策`);
                 shouldContinueHeartbeat = false;
             }
         }
-        recordConversationReport("turn_finished", { turnId, replySent: success });
+        const status: ReplyTurnOutcome = isReplyTurnCancelled()
+            ? "cancelled"
+            : failed
+              ? success
+                  ? "partial_delivery"
+                  : "failed"
+              : (silence ?? (success ? "sent" : "no_reply"));
+        onOutcome?.(status);
+        const durationMs = Date.now() - startedAt;
+        this.logger.info?.(
+            `回复轮次结束 · ${replyTurnOutcomeLabel[status]}${success && silence && status === silence ? " · 本轮已有发送确认" : ""} · ${durationMs}ms`,
+        );
+        recordConversationReport("turn_finished", { turnId, replySent: success, status, durationMs });
         return success;
     }
 
@@ -304,7 +339,7 @@ export class HeartbeatProcessor {
                 ];
                 if (nativeTools) messages.push({ role: "system", content: NATIVE_SYSTEM_PROMPT });
                 // Bound media without loading assets or advancing image lifecycle during packing.
-                if (this.config.enableVision) {
+                if (this.config.enableVision && this.modelSwitcher.hasVisionCapability()) {
                     const imageIds = new Set(
                         [...candidate.l1_working_memory.processed_events, ...candidate.l1_working_memory.new_events].flatMap((item) =>
                             item.type === "message"
@@ -410,11 +445,7 @@ export class HeartbeatProcessor {
     /**
      * 执行单次心跳的完整逻辑（非流式）
      */
-    private async performSingleHeartbeat(
-        turnId: string,
-        stimulus: AgentStimulus<any>,
-        onReplySent: () => void,
-    ): Promise<{ continue: boolean; replySent: boolean } | null> {
+    private async performSingleHeartbeat(turnId: string, stimulus: AgentStimulus<any>, onReplySent: () => void): Promise<HeartbeatResult | null> {
         const { session } = stimulus;
         const { platform } = session;
         const channelId = conversationChannelId(session)!;
@@ -428,7 +459,7 @@ export class HeartbeatProcessor {
             requestPurpose: "主对话",
             messages,
             abortSignal: replyTurnSignal(),
-            validation: this.createJsonValidation(),
+            validation: this.createJsonValidation(session, this.contextBuilder.getAttachedImageIds?.(messages) ?? []),
         });
 
         assertReplyTurn();
@@ -445,6 +476,7 @@ export class HeartbeatProcessor {
             return null;
         }
 
+        recordConversationReport("model.parsed", { turnId, ...agentResponseData });
         await this.interactionManager.recordThought(turnId, platform, channelId, agentResponseData.thoughts, manualRecallIds, consumedSourceIds);
 
         // 步骤 7: 执行动作
@@ -460,17 +492,18 @@ export class HeartbeatProcessor {
 
         if (replySent) this.logger.debug("本次模型决策已发送回复");
         else this.logger.debug("本次模型决策结束 · 无已确认发送的回复");
-        return { continue: !outcome.stop && (agentResponseData.request_heartbeat || outcome.retryRead), replySent };
+        return {
+            continue: !outcome.stop && (agentResponseData.request_heartbeat || outcome.retryRead),
+            replySent,
+            failed: outcome.failed,
+            silence: outcome.silence,
+        };
     }
 
     /**
      * 执行单次心跳的完整逻辑（流式，支持重试批次切换）
      */
-    private async performSingleHeartbeatWithStreaming(
-        turnId: string,
-        stimulus: AgentStimulus<any>,
-        onReplySent: () => void,
-    ): Promise<{ continue: boolean; replySent: boolean } | null> {
+    private async performSingleHeartbeatWithStreaming(turnId: string, stimulus: AgentStimulus<any>, onReplySent: () => void): Promise<HeartbeatResult | null> {
         const { session } = stimulus;
         const { platform } = session;
         const channelId = conversationChannelId(session)!;
@@ -554,7 +587,8 @@ export class HeartbeatProcessor {
                             return { valid: true, earlyExit: false };
                         }
                         const { data, error } = finalValidatorParser.parse(text);
-                        const shapeError = jsonPlanError(data);
+                        const shapeError =
+                            jsonPlanError(data) ?? this.jsonActionError(data!, session, this.contextBuilder.getAttachedImageIds?.(messages) ?? []);
                         if (error || shapeError) {
                             this.logger.warn("最终JSON解析或结构校验失败，即将触发重试...");
                             startConsumers();
@@ -581,12 +615,13 @@ export class HeartbeatProcessor {
         this.contextBuilder.commitMultimodalUsage?.(messages);
         const response = this.parseAndValidateResponse(llmRawResponse, conversationCid(session));
         if (!response) return null;
+        recordConversationReport("model.parsed", { turnId, ...response });
         await this.interactionManager.recordThought(turnId, platform, channelId, response.thoughts, manualRecallIds, consumedSourceIds);
         const outcome = await this.executeActions(turnId, session, response.actions, onReplySent, this.contextBuilder.getAttachedImageIds?.(messages) ?? []);
         const { replySent } = outcome;
         if (replySent) this.logger.debug("本次模型决策已发送回复");
         else this.logger.debug("本次模型决策结束 · 无已确认发送的回复");
-        return { continue: !outcome.stop && (response.request_heartbeat || outcome.retryRead), replySent };
+        return { continue: !outcome.stop && (response.request_heartbeat || outcome.retryRead), replySent, failed: outcome.failed, silence: outcome.silence };
     }
 
     /**
@@ -621,7 +656,26 @@ export class HeartbeatProcessor {
         return data as Omit<AgentResponse, "observations">;
     }
 
-    private createJsonValidation(): ValidationOptions {
+    private jsonActionError(plan: AgentResponse, session: Session, attachedImageIds: readonly string[]): string | undefined {
+        for (const [index, action] of plan.actions.entries()) {
+            const tool = this.toolService.getTool(action.function, session, { attachedImageIds });
+            if (!tool) return `actions[${index}].function is unavailable: ${action.function}.`;
+            try {
+                tool.parameters(action.params ?? {});
+            } catch (error) {
+                const path = (error as { options?: { path?: unknown } })?.options?.path;
+                const suffix = Array.isArray(path)
+                    ? path
+                          .filter((part) => typeof part === "number" || (typeof part === "string" && /^[\w.-]{1,128}$/.test(part)))
+                          .slice(0, 16)
+                          .join(".")
+                    : "";
+                return `actions[${index}].params${suffix ? "." + suffix : ""} do not match the schema for ${action.function}.`;
+            }
+        }
+    }
+
+    private createJsonValidation(session: Session, attachedImageIds: readonly string[]): ValidationOptions {
         const parser = new JsonParser<AgentResponse>();
         return {
             format: "json",
@@ -630,7 +684,7 @@ export class HeartbeatProcessor {
 
                 const { data, error } = parser.parse(text);
                 if (error) return { valid: false, earlyExit: false, error };
-                const shapeError = jsonPlanError(data);
+                const shapeError = jsonPlanError(data) ?? this.jsonActionError(data!, session, attachedImageIds);
                 if (shapeError) return { valid: false, earlyExit: false, error: shapeError };
                 const thoughts = data!.thoughts as AgentResponse["thoughts"] & { request_heartbeat?: boolean };
                 if (typeof thoughts.request_heartbeat === "boolean") data!.request_heartbeat = data!.request_heartbeat ?? thoughts.request_heartbeat;
@@ -639,11 +693,7 @@ export class HeartbeatProcessor {
         };
     }
 
-    private async performNativeHeartbeat(
-        turnId: string,
-        stimulus: AgentStimulus<any>,
-        onReplySent: () => void,
-    ): Promise<{ continue: boolean; replySent: boolean }> {
+    private async performNativeHeartbeat(turnId: string, stimulus: AgentStimulus<any>, onReplySent: () => void): Promise<HeartbeatResult> {
         const session = stimulus.session;
         const { messages, manualRecallIds, consumedSourceIds, fallbackMessages } = await this._prepareLlmRequest(stimulus, turnId);
         const nativeMessages: Message[] = [
@@ -684,7 +734,7 @@ export class HeartbeatProcessor {
                 nativeToolCallingFallback: {
                     messages: fallbackMessages ?? messages,
                     abortSignal: replyTurnSignal(),
-                    validation: this.createJsonValidation(),
+                    validation: this.createJsonValidation(session, this.contextBuilder.getAttachedImageIds?.(messages) ?? []),
                 },
                 tools,
                 toolChoice: "required",
@@ -694,6 +744,7 @@ export class HeartbeatProcessor {
             });
             assertReplyTurn();
             this.contextBuilder.commitMultimodalUsage?.(messages);
+            if (response.toolCalls?.length) recordConversationReport("model.native_plan", { turnId, attempt: attempt + 1, calls: response.toolCalls });
             if (!response.toolCalls?.length) {
                 let toolMarkup = false;
                 if (/<\/?tool_call(?:\s|>)/i.test(response.text ?? "")) {
@@ -704,7 +755,8 @@ export class HeartbeatProcessor {
                     }
                 }
                 const legacy = toolMarkup ? null : this.parseAndValidateResponse(response, conversationCid(session), false);
-                if (legacy) {
+                if (legacy && !this.jsonActionError(legacy as AgentResponse, session, attachedImageIds)) {
+                    recordConversationReport("model.parsed", { turnId, ...legacy });
                     await this.interactionManager.recordThought(
                         turnId,
                         session.platform,
@@ -720,7 +772,12 @@ export class HeartbeatProcessor {
                         onReplySent,
                         this.contextBuilder.getAttachedImageIds?.(messages) ?? [],
                     );
-                    return { continue: !outcome.stop && (legacy.request_heartbeat || outcome.retryRead), replySent: outcome.replySent };
+                    return {
+                        continue: !outcome.stop && (legacy.request_heartbeat || outcome.retryRead),
+                        replySent: outcome.replySent,
+                        failed: outcome.failed,
+                        silence: outcome.silence,
+                    };
                 }
                 const failure = new AppError(ErrorDefinitions.LLM.NATIVE_TOOL_CALL_MISSING, { context: { reason: "native_tool_call_missing" } });
                 if (attempt >= correctionRetries) throw failure;
@@ -762,7 +819,15 @@ export class HeartbeatProcessor {
                         fail("silence_must_be_standalone");
                         continue;
                     }
-                    return { continue: false, replySent: false };
+                    await this.interactionManager.recordThought(
+                        turnId,
+                        session.platform,
+                        conversationChannelId(session)!,
+                        { observe: "", analyze_infer: "", plan: "" },
+                        manualRecallIds,
+                        consumedSourceIds,
+                    );
+                    return { continue: false, replySent: false, silence: "explicit_silence" };
                 }
                 const definition = this.toolService.getTool(call.toolName, session, { attachedImageIds });
                 if (!definition) {
@@ -888,12 +953,12 @@ export class HeartbeatProcessor {
                 metadata: result.metadata,
             });
             if (action.function === "send_message" && result.status === "success" && result.metadata?.intentionalSilence === true)
-                return { continue: false, replySent };
+                return { continue: false, replySent, silence: "empty_send" };
             if (result.status !== "success") {
                 this.logger.warn(
                     `工具失败 | 工具: ${action.function} | 类型: ${result.error?.code ?? result.error?.name ?? "ToolError"} | ${result.error?.message ?? "未知错误"}`,
                 );
-                return { continue: readOnly && !sideEffectAttempted, replySent };
+                return { continue: readOnly && !sideEffectAttempted, replySent, failed: true };
             }
         }
         return { continue: !actions.some((action) => action.function === "send_message"), replySent };
@@ -936,7 +1001,7 @@ export class HeartbeatProcessor {
         actions: AgentResponse["actions"],
         onReplySent: () => void,
         attachedImageIds: readonly string[] = [],
-    ): Promise<{ replySent: boolean; retryRead: boolean; stop: boolean }> {
+    ): Promise<{ replySent: boolean; retryRead: boolean; stop: boolean; failed?: boolean; silence?: ReplySilence }> {
         if (actions.length === 0) {
             this.logger.debug("无动作需要执行");
             return { replySent: false, retryRead: false, stop: false };
@@ -973,12 +1038,12 @@ export class HeartbeatProcessor {
                 metadata: result.metadata,
             });
             if (action.function === "send_message" && result.status === "success" && result.metadata?.intentionalSilence === true)
-                return { replySent, retryRead: false, stop: true };
+                return { replySent, retryRead: false, stop: true, silence: "empty_send" };
             if (result.status !== "success") {
                 this.logger.warn(
                     `工具失败 | 工具: ${action.function} | 类型: ${result.error?.code ?? result.error?.name ?? "ToolError"} | ${result.error?.message ?? "未知错误"}`,
                 );
-                return { replySent, retryRead: readOnly && !sideEffectAttempted, stop: !readOnly || sideEffectAttempted };
+                return { replySent, retryRead: readOnly && !sideEffectAttempted, stop: !readOnly || sideEffectAttempted, failed: true };
             }
         }
         return { replySent, retryRead: false, stop: false };

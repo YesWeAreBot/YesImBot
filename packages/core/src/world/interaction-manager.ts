@@ -9,6 +9,7 @@ import type { LoggerService } from "../logger";
 import { getInstanceDirectory } from "../shared";
 import { TableName } from "../shared/constants";
 import { sanitizeDiagnostic } from "../shared/diagnostic-sanitizer";
+import { AppError, ErrorDefinitions, handleError } from "../shared/errors";
 import { parseConversationChannelId } from "../shared/utils/conversation-scope";
 import { HISTORY_CHANNELS } from "./channel-metadata";
 import { HistoryConfig } from "./config";
@@ -238,8 +239,15 @@ export class InteractionManager {
                 return "duplicate";
             }
             const code = typeof error?.code === "string" && /^[\w.-]{1,60}$/.test(error.code) ? error.code : "UNKNOWN";
-            this.logger.error(`写入消息历史失败 · ${message.platform}:${message.channelId} · 消息 ${message.id} · ${code}`);
-            this.logger.debug(error);
+            handleError(
+                this.logger,
+                new AppError(ErrorDefinitions.SYSTEM.DATABASE_ERROR, {
+                    args: [code],
+                    cause: error,
+                    context: { platform: message.platform, channelId: message.channelId, messageId: message.id },
+                }),
+                "写入消息历史",
+            );
             return "failed";
         }
     }

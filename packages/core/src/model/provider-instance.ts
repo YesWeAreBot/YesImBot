@@ -85,6 +85,7 @@ export class ProviderInstance {
         const finalModelConfig: ModelConfig = {
             ...modelConfig,
             providerName: this.name,
+            statelessUserInput: this.config.type === "LM Studio",
             // These native endpoints cannot replay client-owned tool history; use JSON actions.
             ...(["LM Studio", "Workers AI"].includes(this.config.type) ? { disableNativeToolCalling: true } : {}),
         };

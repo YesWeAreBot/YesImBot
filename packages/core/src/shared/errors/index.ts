@@ -58,6 +58,7 @@ export class ErrorReporter {
         private readonly saveLocal?: (errorId: string, error: Error, conversation?: ConversationReport) => Promise<void>,
         private readonly knownSecrets: readonly string[] = [],
         private readonly captureConversation?: () => ConversationReport | undefined,
+        private readonly recordDiagnostic?: (errorId: string, error: unknown) => void,
     ) {
         this.config = {
             includeSensitiveInfo: false,
@@ -84,29 +85,42 @@ export class ErrorReporter {
     public async report(context: ReportContext): Promise<string | null> {
         if (this.disposed) return null;
         const reportId = diagnosticId(redactDiagnosticText(context.errorId, this.knownSecrets));
+        try {
+            this.recordDiagnostic?.(reportId, context.error);
+        } catch {
+            this.logger.warn(`错误 ${reportId} · 无法记录对话追踪`);
+        }
         let conversation: ConversationReport | undefined;
         let mask: ReturnType<typeof conversationMask> | undefined;
         let secrets = this.knownSecrets;
         if (this.config.conversationDetails === "raw" || this.config.conversationDetails === "masked") {
             try {
                 const snapshot = context.conversation ?? this.captureConversation?.();
+                secrets = conversationReportSecrets([snapshot, context.error, context.additionalInfo], secrets);
                 if (snapshot) {
-                    secrets = conversationReportSecrets([snapshot, context.error, context.additionalInfo], secrets);
                     const cleaned: ConversationReport = sanitizeDiagnostic(snapshot, secrets);
-                    if (this.config.conversationDetails === "masked") mask = conversationMask(cleaned, context.error, context.additionalInfo);
-                    conversation = mask ? mask(cleaned) : cleaned;
+                    conversation = cleaned;
                 }
             } catch {
                 conversation = undefined;
-                mask = undefined;
                 this.logger.warn(`错误 ${reportId} · 无法生成会话诊断`);
+            }
+        }
+
+        if (this.config.conversationDetails === "masked") {
+            try {
+                mask = conversationMask(conversation ?? { entries: [], identities: [], omitted: 0 }, context.error, context.additionalInfo);
+                if (conversation) conversation = mask(conversation);
+            } catch {
+                this.logger.warn(`错误 ${reportId} · 无法脱敏，已跳过报告保存和上传`);
+                return null;
             }
         }
 
         // 本地保存不依赖远程上报开关，也不等待远程服务。
         if (this.saveLocal) {
             try {
-                const cleanedError = conversation ? sanitizeDiagnostic(context.error, secrets) : context.error;
+                const cleanedError = conversation || mask ? sanitizeDiagnostic(context.error, secrets) : context.error;
                 const error = mask ? mask(cleanedError) : cleanedError;
                 if (conversation) await this.saveLocal(context.errorId, error, conversation);
                 else await this.saveLocal(context.errorId, error);
@@ -300,7 +314,7 @@ export class AppError extends Error {
 export function handleError(logger: Logger, error: unknown, contextDescription: string): string {
     const appError = normalizeAppError(error);
 
-    const { errorId, message, suggestion, context, stack } = appError;
+    const { errorId, message, suggestion, context } = appError;
 
     // 步骤 2: 分层记录日志
     // 第一层：面向用户/管理员的清晰错误报告 (ERROR 级别)
@@ -318,19 +332,13 @@ export function handleError(logger: Logger, error: unknown, contextDescription: 
     const devContext = { ...context };
     // 对可能很长的原始响应进行截断，防止刷屏
     if (devContext.rawResponse) {
-        devContext.rawResponse = truncate(devContext.rawResponse as string, 200) + "... (完整响应见已启用的本地日志)";
+        devContext.rawResponse = truncate(devContext.rawResponse as string, 200) + "...（预览，完整内容取决于追踪配置）";
     }
     if (Object.keys(devContext).length > 0) {
         logger.debug(`   - 调试上下文: ${JSON.stringify(sanitizeDiagnostic(devContext))}`);
     }
-    // 堆栈信息使用 DEBUG 级别，仅在需要时通过调整日志等级查看
-    // logger.debug(`   - 堆栈追踪:\n${stack}`);
-    if (appError.cause) {
-        //@ts-ignore
-        logger.debug(`   - 根本原因: ${appError.cause.message}\n${appError.cause.stack}`);
-    } else {
-        logger.debug(`   - 堆栈追踪:\n${stack}`);
-    }
+    const diagnostic = sanitizeDiagnostic(appError);
+    logger.debug(`   - 堆栈追踪:\n${JSON.stringify({ stack: diagnostic.stack, cause: diagnostic.cause }, null, 2)}`);
 
     // An owned logger always keeps its reporter, even after that owner stops.
     const reporter = loggerReporters.get(logger) ?? globalErrorReporter;

@@ -594,12 +594,6 @@ export class PromptContextBuilder {
         const usageKeysById = new Map<string, string>();
         diagnostics.candidates = sortedUniqueCandidates.length;
         for (const candidate of sortedUniqueCandidates) {
-            if (selectedCandidates.length >= Math.max(0, this.config.maxImagesInContext)) {
-                diagnostics.count_limit++;
-                recordOutcome(candidate.id, candidate.sourceId, "count_limit");
-                continue;
-            }
-
             const key = JSON.stringify([
                 worldState.channel?.platform,
                 worldState.self?.id,
@@ -628,20 +622,27 @@ export class PromptContextBuilder {
             return { images: [], usageKeys: [] };
         }
 
-        const imageDataResults = await Promise.allSettled(selectedCandidates.map(({ id }) => this.assetService.getInfo(id)));
-        assertReplyTurn();
         const finalImages: Array<ImagePart | TextPart> = [];
         const usageKeys: string[] = [];
         const allowedImageTypes = new Set(this.config.allowedImageTypes);
 
-        for (const [index, outcome] of imageDataResults.entries()) {
-            const candidate = selectedCandidates[index];
-            if (outcome.status === "rejected") {
+        for (const candidate of selectedCandidates) {
+            assertReplyTurn();
+            if (usageKeys.length >= Math.max(0, this.config.maxImagesInContext)) {
+                diagnostics.count_limit++;
+                recordOutcome(candidate.id, candidate.sourceId, "count_limit");
+                continue;
+            }
+            let result: Awaited<ReturnType<AssetService["getInfo"]>>;
+            try {
+                result = await this.assetService.getInfo(candidate.id);
+            } catch {
+                assertReplyTurn();
                 diagnostics.asset_metadata_failed++;
                 recordOutcome(candidate.id, candidate.sourceId, "asset_metadata_failed");
                 continue;
             }
-            const result = outcome.value;
+            assertReplyTurn();
             if (!result) {
                 diagnostics.missing_asset++;
                 recordOutcome(candidate.id, candidate.sourceId, "missing_asset");
@@ -667,7 +668,7 @@ export class PromptContextBuilder {
                 recordOutcome(candidate.id, candidate.sourceId, "invalid_image_data");
                 continue;
             }
-            usageKeys.push(usageKeysById.get(result.id)!);
+            usageKeys.push(usageKeysById.get(candidate.id)!);
             // 为LLM提供更明确的图片标识
             finalImages.push({ type: "text", text: `The following is an image with ID #${result.id}:` });
             const image: ImagePart = { type: "image_url", image_url: { url: imageBuffer, detail: this.config.detail } };

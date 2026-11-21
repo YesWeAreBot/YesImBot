@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -6,6 +6,8 @@ import { Schema } from "koishi";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ToolService } from "../src/extension/service";
+import { getInstanceDirectory } from "../src/shared/instance-scope";
+import { prepareHistoryReset } from "../src/world/history-reset";
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -21,7 +23,7 @@ async function fixture() {
     const logger = { info() {}, warn() {}, error() {}, debug() {}, success() {} };
     const tools = new ToolService(ctx, { advanced: { maxRetry: 2 } } as any, { world, logging: { getLogger: () => logger } } as any);
     const session = { platform: "test", selfId: "bot", channelId: "group", userId: "u", isDirect: false } as any;
-    return { tools, session, clear: () => generation++, revoke: () => (allowed = false) };
+    return { tools, session, ctx, clear: () => generation++, revoke: () => (allowed = false) };
 }
 function register(tools: ToolService, execute: any) {
     tools.registerTool({ name: "probe", description: "test", parameters: Schema.object({}), execute });
@@ -106,4 +108,19 @@ it("denies a tool-output URI from the same native Telegram topic ID in another g
     expect(receipt.result.kind).toBe("tool-output-resource");
     await expect(tools.readToolOutput({ ...session, guildId: "-10002" }, { uri: receipt.result.uri })).rejects.toThrow(/scope/);
     expect((await tools.readToolOutput(session, { uri: receipt.result.uri })).text.length).toBeGreaterThan(0);
+});
+
+it("purges scoped tool output from disk and preserves resources for other conversations", async () => {
+    const { tools, session, ctx } = await fixture();
+    register(tools, async () => ({ status: "success", result: "x".repeat(30000) }));
+    const other = { ...session, channelId: "other" };
+    const removed = await tools.invoke("probe", {}, session);
+    const retained = await tools.invoke("probe", {}, other);
+    const reset = prepareHistoryReset(ctx, { platform: session.platform, channelId: session.channelId });
+    await reset.finish();
+
+    const directory = getInstanceDirectory(ctx, "data/yesimbot/tool-outputs");
+    expect(await readdir(directory)).toEqual([expect.stringContaining(retained.result.uri.slice("tool-output://".length))]);
+    await expect(tools.readToolOutput(session, { uri: removed.result.uri })).rejects.toThrow("expired");
+    await expect(tools.readToolOutput(other, { uri: retained.result.uri })).resolves.toMatchObject({ totalLength: 30002 });
 });

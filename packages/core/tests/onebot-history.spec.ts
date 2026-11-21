@@ -142,3 +142,23 @@ it("drops a pending page when history is cleared during the adapter read", async
     expect(f.snapshot.size).toBe(0);
     f.manager.stop();
 });
+
+it("cancels an explicit refresh and rejects the late page", async () => {
+    const f = setup();
+    const controller = new AbortController();
+    let finish!: (value: unknown) => void;
+    f.get.mockImplementationOnce(
+        () =>
+            new Promise((resolve) => {
+                finish = resolve;
+            }),
+    );
+    const pending = f.manager.refresh(f.session, undefined, "onebot-tool", controller.signal);
+    await vi.waitFor(() => expect(f.get).toHaveBeenCalledOnce());
+    controller.abort(new Error("cancel backfill"));
+    await expect(pending).rejects.toThrow("cancel backfill");
+    finish({ messages: [message(9, "late")] });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(f.snapshot.size).toBe(0);
+    f.manager.stop();
+});

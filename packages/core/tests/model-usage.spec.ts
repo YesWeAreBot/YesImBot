@@ -4,8 +4,9 @@ import path from "node:path";
 
 import { afterEach, expect, it } from "vitest";
 
-import { getContextSnapshots } from "../src/model/context-snapshot";
+import { beginContextSnapshot, captureContextSnapshot, getContextSnapshots } from "../src/model/context-snapshot";
 import { estimateTokens, getUsageLedger, normalizeUsage, observeUsageFetch, withUsageScope } from "../src/model/usage";
+import { prepareHistoryReset } from "../src/world/history-reset";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -189,4 +190,18 @@ it("keeps concurrent usage scopes isolated and permits a fully detached worker s
     expect(tickets[1].platform).toBeUndefined();
     expect(tickets[1].botId).toBeUndefined();
     expect(tickets[1].target).toBeUndefined();
+});
+
+it("purges scoped snapshots and fences an already pending snapshot", async () => {
+    const ctx = {} as any;
+    const first = { ...metadata, platform: "chat", target: "first" };
+    const second = { ...first, target: "second" };
+    captureContextSnapshot(ctx, first, { messages: [] }, "test");
+    captureContextSnapshot(ctx, second, { messages: [] }, "test");
+    const pending = beginContextSnapshot(ctx, first);
+    await prepareHistoryReset(ctx, { platform: "chat", channelId: "first" }).finish();
+    expect(pending()).toBe(false);
+    expect(getContextSnapshots(ctx).map(({ target }) => target)).toEqual(["second"]);
+    captureContextSnapshot(ctx, first, { messages: [] }, "test");
+    expect(getContextSnapshots(ctx)).toHaveLength(2);
 });

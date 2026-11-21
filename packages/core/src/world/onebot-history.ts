@@ -1,6 +1,7 @@
 import { Argv, Context, Logger, Session, Universal } from "koishi";
 import { CQCode, OneBot } from "koishi-plugin-adapter-onebot";
 
+import { replyTurnSignal } from "../agent/reply-turn";
 import type { AssetService } from "../asset";
 import { TableName } from "../shared/constants";
 import type { HistoryConfig } from "./config";
@@ -30,6 +31,7 @@ const numericId = (value: unknown) => (typeof value === "string" && /^-?\d+$/.te
 const PAGE_SIZE = 30;
 const MAX_PAGES = 3;
 const REQUEST_TIMEOUT_MS = 5000;
+export const ONEBOT_BACKFILL_TIMEOUT_MS = 20000;
 const MAX_TARGETS = 256;
 const BACKGROUND_TARGETS_PER_TICK = 4;
 
@@ -89,16 +91,26 @@ export class OneBotHistoryBackfill {
         this.targets.set(key, { session, channelId, floor, generation: this.world.l2_manager.getHistoryGeneration({ platform: "onebot", channelId }) });
     }
 
-    async refresh(session: Session, messageId?: string, source: BackfillSource = "onebot-tool"): Promise<BackfillResult> {
+    async refresh(session: Session, messageId?: string, source: BackfillSource = "onebot-tool", signal = replyTurnSignal()): Promise<BackfillResult> {
         if (!this.allowed(session)) throw new Error("当前会话未启用 OneBot 历史补录");
         this.observe(session);
         const target = this.targets.get(JSON.stringify([session.platform, session.selfId, session.channelId]));
         if (!target) throw new Error("OneBot 历史补录会话已达上限");
-        if (messageId !== undefined) {
-            if (!numericId(messageId) || !Number.isSafeInteger(Number(messageId))) throw new Error("消息 ID 不可用于 OneBot 回读");
-            return this.syncPage(target, source, messageId);
+        const deadline = AbortSignal.timeout(ONEBOT_BACKFILL_TIMEOUT_MS);
+        const requestSignal = signal ? AbortSignal.any([signal, deadline]) : deadline;
+        if (messageId !== undefined && (!numericId(messageId) || !Number.isSafeInteger(Number(messageId)))) throw new Error("消息 ID 不可用于 OneBot 回读");
+
+        requestSignal.throwIfAborted();
+        let abort!: () => void;
+        const cancelled = new Promise<never>((_, reject) => {
+            abort = () => reject(requestSignal.reason);
+            requestSignal.addEventListener("abort", abort, { once: true });
+        });
+        try {
+            return await Promise.race([this.syncPage(target, source, messageId, requestSignal), cancelled]);
+        } finally {
+            requestSignal.removeEventListener("abort", abort);
         }
-        return this.sync(target, source);
     }
 
     private allowed(session: Session): boolean {
@@ -142,7 +154,7 @@ export class OneBotHistoryBackfill {
         return job;
     }
 
-    private async syncPage(target: Target, source: BackfillSource, messageId?: string): Promise<BackfillResult> {
+    private async syncPage(target: Target, source: BackfillSource, messageId?: string, signal?: AbortSignal): Promise<BackfillResult> {
         const { session, channelId } = target;
         const scope = { platform: "onebot", channelId };
         await this.world.l2_manager.waitForHistoryClear(scope);
@@ -152,6 +164,7 @@ export class OneBotHistoryBackfill {
             target.floor = (Math.floor(Date.now() / 1000) + 1) * 1000;
         }
         const assertCurrent = () => {
+            signal?.throwIfAborted();
             if (!this.allowed(session) || session.channelId !== channelId || this.world.l2_manager.getHistoryGeneration(scope) !== generation)
                 throw new Error("补录期间会话授权或历史状态已改变");
         };
@@ -184,6 +197,7 @@ export class OneBotHistoryBackfill {
                 try {
                     reply = await request(action, { ...params, ...cursorParams });
                 } catch (error) {
+                    assertCurrent();
                     if (!page) throw error;
                     // Older adapters may accept the initial read without paging support.
                     break;
@@ -272,7 +286,7 @@ export class OneBotHistoryBackfill {
                         quoteId,
                     },
                     generation,
-                    { backfilled: true },
+                    { backfilled: true, signal },
                 );
                 if (outcome === "stored") {
                     result.stored++;

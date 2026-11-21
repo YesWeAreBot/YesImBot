@@ -5,6 +5,7 @@ import { ContextBudgetError } from "../agent/context-budget";
 import { isModelReference } from "../commands/config-check";
 import { Config } from "../config";
 import type { LoggerService } from "../logger";
+import { recordConversationReport } from "../logger/conversation-report";
 import { AppError, ErrorDefinitions } from "../shared/errors";
 import { YesImBotService } from "../shared/service";
 import { isNotEmpty } from "../shared/utils";
@@ -553,13 +554,21 @@ class RequestExecutor {
 
                 // 内容验证失败的特定处理
                 if (error instanceof AppError && error.code === ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED.code) {
-                    if (retryPolicy.onContentFailure === ContentFailureAction.AugmentAndRetry && attempt < retryPolicy.maxRetries) {
+                    const willRetry = retryPolicy.onContentFailure === ContentFailureAction.AugmentAndRetry && attempt < retryPolicy.maxRetries;
+                    recordConversationReport("model.validation_failed", {
+                        provider: model.config.providerName,
+                        model: model.id,
+                        attempt: attempt + 1,
+                        details: error.context?.details,
+                        willRetry,
+                    });
+                    if (willRetry) {
                         const rawResponse = error.context?.rawResponse;
                         const failedOutput = typeof rawResponse === "string" ? rawResponse.slice(0, 8000) : "";
                         attemptLogger.warn("内容校验失败，保留原上下文并请求纠正；无效响应未执行工具");
                         options.messages = [
                             ...originalMessages,
-                            ...(failedOutput ? [{ role: "assistant" as const, content: failedOutput }] : []),
+                            ...(failedOutput && !model.config.statelessUserInput ? [{ role: "assistant" as const, content: failedOutput }] : []),
                             {
                                 role: "system",
                                 content:

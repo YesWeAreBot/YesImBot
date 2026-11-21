@@ -10,6 +10,7 @@ export interface LocalLoggingConfig {
     level: 1 | 2 | 3;
     maxFileSizeMB: number;
     maxFiles: number;
+    trace?: boolean;
     retentionDays: number;
 }
 
@@ -38,8 +39,12 @@ export class LocalLogWriter {
         this.directory = path.resolve(baseDir, config.directory || "data/yesimbot/debug_logs");
     }
 
-    public write(record: unknown): Promise<void> {
-        if (this.closed) return Promise.resolve();
+    public async write(record: unknown): Promise<void> {
+        await this.writeWithReceipt(record);
+    }
+
+    public writeWithReceipt(record: unknown): Promise<string | undefined> {
+        if (this.closed) return Promise.resolve(undefined);
         let line: string;
         try {
             line = JSON.stringify(sanitizeDiagnostic(record, this.secrets)) + "\n";
@@ -51,15 +56,16 @@ export class LocalLogWriter {
             for (const secret of secrets) line = line.split(secret).join("[REDACTED]");
         } catch {
             this.warning("本地日志序列化失败");
-            return Promise.resolve();
+            return Promise.resolve(undefined);
         }
         const bytes = Buffer.byteLength(line);
         if (this.queuedBytes + bytes > 32 * 1024 * 1024) {
             this.warning("本地日志写入队列已满，本条日志未保存");
-            return Promise.resolve();
+            return Promise.resolve(undefined);
         }
         this.queuedBytes += bytes;
         let operation = "创建日志目录";
+        let saved: string | undefined;
         this.tail = this.tail
             .then(async () => {
                 await fs.mkdir(this.directory, { recursive: true });
@@ -70,6 +76,7 @@ export class LocalLogWriter {
                 }
                 operation = "写入日志";
                 await fs.appendFile(path.join(this.directory, this.file), line, { encoding: "utf8", mode: 0o600 });
+                saved = path.join(this.directory, this.file);
                 this.bytes += bytes;
                 if (Date.now() - this.lastCleanup > 60000) {
                     operation = "清理旧日志";
@@ -86,7 +93,7 @@ export class LocalLogWriter {
             .finally(() => {
                 this.queuedBytes -= bytes;
             });
-        return this.tail;
+        return this.tail.then(() => saved);
     }
 
     private async cleanup(): Promise<void> {

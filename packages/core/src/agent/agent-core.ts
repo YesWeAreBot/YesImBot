@@ -22,7 +22,7 @@ import { matchContinuation, sameContinuation, type ContinuationMatch } from "./c
 import { registerDecisionCommands } from "./decision-commands";
 import { DecisionJournal } from "./decision-journal";
 import { DecisionRecord, DecisionRecords, formatDecision, describeDecisionStage } from "./decision-record";
-import { HeartbeatProcessor } from "./heartbeat-processor";
+import { HeartbeatProcessor, type ReplyTurnOutcome } from "./heartbeat-processor";
 import { isBotMention } from "./mention";
 import { registerReplyCommands } from "./reply-commands";
 import { ReplyControl, ReplyCategory, ReplyTarget, messageCategories, replyKey } from "./reply-control";
@@ -398,6 +398,7 @@ export class AgentCore extends YesImBotService<Config> {
                 this.activeTurns.set(channelCid, controller);
                 this.activeDecisionIds.set(channelCid, (stimulus as TracedStimulus).decisionId!);
                 let success = false;
+                const cycle: { status?: ReplyTurnOutcome } = {};
                 const valid = () =>
                     !controller.signal.aborted &&
                     this.stimulusCurrent(stimulus as TracedStimulus) &&
@@ -431,7 +432,11 @@ export class AgentCore extends YesImBotService<Config> {
                             const session = guardReplySession(stimulus.session);
                             // Release local scheduling on cancellation even if a remote
                             // implementation ignores abort. Its late promise stays observed.
-                            return awaitReplyTurn(() => this.processor.runCycle({ ...stimulus, session }));
+                            return awaitReplyTurn(() =>
+                                this.processor.runCycle({ ...stimulus, session }, (status) => {
+                                    cycle.status = status;
+                                }),
+                            );
                         },
                         controller.signal,
                         (destination) => {
@@ -466,11 +471,17 @@ export class AgentCore extends YesImBotService<Config> {
                     /* prettier-ignore */
                     this.logger.debug(`已发送回复 · 意愿 ${willingnessBeforeReply.toFixed(2)} → ${willingnessAfterReply.toFixed(2)}`);
                 }
-                const completed = valid();
+                const completed = valid() && cycle.status !== "cancelled";
+                const failed = cycle.status === "failed" || cycle.status === "partial_delivery";
+                let reason: string | undefined;
+                if (!completed) reason = "invalid_generation";
+                else if (failed) reason = success ? "partial_delivery" : "model_decision_failed";
+                else if (cycle.status === "explicit_silence" || cycle.status === "empty_send") reason = cycle.status;
+                else if (!success) reason = "no_reply";
                 this.recordDecision(stimulus, {
-                    stage: completed ? "completed" : "cancelled",
-                    reason: !completed ? "invalid_generation" : success ? undefined : "no_reply",
-                    success: success && completed,
+                    stage: !completed ? "cancelled" : failed ? "failed" : "completed",
+                    reason,
+                    success: success && completed && !failed,
                     score: this.willing.getCurrentWillingness(
                         (stimulus as TracedStimulus).scoringTopic?.scoreKey ?? (stimulus as TracedStimulus).topic?.scoreKey ?? channelCid,
                     ),

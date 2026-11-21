@@ -62,6 +62,29 @@ describe("purpose-based configuration layout", () => {
         expect(entries(layout).find((entry) => entry.path[0] === "providers")!.schema).toBe(fields.providers);
         expect(entries(layout).find((entry) => entry.path[0] === "modelGroups")!.schema.meta.role).toBe("yib-model-groups");
     });
+    it("shows minor settings as native rows inside their category and keeps feature settings foldable", () => {
+        const layout = createConfigLayout(Config, dynamic(), {});
+        const rows = (category: string) => layout.find(({ id }) => id === category)!.groups;
+        const groupFor = (category: string, path: string) => rows(category).find((group) => group.entries.some((entry) => entry.path.join(".") === path))!;
+        expect(groupFor("memory", "ignoreSelfMessage").fold).toBe(false);
+        expect(groupFor("memory", "coreMemoryPath").fold).toBe(false);
+        expect(groupFor("vision", "enableVision").fold).toBe(false);
+        expect(groupFor("vision", "multiModalSystemTemplate").fold).toBe(false);
+        expect(groupFor("tools", "nativeToolCalling").fold).toBe(false);
+        expect(groupFor("tools", "streamAction").fold).toBe(false);
+        expect(groupFor("reply", "typesafe").fold).toBe(true);
+        expect(groupFor("memory", "l2_memory").fold).toBe(true);
+        expect(groupFor("memory", "onebotHistory").id).toBe("l1");
+        expect(groupFor("vision", "extra.core_util.vision").fold).toBe(true);
+        expect(groupFor("tools", "extra.third_party").fold).toBe(true);
+        const entry = groupFor("memory", "ignoreSelfMessage").entries.find(({ path }) => path[0] === "ignoreSelfMessage")!;
+        expect(entry.schema.type).toBe("boolean");
+        expect(writeConfigEntry({ ignoreSelfMessage: false, contextInputBudgetTokens: 2048 }, entry, true)).toEqual({
+            ignoreSelfMessage: true,
+            contextInputBudgetTokens: 2048,
+        });
+    });
+
     it("projects vision into one place and preserves its native dynamic model selector", () => {
         const layout = createConfigLayout(Config, dynamic(), {});
         const vision = layout.find((group) => group.id === "vision")!;
@@ -129,6 +152,76 @@ describe("purpose-based configuration layout", () => {
         const layout = createConfigLayout(Config, { "toolService.availableExtensions": hydrated }, {});
         expect(entries(layout).filter((entry) => entry.path.join(".") === "extra.core_util.vision")).toHaveLength(1);
     });
+    it("switches search modes without overwriting saved settings or the draft selections", () => {
+        const registry = {
+            "toolService.availableExtensions": Schema.object({
+                search: Schema.intersect([
+                    Schema.object({ enabled: Schema.boolean().default(true) }),
+                    Schema.union([
+                        Schema.object({
+                            enabled: Schema.const(true),
+                            endpoint: Schema.string().default("https://legacy.example/search"),
+                            sources: Schema.array(Schema.string()),
+                            format: Schema.union(["json", "html"]),
+                            limit: Schema.number().default(5),
+                            engineSelection: Schema.union(["legacy", "configured"]).default("legacy"),
+                            strategy: Schema.union(["auto", "parallel"]).default("auto"),
+                            engines: Schema.array(Schema.object({ id: Schema.string(), backend: Schema.string() })),
+                            selectedEngines: Schema.array(Schema.string()).default([]),
+                        }),
+                        Schema.object({ selectedEngines: Schema.any().hidden() }),
+                    ]),
+                ]),
+            }),
+        };
+        const input = {
+            extra: {
+                search: {
+                    endpoint: "https://saved.example/search",
+                    sources: ["bing"],
+                    format: "json",
+                    engineSelection: "legacy",
+                    strategy: "parallel",
+                    engines: [{ id: "saved", backend: "brave" }],
+                    selectedEngines: ["saved"],
+                },
+            },
+        };
+        const searchEntries = (config: unknown) => entries(createConfigLayout(Config, registry, config)).filter((entry) => entry.path[1] === "search");
+        const [legacy] = searchEntries(input);
+        expect(searchEntries(input)).toHaveLength(1);
+        expect(collectConfigFields(legacy.schema)).toHaveProperty("endpoint");
+        expect(collectConfigFields(legacy.schema)).not.toHaveProperty("engines");
+        const configured = writeConfigEntry(input, legacy, { ...readConfigEntry(input, legacy), engineSelection: "configured" });
+        const [settings, picker] = searchEntries(configured);
+        expect(collectConfigFields(settings.schema)).not.toHaveProperty("endpoint");
+        expect(collectConfigFields(settings.schema)).not.toHaveProperty("selectedEngines");
+        expect(collectConfigFields(settings.schema)).toHaveProperty("limit");
+        expect(picker.path.join(".")).toBe("extra.search.selectedEngines");
+        expect(picker.editor).toBe("search-engines");
+        const edited = writeConfigEntry(configured, settings, {
+            ...readConfigEntry(configured, settings),
+            engines: [...configured.extra.search.engines, { id: "new-draft", backend: "exa" }],
+        });
+        const selected = writeConfigEntry(edited, picker, ["new-draft"]);
+        expect(selected.extra.search).toMatchObject({
+            endpoint: input.extra.search.endpoint,
+            strategy: "parallel",
+            engines: [
+                { id: "saved", backend: "brave" },
+                { id: "new-draft", backend: "exa" },
+            ],
+            selectedEngines: ["new-draft"],
+        });
+        const disabled = writeConfigEntry(selected, settings, { ...readConfigEntry(selected, settings), enabled: false });
+        expect(searchEntries(disabled)).toHaveLength(1);
+        expect(disabled.extra.search.selectedEngines).toEqual(["new-draft"]);
+        const [disabledSettings] = searchEntries(disabled);
+        const restored = writeConfigEntry(disabled, disabledSettings, { ...readConfigEntry(disabled, disabledSettings), engineSelection: "legacy" });
+        expect(restored.extra.search).toMatchObject({ endpoint: input.extra.search.endpoint, selectedEngines: ["new-draft"] });
+        expect(searchEntries(restored)).toHaveLength(1);
+    });
+
     it("retains third-party conditional schemas and new core-util fields in their original editor", () => {
         const registry = dynamic();
         const thirdParty = registry["toolService.availableExtensions"].dict!.third_party;
