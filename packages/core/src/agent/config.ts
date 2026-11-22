@@ -359,7 +359,7 @@ export const AgentBehaviorConfigSchema: Schema<AgentBehaviorConfig> = Schema.int
         systemTemplate: Schema.string()
             .default(SystemBaseTemplate)
             .role("textarea", { rows: [2, 4] })
-            .description("系统提示词模板"),
+            .description("系统提示词模板。支持 model.name、model.id、model.group.name，以及 model.group.models 成员区段。"),
         userTemplate: Schema.string()
             .default(UserBaseTemplate)
             .role("textarea", { rows: [2, 4] })

@@ -11,9 +11,13 @@ import { diagnosticId, diagnosticCode, summarizeContext, summarizeError } from "
 
 // --- 错误上报模块 ---
 
+const reportLevels = ["lite", "low", "medium", "full", "full-all"] as const;
+type ReportLevel = (typeof reportLevels)[number];
+
 export interface ErrorReporterConfig {
     enabled: boolean; // 是否启用上报
     pasteServiceUrl?: string; // 可配置的上-报链接
+    level?: ReportLevel;
     includeSensitiveInfo?: boolean;
     conversationDetails?: "off" | "masked" | "raw";
     includeCookies?: boolean;
@@ -23,19 +27,33 @@ export interface ErrorReporterConfig {
 export const ErrorReporterConfigSchema = Schema.object({
     enabled: Schema.boolean().default(true).description("是否启用错误上报（默认仅上传脱敏技术摘要）"),
     pasteServiceUrl: Schema.string().role("link").default("https://dump.yesimbot.chat/").description("错误上报服务的 URL"),
-    includeSensitiveInfo: Schema.boolean()
-        .default(false)
-        .description("包含详细诊断信息（可能包含对话、模型响应、错误原文和堆栈；凭据保留首尾各 4 字符，短凭据全部遮盖）"),
+    level: Schema.union([
+        Schema.const("lite").description("仅错误简报"),
+        Schema.const("low").description("错误详情和堆栈"),
+        Schema.const("medium").description("错误详情、堆栈和模型响应"),
+        Schema.const("full").description("加入简洁对话上下文"),
+        Schema.const("full-all").description("全部轮次诊断，包括 System 提示词和模型请求"),
+    ]).description("错误上报级别（未设置时兼容旧配置）"),
+    includeSensitiveInfo: Schema.boolean().default(false).hidden(),
     conversationDetails: Schema.union([
-        Schema.const("off").description("不附带会话"),
-        Schema.const("masked").description("附带会话并遮盖身份标识"),
-        Schema.const("raw").description("附带原始会话与身份标识"),
+        Schema.const("off").description("沿用级别默认值"),
+        Schema.const("masked").description("遮盖会话身份标识"),
+        Schema.const("raw").description("保留会话身份标识"),
     ])
         .default("off")
-        .description("错误报告的会话信息。可包含对话、提示词、原始模型响应和相关日志，凭据始终遮盖。"),
-    includeCookies: Schema.boolean().default(false).description("详细诊断中包含 Cookie（保留首尾各 4 字符，其余用 * 遮盖；短 Cookie 全部遮盖）"),
+        .description("会话身份脱敏"),
+    includeCookies: Schema.boolean().default(false).hidden(),
     includeSystemInfo: Schema.boolean().default(true).description("是否包含系统信息"),
 });
+
+export function shouldCaptureReportConversation(config?: ErrorReporterConfig): boolean {
+    return config?.level ? reportLevels.indexOf(config.level) >= 2 : config?.conversationDetails === "masked" || config?.conversationDetails === "raw";
+}
+
+function jsonSection(title: string, value: unknown): string {
+    return `## ${title}\n\n\`\`\`json\n${JSON.stringify(value ?? null, null, 2).replace(/`/g, "\\u0060")}\n\`\`\`
+`;
+}
 
 export interface ReportContext {
     errorId: string;
@@ -93,7 +111,7 @@ export class ErrorReporter {
         let conversation: ConversationReport | undefined;
         let mask: ReturnType<typeof conversationMask> | undefined;
         let secrets = this.knownSecrets;
-        if (this.config.conversationDetails === "raw" || this.config.conversationDetails === "masked") {
+        if (shouldCaptureReportConversation(this.config)) {
             try {
                 const snapshot = context.conversation ?? this.captureConversation?.();
                 secrets = conversationReportSecrets([snapshot, context.error, context.additionalInfo], secrets);
@@ -107,7 +125,7 @@ export class ErrorReporter {
             }
         }
 
-        if (this.config.conversationDetails === "masked") {
+        if (this.config.level ? this.config.conversationDetails !== "raw" : this.config.conversationDetails === "masked") {
             try {
                 mask = conversationMask(conversation ?? { entries: [], identities: [], omitted: 0 }, context.error, context.additionalInfo);
                 if (conversation) conversation = mask(conversation);
@@ -179,6 +197,7 @@ export class ErrorReporter {
     }
 
     private formatErrorDump(context: ReportContext, secrets: readonly string[], mask?: ReturnType<typeof conversationMask>): string {
+        if (this.config.level) return this.formatLeveledDump(context, secrets, mask);
         const error = normalizeAppError(context.error);
         // Credential filtering includes nested Error fields and additionalInfo before
         // applying the stricter outbound content policy. Neither step mutates inputs.
@@ -220,6 +239,83 @@ export class ErrorReporter {
         ].join("\n");
         // Defense in depth also covers identifiers and serialization escape forms.
         return context.conversation ? dump : redactDiagnosticText(dump, secrets, privacy);
+    }
+    private formatLeveledDump(context: ReportContext, secrets: readonly string[], mask?: ReturnType<typeof conversationMask>): string {
+        const level = reportLevels.indexOf(this.config.level!);
+        const error = sanitizeDiagnostic(normalizeAppError(context.error), secrets);
+        const safeError = mask ? mask(error) : error;
+        const details = (row: any): unknown =>
+            row && typeof row === "object"
+                ? {
+                      ...(summarizeError(row) as Record<string, unknown>),
+                      message: row.message,
+                      stack: row.stack,
+                      cause: details(row.cause),
+                      errors: Array.isArray(row.errors) ? row.errors.map(details) : undefined,
+                  }
+                : row;
+        const sections = [
+            `# 智能体错误报告 · ${this.config.level}\n\n`,
+            jsonSection("错误", {
+                id: diagnosticId(redactDiagnosticText(context.errorId, secrets)),
+                error: level === 0 ? summarizeError(safeError) : details(safeError),
+            }),
+        ];
+        const rows = context.conversation?.entries ?? [];
+        const entries = (kind: string) => rows.filter((row) => row.kind === kind);
+        if (level >= 2) sections.push(jsonSection("模型响应", entries("model.response").length ? entries("model.response") : "未采集到模型响应"));
+        if (level === 3) {
+            const latest = entries("conversation.input").at(-1)?.data as
+                | { channelId?: string; channelName?: string; messages?: Array<{ userId: string; messageId: string; nickname: string; content: string }> }
+                | undefined;
+            const lines = Array.isArray(latest?.messages)
+                ? latest.messages.map((row) =>
+                      [row.userId, row.messageId, row.nickname, row.content]
+                          .map((value) =>
+                              String(value ?? "")
+                                  .replace(/\r?\n/g, " ")
+                                  .replace(/\`/g, "′"),
+                          )
+                          .join(" - "),
+                  )
+                : [];
+            const channel = latest?.channelId ?? context.conversation?.identities.find(({ kind }) => kind === "channel")?.id ?? "未知";
+            sections.push(
+                `## 对话上下文\n\n会话 ${JSON.stringify(channel)}${latest?.channelName ? ` - ${JSON.stringify(latest.channelName)}` : ""}\n\n\`\`\`text\n${lines.join("\n") || "未采集到对话上下文"}\n\`\`\`\n`,
+            );
+        }
+        if (level === 4) {
+            const requests = rows.filter((row) => row.kind === "model.request" || row.kind === "model.provider_request");
+            const system = requests.map(({ data }) => {
+                const request = data as { requestId?: string; wireRequest?: number; payload?: any };
+                const { payload } = request;
+                return {
+                    requestId: request.requestId,
+                    wireRequest: request.wireRequest,
+                    system:
+                        payload?.system ??
+                        payload?.systemInstruction ??
+                        payload?.instructions ??
+                        (Array.isArray(payload?.messages) ? payload.messages.filter((message: any) => message?.role === "system") : undefined),
+                };
+            });
+            sections.push(
+                jsonSection("System 提示词", system.length ? system : "未采集到模型请求"),
+                jsonSection("模型请求", requests),
+                jsonSection(
+                    "轮次追踪与工具回执",
+                    rows.filter((row) => !requests.includes(row) && row.kind !== "model.response"),
+                ),
+                jsonSection("详细错误", {
+                    error: safeError,
+                    additionalInfo: mask ? mask(sanitizeDiagnostic(context.additionalInfo, secrets)) : sanitizeDiagnostic(context.additionalInfo, secrets),
+                }),
+            );
+        }
+        if (level >= 2 && context.conversation?.omitted) sections.push(`遗漏追踪条目 ${context.conversation.omitted} 条。\n`);
+        if (level >= 1 && this.config.includeSystemInfo)
+            sections.push(jsonSection("系统信息", { nodeVersion: process.version, platform: process.platform, architecture: process.arch }));
+        return sections.join("\n");
     }
 }
 

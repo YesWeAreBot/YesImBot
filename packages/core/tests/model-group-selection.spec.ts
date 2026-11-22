@@ -6,6 +6,8 @@ import { BaseModel } from "../src/model/base-model";
 import type { ChatRequestOptions, IChatModel } from "../src/model/chat-model";
 import { ContentFailureAction, ModelAbility, ModelSwitchingStrategy, TaskType, type ModelConfig } from "../src/model/config";
 import { ChatModelSwitcher, ModelService } from "../src/model/service";
+import { systemPromptRenderers } from "../src/prompt/model-prompt";
+import { PromptService } from "../src/prompt/service";
 import { loggingStub, stubCtx } from "./helpers/yesimbot";
 
 const logger = { extend: () => logger, debug() {}, info() {}, success() {}, warn() {}, error() {} };
@@ -330,4 +332,22 @@ it("preserves non-image assistant content during text-only fallback", async () =
     request.messages.push({ role: "assistant", content: [] });
     await group([model]).chat(request);
     expect(received.messages[1]).toEqual({ role: "assistant", content: [] });
+});
+
+it("renders the system prompt for the actual candidate after failover", async () => {
+    const first = new ExternalModel("first", []);
+    const second = new ExternalModel("second", []);
+    const prompt = new PromptService(ctx, {} as Config, logging);
+    prompt.registerTemplate(
+        "agent.system",
+        "{{model.name}}/{{model.id}}/{{model.group.name}} {{#model.group.models}}{{name}}={{selected}} {{/model.group.models}}",
+    );
+    const render = await prompt.prepareModelSystem({});
+    const system = { role: "system" as const, content: "" };
+    systemPromptRenderers.set(system, render!);
+    const firstCall = vi.spyOn(first, "chat").mockRejectedValue(new Error("provider unavailable"));
+    const secondCall = vi.spyOn(second, "chat");
+    await group([first, second]).chat({ messages: [system, { role: "user", content: "hello" }] });
+    expect(firstCall.mock.calls[0][0].messages[0].content).toBe("first/first/selection first=true second=false ");
+    expect(secondCall.mock.calls[0][0].messages[0].content).toBe("second/second/selection first=false second=true ");
 });

@@ -6,6 +6,7 @@ import { isModelReference } from "../commands/config-check";
 import { Config } from "../config";
 import type { LoggerService } from "../logger";
 import { recordConversationReport } from "../logger/conversation-report";
+import { systemPromptRenderers } from "../prompt/model-prompt";
 import { AppError, ErrorDefinitions } from "../shared/errors";
 import { YesImBotService } from "../shared/service";
 import { isNotEmpty } from "../shared/utils";
@@ -413,7 +414,11 @@ class RequestExecutor {
         this.logger = logging.getLogger(`[请求执行器][${groupName}]`);
     }
 
-    public async execute(options: ChatRequestOptions, onFirstAttempt?: (model: IChatModel) => void): Promise<GenerateTextResult> {
+    public async execute(
+        options: ChatRequestOptions,
+        onFirstAttempt?: (model: IChatModel) => void,
+        groupMembers = this.candidateModels,
+    ): Promise<GenerateTextResult> {
         let unavailable = 0;
         for (const model of this.candidateModels) {
             options.abortSignal?.throwIfAborted();
@@ -430,7 +435,24 @@ class RequestExecutor {
 
             // 执行单个模型的请求尝试（包含内部重试）
             const modelOptions = model.config.disableNativeToolCalling && options.nativeToolCallingFallback ? options.nativeToolCallingFallback : options;
-            const originalMessages = JSON.parse(JSON.stringify(modelOptions.messages));
+            const originalMessages = JSON.parse(JSON.stringify(modelOptions.messages)) as ChatRequestOptions["messages"];
+            try {
+                for (const [index, message] of modelOptions.messages.entries()) {
+                    const render = systemPromptRenderers.get(message);
+                    if (!render) continue;
+                    originalMessages[index].content = render({
+                        name: model.id,
+                        id: model.id,
+                        group: {
+                            name: this.groupName,
+                            models: groupMembers.map((member) => ({ name: member.id, id: member.id, selected: member === model })),
+                        },
+                    });
+                }
+            } catch (error) {
+                breaker?.release(generation!);
+                throw error;
+            }
             const result = await this.tryRequestWithModel(model, modelOptions, originalMessages).catch((error) => {
                 breaker?.release(generation!);
                 throw error;
@@ -749,6 +771,6 @@ export class ChatModelSwitcher extends ModelSwitcher<IChatModel> {
         }
 
         const executor = new RequestExecutor(this.ctx, this.groupConfig.name, candidateModels, this.getCircuitBreakers(), this.logging);
-        return executor.execute(options, onFirstAttempt);
+        return executor.execute(options, onFirstAttempt, this._models);
     }
 }

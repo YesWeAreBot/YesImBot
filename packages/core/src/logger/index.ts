@@ -4,7 +4,7 @@ import { Context, Logger, Schema } from "koishi";
 
 import { Config } from "../config";
 import { sanitizeDiagnostic } from "../shared/diagnostic-sanitizer";
-import { bindErrorReporter, ErrorReporter } from "../shared/errors";
+import { bindErrorReporter, ErrorReporter, shouldCaptureReportConversation } from "../shared/errors";
 import { YesImBotService } from "../shared/service";
 import { conversationLogPrefix, formatLogTarget } from "./conversation";
 import { ConversationReportRecorder, recordConversationReport, type ConversationReport, type ReportTarget } from "./conversation-report";
@@ -43,7 +43,7 @@ export const LoggingConfigSchema: Schema<LoggingConfig> = Schema.object({
     })
         .collapse()
         .description("本地日志（可能包含对话内容，请妥善保管）"),
-    traceToConsole: Schema.boolean().default(false).description("在 DEBUG 控制台展开对话追踪，含提示词、模型原文及工具结果"),
+    traceToConsole: Schema.boolean().default(false).description("在 DEBUG 控制台展开对话追踪，模型响应展开，其余正文折叠"),
     level: Schema.union([
         Schema.const(LogLevel.SILENT).description("SILENT"),
         Schema.const(LogLevel.ERROR).description("ERROR"),
@@ -129,8 +129,7 @@ export class LoggerService extends YesImBotService<Config> {
         }
         const traceToConsole = config.logging.traceToConsole && config.logging.level === LogLevel.DEBUG;
         const traceToFile = !!this.localWriter && config.logging.local?.trace && config.logging.local.level === LogLevel.DEBUG;
-        const traceForReport =
-            (config.errorReporting?.enabled || this.localWriter) && ["masked", "raw"].includes(config.errorReporting?.conversationDetails ?? "");
+        const traceForReport = (config.errorReporting?.enabled || this.localWriter) && shouldCaptureReportConversation(config.errorReporting);
         if (traceToConsole || traceToFile || traceForReport) {
             const traceLogger = ctx.logger("[对话追踪]");
             if (traceToConsole) traceLogger.level = LogLevel.DEBUG;
@@ -139,7 +138,21 @@ export class LoggerService extends YesImBotService<Config> {
                 const prefix = formatLogTarget(target);
                 if (traceToFile) void this.localWriter?.write({ level: "debug", target, ...entry });
                 if (traceToConsole) {
-                    const safe = sanitizeDiagnostic({ prefix, ...entry }, this.knownSecrets);
+                    const data = entry.data;
+                    const header = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
+                    const display =
+                        entry.kind === "model.response"
+                            ? data
+                            : {
+                                  requestId: header.requestId,
+                                  wireRequest: header.wireRequest,
+                                  provider: header.provider,
+                                  model: header.model,
+                                  omitted: header.omitted,
+                                  bytes: header.bytes,
+                                  body: "……",
+                              };
+                    const safe = sanitizeDiagnostic({ prefix, ...entry, data: display }, this.knownSecrets);
                     traceLogger.debug("%s %s\n%s", safe.prefix, safe.kind, JSON.stringify(safe, null, 2));
                 }
             });

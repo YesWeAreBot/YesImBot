@@ -132,6 +132,16 @@ export class PromptService extends YesImBotService<Config> {
         return this.renderer.render(templateContent, scope, partials, { maxDepth: this.config.maxRenderDepth });
     }
 
+    /** Prepare dynamic snippets once, then supply the selected model at dispatch. */
+    public async prepareModelSystem(initialScope: Record<string, any>) {
+        const template = this.templates.get("agent.system");
+        const partials = Object.fromEntries(this.templates);
+        if (!template || ![template, ...Object.values(partials)].some((value) => /\bmodel\b/.test(value))) return;
+        const scope = await this.buildScope(initialScope, template, partials);
+        return (model?: import("./model-prompt").PromptModel) =>
+            this.renderer.render(template, { ...scope, model }, partials, { maxDepth: this.config.maxRenderDepth });
+    }
+
     /**
      * 渲染一个原始的模板字符串，不经过注册
      */

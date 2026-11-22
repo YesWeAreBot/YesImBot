@@ -17,6 +17,7 @@ import { ChatModelSwitcher } from "../model";
 import type { ValidationOptions } from "../model/chat-model";
 import { withUsageScope } from "../model/usage";
 import { PromptService } from "../prompt";
+import { systemPromptRenderers } from "../prompt/model-prompt";
 import { AppError, ErrorDefinitions, handleError } from "../shared/errors";
 import { estimateTokensByRegex, formatDate, JsonParser, StreamParser } from "../shared/utils";
 import { conversationChannelId, conversationCid } from "../shared/utils/conversation-scope";
@@ -301,7 +302,9 @@ export class HeartbeatProcessor {
             view.WORLD_STATE = modelWorld;
             view.triggerContext = modelWorld.triggerContext;
             view.CONTEXT_BUDGET = explicitBudget && memoryBudgetReport ? escapeMetadata(memoryBudgetReport) : "";
-            let system = await this.promptService.render("agent.system", view);
+            const renderModel = await this.promptService.prepareModelSystem?.(view);
+            const baseSystem = renderModel ? renderModel() : await this.promptService.render("agent.system", view);
+            let system = baseSystem;
             let user = await this.promptService.render("agent.user", view);
             assertReplyTurn();
             // Custom templates also receive the derived routing metadata; values are escaped data.
@@ -320,7 +323,8 @@ export class HeartbeatProcessor {
                 );
                 user += `\n<topic_focus>${summary}</topic_focus>`;
             }
-            return { system, user };
+            const suffix = system.slice(baseSystem.length);
+            return { system, user, renderModel: renderModel && ((model: Parameters<typeof renderModel>[0]) => renderModel(model) + suffix) };
         };
         const nativeTools = this.config.nativeToolCalling
             ? this.toolService.getAvailableTools(stimulus.session, undefined, "model").map((definition) => ({
@@ -391,6 +395,7 @@ export class HeartbeatProcessor {
             { role: "user", content: userMessageContent },
         ];
 
+        if (rendered.renderModel) systemPromptRenderers.set(messages[0], rendered.renderModel);
         const attachedImageIds = this.contextBuilder.getAttachedImageIds?.(messages) ?? [];
         if (attachedImageIds.length) {
             textToolSchemas = promptContext.toolSchemas.filter(
@@ -398,6 +403,7 @@ export class HeartbeatProcessor {
             );
             const filtered = await render(promptContext.worldState);
             messages[0].content = filtered.system;
+            if (filtered.renderModel) systemPromptRenderers.set(messages[0], filtered.renderModel);
             if (typeof userMessageContent === "string") messages[1].content = filtered.user;
             else {
                 // Keep the exact media content object: the builder uses it as the
@@ -412,9 +418,11 @@ export class HeartbeatProcessor {
             .filter(([, owner]) => owner === undefined)
             .map(([item]) => (item as { turnId: string }).turnId);
         let fallbackMessages: Message[] | undefined;
+        let deferredFallback: typeof rendered.renderModel;
         if (this.config.nativeToolCalling) {
             view.NATIVE_TOOL_CALLING = false;
             const fallback = await render(promptContext.worldState);
+            deferredFallback = fallback.renderModel;
             fallbackMessages = [
                 { role: "system", content: fallback.system },
                 {
@@ -428,16 +436,25 @@ export class HeartbeatProcessor {
                 },
             ];
         }
+        if (fallbackMessages && deferredFallback) systemPromptRenderers.set(fallbackMessages[0], deferredFallback);
         const consumedSourceIds = [...l1.processed_events, ...l1.new_events].flatMap((item) =>
             item.type === "message" || item.type === "system_event" ? [JSON.stringify([item.type, item.id])] : [],
         );
         if (isConversationReportEnabled()) {
+            const messages = [...l1.processed_events, ...l1.new_events].flatMap((item) =>
+                item.type === "message"
+                    ? [{ messageId: item.id, quoteId: item.quoteId, userId: item.sender.id, nickname: item.sender.name, content: item.content }]
+                    : [],
+            );
             recordConversationReport(
                 "history_sources",
-                [...l1.processed_events, ...l1.new_events].flatMap((item) =>
-                    item.type === "message" ? [{ messageId: item.id, quoteId: item.quoteId, userId: item.sender.id }] : [],
-                ),
+                messages.map(({ messageId, quoteId, userId }) => ({ messageId, quoteId, userId })),
             );
+            recordConversationReport("conversation.input", {
+                channelId: packed.worldState.channel?.id,
+                channelName: packed.worldState.channel?.name,
+                messages,
+            });
         }
         return { messages, manualRecallIds, consumedSourceIds, fallbackMessages };
     }
