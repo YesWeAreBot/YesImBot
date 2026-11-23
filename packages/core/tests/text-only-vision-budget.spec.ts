@@ -19,7 +19,7 @@ async function prompt() {
 }
 const m = (id: string, content: string, elements: any[] = []) => ({ type: "message", id, content, elements, timestamp: new Date(), sender: { id: "u" } });
 
-async function prepare(enableVision: boolean, system: string, models: { name: string }[] = []) {
+async function prepare(enableVision: boolean, system: string, models: Array<{ name: string }> = []) {
     const p = await prompt();
     p.registerTemplate("agent.system", system);
     p.registerTemplate(
