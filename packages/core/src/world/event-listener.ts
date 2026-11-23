@@ -423,13 +423,13 @@ export class EventListenerManager {
         await this.service.observeChannel(session);
         this.logger.debug(`记录机器人消息 | 频道: ${conversationCid(session)} | 消息ID: ${session.messageId}`);
 
-        const origin = operator ? "operator" : session.scope?.startsWith("commands.") ? "framework" : getModelMessageOrigin();
+        const origin = operator ? "operator" : session.scope?.startsWith("commands.") ? "framework" : (getModelMessageOrigin() ?? "framework");
         const message: MessageData = {
             id: session.messageId,
             platform: session.platform,
             channelId: conversationChannelId(session)!,
             channelType: session.isDirect ? "private" : "guild",
-            sender: { id: session.bot.selfId, name: session.bot.user?.nick || session.bot.user?.name || "", ...(origin ? { origin } : {}) },
+            sender: { id: session.bot.selfId, name: session.bot.user?.nick || session.bot.user?.name || "", origin },
             content: await this.assetService.transform(await normalizeOneBotMessageContent(session, session.toJSON().message?.content ?? session.content), {
                 session,
             }),

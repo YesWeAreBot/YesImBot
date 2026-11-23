@@ -332,6 +332,16 @@ export class HeartbeatProcessor {
                   function: { name: definition.name, description: definition.description, parameters: toolJSONSchema(definition.parameters) },
               }))
             : undefined;
+        const estimateRendered = (rendered: Awaited<ReturnType<typeof render>>, messages: Message[], tools?: typeof nativeTools) => {
+            const deferred = rendered.renderModel;
+            if (!deferred) return estimateContextTokens({ messages, tools });
+            let max = 0;
+            for (const model of this.modelSwitcher.getPromptModels()) {
+                const system = { role: "system" as const, content: deferred(model) };
+                max = Math.max(max, estimateContextTokens({ messages: [system, ...messages.slice(1)], tools }));
+            }
+            return max;
+        };
         const packed = await packWorldState(initialWorld, {
             budgetTokens: this.config.contextInputBudgetTokens ?? 16000,
             focus,
@@ -365,19 +375,17 @@ export class HeartbeatProcessor {
                     view.NATIVE_TOOL_CALLING = false;
                     try {
                         const fallback = await render(candidate);
-                        fallbackTokens = estimateContextTokens({
-                            messages: [
-                                { role: "system", content: fallback.system },
-                                { role: "user", content: fallback.user },
-                                ...messages.filter((message, index) => index > 1 && message.content !== NATIVE_SYSTEM_PROMPT),
-                            ],
-                        });
+                        fallbackTokens = estimateRendered(fallback, [
+                            { role: "system", content: fallback.system },
+                            { role: "user", content: fallback.user },
+                            ...messages.filter((message, index) => index > 1 && message.content !== NATIVE_SYSTEM_PROMPT),
+                        ]);
                     } finally {
                         view.NATIVE_TOOL_CALLING = true;
                     }
                 }
                 // Reserve room for the final program-derived report itself.
-                return Math.max(estimateContextTokens({ messages, tools: nativeTools }), fallbackTokens) + 256;
+                return Math.max(estimateRendered(rendered, messages, nativeTools), fallbackTokens) + 256;
             },
         });
         this.logger.debug(`上下文裁剪 | ${JSON.stringify(packed.report)}`);

@@ -231,13 +231,30 @@ export class InteractionManager {
                         channelType: message.channelType,
                     },
                 ]);
-            await this.ctx.database.create(TableName.Messages, message);
-            return "stored";
-        } catch (error) {
-            if (error?.code === "duplicate-entry" || /^UNIQUE constraint failed: worldstate\.messages\./.test(error?.message || "")) {
-                this.logger.debug(`历史记录已存在 · ${message.platform}:${message.channelId} · 消息 ${message.id}`);
-                return "duplicate";
+            try {
+                await this.ctx.database.create(TableName.Messages, message);
+                return "stored";
+            } catch (error) {
+                if (error?.code !== "duplicate-entry" && !/^UNIQUE constraint failed: worldstate\.messages\./.test(error?.message || "")) throw error;
             }
+            const origin = message.sender?.origin;
+            if (origin === "model" || origin === "framework") {
+                // A self-message echo can be inserted before the confirmed send.
+                await this.ctx.database.set(
+                    TableName.Messages,
+                    {
+                        platform: message.platform,
+                        channelId: message.channelId,
+                        id: message.id,
+                        "sender.id": message.sender.id,
+                        $or: [{ "sender.origin": "operator" }, { "sender.origin": { $exists: false } }],
+                    },
+                    { "sender.origin": origin },
+                );
+            }
+            this.logger.debug(`历史记录已存在 · ${message.platform}:${message.channelId} · 消息 ${message.id}`);
+            return "duplicate";
+        } catch (error) {
             const code = typeof error?.code === "string" && /^[\w.-]{1,60}$/.test(error.code) ? error.code : "UNKNOWN";
             handleError(
                 this.logger,

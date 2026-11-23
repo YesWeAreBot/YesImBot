@@ -399,6 +399,14 @@ export class ModelService extends YesImBotService<Config> {
 
 // --- 新增: 请求执行器 (RequestExecutor) ---
 // 职责：封装单次请求的全部执行逻辑，包括重试、超时、断路器检查和故障转移。
+function describePromptModel(groupName: string, members: readonly IChatModel[], model: IChatModel) {
+    return {
+        name: model.id,
+        id: model.id,
+        group: { name: groupName, models: members.map((member) => ({ name: member.id, id: member.id, selected: member === model })) },
+    };
+}
+
 class RequestExecutor {
     private readonly logger: Logger;
     private attempts = 0;
@@ -440,14 +448,7 @@ class RequestExecutor {
                 for (const [index, message] of modelOptions.messages.entries()) {
                     const render = systemPromptRenderers.get(message);
                     if (!render) continue;
-                    originalMessages[index].content = render({
-                        name: model.id,
-                        id: model.id,
-                        group: {
-                            name: this.groupName,
-                            models: groupMembers.map((member) => ({ name: member.id, id: member.id, selected: member === model })),
-                        },
-                    });
+                    originalMessages[index].content = render(describePromptModel(this.groupName, groupMembers, model));
                 }
             } catch (error) {
                 breaker?.release(generation!);
@@ -706,6 +707,10 @@ export class ModelSwitcher<T extends BaseModel> {
 // --- 专用于聊天的模型切换器 ---
 // 职责：提供一个简单的 `.chat()` 接口，内部处理视觉/非视觉模型选择，并调用 RequestExecutor。
 export class ChatModelSwitcher extends ModelSwitcher<IChatModel> {
+    public getPromptModels() {
+        return this._models.map((model) => describePromptModel(this.groupConfig.name, this._models, model));
+    }
+
     private readonly visionModels: IChatModel[];
     private readonly nonVisionModels: IChatModel[];
     // Candidate pools rotate independently and live only as long as this switcher.
