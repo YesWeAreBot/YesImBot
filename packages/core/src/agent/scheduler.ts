@@ -23,7 +23,7 @@ export class StimulusScheduler {
     private readonly deferredTimers = new Map<string, NodeJS.Timeout>();
     private readonly pendingStimuli = new Map<string, AgentStimulus<any>>();
     private readonly scheduledStimuli = new Map<string, Array<AgentStimulus<any>>>();
-    private readonly completionStimuli = new Map<string, AgentStimulus<any>>();
+    private readonly completionStimuli = new Map<string, Array<AgentStimulus<any>>>();
     private readonly deferredReady = new Set<string>();
     private disposed = false;
 
@@ -135,7 +135,7 @@ export class StimulusScheduler {
         const queued = [
             ...this.pendingStimuli.values(),
             ...this.skippedStimulus.values(),
-            ...this.completionStimuli.values(),
+            ...[...this.completionStimuli.values()].flat(),
             ...[...this.scheduledStimuli.values()].flat(),
         ];
         for (const key of new Set(queued.filter(matches).map((stimulus) => stimulus.channelCid))) this.cancel(key, reason);
@@ -148,8 +148,7 @@ export class StimulusScheduler {
         if (skipped) this.observe?.(skipped, "cancelled", reason);
         for (const scheduled of this.scheduledStimuli.get(channelKey) ?? []) this.observe?.(scheduled, "cancelled", reason);
         this.scheduledStimuli.delete(channelKey);
-        const completion = this.completionStimuli.get(channelKey);
-        if (completion) this.observe?.(completion, "cancelled", reason);
+        for (const completion of this.completionStimuli.get(channelKey) ?? []) this.observe?.(completion, "cancelled", reason);
         this.completionStimuli.delete(channelKey);
         this.deferredReady.delete(channelKey);
         this.pendingStimuli.delete(channelKey);
@@ -205,7 +204,7 @@ export class StimulusScheduler {
         this.disposed = true;
         for (const stimulus of this.pendingStimuli.values()) this.observe?.(stimulus, "cancelled", "disposed");
         for (const stimulus of this.skippedStimulus.values()) this.observe?.(stimulus, "cancelled", "disposed");
-        for (const stimulus of this.completionStimuli.values()) this.observe?.(stimulus, "cancelled", "disposed");
+        for (const queue of this.completionStimuli.values()) for (const stimulus of queue) this.observe?.(stimulus, "cancelled", "disposed");
         for (const queue of this.scheduledStimuli.values()) for (const stimulus of queue) this.observe?.(stimulus, "cancelled", "disposed");
         this.scheduledStimuli.clear();
         this.debouncedReplyTasks.forEach((task) => task.dispose());
@@ -219,10 +218,16 @@ export class StimulusScheduler {
     }
 
     private retainCompletion(stimulus: AgentStimulus<any>): void {
-        const old = this.completionStimuli.get(stimulus.channelCid);
-        const limit = this.config.backgroundTools?.maxRetained ?? 128;
-        const taskIds = [...new Set([...(old?.payload?.taskIds ?? []), ...(stimulus.payload?.taskIds ?? [])])].slice(-limit);
-        this.completionStimuli.set(stimulus.channelCid, { ...stimulus, payload: { ...stimulus.payload, taskIds } });
+        const queue = this.completionStimuli.get(stimulus.channelCid) ?? [];
+        // Keep the original session, completion token and task IDs together.
+        if (queue.some((queued) => queued.payload === stimulus.payload)) return;
+        if (queue.length >= (this.config.backgroundTools?.maxRetained ?? 128)) {
+            this.observe?.(stimulus, "cancelled", "background_queue_full");
+            this.logger.warn(`后台续接队列已满 · 会话 ${stimulus.channelCid} · 请求 ${stimulus.payload?.requestId}`);
+            return;
+        }
+        queue.push(stimulus);
+        this.completionStimuli.set(stimulus.channelCid, queue);
         this.observe?.(stimulus, "queued", "background_completion");
     }
 
@@ -235,9 +240,10 @@ export class StimulusScheduler {
             void this.executeTask(channelKey, scheduled);
             return;
         }
-        const completion = this.completionStimuli.get(channelKey);
+        const completions = this.completionStimuli.get(channelKey);
+        const completion = completions?.shift();
         if (!completion) return;
-        this.completionStimuli.delete(channelKey);
+        if (!completions?.length) this.completionStimuli.delete(channelKey);
         void this.executeTask(channelKey, completion);
     }
 

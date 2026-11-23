@@ -4,7 +4,7 @@ import { PromptContextBuilder } from "../src/agent/context-builder";
 import { withReplyTurn } from "../src/agent/reply-turn";
 import { loggingStub, stubCtx } from "./helpers/yesimbot";
 
-function fixture(read: () => Promise<unknown>) {
+function fixture(read: () => Promise<unknown>, background?: object) {
     const warn = vi.fn<(...args: unknown[]) => void>();
     const ctx = stubCtx({}, { filter: (_session: unknown) => true });
     const world = {
@@ -17,7 +17,7 @@ function fixture(read: () => Promise<unknown>) {
         model: {} as any,
         logging: loggingStub({ debug() {}, warn }),
         asset: {} as any,
-        tool: { getToolSchemas: () => [] } as any,
+        tool: { getToolSchemas: () => [], background } as any,
         memory: { getMemoryBlocksForRendering: () => [] } as any,
         world: world as any,
     });
@@ -105,7 +105,7 @@ it("projects validated working sources into context without writing history or t
 });
 
 it("restores the original request for a background completion without counting it as a new message", async () => {
-    const f = fixture(async () => ({ unknown: true }));
+    const f = fixture(async () => ({ unknown: true }), { readContinuation: async () => ({ requestId: "first", tasks: [{ id: "task-a" }] }) });
     f.stimulus.type = "background_task_completion";
     f.stimulus.session.messageId = "original";
     (f.world as any).readMessageWindow = async () => ({
@@ -113,6 +113,8 @@ it("restores the original request for a background completion without counting i
         quotes: [],
     });
     const result = await f.build();
+    expect(result.worldState.triggerContext).toMatchObject({ requestId: "first", tasks: [{ id: "task-a" }] });
+    expect(result.worldState.backgroundTasks).toBeUndefined();
     expect(result.worldState.conversationFocus).toMatchObject({ triggerMessageIds: ["original"], missingMessageIds: [] });
     expect(result.worldState.l1_working_memory.processed_events).toMatchObject([{ id: "original", is_new: false }]);
 });

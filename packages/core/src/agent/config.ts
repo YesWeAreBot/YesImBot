@@ -243,30 +243,10 @@ export const DEFAULT_BACKGROUND_TOOLS = ["web_search", "fetch_webpage", "get_ima
 export interface BackgroundToolsConfig {
     enabled: boolean;
     allowedTools?: string[];
-    completion: "next_cycle" | "stimulus";
-    settlement: "task" | "request";
-    willingness: { succeeded: number; failed: number; cancelled: number };
     maxConcurrent: number;
     maxRetained: number;
     timeoutMs: number;
 }
-
-const backgroundWillingnessFields: Schema<BackgroundToolsConfig["willingness"]> = Schema.object({
-    succeeded: Schema.number().min(0).max(1000000).default(0).description("成功完成时增加的意愿值"),
-    failed: Schema.number().min(0).max(1000000).default(0).description("执行失败时增加的意愿值"),
-    cancelled: Schema.number().min(0).max(1000000).default(0).description("任务取消时增加的意愿值"),
-});
-const backgroundWillingnessSchema = Schema.intersect([
-    backgroundWillingnessFields,
-    Schema.transform(
-        backgroundWillingnessFields,
-        (value) => {
-            if (Object.values(value).some((amount) => !Number.isFinite(amount))) throw new TypeError("后台任务意愿值必须为有限数值");
-            return value;
-        },
-        true,
-    ),
-]);
 
 export type AgentBehaviorConfig = ArousalConfig &
     WillingnessConfig &
@@ -297,19 +277,6 @@ export const AgentBehaviorConfigSchema: Schema<AgentBehaviorConfig> = Schema.int
             allowedTools: Schema.dynamic("toolService.backgroundEligibleTools")
                 .default([...DEFAULT_BACKGROUND_TOOLS])
                 .description("允许后台执行的工具（取消勾选不影响普通调用）"),
-            completion: Schema.union([
-                Schema.const("next_cycle").description("下轮对话读取结果"),
-                Schema.const("stimulus").description("完成后进行回复意愿判断"),
-            ])
-                .default("next_cycle")
-                .description("任务完成处理方式"),
-            settlement: Schema.union([
-                Schema.const("task").description("每个任务结算"),
-                Schema.const("request").description("同轮对话提交的全部后台任务完成后结算"),
-            ])
-                .default("request")
-                .description("完成意愿结算单位"),
-            willingness: backgroundWillingnessSchema.description("后台任务完成意愿"),
             maxConcurrent: Schema.natural().min(1).max(32).default(4).description("同时执行的后台任务数上限"),
             maxRetained: Schema.natural().min(1).max(1024).default(128).description("保留的后台任务数上限"),
             timeoutMs: Schema.natural().min(1000).max(3600000).default(120000).description("后台任务执行超时（毫秒）"),

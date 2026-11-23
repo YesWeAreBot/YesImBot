@@ -6,7 +6,7 @@ import { ReplyControl } from "../src/agent/reply-control";
 import { WillingnessManager } from "../src/agent/willing";
 import { loggingStub, stubCtx } from "./helpers/yesimbot";
 
-function fixture(wake = true, gain = 60) {
+function fixture() {
     const session: any = {
         platform: "test",
         selfId: "b",
@@ -35,7 +35,7 @@ function fixture(wake = true, gain = 60) {
         consumeCompletion: () => {
             if (consumed || !valid) return;
             consumed = true;
-            return { gain, wake };
+            return true;
         },
         isCompletionCurrent: () => valid,
     };
@@ -67,23 +67,11 @@ function fixture(wake = true, gain = 60) {
     };
     return { core, session, willing, queued, stimulus, invalidate: () => (valid = false), mute: () => (muted = true) };
 }
-it("uses a dedicated background probability without replaying source message bonuses", () => {
-    const f = fixture(true, 0);
+it("schedules an accepted continuation exactly once with zero willingness", () => {
+    const f = fixture();
+    f.core.processStimulus(f.stimulus);
     f.core.processStimulus(f.stimulus);
     expect(f.willing.getCurrentWillingness(JSON.stringify(["test", "b", "g"]))).toBe(0);
-    expect(f.queued).toEqual([]);
-});
-it("adds configured willingness once while waiting for the next normal cycle", () => {
-    const f = fixture(false, 25);
-    f.core.processStimulus(f.stimulus);
-    f.core.processStimulus(f.stimulus);
-    expect(f.willing.getCurrentWillingness(JSON.stringify(["test", "b", "g"]))).toBe(25);
-    expect(f.queued).toEqual([]);
-});
-it("schedules a requested completion only after the normal probability decision", () => {
-    const f = fixture();
-    vi.spyOn(Math, "random").mockReturnValueOnce(0);
-    f.core.processStimulus(f.stimulus);
     expect(f.queued).toHaveLength(1);
 });
 it.each(["invalidate", "mute"] as const)("does not award or schedule after %s", (change) => {
@@ -99,7 +87,7 @@ it("injects scoped task snapshots and completion metadata into each prompt conte
         model: {} as any,
         logging: loggingStub(),
         asset: {} as any,
-        tool: { getToolSchemas: () => [], background: { snapshots: () => [{ id: "task", tool: "search", state: "running", progress: "received" }] } } as any,
+        tool: { getToolSchemas: () => [], background: { readContinuation: async () => ({ tasks: [{ id: "one", state: "succeeded" }] }) } } as any,
         memory: { getMemoryBlocksForRendering: () => [] } as any,
         world: {
             isChannelAllowed: () => true,
@@ -108,8 +96,8 @@ it("injects scoped task snapshots and completion metadata into each prompt conte
         } as any,
     });
     const result: any = await builder.build(f.stimulus as any);
-    expect(result.worldState.backgroundTasks).toMatchObject([{ id: "task", progress: "received" }]);
-    expect(result.worldState.triggerContext).toMatchObject({ isBackgroundTaskCompletion: true, taskIds: ["one"] });
+    expect(result.worldState.backgroundTasks).toBeUndefined();
+    expect(result.worldState.triggerContext).toMatchObject({ isBackgroundTaskCompletion: true, tasks: [{ id: "one", state: "succeeded" }] });
 });
 it("revalidates queued completion ownership before entering a model cycle", async () => {
     vi.useFakeTimers();

@@ -264,7 +264,7 @@ export class PromptContextBuilder {
             ...new Set([...focus.missingMessageIds, ...(focus.explicitWorkingState?.sourceMessageIds ?? []).filter((id) => !present.has(id))]),
         ];
         const worldState: FocusedWorldState = { ...sourceWorldState, conversationFocus: focus };
-        if (this.toolService.background) worldState.backgroundTasks = this.toolService.background.snapshots(session);
+        if (type !== "background_task_completion" && this.toolService.background) worldState.backgroundTasks = this.toolService.background.snapshots(session);
         assertContextCurrent();
 
         let triggerContext: object = {};
@@ -273,7 +273,9 @@ export class PromptContextBuilder {
                 triggerContext = { isUserMessage: true, messageIds: (payload as UserMessagePayload).messageIds };
                 break;
             case "background_task_completion":
-                triggerContext = { isBackgroundTaskCompletion: true, taskIds: payload?.taskIds, requestId: payload?.requestId, outcome: payload?.outcome };
+                if (!this.toolService.background) throw new Error("后台任务服务已停用");
+                triggerContext = { isBackgroundTaskCompletion: true, ...(await this.toolService.background.readContinuation(session, payload)) };
+                assertContextCurrent();
                 break;
             case "scheduled_task":
                 triggerContext = {

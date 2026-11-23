@@ -424,8 +424,10 @@ export class AgentCore extends YesImBotService<Config> {
                         this.recordDecision(stimulus, { stage: "blocked", reason: "muted", success: false });
                         return;
                     }
-                    this.cancelAssessment(channelCid);
-                    this.willing.handlePreReply(channelCid);
+                    if (stimulus.type !== "background_task_completion") {
+                        this.cancelAssessment(channelCid);
+                        this.willing.handlePreReply(channelCid);
+                    }
                     success = await withReplyTurn(
                         valid,
                         async () => {
@@ -462,7 +464,12 @@ export class AgentCore extends YesImBotService<Config> {
                 }
 
                 const replyTopic = (stimulus as TracedStimulus).scoringTopic ?? (stimulus as TracedStimulus).topic;
-                if (success && valid() && (!replyTopic || this.topicScores.get(channelCid)?.has(replyTopic.scoreKey))) {
+                if (
+                    stimulus.type !== "background_task_completion" &&
+                    success &&
+                    valid() &&
+                    (!replyTopic || this.topicScores.get(channelCid)?.has(replyTopic.scoreKey))
+                ) {
                     const scoreKey = replyTopic?.scoreKey ?? channelCid;
                     const willingnessBeforeReply = this.willing.getCurrentWillingness(scoreKey);
                     this.willing.handlePostReply(stimulus.session, scoreKey, 0, channelCid);
@@ -835,12 +842,9 @@ export class AgentCore extends YesImBotService<Config> {
                 return;
             }
         } else if (type === "background_task_completion") {
-            const completion = this.toolService?.background?.consumeCompletion(session, stimulus.payload);
-            if (!completion) return;
-            const result = this.willing.addBackgroundWillingness(session, channelCid, completion.gain);
-            const roll = completion.wake ? Math.random() : undefined;
-            decision = completion.wake && result.probability > (roll ?? 1);
-            this.recordDecision(stimulus, { stage: "calculated", decision, allowed, score: result.score, probability: result.probability, roll });
+            if (!this.toolService?.background?.consumeCompletion(session, stimulus.payload)) return;
+            decision = true;
+            this.recordDecision(stimulus, { stage: "calculated", decision, allowed, reason: "background_task_continuation" });
         } else {
             decision = true;
             this.recordDecision(stimulus, { stage: "calculated", decision, allowed });
