@@ -32,6 +32,8 @@ it("console error cause masks configured provider secret", async () => {
     await svc.stop();
 });
 
+const entry = (kind: string, data: unknown) => ({ kind, data, timestamp: "2026-01-01T00:00:00Z" });
+
 it.each([
     ["lite", false, false, false, false],
     ["low", true, false, false, false],
@@ -43,7 +45,6 @@ it.each([
     vi.stubGlobal("fetch", fetch);
     try {
         const reporter = new ErrorReporter({ enabled: true, level, pasteServiceUrl: "https://invalid.test" }, sink() as any);
-        const entry = (kind: string, data: unknown) => ({ kind, data, timestamp: "2026-01-01T00:00:00Z" });
         await reporter.report({
             errorId: "fixture",
             error: new Error("specific-error-detail"),

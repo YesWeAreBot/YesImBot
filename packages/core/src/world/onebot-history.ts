@@ -87,8 +87,10 @@ export class OneBotHistoryBackfill {
         if (this.targets.size >= MAX_TARGETS) return;
         // An explicit clear must not be undone by platform history, including
         // after restart. Only fill gaps after observing this target this run.
-        const floor = Math.floor(Date.now() / 1000) * 1000;
-        this.targets.set(key, { session, channelId, floor, generation: this.world.l2_manager.getHistoryGeneration({ platform: "onebot", channelId }) });
+        const generation = this.world.l2_manager.getHistoryGeneration({ platform: "onebot", channelId });
+        // OneBot timestamps cannot order messages within the reset second.
+        const floor = (Math.floor(Date.now() / 1000) + (generation > 0 ? 1 : 0)) * 1000;
+        this.targets.set(key, { session, channelId, floor, generation });
     }
 
     async refresh(session: Session, messageId?: string, source: BackfillSource = "onebot-tool", signal = replyTurnSignal()): Promise<BackfillResult> {

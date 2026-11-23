@@ -68,3 +68,21 @@ it("shares the total timeout across sequential engines", async () => {
     await expect(service.search("Koishi", 5)).rejects.toMatchObject({ retryable: false, attempts: [{ engine: "first", error: "请求超时" }] });
     expect(fetch).toHaveBeenCalledTimes(1);
 });
+
+it("retrieves distinct slash and slashless paths and deduplicates fragment variants", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async (_url, init) => {
+        const [url] = JSON.parse(String(init?.body)).urls;
+        return Response.json({ results: [{ url, raw_content: url }] });
+    });
+    vi.stubGlobal("fetch", fetch);
+    const service = new SearchService(
+        [{ backend: "tavily", id: "reader", endpoint: "https://reader.test", apiKey: "test", timeoutMs: 0, searchDepth: "basic", includeAnswer: false }],
+        ["reader"],
+        "auto",
+        options,
+    );
+    const urls = ["https://example.test/docs/", "https://example.test/docs"];
+    const result = await service.fetch([...urls, urls[0] + "#part"], 100);
+    expect(result.results.map((row) => row.content)).toEqual(urls);
+    expect(fetch).toHaveBeenCalledTimes(2);
+});

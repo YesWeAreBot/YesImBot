@@ -162,3 +162,15 @@ it("cancels an explicit refresh and rejects the late page", async () => {
     expect(f.snapshot.size).toBe(0);
     f.manager.stop();
 });
+
+it("excludes the ambiguous second for a group first observed after a reset", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(10500);
+    const f = setup();
+    f.clear();
+    const session = { ...f.session, channelId: "321", guildId: "321" };
+    f.manager.observe(session);
+    vi.mocked(Date.now).mockReturnValue(11000);
+    f.get.mockResolvedValue({ messages: [message(1, "old", { group_id: 321, time: 10 }), message(2, "new", { group_id: 321, time: 11 })] });
+    expect(await f.manager.refresh(session)).toMatchObject({ stored: 1, skipped: 1, messageIds: ["2"] });
+    f.manager.stop();
+});

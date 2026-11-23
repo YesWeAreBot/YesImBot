@@ -4,7 +4,7 @@ import type { Context } from "koishi";
 // See resources/licenses/ishiki-search.txt for the original MIT notice.
 import { createEngines } from "./engines/index";
 import type { EngineConfig, EngineSearchResult, FetchOutput, SearchAttempt, SearchConfig, SearchEngine, SearchOutput } from "./types";
-import { capAnswers, compileBlacklist, describeEngineFailure, isBlocked, mergeHits, normalizeUrl, timeoutSignal, truncate } from "./utils";
+import { capAnswers, compileBlacklist, describeEngineFailure, isBlocked, mergeHits, normalizeUrl, timeoutSignal, truncate, validatedUrl } from "./utils";
 
 export class SearchDispatchError extends Error {
     constructor(
@@ -103,7 +103,7 @@ export class SearchService {
             signal?.throwIfAborted();
             let url: string;
             try {
-                url = normalizeUrl(value);
+                url = validatedUrl(value).href;
             } catch {
                 results.push({ url: "无效 URL", error: "请输入不包含凭证的 HTTP 或 HTTPS 地址" });
                 continue;

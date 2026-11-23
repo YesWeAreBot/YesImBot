@@ -17,6 +17,8 @@ async function prompt() {
     await p.start();
     return p;
 }
+const m = (id: string, content: string, elements: any[] = []) => ({ type: "message", id, content, elements, timestamp: new Date(), sender: { id: "u" } });
+
 it("vision toggle preserves text history for a text-only model group", async () => {
     const p = await prompt();
     p.registerTemplate("agent.system", "hello");
@@ -24,7 +26,6 @@ it("vision toggle preserves text history for a text-only model group", async () 
         "agent.user",
         "{{#WORLD_STATE.l1_working_memory.processed_events}}{{content}}{{/WORLD_STATE.l1_working_memory.processed_events}} {{#WORLD_STATE.l1_working_memory.new_events}}{{content}}{{/WORLD_STATE.l1_working_memory.new_events}}",
     );
-    const m = (id: string, content: string, elements: any[] = []) => ({ type: "message", id, content, elements, timestamp: new Date(), sender: { id: "u" } });
     const state = {
         ...world,
         l1_working_memory: {

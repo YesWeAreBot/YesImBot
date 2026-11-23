@@ -22,7 +22,7 @@ const defaultPorts: Record<string, string> = {
     "https:": "443",
 };
 
-export function normalizeUrl(input: string): string {
+export function validatedUrl(input: string): URL {
     const url = new URL(input.trim());
     if (url.protocol !== "http:" && url.protocol !== "https:") {
         throw new Error(`Unsupported URL scheme: ${url.protocol}`);
@@ -31,6 +31,11 @@ export function normalizeUrl(input: string): string {
     url.hash = "";
     url.hostname = url.hostname.toLowerCase();
     if (defaultPorts[url.protocol] === url.port) url.port = "";
+    return url;
+}
+
+export function normalizeUrl(input: string): string {
+    const url = validatedUrl(input);
     if (url.pathname.length > 1) url.pathname = url.pathname.replace(/\/+$/, "");
     return url.toString();
 }

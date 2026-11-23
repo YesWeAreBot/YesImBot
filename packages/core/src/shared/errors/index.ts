@@ -62,6 +62,17 @@ export interface ReportContext {
     conversation?: ConversationReport;
 }
 
+const errorDetails = (row: any): unknown =>
+    row && typeof row === "object"
+        ? {
+              ...(summarizeError(row) as Record<string, unknown>),
+              message: row.message,
+              stack: row.stack,
+              cause: errorDetails(row.cause),
+              errors: Array.isArray(row.errors) ? row.errors.map(errorDetails) : undefined,
+          }
+        : row;
+
 /**
  * 负责格式化错误详情并将其上报到外部服务
  */
@@ -244,21 +255,11 @@ export class ErrorReporter {
         const level = reportLevels.indexOf(this.config.level!);
         const error = sanitizeDiagnostic(normalizeAppError(context.error), secrets);
         const safeError = mask ? mask(error) : error;
-        const details = (row: any): unknown =>
-            row && typeof row === "object"
-                ? {
-                      ...(summarizeError(row) as Record<string, unknown>),
-                      message: row.message,
-                      stack: row.stack,
-                      cause: details(row.cause),
-                      errors: Array.isArray(row.errors) ? row.errors.map(details) : undefined,
-                  }
-                : row;
         const sections = [
             `# 智能体错误报告 · ${this.config.level}\n\n`,
             jsonSection("错误", {
                 id: diagnosticId(redactDiagnosticText(context.errorId, secrets)),
-                error: level === 0 ? summarizeError(safeError) : details(safeError),
+                error: level === 0 ? summarizeError(safeError) : errorDetails(safeError),
             }),
         ];
         const rows = context.conversation?.entries ?? [];
