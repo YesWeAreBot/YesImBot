@@ -82,6 +82,32 @@ export class ToolOutputStore {
         return operation;
     }
 
+    public clear(matches: (owner: ToolOutputOwner) => boolean, all = false): Promise<void> {
+        const operation = this.queue.then(async () => {
+            const names = await readdir(this.directory).catch((error) => {
+                if (error.code === "ENOENT") return [] as string[];
+                throw error;
+            });
+            for (const name of names.filter((name) => FILE_NAME.test(name))) {
+                const file = path.join(this.directory, name);
+                if (all) {
+                    await rm(file, { force: true });
+                    continue;
+                }
+                if (name.endsWith(".tmp")) continue;
+                const contents = await readFile(file, "utf8").catch((error) => {
+                    if (error.code === "ENOENT") return;
+                    throw error;
+                });
+                if (!contents) continue;
+                const resource = JSON.parse(contents);
+                if (resource.owner && matches(resource.owner)) await rm(file, { force: true });
+            }
+        });
+        this.queue = operation.catch(() => {});
+        return operation;
+    }
+
     public async read(uri: string, owner: ToolOutputOwner, offset = 0, limit = 6000, assertCurrent: () => void) {
         assertCurrent();
         const match = RESOURCE.exec(uri);

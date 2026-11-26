@@ -2,6 +2,8 @@ import { h, type Session } from "koishi";
 import { CQCode, OneBot } from "koishi-plugin-adapter-onebot";
 import * as qface from "qface";
 
+import { readOneBotMarkdownMention } from "../shared/utils/onebot-markdown";
+
 const record = (value: unknown): value is Record<string, any> => !!value && typeof value === "object" && !Array.isArray(value);
 const scalar = (value: unknown) => (typeof value === "string" || (typeof value === "number" && Number.isFinite(value)) ? String(value) : undefined);
 
@@ -90,7 +92,7 @@ export function deduplicateOneBotMarkdown(content: string): string {
     const plain = elements.slice(index + 1);
     if (!plain.length || plain.some((element) => !["text", "at"].includes(element.type))) return content;
     const text = markdown.attrs.content as string;
-    const mention = /^\[@[^\]\n]+\]\(mqqapi:\/\/markdown\/mention\?at_type=1&at_tinyid=(\d+)\)([\s\S]*)$/.exec(text);
+    const mention = readOneBotMarkdownMention(text);
     if (mention) {
         if (plain[0].type !== "at" || String(plain[0].attrs.id) !== mention[1]) return content;
         if (plain.slice(1).some((element) => element.type !== "text") || plainText(plain.slice(1)) !== mention[2].trim()) return content;

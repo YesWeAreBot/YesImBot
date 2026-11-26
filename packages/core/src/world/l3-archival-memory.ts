@@ -37,8 +37,8 @@ export class ArchivalMemoryManager {
     ) {
         this.logger = logging.getLogger("[L3-长期记忆]");
         registerHistoryResetParticipant(ctx, {
-            prepare: () => {
-                this.failures.clear();
+            prepare: (scope) => {
+                if ("type" in scope && scope.type === "all") this.failures.clear();
             },
         });
     }
@@ -253,7 +253,6 @@ export class ArchivalMemoryManager {
         this.controllers.add(controller);
         const unwatch = this.semanticMemory?.watchHistory(target, () => {
             controller.abort(new Error("日记来源历史已清除"));
-            this.failures.clear();
         });
         try {
             await this.semanticMemory?.waitForHistoryClear(target);
@@ -288,6 +287,9 @@ export class ArchivalMemoryManager {
                 }),
             );
             if (!active()) return;
+            if (diaryContent.finishReason === "length" || diaryContent.finishReason === "content_filter") {
+                throw new AppError(ErrorDefinitions.LLM.REQUEST_FAILED, { args: [`日记生成异常结束：${diaryContent.finishReason}`] });
+            }
             if (isEmpty(diaryContent.text)) {
                 throw new AppError(ErrorDefinitions.LLM.OUTPUT_EMPTY_CONTENT);
             }

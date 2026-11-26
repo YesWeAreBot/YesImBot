@@ -4,7 +4,7 @@ import { conversationChannelId } from "../shared/utils/conversation-scope";
 
 type IdentityKind = "user" | "channel" | "message" | "bot";
 type Identity = { id: string; kind: IdentityKind };
-type Entry = { timestamp: string; kind: string; data: unknown };
+type Entry = { timestamp: string; kind: string; turnId?: string; messageId?: string; data: unknown };
 export type ConversationReport = { entries: Entry[]; identities: Identity[]; omitted: number };
 
 export interface ReportTarget {
@@ -16,8 +16,9 @@ export interface ReportTarget {
     messageId?: string;
     isDirect?: boolean;
 }
-type StoredEntry = { entry: Entry; ids: Identity[]; bytes: number; turn?: string; generation: object };
-type Trace = { owner: ConversationReportRecorder; target: ReportTarget; key: string; turn?: string; generation: object };
+type StoredEntry = { entry: Entry; ids: Identity[]; bytes: number; turn?: string; generation: Generation };
+type Generation = { channelId: string; platform: string; isDirect: boolean; omitted: number };
+type Trace = { owner: ConversationReportRecorder; target: ReportTarget; key: string; turn?: string; generation: Generation };
 const current = new AsyncLocalStorage<Trace | undefined>();
 
 const MAX_BYTES = 8 * 1024 * 1024;
@@ -26,10 +27,11 @@ const MAX_AGE = 30 * 60 * 1000;
 
 export class ConversationReportRecorder {
     private readonly entries: Array<StoredEntry & { key: string; time: number }> = [];
-    private readonly generations = new Map<string, { channelId: string; platform: string; isDirect: boolean }>();
+    private readonly generations = new Map<string, Generation>();
     private bytes = 0;
-    private omitted = 0;
     private stopped = false;
+
+    constructor(private readonly onEntry?: (target: ReportTarget, entry: Entry) => void) {}
 
     public start(target: ReportTarget, turn?: string): Trace | undefined {
         if (this.stopped || !target.platform || !target.channelId || !target.selfId) return;
@@ -43,7 +45,7 @@ export class ConversationReportRecorder {
         let generation = this.generations.get(key);
         if (!generation) {
             if (this.generations.size >= MAX_ENTRIES) this.generations.delete(this.generations.keys().next().value!);
-            generation = { platform: target.platform, channelId, isDirect: target.isDirect === true || channelId.startsWith("private:") };
+            generation = { omitted: 0, platform: target.platform, channelId, isDirect: target.isDirect === true || channelId.startsWith("private:") };
             this.generations.set(key, generation);
         }
         return { owner: this, target, key, turn, generation };
@@ -57,7 +59,7 @@ export class ConversationReportRecorder {
             if (serialized === undefined) return;
             const bytes = Buffer.byteLength(serialized);
             if (bytes > MAX_BYTES) {
-                this.omitted++;
+                trace.generation.omitted++;
                 return;
             }
             const { userId, messageId, channelId, guildId, selfId } = trace.target;
@@ -73,8 +75,9 @@ export class ConversationReportRecorder {
             }
             const time = Date.now();
             this.evict(time, bytes);
+            const entry = { timestamp: new Date(time).toISOString(), kind, turnId: trace.turn, messageId, data: JSON.parse(serialized) };
             this.entries.push({
-                entry: { timestamp: new Date(time).toISOString(), kind, data: JSON.parse(serialized) },
+                entry,
                 ids,
                 key: trace.key,
                 turn: trace.turn,
@@ -83,8 +86,9 @@ export class ConversationReportRecorder {
                 time,
             });
             this.bytes += bytes;
+            this.onEntry?.(trace.target, entry);
         } catch {
-            this.omitted++;
+            trace.generation.omitted++;
         }
     }
 
@@ -96,10 +100,10 @@ export class ConversationReportRecorder {
             (row) =>
                 row.key === trace.key &&
                 row.generation === trace.generation &&
-                (row.turn === trace.turn || row.entry.kind === "log" || row.entry.kind === "stimulus" || row.entry.kind === "decision"),
+                (row.turn === trace.turn || row.entry.kind === "stimulus" || row.entry.kind === "decision" || row.entry.kind.startsWith("ingress.")),
         );
         if (!rows.length) return;
-        return { entries: rows.map(({ entry }) => entry), identities: rows.flatMap(({ ids }) => ids), omitted: this.omitted };
+        return { entries: rows.map(({ entry }) => entry), identities: rows.flatMap(({ ids }) => ids), omitted: trace.generation.omitted };
     }
 
     public clear(matches: (platform: string, channelId: string, isDirect: boolean) => boolean): void {
@@ -127,8 +131,9 @@ export class ConversationReportRecorder {
             this.entries.length &&
             (this.entries[0].time < time - MAX_AGE || (adding && this.entries.length >= MAX_ENTRIES) || this.bytes + incoming > MAX_BYTES)
         ) {
-            this.bytes -= this.entries.shift()!.bytes;
-            this.omitted++;
+            const row = this.entries.shift()!;
+            this.bytes -= row.bytes;
+            row.generation.omitted++;
         }
     }
 }

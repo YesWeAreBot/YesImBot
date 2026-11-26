@@ -30,7 +30,7 @@ async function fixture() {
     );
     await ctx.start();
     await assets.start();
-    return { assets, processed: path.join(baseDir, "processed") };
+    return { assets, storage: path.join(baseDir, "assets"), processed: path.join(baseDir, "processed") };
 }
 
 it("retains the image MIME and dimensions through data URL storage and rendering", async () => {
@@ -70,12 +70,22 @@ it("makes transformAsync deduplicated references readable", async () => {
     expect(await assets.read(elements[0].attrs.id)).toEqual(Buffer.from("shared content"));
 });
 
-it("rejects damaged image conversion without storing the fallback bytes as JPEG", async () => {
-    const { assets, processed } = await fixture();
-    const source = `data:image/png;base64,${Buffer.from("broken image").toString("base64")}`;
-    const id = await assets.create(source);
-    await expect(assets.read(id, { format: "data-url", image: { process: true } })).rejects.toThrow();
+it("rejects a truncated PNG before writing its bytes or assigning a resource id", async () => {
+    const { assets, processed, storage } = await fixture();
+    const png = await new Jimp({ width: 1, height: 1, color: 0xff0000ff }).getBuffer("image/png");
+    const source = `data:image/png;base64,${png.subarray(0, -12).toString("base64")}`;
+    const rejected = assets.create(source);
+    await expect(rejected).rejects.toMatchObject({ code: "RESOURCE.IMAGE_INVALID", cause: expect.any(Error) });
+    expect(await readdir(storage)).toEqual([]);
     expect(await readdir(processed)).toEqual([]);
+    expect(h.parse(await assets.transformAsync([h("img", { src: source })]))[0].attrs).toMatchObject({ src: source });
+});
+
+it("preserves raw SVG assets outside the raster decoder", async () => {
+    const { assets } = await fixture();
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><path d="M0 0h1v1H0z"/></svg>');
+    const source = `data:image/svg+xml;base64,${svg.toString("base64")}`;
+    const id = await assets.create(source);
     expect(await assets.read(id, { format: "data-url" })).toBe(source);
 });
 

@@ -317,3 +317,20 @@ it("rejects discovery results when history is cleared while the bounded window i
     await f.processor.runCycle(f.followUp("new-epoch-follow-up"));
     expect(images(f.wires.at(-1)!.messages)).toHaveLength(0);
 });
+
+it("fills an image slot with a valid lower-priority candidate when the first asset is missing", async () => {
+    const f = fixture();
+    f.photo.elements = h.parse('<img id="missing"/><img id="pixels"/>');
+    f.asset.getInfo.mockResolvedValueOnce(undefined);
+    const { messages } = await (f.processor as any)._prepareLlmRequest(f.stimulus("photo"));
+    expect(f.asset.getInfo.mock.calls).toEqual([["missing"], ["pixels"]]);
+    expect(f.builder.getAttachedImageIds(messages)).toEqual(["pixels"]);
+});
+
+it("renders known history provenance through the unchanged default history template", async () => {
+    const f = fixture();
+    f.photo.sender.discovery = "onebot-tool";
+    const { messages } = await (f.processor as any)._prepareLlmRequest(f.stimulus("photo"));
+    expect(JSON.stringify(messages)).toContain("Alice〔工具回填〕");
+    expect(f.photo.sender.name).toBe("Alice");
+});

@@ -132,6 +132,20 @@ export const ErrorDefinitions = {
             suggestion: "在决定是否回复时发生内部错误。请检查日志以获取更多详情",
         },
     },
+    RESOURCE: {
+        IMAGE_INVALID: {
+            code: "RESOURCE.IMAGE_INVALID",
+            category: "source_invalid",
+            message: "图片无法解码，未存入资源库",
+            suggestion: "请提供可完整读取的原图，或将图片转换为常用格式后重发",
+        },
+        IMAGE_READ_FAILED: {
+            code: "RESOURCE.IMAGE_READ_FAILED",
+            category: "source_invalid",
+            message: "识图工具无法读取或解码该图片",
+            suggestion: "请重新发送原图，或检查对应资源是否仍存在且未损坏",
+        },
+    },
     PERSON_MEMORY: {
         VERSION_CONFLICT: {
             code: "PERSON_MEMORY.VERSION_CONFLICT",
@@ -143,6 +157,12 @@ export const ErrorDefinitions = {
     },
     // --- 系统未知错误 ---
     SYSTEM: {
+        DATABASE_ERROR: {
+            code: "SYSTEM.DATABASE_ERROR",
+            category: "internal",
+            message: (code: string) => `数据库操作失败（${code}）`,
+            suggestion: "请检查数据库连接与存储状态，并根据错误编号查看诊断",
+        },
         UNKNOWN: {
             code: "SYSTEM.UNKNOWN",
             category: "internal",

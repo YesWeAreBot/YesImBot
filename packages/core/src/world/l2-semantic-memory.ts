@@ -120,6 +120,18 @@ export class SemanticMemoryManager {
         return () => this.coordination.invalidations.delete(entry);
     }
 
+    private async embedForHistory(target: MemoryTarget, model: IEmbedModel, text: string) {
+        const controller = new AbortController();
+        const unwatch = this.watchHistory(target, () => controller.abort(new Error("嵌入来源历史已清除")));
+        try {
+            const result = await model.embed(text, controller.signal);
+            controller.signal.throwIfAborted();
+            return result;
+        } finally {
+            unwatch();
+        }
+    }
+
     /** Retention removes only expired buffered messages; valid indexing work survives. */
     public pruneExpiredBuffers(cutoff: number): void {
         this.coordination.retentionCutoff = Math.max(this.coordination.retentionCutoff, cutoff);
@@ -241,7 +253,9 @@ export class SemanticMemoryManager {
                 const lastEvent = retained[retained.length - 1];
                 const { platform, channelId } = firstEvent;
                 const conversationText = this.compileEventsToText(retained);
-                const embedding = await withUsageScope({ platform, target: channelId, purpose: "L2记忆索引" }, () => embedModel.embed(conversationText));
+                const embedding = await withUsageScope({ platform, target: channelId, purpose: "L2记忆索引" }, () =>
+                    this.embedForHistory(target, embedModel, conversationText),
+                );
                 if (this.generation(target) !== generation) return;
                 const current = this.unexpiredMessages(retained);
                 if (current.length !== retained.length) {
@@ -275,6 +289,7 @@ export class SemanticMemoryManager {
                 return;
             }
         } catch (error) {
+            if (this.generation(target) !== generation) return;
             this.logger.error(`消息索引创建失败 | ${error.message}`);
             this.logger.debug(error);
         }
@@ -305,17 +320,20 @@ export class SemanticMemoryManager {
         )
             return [];
         queryText = queryText.slice(-2000);
+        const target = options.platform && options.channelId ? { platform: options.platform, channelId: options.channelId } : undefined;
+        const generation = target && this.generation(target);
         const minAllowedSim = this.config.l2_memory.retrievalMinSimilarity ?? 0.5;
         let vector: number[] | undefined;
         if (this.embedModel) {
             try {
                 const result = await withUsageScope({ platform: options.platform, target: options.channelId, purpose: "L2记忆检索" }, () =>
-                    this.embedModel!.embed(queryText),
+                    target ? this.embedForHistory(target, this.embedModel!, queryText) : this.embedModel!.embed(queryText),
                 );
                 if (!result.embedding.length || !result.embedding.every(Number.isFinite) || !result.embedding.some((value) => value !== 0))
                     throw new Error("无效检索向量");
                 vector = result.embedding;
             } catch (error) {
+                if (target && this.generation(target) !== generation) return [];
                 this.logger.warn(`L2 嵌入检索失败，降级为有界关键词检索: ${error instanceof Error ? error.message : String(error)}`);
             }
         }
@@ -337,6 +355,7 @@ export class SemanticMemoryManager {
                   .slice(0, 200)
                   .filter((chunk) => withinRecallScope(chunk, options!))
             : [];
+        if (target && this.generation(target) !== generation) return [];
         const sourceChunks = keywordChunks.filter((chunk) => chunk.id.startsWith("message:"));
         const allChunks = [
             ...new Map([...semanticChunks, ...keywordChunks.filter((chunk) => !chunk.id.startsWith("message:"))].map((chunk) => [chunk.id, chunk])).values(),
@@ -550,7 +569,7 @@ export class SemanticMemoryManager {
                     const generation = this.generation(chunk, generations);
                     if (this.generation(chunk) !== generation) continue;
                     const result = await withUsageScope({ platform: chunk.platform, target: chunk.channelId, purpose: "L2索引重建" }, () =>
-                        this.embedModel!.embed(chunk.content),
+                        this.embedForHistory(chunk, this.embedModel!, chunk.content),
                     );
                     if (
                         await this.writeMemory(chunk, generation, () =>

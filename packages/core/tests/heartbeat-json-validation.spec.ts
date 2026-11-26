@@ -110,6 +110,8 @@ for (const stream of [false, true]) {
         { function: "send_message", params: "bad" },
         { function: "send_message", params: null },
         { function: "send_message", params: [] },
+        { function: "send_message", params: {} },
+        { function: "unknown_tool", params: {} },
     ]) {
         it(`${stream ? "streaming" : "JSON"} corrects invalid action shape ${JSON.stringify(invalid)} before any tool executes`, async () => {
             // A valid-looking earlier action in the same invalid batch must not execute.

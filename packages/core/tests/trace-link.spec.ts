@@ -40,6 +40,7 @@ for (const mode of ["normal", "streaming", "native"]) {
             prompt: {} as any,
             tool: {
                 getAvailableTools: () => [{ name: "probe", description: "test", parameters: Schema.object({}) }],
+                getTool: (name: string) => (name === "probe" ? { name, description: "test", parameters: Schema.object({}) } : undefined),
                 invoke: async () => {
                     await transport("tool");
                     return { status: "success" };

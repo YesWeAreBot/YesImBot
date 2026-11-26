@@ -330,6 +330,7 @@ for (const nativeToolCalling of [false, true]) {
         config.heartbeat = 1;
         config.nativeToolCorrectionRetries = 0;
         const mainModel = {
+            hasVisionCapability: () => true,
             chat: async (options: any) => {
                 modelRequests.push(options);
                 return nativeToolCalling
@@ -430,3 +431,15 @@ for (const mode of ["search", "static", "dynamic"] as const) {
         expect(await invocation).toMatchObject({ status: "success" });
     });
 }
+
+it("preserves the image-read failure rather than calling the vision provider", async () => {
+    const f = setup();
+    const cause = new Error("unrecognised content at end of stream");
+    f.ctx.yesimbot.asset.read = vi.fn<() => Promise<string>>().mockRejectedValue(cause);
+    await expect(f.extension.getImageDescription({ image_id: "image", question: "what?", session: f.session })).rejects.toMatchObject({
+        code: "RESOURCE.IMAGE_READ_FAILED",
+        cause,
+        context: { imageId: "image", mime: "image/png" },
+    });
+    expect(f.model.chat).not.toHaveBeenCalled();
+});

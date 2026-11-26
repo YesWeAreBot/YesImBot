@@ -16,6 +16,7 @@ function state(channel = "A", source = "msg", quoted = false, selfId = "bot") {
     } as any;
 }
 function setup() {
+    const debug = vi.fn<(line: string) => void>();
     const asset = {
         getInfo: vi.fn<(id: string) => Promise<{ id: string; mime: string } | undefined>>().mockResolvedValue({ id: "img", mime: "image/png" }),
         read: vi.fn<(id: string) => Promise<string>>().mockResolvedValue("data:image/jpeg;base64,eA=="),
@@ -23,11 +24,11 @@ function setup() {
     const builder = new PromptContextBuilder(
         {} as any,
         { enableVision: true, maxImagesInContext: 3, imageLifecycleCount: 1, allowedImageTypes: ["image/png"], detail: "low" } as any,
-        { model: { hasVisionCapability: () => true }, logging: loggingStub({ debug() {} }), asset, memory: {}, tool: {}, world: {} } as any,
+        { model: { hasVisionCapability: () => true }, logging: loggingStub({ debug }), asset, memory: {}, tool: {}, world: {} } as any,
     );
     const build = (world = state()) => builder.buildMultimodalUserMessage("prompt", world);
     const commit = (content: any) => (builder as any).commitMultimodalUsage([{ role: "user", content }]);
-    return { asset, builder, build, commit };
+    return { asset, builder, build, commit, debug };
 }
 it("does not consume the allowance before a successful model request", async () => {
     const f = setup();
@@ -108,5 +109,9 @@ it("keeps healthy images when a selected image cannot be decoded", async () => {
     f.asset.read.mockRejectedValueOnce(new Error("decode error"));
     const result = await f.build(world);
     expect(f.asset.read).toHaveBeenCalledTimes(2);
+    const logs = f.debug.mock.calls.flat().join("\n");
+    expect(logs).toContain('"imageId":"broken","sourceMessageId":"msg","outcome":"asset_read_failed"');
+    expect(logs).toContain('"imageId":"img","sourceMessageId":"msg","outcome":"prepared"');
+    expect(logs).not.toContain("data:image");
     expect(f.builder.getAttachedImageIds([{ role: "user", content: result }] as any)).toEqual(["img"]);
 });

@@ -11,7 +11,7 @@ import { observeUsageFetch } from "./usage";
 import type { UsageOwner } from "./usage-owner";
 
 export interface IEmbedModel extends BaseModel {
-    embed(text: string): Promise<EmbedResult>;
+    embed(text: string, abortSignal?: AbortSignal): Promise<EmbedResult>;
     embedMany(texts: string[]): Promise<EmbedManyResult>;
 }
 
@@ -28,12 +28,13 @@ export class EmbedModel extends BaseModel implements IEmbedModel {
         this.fetch = observeUsageFetch(ctx, { provider: modelConfig.providerName ?? "未知", model: this.id, purpose: "嵌入" }, fetch, usageOwner);
     }
 
-    public async embed(text: string): Promise<EmbedResult> {
+    public async embed(text: string, abortSignal?: AbortSignal): Promise<EmbedResult> {
         //this.logger.debug(`正在为文本生成嵌入向量："${truncate(text, 50)}"`);
         const embedOptions: EmbedOptions = {
             ...this.embedProvider(this.config.modelId),
             fetch: observeModelReportRequest(this.fetch),
             input: text,
+            abortSignal,
         };
         return withModelConversationReport(
             { requestId: modelReportRequestId("embedding"), provider: this.config.providerName, model: this.id, purpose: "嵌入" },

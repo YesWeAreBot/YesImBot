@@ -19,13 +19,16 @@ function fixture() {
     const ctx = new Context();
     const trace: string[] = [];
     const errors: unknown[][] = [];
+    const debug: unknown[][] = [];
     const memory = new Map<string, string>();
     const stimuli: Array<{ session: Session; payload: { messageIds: string[] }; memory?: string }> = [];
     Object.assign(ctx, {
         yesimbot: stubYesImBot({
             logging: {
                 getLogger: () => ({
-                    debug() {},
+                    debug(...args: unknown[]) {
+                        debug.push(args);
+                    },
                     info() {},
                     error(...args: unknown[]) {
                         errors.push(args);
@@ -73,7 +76,7 @@ function fixture() {
         }
         await next();
     }
-    return { ctx, manager, trace, errors, memory, stimuli, session, run };
+    return { ctx, manager, trace, errors, debug, memory, stimuli, session, run };
 }
 
 for (const registration of ["before", "after"] as const) {
@@ -130,7 +133,8 @@ it("keeps an ordinary user stimulus available after optional capture rejects", a
         const session = f.session();
         await f.run(session);
         expect(f.errors).toHaveLength(1);
-        expect(f.errors[0]).toContain(error);
+        expect(f.errors[0][0]).toContain("用户消息前置处理");
+        expect(JSON.stringify(f.debug)).toContain(error.message);
         expect(f.stimuli).toHaveLength(1);
         expect(f.stimuli[0].session.id).toBe(session.id);
     } finally {
@@ -166,7 +170,8 @@ for (const rejection of ["synchronous throw", "async rejection"] as const) {
             expect(f.stimuli).toHaveLength(1);
             expect(f.stimuli[0].memory).toBe("Alice");
             expect(f.errors).toHaveLength(1);
-            expect(f.errors[0]).toContain(error);
+            expect(f.errors[0][0]).toContain("用户消息前置处理");
+            expect(JSON.stringify(f.debug)).toContain(error.message);
         } finally {
             finishCapture.resolve();
             await processing;

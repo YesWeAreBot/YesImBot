@@ -5,7 +5,7 @@ import path from "node:path";
 
 import type { Context } from "koishi";
 
-import { captureContextSnapshot, clearContextSnapshots, MAX_CONTEXT_SNAPSHOT_BYTES } from "./context-snapshot";
+import { beginContextSnapshot, captureContextSnapshot, clearContextSnapshots, MAX_CONTEXT_SNAPSHOT_BYTES } from "./context-snapshot";
 import { resolveUsageOwner, UsageOwner } from "./usage-owner";
 
 export interface TokenUsage {
@@ -361,12 +361,19 @@ export function getUsageLedger(ctx: Context, explicitOwner?: UsageOwner): UsageL
 /** Observe each transport call, so SDK tool steps and retries each have a record. */
 export function observeUsageFetch(ctx: Context, metadata: UsageMetadata, fetch: typeof globalThis.fetch, explicitOwner?: UsageOwner): typeof globalThis.fetch {
     return (async (url, init) => {
+        let finishSnapshot: (() => boolean) | undefined;
+        try {
+            finishSnapshot = beginContextSnapshot(ctx, { ...metadata, ...scopes.getStore() }, explicitOwner);
+        } catch (error) {
+            warnUsage(ctx, `请求上下文快照不可用: ${error.message}`);
+        }
         let ledger: UsageLedger, ticket: UsageTicket;
         try {
             ledger = getUsageLedger(ctx, explicitOwner);
             await ledger.ready();
             ticket = ledger.begin(metadata);
         } catch (error) {
+            finishSnapshot?.();
             warnUsage(ctx, `用量统计不可用，继续原始模型请求: ${error.message}`);
             return fetch(url, init);
         }
@@ -378,14 +385,15 @@ export function observeUsageFetch(ctx: Context, metadata: UsageMetadata, fetch: 
             /* non-JSON request */
         }
         try {
-            captureContextSnapshot(
-                ctx,
-                ticket,
-                payload,
-                ticket.period,
-                oversized ? "请求上下文超过单条快照容量，未解析或保留正文；本地输入估算不可用" : undefined,
-                explicitOwner,
-            );
+            if (finishSnapshot?.() && !init?.signal?.aborted && !(url instanceof Request && url.signal.aborted))
+                captureContextSnapshot(
+                    ctx,
+                    ticket,
+                    payload,
+                    ticket.period,
+                    oversized ? "请求上下文超过单条快照容量，未解析或保留正文；本地输入估算不可用" : undefined,
+                    explicitOwner,
+                );
         } catch (error) {
             warnUsage(ctx, `请求上下文快照不可用: ${error.message}`);
         }

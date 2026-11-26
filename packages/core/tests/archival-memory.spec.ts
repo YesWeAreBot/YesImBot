@@ -658,3 +658,14 @@ it("expires automatic failure cooldown, resets it on success, and clears it with
     await automatic();
     expect(calls).toBe(6);
 });
+
+it("does not advance the diary after a truncated response", async () => {
+    const f = await fixture();
+    f.seedMessages();
+    f.model(async () => ({ text: "partial diary", finishReason: "length" }));
+    await expect(f.memory.generateOnDemand("onebot", "same", day())).rejects.toThrow("length");
+    expect(f.diaries()).toEqual([]);
+    f.model(async () => ({ text: "complete diary" }));
+    await f.memory.generateOnDemand("onebot", "same", day());
+    expect(f.diaries().map((entry) => entry.content)).toEqual(["complete diary"]);
+});

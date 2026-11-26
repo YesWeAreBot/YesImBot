@@ -9,6 +9,7 @@ import type { LoggerService } from "../logger";
 import { getInstanceDirectory } from "../shared";
 import { TableName } from "../shared/constants";
 import { sanitizeDiagnostic } from "../shared/diagnostic-sanitizer";
+import { AppError, ErrorDefinitions, handleError } from "../shared/errors";
 import { parseConversationChannelId } from "../shared/utils/conversation-scope";
 import { HISTORY_CHANNELS } from "./channel-metadata";
 import { HistoryConfig } from "./config";
@@ -230,16 +231,40 @@ export class InteractionManager {
                         channelType: message.channelType,
                     },
                 ]);
-            await this.ctx.database.create(TableName.Messages, message);
-            return "stored";
-        } catch (error) {
-            if (error?.code === "duplicate-entry" || /^UNIQUE constraint failed: worldstate\.messages\./.test(error?.message || "")) {
-                this.logger.debug(`历史记录已存在 · ${message.platform}:${message.channelId} · 消息 ${message.id}`);
-                return "duplicate";
+            try {
+                await this.ctx.database.create(TableName.Messages, message);
+                return "stored";
+            } catch (error) {
+                if (error?.code !== "duplicate-entry" && !/^UNIQUE constraint failed: worldstate\.messages\./.test(error?.message || "")) throw error;
             }
+            const origin = message.sender?.origin;
+            if (origin === "model" || origin === "framework") {
+                // A self-message echo can be inserted before the confirmed send.
+                await this.ctx.database.set(
+                    TableName.Messages,
+                    {
+                        platform: message.platform,
+                        channelId: message.channelId,
+                        id: message.id,
+                        "sender.id": message.sender.id,
+                        $or: [{ "sender.origin": "operator" }, { "sender.origin": { $exists: false } }],
+                    },
+                    { "sender.origin": origin },
+                );
+            }
+            this.logger.debug(`历史记录已存在 · ${message.platform}:${message.channelId} · 消息 ${message.id}`);
+            return "duplicate";
+        } catch (error) {
             const code = typeof error?.code === "string" && /^[\w.-]{1,60}$/.test(error.code) ? error.code : "UNKNOWN";
-            this.logger.error(`写入消息历史失败 · ${message.platform}:${message.channelId} · 消息 ${message.id} · ${code}`);
-            this.logger.debug(error);
+            handleError(
+                this.logger,
+                new AppError(ErrorDefinitions.SYSTEM.DATABASE_ERROR, {
+                    args: [code],
+                    cause: error,
+                    context: { platform: message.platform, channelId: message.channelId, messageId: message.id },
+                }),
+                "写入消息历史",
+            );
             return "failed";
         }
     }

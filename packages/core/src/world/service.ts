@@ -24,6 +24,7 @@ import { ArchivalMemoryManager } from "./l3-archival-memory";
 import { diaryDateKey } from "./memory-date";
 import type { MessageWindowTarget } from "./message-window";
 import { readMessageWindowPage, type MessageWindowOptions } from "./message-window";
+import { OneBotHistoryBackfill } from "./onebot-history";
 import { recallRawPage, type RawRecallOptions } from "./raw-recall";
 import { recallStoredMemories, type StoredRecallOptions } from "./recall";
 import { AgentStimulus, BotMuteStateData, DiaryEntryData, MemberData, MemoryChunkData, MessageData, SystemEventData, WorldState } from "./types";
@@ -66,6 +67,7 @@ export class WorldStateService extends YesImBotService<Config> {
 
     private logger: Logger;
     private contextBuilder: ContextBuilder;
+    private readonly oneBotHistory: OneBotHistoryBackfill;
     private eventListenerManager: EventListenerManager;
     private commandManager: HistoryCommandManager;
     private readonly mutedChannels = new Map<string, number>();
@@ -85,6 +87,7 @@ export class WorldStateService extends YesImBotService<Config> {
         this.l3_manager = new ArchivalMemoryManager(ctx, config, this.l1_manager, deps.logging, deps.model, this.l2_manager);
         this.contextBuilder = new ContextBuilder(ctx, config, this.l1_manager, this.l2_manager, this.l3_manager, deps.logging);
         this.eventListenerManager = new EventListenerManager(ctx, this, config, deps.logging, deps.asset);
+        this.oneBotHistory = new OneBotHistoryBackfill(ctx, config.onebotHistory, this, deps.asset, this.logger);
         this.commandManager = new HistoryCommandManager(ctx, this, config, deps.logging, { model: deps.model, memory: deps.memory });
     }
 
@@ -100,6 +103,7 @@ export class WorldStateService extends YesImBotService<Config> {
         // Start sub-services
         this.l2_manager.start();
         this.l3_manager.start();
+        this.oneBotHistory.start();
         this.eventListenerManager.start();
         this.commandManager.register();
 
@@ -108,6 +112,7 @@ export class WorldStateService extends YesImBotService<Config> {
 
     public async stop(): Promise<void> {
         this.conversationState?.dispose();
+        this.oneBotHistory?.stop();
         this.eventListenerManager.stop();
         const stoppingDiaries = this.l3_manager.stop();
         if (this.clearTimer) {
@@ -298,6 +303,12 @@ export class WorldStateService extends YesImBotService<Config> {
         const target = { platform: session.platform, channelId: conversationChannelId(session)! };
         await this.l2_manager.waitForHistoryClear(target);
         const generation = this.l2_manager.getHistoryGeneration(target);
+        if (this.config?.onebotHistory?.enabled && session.platform === "onebot" && session.quote?.id) {
+            const [quote] = await this.ctx.database.get(TableName.Messages, { ...target, id: session.quote.id }, ["id"]);
+            if (!quote) {
+                await this.oneBotHistory.refresh(session, session.quote.id, "onebot-quote").catch(() => this.logger.debug("OneBot 引用消息暂不可补录"));
+            }
+        }
         const state = await this.contextBuilder.build(session);
         if (this.l2_manager.getHistoryGeneration(target) !== generation) throw new Error("上下文构建期间历史已清除，请重新触发回复");
         await this.ctx.parallel(session, "yesimbot/filter-recalled-memory", session, state);
@@ -306,7 +317,12 @@ export class WorldStateService extends YesImBotService<Config> {
     }
 
     /** Channel identity comes from the adapter, never from an ID prefix. */
+    public refreshOneBotHistory(session: Session, messageId?: string, signal?: AbortSignal) {
+        return this.oneBotHistory.refresh(session, messageId, "onebot-tool", signal);
+    }
+
     public async observeChannel(session: Session): Promise<void> {
+        this.oneBotHistory?.observe(session);
         const channelType = sessionChannelType(session);
         if (!channelType || !session.platform || !session.channelId) return;
         const target = { platform: session.platform, channelId: conversationChannelId(session)! };
@@ -314,16 +330,21 @@ export class WorldStateService extends YesImBotService<Config> {
         await this.ctx.database.upsert(HISTORY_CHANNELS, [{ ...target, channelType }]);
     }
 
-    public async recordMessage(message: MessageData, expectedGeneration?: number): Promise<"stored" | "duplicate" | "failed" | "invalidated"> {
+    public async recordMessage(
+        message: MessageData,
+        expectedGeneration?: number,
+        options: { backfilled?: boolean; signal?: AbortSignal } = {},
+    ): Promise<"stored" | "duplicate" | "failed" | "invalidated"> {
         if (message.channelType) this.l2_manager.observeChannel(message, message.channelType);
         // 在 L1 异步写入之前登记代次与在途任务，清除必须等待已接受的写入。
         const generation = expectedGeneration ?? this.l2_manager.getHistoryGeneration(message);
         const result: { outcome: Awaited<ReturnType<InteractionManager["recordMessage"]>> } = { outcome: "failed" };
         const recorded = await this.l2_manager.writeMemory(message, generation, async () => {
+            options.signal?.throwIfAborted();
             result.outcome = await this.l1_manager.recordMessage(message);
         });
         if (!recorded || this.l2_manager.getHistoryGeneration(message) !== generation) return "invalidated";
-        if (result.outcome !== "stored") return result.outcome;
+        if (result.outcome !== "stored" || options.backfilled) return result.outcome;
         if (this.config.l3_memory?.messageThreshold) {
             void this.l3_manager.observeMessage(message).catch((error) => this.logger.warn(`L3 消息触发失败：${String(error)}`));
         }

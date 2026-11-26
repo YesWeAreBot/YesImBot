@@ -1,6 +1,8 @@
-import { Context } from "koishi";
+import type { Context } from "koishi";
 
 import { estimateTokensByRegex } from "../shared/utils/toolkit";
+import { HISTORY_CHANNELS } from "../world/channel-metadata";
+import { registerHistoryResetParticipant, type HistoryResetScope } from "../world/history-reset";
 import { resolveUsageOwner, UsageOwner } from "./usage-owner";
 
 export interface ContextSnapshot {
@@ -28,6 +30,64 @@ function owner(ctx: Context, explicitOwner?: UsageOwner): object {
     return resolveUsageOwner(ctx, explicitOwner) ?? ctx;
 }
 
+type SnapshotTarget = Pick<ContextSnapshot, "adapter" | "target">;
+type PendingSnapshot = SnapshotTarget & { valid: boolean };
+const participants = new WeakMap<object, { pending: Set<PendingSnapshot>; fences: Set<(target: SnapshotTarget) => boolean> }>();
+
+function snapshotParticipant(ctx: Context, explicitOwner?: UsageOwner) {
+    const usageOwner = resolveUsageOwner(ctx, explicitOwner);
+    const identity = usageOwner ?? ctx;
+    let participant = participants.get(identity);
+    if (!participant) {
+        const context = usageOwner?.context ?? ctx;
+        const state = { pending: new Set<PendingSnapshot>(), fences: new Set<(target: SnapshotTarget) => boolean>() };
+        registerHistoryResetParticipant(context, {
+            prepare(scope: HistoryResetScope) {
+                const targets = new Set<string>();
+                const matches = ({ adapter, target }: SnapshotTarget) =>
+                    "type" in scope
+                        ? scope.type === "all" || targets.has(JSON.stringify([adapter, target]))
+                        : adapter === scope.platform && target === scope.channelId;
+                state.fences.add(matches);
+                const purge = () => {
+                    for (const row of state.pending) if (matches(row)) row.valid = false;
+                    const store = stores.get(identity);
+                    if (store) for (const [key, row] of store) if (matches(row)) store.delete(key);
+                };
+                purge();
+                const ready =
+                    "type" in scope && scope.type !== "all" && context.database
+                        ? context.database.get(HISTORY_CHANNELS, { channelType: scope.type }).then((rows) => {
+                              for (const row of rows) targets.add(JSON.stringify([row.platform, row.channelId]));
+                              purge();
+                          })
+                        : undefined;
+                return {
+                    ready,
+                    release: () => {
+                        state.fences.delete(matches);
+                    },
+                };
+            },
+        });
+        participant = state;
+        participants.set(identity, state);
+    }
+    return participant;
+}
+
+/** Fence requests already waiting on the usage ledger when history is cleared. */
+export function beginContextSnapshot(ctx: Context, metadata: { platform?: string; target?: string }, explicitOwner?: UsageOwner) {
+    const state = snapshotParticipant(ctx, explicitOwner);
+    const request: PendingSnapshot = { adapter: metadata.platform, target: metadata.target, valid: true };
+    request.valid = ![...state.fences].some((matches) => matches(request));
+    state.pending.add(request);
+    return () => {
+        state.pending.delete(request);
+        return request.valid;
+    };
+}
+
 export function captureContextSnapshot(
     ctx: Context,
     metadata: {
@@ -45,6 +105,8 @@ export function captureContextSnapshot(
     unavailable?: string,
     explicitOwner?: UsageOwner,
 ): void {
+    const participant = snapshotParticipant(ctx, explicitOwner);
+    if ([...participant.fences].some((matches) => matches({ adapter: metadata.platform, target: metadata.target }))) return;
     const traceId =
         typeof metadata.traceId === "string" && metadata.traceId.length > 0 && metadata.traceId.length <= 512 && !/\p{Cc}/u.test(metadata.traceId)
             ? metadata.traceId

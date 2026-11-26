@@ -13,6 +13,7 @@ it("keeps earlier willingness and the failing turn without mixing simultaneous c
     withConversationReport(previous, () => {
         recordConversationReport("decision", { score: 13 });
         recordConversationReport("model.response", { raw: "previous response" });
+        recordConversationReport("log", "previous debug");
     });
 
     const [report, otherReport] = await Promise.all([
@@ -24,12 +25,16 @@ it("keeps earlier willingness and the failing turn without mixing simultaneous c
         }),
         withConversationReport(other, async () => {
             recordConversationReport("log", "other channel");
+            recordConversationReport("model.response", "x".repeat(8 * 1024 * 1024));
             await Promise.resolve();
             return recorder.snapshot();
         }),
     ]);
     expect(report?.entries.map(({ data }) => data)).toEqual([{ score: 13 }, { prompt: "current prompt" }]);
+    expect(report?.omitted).toBe(0);
+    expect(report?.entries.map(({ turnId }) => turnId)).toEqual(["previous", "active"]);
     expect(otherReport?.entries.map(({ data }) => data)).toEqual(["other channel"]);
+    expect(otherReport?.omitted).toBe(1);
     expect(recorder.snapshot()).toBeUndefined();
 });
 
@@ -91,5 +96,29 @@ it("uploads an opted-in trace through the owned logger even when console logs ar
     } finally {
         await service.stop();
         vi.unstubAllGlobals();
+    }
+});
+
+it("expands a successful model trace with reporting disabled and redacts its configured credentials", async () => {
+    const { LoggerService, LogLevel } = await import("../src/logger");
+    const { stubCtx } = await import("./helpers/yesimbot");
+    const { vi } = await import("vitest");
+    const logger = { debug: vi.fn<(...args: string[]) => void>() };
+    const service = new LoggerService(stubCtx({}, { logger: () => logger }), {
+        logging: { level: LogLevel.DEBUG, traceToConsole: true },
+        errorReporting: { enabled: false },
+        providers: [{ apiKey: "test-provider-secret" }],
+    } as any);
+    try {
+        withConversationReport(service.startConversationReport(target, "test-turn"), () => {
+            recordConversationReport("model.response", { raw: "完整返回 test-provider-secret" });
+        });
+        const emitted = JSON.stringify(logger.debug.mock.calls);
+        expect(emitted).toContain("test-turn");
+        expect(emitted).toContain("完整返回");
+        expect(emitted).toContain("[REDACTED]");
+        expect(emitted).not.toContain("test-provider-secret");
+    } finally {
+        await service.stop();
     }
 });

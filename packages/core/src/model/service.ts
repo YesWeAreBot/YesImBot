@@ -5,6 +5,8 @@ import { ContextBudgetError } from "../agent/context-budget";
 import { isModelReference } from "../commands/config-check";
 import { Config } from "../config";
 import type { LoggerService } from "../logger";
+import { recordConversationReport } from "../logger/conversation-report";
+import { systemPromptRenderers } from "../prompt/model-prompt";
 import { AppError, ErrorDefinitions } from "../shared/errors";
 import { YesImBotService } from "../shared/service";
 import { isNotEmpty } from "../shared/utils";
@@ -397,6 +399,14 @@ export class ModelService extends YesImBotService<Config> {
 
 // --- 新增: 请求执行器 (RequestExecutor) ---
 // 职责：封装单次请求的全部执行逻辑，包括重试、超时、断路器检查和故障转移。
+function describePromptModel(groupName: string, members: readonly IChatModel[], model: IChatModel) {
+    return {
+        name: model.id,
+        id: model.id,
+        group: { name: groupName, models: members.map((member) => ({ name: member.id, id: member.id, selected: member === model })) },
+    };
+}
+
 class RequestExecutor {
     private readonly logger: Logger;
     private attempts = 0;
@@ -412,7 +422,11 @@ class RequestExecutor {
         this.logger = logging.getLogger(`[请求执行器][${groupName}]`);
     }
 
-    public async execute(options: ChatRequestOptions, onFirstAttempt?: (model: IChatModel) => void): Promise<GenerateTextResult> {
+    public async execute(
+        options: ChatRequestOptions,
+        onFirstAttempt?: (model: IChatModel) => void,
+        groupMembers = this.candidateModels,
+    ): Promise<GenerateTextResult> {
         let unavailable = 0;
         for (const model of this.candidateModels) {
             options.abortSignal?.throwIfAborted();
@@ -429,7 +443,17 @@ class RequestExecutor {
 
             // 执行单个模型的请求尝试（包含内部重试）
             const modelOptions = model.config.disableNativeToolCalling && options.nativeToolCallingFallback ? options.nativeToolCallingFallback : options;
-            const originalMessages = JSON.parse(JSON.stringify(modelOptions.messages));
+            const originalMessages = JSON.parse(JSON.stringify(modelOptions.messages)) as ChatRequestOptions["messages"];
+            try {
+                for (const [index, message] of modelOptions.messages.entries()) {
+                    const render = systemPromptRenderers.get(message);
+                    if (!render) continue;
+                    originalMessages[index].content = render(describePromptModel(this.groupName, groupMembers, model));
+                }
+            } catch (error) {
+                breaker?.release(generation!);
+                throw error;
+            }
             const result = await this.tryRequestWithModel(model, modelOptions, originalMessages).catch((error) => {
                 breaker?.release(generation!);
                 throw error;
@@ -553,13 +577,21 @@ class RequestExecutor {
 
                 // 内容验证失败的特定处理
                 if (error instanceof AppError && error.code === ErrorDefinitions.LLM.OUTPUT_PARSING_FAILED.code) {
-                    if (retryPolicy.onContentFailure === ContentFailureAction.AugmentAndRetry && attempt < retryPolicy.maxRetries) {
+                    const willRetry = retryPolicy.onContentFailure === ContentFailureAction.AugmentAndRetry && attempt < retryPolicy.maxRetries;
+                    recordConversationReport("model.validation_failed", {
+                        provider: model.config.providerName,
+                        model: model.id,
+                        attempt: attempt + 1,
+                        details: error.context?.details,
+                        willRetry,
+                    });
+                    if (willRetry) {
                         const rawResponse = error.context?.rawResponse;
                         const failedOutput = typeof rawResponse === "string" ? rawResponse.slice(0, 8000) : "";
                         attemptLogger.warn("内容校验失败，保留原上下文并请求纠正；无效响应未执行工具");
                         options.messages = [
                             ...originalMessages,
-                            ...(failedOutput ? [{ role: "assistant" as const, content: failedOutput }] : []),
+                            ...(failedOutput && !model.config.statelessUserInput ? [{ role: "assistant" as const, content: failedOutput }] : []),
                             {
                                 role: "system",
                                 content:
@@ -675,6 +707,10 @@ export class ModelSwitcher<T extends BaseModel> {
 // --- 专用于聊天的模型切换器 ---
 // 职责：提供一个简单的 `.chat()` 接口，内部处理视觉/非视觉模型选择，并调用 RequestExecutor。
 export class ChatModelSwitcher extends ModelSwitcher<IChatModel> {
+    public getPromptModels() {
+        return this._models.map((model) => describePromptModel(this.groupConfig.name, this._models, model));
+    }
+
     private readonly visionModels: IChatModel[];
     private readonly nonVisionModels: IChatModel[];
     // Candidate pools rotate independently and live only as long as this switcher.
@@ -740,6 +776,6 @@ export class ChatModelSwitcher extends ModelSwitcher<IChatModel> {
         }
 
         const executor = new RequestExecutor(this.ctx, this.groupConfig.name, candidateModels, this.getCircuitBreakers(), this.logging);
-        return executor.execute(options, onFirstAttempt);
+        return executor.execute(options, onFirstAttempt, this._models);
     }
 }

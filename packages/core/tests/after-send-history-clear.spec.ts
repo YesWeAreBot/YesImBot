@@ -5,6 +5,7 @@ import { expect, it, onTestFinished } from "vitest";
 import { TableName } from "../src/shared/constants";
 import { EventListenerManager } from "../src/world/event-listener";
 import { SemanticMemoryManager } from "../src/world/l2-semantic-memory";
+import { withModelMessageOrigin } from "../src/world/message-origin";
 import { WorldStateService } from "../src/world/service";
 import { loggingStub } from "./helpers/yesimbot";
 
@@ -95,4 +96,12 @@ it.each([
     await clear;
     await fresh;
     expect(await f.rows()).toMatchObject([{ id: "fresh-confirmed", content: "fresh-confirmed", sender: { id: direction === "sent" ? "bot" : "user" } }]);
+});
+
+it("marks confirmed model sends without inferring the origin of other messages", async () => {
+    const f = await fixture(async (text) => text);
+    await Promise.all([withModelMessageOrigin(() => f.record("model")), f.record("other")]);
+    const rows = await f.rows();
+    expect(rows.find((row) => row.id === "model")?.sender?.["origin"]).toBe("model");
+    expect(rows.find((row) => row.id === "other")?.sender?.["origin"]).toBeUndefined();
 });

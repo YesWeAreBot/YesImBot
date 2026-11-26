@@ -4,6 +4,7 @@ import { expect, it, onTestFinished } from "vitest";
 
 import MemoryExtension from "../src/extension/builtin/memory";
 import { TableName } from "../src/shared/constants";
+import { InteractionManager } from "../src/world/interaction-manager";
 import { SemanticMemoryManager } from "../src/world/l2-semantic-memory";
 import { WorldStateService } from "../src/world/service";
 
@@ -217,4 +218,17 @@ it("keeps raw source identity stable across bots sharing the same history", asyn
     expect(second.anchor.evidenceKey).toBe(first.anchor.evidenceKey);
     expect(second.anchor.sourceIdentity).toEqual(first.anchor.sourceIdentity);
     expect(second.anchor.sourceIdentity).not.toHaveProperty("selfId");
+});
+
+it.each(["model", "framework"] as const)("retains the confirmed %s origin regardless of echo order", async (origin) => {
+    const f = await fixture();
+    const l1 = new InteractionManager(f.app, {} as any, { getLogger: () => logger } as any);
+    const echo = { ...row("echo"), sender: { id: "bot", name: "name", origin: "operator" as const } };
+    const receipt = { ...echo, sender: { ...echo.sender, origin }, content: "confirmed" };
+    expect(await l1.recordMessage(echo)).toBe("stored");
+    expect(await l1.recordMessage(receipt)).toBe("duplicate");
+    expect(await l1.recordMessage(echo)).toBe("duplicate");
+    const [stored] = await f.app.database.get(TableName.Messages, { id: "echo" });
+    expect(stored.sender).toEqual(receipt.sender);
+    expect(stored.content).toBe(echo.content);
 });

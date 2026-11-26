@@ -7,7 +7,7 @@ import { SemanticMemoryManager } from "../src/world/l2-semantic-memory";
 import { MessageData, MemoryChunkData } from "../src/world/types";
 import { stubCtx } from "./helpers/yesimbot";
 
-const defaultEmbed = async (_text: string) => ({ embedding: [1, 0] });
+const defaultEmbed = async (_text: string, _signal?: AbortSignal) => ({ embedding: [1, 0] });
 const noop = async () => {};
 
 function deferred<T = void>() {
@@ -98,7 +98,7 @@ function fixture(chunkSize = 2) {
     const ctx = stubCtx(
         {
             logging: { getLogger: () => log },
-            model: { useEmbeddingGroup: () => ({ getModels: () => [{ embed: (text: string) => embed(text) }] }) },
+            model: { useEmbeddingGroup: () => ({ getModels: () => [{ embed: (text: string, signal?: AbortSignal) => embed(text, signal) }] }) },
         },
         { database, logger: log, command },
     );
@@ -151,13 +151,16 @@ it("does not resurrect a batch whose embedding was pending when clear succeeded"
     const f = fixture(1),
         entered = deferred(),
         embedding = deferred<{ embedding: number[] }>();
-    f.embedding(async () => {
+    let signal: AbortSignal | undefined;
+    f.embedding(async (_text, requestSignal) => {
+        signal = requestSignal;
         entered.resolve();
         return embedding.promise;
     });
     const old = f.memory.addMessageToBuffer(message("old"));
     await entered.promise;
     expect(await f.clear()).toContain("操作成功");
+    expect(signal?.aborted).toBe(true);
     embedding.resolve({ embedding: [1, 0] });
     await old;
     expect(f.chunks()).toEqual([]);

@@ -4,6 +4,7 @@ import { Extension, Tool, withInnerThoughts } from "../../extension/decorators";
 import { Failed, Success } from "../../extension/helpers";
 import { Infer } from "../../extension/types";
 import type { ConversationStateInput } from "../../world/conversation-state";
+import { ONEBOT_BACKFILL_TIMEOUT_MS } from "../../world/onebot-history";
 
 @Extension({
     name: "memory",
@@ -162,6 +163,28 @@ export default class MemoryExtension {
             );
         } catch (error) {
             return Failed(`消息读取失败：${String(error)}`);
+        }
+    }
+
+    @Tool({
+        name: "conversation_backfill",
+        isSupported: (session) => session.platform === "onebot" && typeof session.bot?.internal?._get === "function",
+        timeout: () => ONEBOT_BACKFILL_TIMEOUT_MS + 1000,
+        readOnly: true,
+        isAvailable(this: MemoryExtension) {
+            return !!this.ctx.yesimbot?.world?.config?.onebotHistory?.enabled;
+        },
+        description: "从当前 OneBot 会话补录近期平台历史，或按消息 ID 补录一条遗漏消息。补录后用 conversation_read 查询原文；不会触发旧消息的回复。",
+        parameters: withInnerThoughts({
+            message_id: Schema.string().description("可选。当前会话中的原始消息 ID；留空检查近期历史"),
+        }),
+    })
+    async conversationBackfill({ session, message_id, toolContext }: Infer<{ message_id?: string }>) {
+        if (!session) return Failed("session 不可用");
+        try {
+            return Success(await this.ctx.yesimbot.world.refreshOneBotHistory(session, message_id, toolContext?.signal));
+        } catch (error) {
+            return Failed(`OneBot 历史补录失败：${String(error)}`);
         }
     }
 

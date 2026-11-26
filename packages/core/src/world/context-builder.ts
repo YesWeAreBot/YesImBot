@@ -1,5 +1,6 @@
 import { Bot, Context, Logger, Session } from "koishi";
 
+import { assertReplyTurn } from "../agent/reply-turn";
 import type { LoggerService } from "../logger";
 import { TableName } from "../shared/constants";
 import { conversationChannelId } from "../shared/utils/conversation-scope";
@@ -38,7 +39,7 @@ export class ContextBuilder {
         const { processed_events, new_events } = this.partitionL1History(session.selfId, l1_history);
 
         let l2_retrieved_memories: RetrievedMemoryChunk[] = [];
-        if (isL1Overloaded) {
+        if (isL1Overloaded && this.config.l2_memory.enabled) {
             const earliestMessageTimestamp = raw_l1_history
                 .filter((e) => e.type === "message")
                 .map((e) => e.timestamp)
@@ -51,15 +52,19 @@ export class ContextBuilder {
                     k: this.config.l2_memory.retrievalK,
                     endTimestamp: earliestMessageTimestamp,
                 });
-                this.logger.info(`成功检索 ${l2_retrieved_memories.length} 条召回记忆`);
+                this.logger.debug(`成功检索 ${l2_retrieved_memories.length} 条召回记忆`);
             } catch (error) {
-                this.logger.error(`L2 语义检索失败: ${error.message}`);
+                assertReplyTurn();
+                this.logger.warn("L2 语义检索失败 · 继续使用近期历史", error);
             }
-        } else {
-            l2_retrieved_memories = [];
         }
 
-        const l3_diary_entries = await this.retrieveL3Memories(platform, channelId);
+        const l3_diary_entries = await this.retrieveL3Memories(platform, channelId).catch((error) => {
+            assertReplyTurn();
+            this.logger.warn("L3 日记读取失败 · 继续构造对话上下文", error);
+            return [];
+        });
+        assertReplyTurn();
 
         const channelInfo = await this.getChannelInfo(session);
         const selfInfo = await this.getSelfInfo(session);
@@ -176,26 +181,21 @@ export class ContextBuilder {
 
         if (!queryText) return [];
 
-        try {
-            const retrieved = await this.l2Manager.search(queryText, {
-                platform: filter?.platform,
-                channelId: filter?.channelId,
-                k: this.config.l2_memory.retrievalK,
-                startTimestamp: filter?.startTimestamp,
-                endTimestamp: filter?.endTimestamp,
-            });
-            return retrieved.map((chunk) => ({
-                platform: chunk.platform,
-                participantIds: chunk.participantIds,
-                content: chunk.content,
-                relevance: chunk.similarity,
-                retrievalMethod: chunk.retrievalMethod,
-                timestamp: chunk.startTimestamp,
-            }));
-        } catch (error) {
-            this.logger.warn(`L2 记忆检索失败: ${error instanceof Error ? error.message : String(error)}`);
-            return [];
-        }
+        const retrieved = await this.l2Manager.search(queryText, {
+            platform: filter?.platform,
+            channelId: filter?.channelId,
+            k: this.config.l2_memory.retrievalK,
+            startTimestamp: filter?.startTimestamp,
+            endTimestamp: filter?.endTimestamp,
+        });
+        return retrieved.map((chunk) => ({
+            platform: chunk.platform,
+            participantIds: chunk.participantIds,
+            content: chunk.content,
+            relevance: chunk.similarity,
+            retrievalMethod: chunk.retrievalMethod,
+            timestamp: chunk.startTimestamp,
+        }));
     }
 
     private async retrieveL3Memories(platform: string, channelId: string): Promise<DiaryEntryData[]> {
@@ -273,7 +273,7 @@ export class ContextBuilder {
             // 如果 item 不是消息，则这个条件始终为 true，也就是说只要时间戳满足，非消息类型就总是“新”的
             item.is_new =
                 item.type === "message" || item.type === "system_event"
-                    ? item.wasConsumed !== true && (item.type !== "message" || item.sender.id !== selfId)
+                    ? item.wasConsumed !== true && (item.type !== "message" || (item.sender.id !== selfId && !item.sender.discovery))
                     : item.timestamp > lastAgentTurnTime;
 
             (item as any).is_message = item.type === "message";

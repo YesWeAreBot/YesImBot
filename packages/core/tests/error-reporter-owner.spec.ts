@@ -2,9 +2,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { Context, Logger } from "koishi";
+import { Context, Logger, Schema } from "koishi";
 import { afterEach, expect, it, vi } from "vitest";
 
+import { ToolService } from "../src/extension/service";
 import { LoggerService } from "../src/logger";
 import { AppError, ErrorDefinitions, handleError, initializeErrorReporter } from "../src/shared/errors";
 
@@ -141,4 +142,26 @@ it("keeps a disposed owner bound even while a legacy fallback is active", async 
     await settle();
     expect(a.local).not.toHaveBeenCalled();
     expect(uploads).toEqual([]);
+});
+
+it("uses the same error ID for a thrown tool failure and its report", async () => {
+    const uploads = captureUploads();
+    const { instance, local } = service("tool", true);
+    const tools = new ToolService(new Context(), {} as any, { logging: instance } as any);
+    tools.registerTool({
+        name: "probe_report",
+        description: "test",
+        parameters: Schema.object({}),
+        execute: async () => {
+            throw new Error("fixture tool exception");
+        },
+    });
+    const result = await tools.invoke("probe_report", {});
+    await settle();
+
+    expect(result.status).toBe("error");
+    expect(result.error?.errorId).toBeTruthy();
+    expect(local).toHaveBeenCalledExactlyOnceWith(result.error?.errorId, expect.any(Error));
+    expect(uploads).toHaveLength(1);
+    expect(uploads[0].dump).toContain("fixture tool exception");
 });

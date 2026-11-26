@@ -8,6 +8,12 @@ import { loggingStub, stubCtx } from "./helpers/yesimbot";
 const modelResponse = (message: string) =>
     JSON.stringify({ thoughts: {}, actions: [{ function: "send_message", params: { message } }], request_heartbeat: false });
 
+const testTools = new Map([
+    ["send_message", { name: "send_message", parameters: Schema.object({ message: Schema.string(), status: Schema.string() }) }],
+    ["lookup", { name: "lookup", parameters: Schema.object({ status: Schema.string() }) }],
+]);
+const getTestTool = (name: string) => testTools.get(name);
+
 for (const scenario of ["success", "error", "query", "legacy", "partial"]) {
     it(`native heartbeat counts confirmed replies: ${scenario}`, async () => {
         const logger = { debug() {}, info() {}, warn() {}, error() {}, success() {} };
@@ -80,7 +86,7 @@ function streamingFixture(chat: any, invoke: any): HeartbeatProcessor {
     const processor = new HeartbeatProcessor(stubCtx({ logging: { getLogger: () => logger } }), { heartbeat: 1, streamAction: true } as any, {
         model: { chat } as any,
         prompt: {} as any,
-        tool: { invoke } as any,
+        tool: { getTool: getTestTool, invoke } as any,
         l1: { recordThought: async () => {}, recordAction: async () => "action", recordObservation: async () => {} } as any,
         contextBuilder: {} as any,
         logging: loggingStub(logger),
@@ -111,6 +117,7 @@ for (const streamAction of [false, true]) {
                 } as any,
                 prompt: {} as any,
                 tool: {
+                    getTool: getTestTool,
                     invoke: async () => ({ status, error: status === "error" ? { name: "ToolError", message: "QQ refused" } : undefined }),
                 } as any,
                 l1: {
@@ -225,7 +232,7 @@ for (const streamAction of [false, true]) {
                     },
                 } as any,
                 prompt: {} as any,
-                tool: { invoke: async (_name: string, params: any) => ({ status: params.status }) } as any,
+                tool: { getTool: getTestTool, invoke: async (_name: string, params: any) => ({ status: params.status }) } as any,
                 l1: {
                     recordThought: async () => {},
                     recordHeartbeat: async () => {},

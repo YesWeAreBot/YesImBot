@@ -297,3 +297,20 @@ it("bounds long report fields without changing the captured error", () => {
     expect(entries[0]).toContain("建议:");
     expect(error.message).toBe(original);
 });
+
+it("acknowledges local persistence only after the file is written", async () => {
+    const base = await fs.mkdtemp(path.join(os.tmpdir(), "yib-local-receipt-"));
+    const config = { enabled: true, directory: "logs", level: 3 as const, maxFileSizeMB: 1, maxFiles: 2, retentionDays: 7 };
+    const writer = new LocalLogWriter(base, config, () => {});
+    try {
+        await fs.writeFile(writer.directory, "");
+        expect(await writer.writeWithReceipt({ receipt: "failed" })).toBeUndefined();
+        await fs.unlink(writer.directory);
+        const saved = await writer.writeWithReceipt({ receipt: "saved" });
+        expect(saved).toBeDefined();
+        expect(await fs.readFile(saved!, "utf8")).toContain('"receipt":"saved"');
+    } finally {
+        await writer.close();
+        await fs.rm(base, { recursive: true, force: true });
+    }
+});
