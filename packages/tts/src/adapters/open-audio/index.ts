@@ -105,12 +105,12 @@ export const OpenAudioConfig: Schema<OpenAudioConfig> = Schema.object({
 4.  **避免标签滥用**: 在短句中过多使用标签可能会干扰模型效果。`,
         )
         .description("工具描述文本，用于指导AI使用情感控制标签生成高质量的文本"),
-}).description("Fish Audio 配置");
+}).description("OpenAudio 配置");
 
 export interface OpenAudioTTSParams extends BaseTTSParams {}
 
 export class OpenAudioAdapter extends TTSAdapter<OpenAudioConfig, OpenAudioTTSParams> {
-    public readonly name = "fish-audio";
+    public readonly name = "open-audio";
     private references: ServerReferenceAudio[] = [];
     private baseURL: string;
 
@@ -133,7 +133,7 @@ export class OpenAudioAdapter extends TTSAdapter<OpenAudioConfig, OpenAudioTTSPa
     }
 
     async synthesize(params: OpenAudioTTSParams): Promise<SynthesisResult> {
-        this.controller.signal.throwIfAborted();
+        const signal = this.requestSignal(params);
         const request: ServerTTSRequest = {
             text: params.text,
             chunk_length: this.config.chunk_length,
@@ -150,8 +150,8 @@ export class OpenAudioAdapter extends TTSAdapter<OpenAudioConfig, OpenAudioTTSPa
 
         const response = await fetch(`${this.baseURL}/v1/tts`, {
             method: "POST",
-            signal: this.controller.signal,
-            headers: { "Content-Type": "application/msgpack" },
+            signal,
+            headers: { "Content-Type": "application/msgpack", ...(this.config.apiKey ? { Authorization: `Bearer ${this.config.apiKey}` } : {}) },
             body: encode(request) as BodyInit,
         });
 

@@ -73,16 +73,16 @@ it("keeps noncooperative cancellation active until execution settles and discard
     await settle();
     expect(registry.cancel("a", task.id).state).toBe("cancelling");
     expect(signal.aborted).toBe(true);
-    expect(() => registry.start("b", "r", "read", async () => 1)).toThrow(/Background/);
+    expect(registry.start("b", "r", "read", async () => 1).state).toBe("queued");
     expect(events).toEqual([]);
     registry.cancel("a", task.id);
     job.resolve("late secret");
     await settle();
     expect(registry.query("a", task.id).state).toBe("cancelled");
     expect(registry.query("a", task.id)).not.toHaveProperty("result");
-    expect(events.map((event) => event.outcome)).toEqual(["cancelled"]);
+    expect(events.filter((event) => event.owner === "a").map((event) => event.outcome)).toEqual(["cancelled"]);
     registry.cancel("a", task.id);
-    expect(events).toHaveLength(1);
+    expect(events.filter((event) => event.owner === "a")).toHaveLength(1);
     expect(registry.start("b", "next", "read", async () => 1).state).toBe("running");
 });
 
@@ -160,7 +160,7 @@ it("hides invalidated history and suppresses its settlement while retaining occu
     expect(registry.list("a")).toEqual([]);
     expect(() => registry.query("a", task.id)).toThrow(/Background/);
     expect(signal.aborted).toBe(true);
-    expect(() => registry.start("b", "r", "read", async () => 1)).toThrow(/Background/);
+    expect(registry.start("b", "r", "read", async () => 1).state).toBe("queued");
     valid = true;
     expect(registry.list("a")).toEqual([]);
     job.resolve("stale");
@@ -297,10 +297,39 @@ it.each([
     await vi.advanceTimersByTimeAsync(16);
     expect(signal.aborted).toBe(true);
     expect(registry.query("a", task.id).state).toBe("cancelling");
-    expect(() => registry.start("b", "other", "read", async () => "other")).toThrow(/concurrency/);
+    expect(registry.start("b", "other", "read", async () => "other").state).toBe("queued");
     expect(events).toEqual([]);
     job.resolve("late result");
     await settle();
     expect(registry.query("a", task.id)).toMatchObject({ state: "failed", error: "Background task timeout (15ms)" });
     expect(registry.query("a", task.id)).not.toHaveProperty("result");
+});
+
+it("drains queued owners round robin while preserving each owner's submission order", async () => {
+    const { registry } = fixture({ maxConcurrent: 1 });
+    const gate = deferred();
+    registry.start("first", "r", "read", () => gate.promise);
+    const order: string[] = [];
+    for (const owner of ["a", "a", "a", "b", "b"]) expect(registry.start(owner, "r", "read", async () => order.push(owner)).state).toBe("queued");
+    gate.resolve(null);
+    await vi.waitFor(() => expect(order).toEqual(["a", "b", "a", "b", "a"]));
+});
+
+it("cancels, expires and invalidates queued work before executing it", async () => {
+    vi.useFakeTimers();
+    const { registry, events } = fixture({ maxConcurrent: 1, settlement: "task" });
+    const gate = deferred();
+    registry.start("first", "r", "read", () => gate.promise);
+    const read = vi.fn(async () => 0);
+    const cancelled = registry.start("a", "r", "read", read);
+    const expired = registry.start("b", "r", "read", read, undefined, 10);
+    registry.start("c", "r", "read", read);
+    registry.invalidate("c");
+    expect(registry.cancel("a", cancelled.id).state).toBe("cancelled");
+    await vi.advanceTimersByTimeAsync(10);
+    expect(registry.query("b", expired.id).state).toBe("failed");
+    expect(events.map((event) => event.owner)).toEqual(["a", "b"]);
+    gate.resolve(null);
+    await settle();
+    expect(read).not.toHaveBeenCalled();
 });

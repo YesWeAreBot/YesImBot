@@ -387,48 +387,63 @@ for (const nativeToolCalling of [false, true]) {
     });
 }
 
-for (const mode of ["search", "static", "dynamic"] as const) {
-    it(`lets the real builtin ${mode} web operation use its HTTP/browser budget beyond 10 seconds`, async () => {
+for (const mode of ["search", "static"] as const) {
+    it(`lets the real builtin ${mode} web operation use its dedicated budget beyond 10 seconds`, async () => {
         const { default: SearchExtension } = await import("../src/extension/builtin/search");
+        const download = await import("../src/asset/download");
         const f = setup();
         Object.assign(f.ctx.logger, f.ctx.logger());
-        f.ctx.http = {
-            get: async () =>
-                new Promise((resolve) =>
-                    setTimeout(
-                        () =>
-                            resolve(
-                                mode === "search" ? { results: [{ title: "Result", url: "https://example.test/", content: "Body" }] } : "<html>Body</html>",
-                            ),
-                        12000,
-                    ),
-                ),
-        };
+        const get = vi.fn<(url: string) => Promise<unknown>>(
+            async () => new Promise((resolve) => setTimeout(() => resolve({ results: [{ title: "Result", url: "https://example.test/" }] }), 12000)),
+        );
+        f.ctx.http = { get };
+        const downloadSpy = vi.spyOn(download, "downloadPublicMedia").mockResolvedValue({ data: Buffer.from("<html>Body</html>"), type: "text/html" });
+        const disableScripts = vi.fn();
+        const intercept = vi.fn();
         f.ctx.puppeteer = {
             page: async () => ({
-                setUserAgent: async () => {},
-                setViewport: async () => {},
-                setDefaultNavigationTimeout: async () => {},
-                goto: async () => new Promise((resolve) => setTimeout(() => resolve({ ok: () => true }), 25000)),
+                setJavaScriptEnabled: disableScripts,
+                setRequestInterception: intercept,
+                on: () => {},
                 setContent: async () => new Promise((resolve) => setTimeout(resolve, 25000)),
                 evaluate: async () => ({ title: "Page", content: "<p>Body</p>", textContent: "Body", links: [] }),
                 close: async () => {},
             }),
         };
         f.session.app = f.ctx;
-        const extension = new SearchExtension(f.ctx, SearchExtension.Config({ httpTimeout: 15000, puppeteerTimeout: 30000, puppeteerWaitTime: 2000 }));
+        const extension = new SearchExtension(
+            f.ctx,
+            SearchExtension.Config({
+                endpoint: "https://search.example.test/search?lang=zh",
+                httpTimeout: 15000,
+                puppeteerTimeout: 30000,
+            }),
+        );
         for (const definition of (extension as any).tools.values()) f.tools.registerTool(definition);
         const toolName = mode === "search" ? "web_search" : "fetch_webpage";
-        const params = mode === "search" ? { query: "term" } : { url: "https://example.test/", use_dynamic: mode === "dynamic" };
+        const params = mode === "search" ? { query: "a&b" } : { url: "https://example.test/" };
         let finished = false;
-        const invocation = f.tools.invoke(toolName, params, f.session).then((result) => {
-            finished = true;
-            return result;
-        });
-        await vi.advanceTimersByTimeAsync(10001);
-        expect(finished).toBe(false);
-        await vi.advanceTimersByTimeAsync(30000);
-        expect(await invocation).toMatchObject({ status: "success" });
+        try {
+            const invocation = f.tools.invoke(toolName, params, f.session).then((result) => {
+                finished = true;
+                return result;
+            });
+            await vi.advanceTimersByTimeAsync(10001);
+            expect(finished).toBe(false);
+            await vi.advanceTimersByTimeAsync(30000);
+            expect(await invocation).toMatchObject({ status: "success" });
+            if (mode === "search") {
+                const url = new URL(get.mock.calls[0][0]);
+                expect(url.searchParams.get("lang")).toBe("zh");
+                expect(url.searchParams.get("q")).toBe("a&b");
+                expect(url.searchParams.get("format")).toBe("json");
+            } else {
+                expect(disableScripts).toHaveBeenCalledWith(false);
+                expect(intercept).toHaveBeenCalledWith(true);
+            }
+        } finally {
+            downloadSpy.mockRestore();
+        }
     });
 }
 

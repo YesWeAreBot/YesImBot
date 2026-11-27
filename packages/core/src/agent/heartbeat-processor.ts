@@ -7,9 +7,10 @@ import { Context, Schema, h, Logger, Session } from "koishi";
 import { v4 as uuidv4 } from "uuid";
 
 import { assertReplyTurn, guardReplySession, isReplyTurnCancelled, replyTurnSignal, withReplyTurnGuard } from "../agent/reply-turn";
-import { Properties, ToolSchema, ToolService } from "../extension";
+import { ToolSchema, ToolService } from "../extension";
 import { isReadOnlyTool } from "../extension/helpers";
 import { toolJSONSchema } from "../extension/json-schema";
+import { processParams } from "../extension/parameter-view";
 import type { LoggerService } from "../logger";
 import { withConversationLog } from "../logger/conversation";
 import { isConversationReportEnabled, recordConversationReport } from "../logger/conversation-report";
@@ -329,7 +330,11 @@ export class HeartbeatProcessor {
         const nativeTools = this.config.nativeToolCalling
             ? this.toolService.getAvailableTools(stimulus.session, undefined, "model").map((definition) => ({
                   type: "function",
-                  function: { name: definition.name, description: definition.description, parameters: toolJSONSchema(definition.parameters) },
+                  function: {
+                      name: definition.name,
+                      description: definition.description,
+                      parameters: definition.parametersJSONSchema ?? toolJSONSchema(definition.parameters),
+                  },
               }))
             : undefined;
         const estimateRendered = (rendered: Awaited<ReturnType<typeof render>>, messages: Message[], tools?: typeof nativeTools) => {
@@ -396,7 +401,7 @@ export class HeartbeatProcessor {
 
         // 4. 条件化构建多模态上下文并组装最终的 messages
         this.logger.debug("构建模型请求消息");
-        const userMessageContent = await this.contextBuilder.buildMultimodalUserMessage(userPromptText, promptContext.worldState);
+        const userMessageContent = await this.contextBuilder.buildMultimodalUserMessage(userPromptText, promptContext.worldState, stimulus.session);
 
         const messages: Message[] = [
             { role: "system", content: systemPrompt },
@@ -735,7 +740,11 @@ export class HeartbeatProcessor {
             .filter((definition) => definition.name !== NATIVE_SILENCE_TOOL);
         const tools: Tool[] = definitions.map((definition) => ({
             type: "function",
-            function: { name: definition.name, description: definition.description, parameters: toolJSONSchema(definition.parameters) },
+            function: {
+                name: definition.name,
+                description: definition.description,
+                parameters: definition.parametersJSONSchema ?? toolJSONSchema(definition.parameters),
+            },
             // SDK 阶段不执行任何真实工具，失败重试不会重放消息。
             execute: () => ({}),
         }));
@@ -1078,26 +1087,6 @@ export class HeartbeatProcessor {
 function _toString(obj: any) {
     if (typeof obj === "string") return obj;
     return JSON.stringify(obj);
-}
-
-function processParams(params: Properties, indent = ""): any[] {
-    return Object.entries(params).map(([key, param]) => {
-        const processedParam: any = { ...param, key, indent };
-        if (param.properties) {
-            processedParam.properties = processParams(param.properties, indent + "    ");
-        }
-        if (param.items?.properties) {
-            processedParam.items = [
-                {
-                    ...param.items,
-                    key: "item",
-                    indent: indent + "    ",
-                    properties: processParams(param.items.properties, indent + "        "),
-                },
-            ];
-        }
-        return processedParam;
-    });
 }
 
 function prepareDataForTemplate(tools: ToolSchema[]) {

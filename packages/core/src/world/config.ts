@@ -44,6 +44,7 @@ export interface HistoryConfig {
 
     /* === 清理 === */
     logLengthLimit?: number;
+    allowGlobalRetention?: boolean;
     dataRetentionDays: number;
     cleanupIntervalSec: number;
 }
@@ -51,18 +52,18 @@ export interface HistoryConfig {
 export const HistoryConfigSchema: Schema<HistoryConfig> = Schema.intersect([
     Schema.object({
         l1_memory: Schema.object({
-            maxMessages: Schema.number().default(50).description("L1工作记忆中最多包含的消息数量，超出部分将被平滑裁剪"),
-            pendingTurnTimeoutSec: Schema.number().default(1800).description("等待处理的交互轮次在多长时间无新消息后被强制关闭（秒）"),
-            keepFullTurnCount: Schema.number().default(2).description("保留完整 Agent 响应（思考、行动、观察）的最新轮次数"),
+            maxMessages: Schema.natural().min(1).default(50).description("L1工作记忆中最多包含的消息数量，超出部分将被平滑裁剪"),
+            pendingTurnTimeoutSec: Schema.natural().min(1).default(1800).description("等待处理的交互轮次在多长时间无新消息后被强制关闭（秒）"),
+            keepFullTurnCount: Schema.natural().default(2).description("保留完整 Agent 响应（思考、行动、观察）的最新轮次数"),
         })
             .collapse()
             .description("L1 工作记忆"),
 
         l2_memory: Schema.object({
             enabled: Schema.boolean().default(true).description("启用 L2 语义记忆检索功能 (RAG)"),
-            retrievalK: Schema.number().default(8).description("每次从 L2 检索的最大记忆片段数量"),
-            retrievalMinSimilarity: Schema.number().default(0.55).description("向量相似度搜索的最低置信度阈值，低于此值的结果将被过滤"),
-            messagesPerChunk: Schema.number().default(4).description("每个语义记忆片段包含的消息数量"),
+            retrievalK: Schema.natural().default(8).description("每次从 L2 检索的最大记忆片段数量"),
+            retrievalMinSimilarity: Schema.number().min(0).max(1).default(0.55).description("向量相似度搜索的最低置信度阈值，低于此值的结果将被过滤"),
+            messagesPerChunk: Schema.natural().min(1).default(4).description("每个语义记忆片段包含的消息数量"),
             includeNeighborChunks: Schema.boolean().default(true).description("是否扩展前后相邻的记忆片段"),
         })
             .collapse()
@@ -89,9 +90,10 @@ export const HistoryConfigSchema: Schema<HistoryConfig> = Schema.intersect([
         ignoreSelfMessage: Schema.boolean().default(false).description("是否忽略自身发送的消息"),
     }).description("历史记录与上下文"),
     Schema.object({
-        logLengthLimit: Schema.number().default(100).description("Agent 内部日志的最大长度"),
-        dataRetentionDays: Schema.number().default(30).description("历史数据在被永久删除前的最大保留天数"),
-        cleanupIntervalSec: Schema.number().default(1800).description("后台清理任务的执行频率（秒）"),
+        logLengthLimit: Schema.natural().default(100).description("Agent 内部日志的最大长度"),
+        allowGlobalRetention: Schema.boolean().default(false).description("明确授权全库过期删除；仅限独占数据库或各实例统一保留策略，默认关闭"),
+        dataRetentionDays: Schema.natural().default(30).description("共享历史数据库的保留天数；0 表示不保留历史。共用数据库的实例应使用相同设置"),
+        cleanupIntervalSec: Schema.natural().max(2147483).default(1800).description("后台清理任务间隔（秒）；0 停用此实例的定时清理"),
     })
         .collapse()
         .description("历史维护"),

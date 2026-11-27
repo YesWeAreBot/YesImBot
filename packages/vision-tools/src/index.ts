@@ -206,6 +206,7 @@ export interface LensScraperOptions {
 export interface Config {
     engine: "google_lens_scraper" | "google_lens_serpapi" | "google_vision" | "serpapi_reverse_image";
     proxy?: string;
+    allowPrivateImageSearch?: boolean;
     serpapi?: {
         api_key: string;
     };
@@ -221,6 +222,7 @@ export const Config: Schema<Config> = Schema.object({
     engine: Schema.union(["google_lens_scraper", "google_lens_serpapi", "google_vision", "serpapi_reverse_image"])
         .default("google_lens_scraper")
         .description("默认使用的图片搜索引擎"),
+    allowPrivateImageSearch: Schema.boolean().default(false).description("允许将私聊图片发送给第三方识图服务及配置的图床"),
     proxy: Schema.string().description("HTTP(S) 代理地址，例如：`http://127.0.0.1:8080`；不支持 SOCKS 代理。"),
     serpapi: Schema.object({
         api_key: Schema.string().role("secret").description("SerpApi 的 API Key，用于 Google Lens 和反向图片搜索。"),
@@ -322,12 +324,13 @@ export default class VisionTools {
     public async searchImageSource(args: Infer<{ image_id: string; method: string }>): Promise<ToolCallResult> {
         try {
             this.controller.signal.throwIfAborted();
-            const { image_id, method } = args;
+            const { image_id, method, session } = args;
+            if (session?.isDirect && !this.config.allowPrivateImageSearch) return Failed("当前配置禁止将私聊图片发送给第三方");
             this.ctx.logger.info(`请求使用方法: ${method}`);
 
             const assetService = this.ctx.yesimbot.asset;
-            const image = (await assetService.read(image_id, { format: "data-url" })) as string;
-            const imageInfo = await assetService.getInfo(image_id);
+            const image = (await assetService.read(image_id, { session, format: "data-url" })) as string;
+            const imageInfo = await assetService.getInfo(image_id, session);
             if (!image || !imageInfo?.mime.startsWith("image/")) {
                 return Failed(`图片获取失败 (ID: ${image_id})，请确认图片ID是否正确。`);
             }

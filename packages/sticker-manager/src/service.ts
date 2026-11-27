@@ -1,7 +1,6 @@
-import { createHash } from "crypto";
-import { mkdir, readdir, readFile, rename, rmdir, unlink, writeFile } from "fs/promises";
+import { createHash, randomUUID } from "crypto";
+import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, stat, unlink, writeFile } from "fs/promises";
 import path from "path";
-import { pathToFileURL } from "url";
 
 import { Context, h, Session } from "koishi";
 
@@ -105,13 +104,15 @@ export class StickerService {
      */
     public async stealSticker(image_id: string, session: Session): Promise<StickerRecord> {
         await this.whenReady();
+        if (session.isDirect) throw new Error("私聊图片不能保存为共享表情");
         const assetService = this.ctx.yesimbot.asset;
 
         const imageDataForLLM = (await assetService.read(image_id, {
+            session,
             format: "data-url",
             image: { process: true, format: "jpeg" },
         })) as string;
-        const imageData = (await assetService.read(image_id, { format: "buffer" })) as Buffer;
+        const imageData = (await assetService.read(image_id, { session, format: "buffer" })) as Buffer;
 
         // 生成唯一ID - 使用URL作为哈希输入
         const hash = createHash("sha256");
@@ -286,16 +287,6 @@ export class StickerService {
         return hash.digest("hex");
     }
 
-    private async saveImageToLocal(url: string, content: ArrayBuffer, contentType: string): Promise<{ localPath: string }> {
-        const id = createHash("sha256").update(url).digest("hex");
-        const extension = contentType.split("/")[1] || "bin";
-        const fileName = `${id}.${extension}`;
-        const filePath = path.join(this.config.storagePath, fileName);
-
-        await writeFile(filePath, Buffer.from(content));
-        return { localPath: filePath };
-    }
-
     /**
      * 规范化 emojihub-bili URL
      * 处理特定格式的部分 URL
@@ -349,8 +340,6 @@ export class StickerService {
         const randomIndex = Math.floor(Math.random() * records.length);
         const sticker = records[randomIndex];
 
-        const fileUrl = pathToFileURL(sticker.filePath).href;
-
         const ext = sticker.filePath.split(".").pop();
 
         const b64 = await readFile(sticker.filePath, "base64");
@@ -397,19 +386,14 @@ export class StickerService {
 
         // 创建进度消息
         this.controller.signal.throwIfAborted();
-        const progressMsg = await session.sendQueued(`开始导入表情包，共 ${stats.total} 个 URL...`);
-
+        await session.sendQueued(`开始导入表情包，共 ${stats.total} 个 URL...`);
+        const tempDir = await mkdtemp(path.join(this.config.storagePath, ".import-"));
         try {
-            // 准备临时下载目录
-            const tempDir = path.join(this.config.storagePath, "temp");
-            await mkdir(tempDir, { recursive: true });
-            this.ctx.logger.debug(`创建临时目录: ${tempDir}`);
-
             // 处理每个 URL
             for (const [index, rawUrl] of urls.entries()) {
                 this.controller.signal.throwIfAborted();
                 // 更新进度消息
-                if (index % 100 === 0 && progressMsg) {
+                if (index > 0 && index % 100 === 0) {
                     this.controller.signal.throwIfAborted();
                     await session.sendQueued(`已处理 ${index}/${urls.length} 个 URL...`);
                 }
@@ -433,7 +417,7 @@ export class StickerService {
 
                     // 生成文件名 (使用URL哈希)
                     const fileHash = createHash("sha256").update(url).digest("hex");
-                    const tempFilePath = path.join(this.config.storagePath, `${fileHash}.${extension}`);
+                    const tempFilePath = path.join(tempDir, `${fileHash}.${extension}`);
 
                     // 将图片数据写入文件
                     const buffer = await response.arrayBuffer();
@@ -464,12 +448,7 @@ export class StickerService {
                 }
             }
         } finally {
-            // 移除进度消息
-            if (progressMsg) {
-                // await session.cancelQueued(progressMsg);
-            }
-
-            // await this.cleanupTempDir(tempDir);
+            await rm(tempDir, { recursive: true, force: true });
         }
 
         return stats;
@@ -502,23 +481,6 @@ export class StickerService {
         return fetch(url, { signal: AbortSignal.any([this.controller.signal, AbortSignal.timeout(timeout)]) });
     }
     /**
-     * 清理临时目录
-     */
-    private async cleanupTempDir(tempDir: string) {
-        try {
-            const files = await readdir(tempDir);
-            for (const file of files) {
-                const filePath = path.join(tempDir, file);
-                await unlink(filePath);
-            }
-            await rmdir(tempDir);
-            this.ctx.logger.debug(`已清理临时目录: ${tempDir}`);
-        } catch (error) {
-            this.ctx.logger.warn(`清理临时目录失败: ${error.message}`);
-        }
-    }
-
-    /**
      * 增强版 importSingleSticker 方法
      */
     private async importSingleSticker(filePath: string, category: string, session?: Session): Promise<"success" | "duplicate"> {
@@ -538,11 +500,7 @@ export class StickerService {
         const extension = path.extname(filePath) || ".png";
 
         // 目标文件路径
-        const destPath = path.resolve(this.config.storagePath, `${fileHash}${extension}`);
-
-        // 移动文件到表情包目录
-        this.controller.signal.throwIfAborted();
-        await rename(filePath, destPath);
+        const destPath = path.resolve(this.config.storagePath, `${fileHash}-${randomUUID()}${extension}`);
 
         // 创建数据库记录
         const record: StickerRecord = {
@@ -558,7 +516,18 @@ export class StickerService {
             createdAt: new Date(),
         };
 
-        await this.ctx.database.create(TableName, record);
+        try {
+            this.controller.signal.throwIfAborted();
+            await copyFile(filePath, destPath);
+            this.controller.signal.throwIfAborted();
+            await this.ctx.database.create(TableName, record);
+        } catch (error) {
+            const [stored] = await this.ctx.database.get(TableName, { id: fileHash });
+            if (stored?.filePath === destPath) return "success";
+            await rm(destPath, { force: true });
+            if (stored) return "duplicate";
+            throw error;
+        }
         this.ctx.logger.info(`已导入表情: ${category}/${fileHash}${extension}`);
 
         return "success";
@@ -654,13 +623,21 @@ export class StickerService {
      */
     public async cleanupUnreferenced(): Promise<number> {
         const dbFiles = new Set((await this.ctx.database.select(TableName).execute()).map((r) => path.basename(r.filePath)));
-        const fsFiles = await readdir(this.config.storagePath);
+        const fsFiles = await readdir(this.config.storagePath, { withFileTypes: true });
 
         let deletedCount = 0;
-        for (const file of fsFiles) {
+        for (const entry of fsFiles) {
+            if (!entry.isFile()) continue;
+            const file = entry.name;
+            if (!/^[0-9a-f]{64}(?:-[0-9a-f-]{36})?\.[a-z0-9]+$/i.test(file)) continue;
             if (!dbFiles.has(file)) {
                 try {
-                    await unlink(path.join(this.config.storagePath, file));
+                    const fullPath = path.join(this.config.storagePath, file);
+                    // An import can be writing the file before its DB row exists.
+                    if (Date.now() - (await stat(fullPath)).mtimeMs < 300_000) continue;
+                    const saved = await this.ctx.database.get(TableName, { filePath: fullPath });
+                    if (saved.length) continue;
+                    await unlink(fullPath);
                     this.ctx.logger.debug(`清理未引用表情: ${file}`);
                     deletedCount++;
                 } catch (error) {

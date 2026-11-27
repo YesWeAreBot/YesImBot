@@ -2,6 +2,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport, StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import Ajv from "ajv";
+import addFormats from "ajv-formats";
 import { Context, Schema } from "koishi";
 import { Failed, Infer, replyTurnSignal, type ToolCallResult, type ToolService } from "koishi-plugin-yesimbot";
 
@@ -242,27 +244,53 @@ export class MCPManager {
                     continue;
                 }
 
-                const definition = {
-                    name: tool.name,
-                    description: tool.description ?? "",
+                if (this.toolService.hasRegisteredTool?.(tool.name) ?? this.toolService.getTool?.(tool.name)) {
+                    this.logger.warn(`拒绝同名 MCP 工具: ${tool.name} (来自 ${serverName})；请在服务端重命名`);
+                    continue;
+                }
+                try {
+                    const originalSchema = structuredClone(tool.inputSchema);
+                    const validator = new Ajv({
+                        strict: true,
+                        strictRequired: false,
+                        allErrors: false,
+                        coerceTypes: false,
+                        useDefaults: false,
+                        removeAdditional: false,
+                        validateFormats: true,
+                    });
+                    addFormats(validator);
+                    const validate = validator.compile(originalSchema);
+                    const parameters = Schema.transform(Schema.any(), (value) => {
+                        if (!validate(value)) throw new Error("MCP parameters do not satisfy the declared JSON Schema");
+                        return value;
+                    });
+                    const definition = {
+                        name: tool.name,
+                        description: tool.description ?? "",
 
-                    parameters: convertJsonSchemaToSchemastery(tool.inputSchema),
-                    execute: async (args: Infer<any>) => {
-                        const { session: _session, toolContext: _toolContext, ...cleanArgs } = args;
-                        return await this.executeTool(client, tool.name, cleanArgs);
-                    },
-                };
-                const unregister = this.toolService.registerTool(definition, this.ctx);
-                this.toolDisposers.push(
-                    typeof unregister === "function"
-                        ? unregister
-                        : () => {
-                              if (this.toolService.getTool(definition.name) === definition) this.toolService.unregisterTool(definition.name);
-                          },
-                );
+                        parameters,
+                        parametersJSONSchema: originalSchema,
+                        execute: async (args: Infer<any>) => {
+                            const { session: _session, toolContext: _toolContext, ...cleanArgs } = args;
+                            parameters(cleanArgs);
+                            return await this.executeTool(client, tool.name, cleanArgs);
+                        },
+                    };
+                    const unregister = this.toolService.registerTool(definition, this.ctx);
+                    this.toolDisposers.push(
+                        typeof unregister === "function"
+                            ? unregister
+                            : () => {
+                                  if (this.toolService.getTool(definition.name) === definition) this.toolService.unregisterTool(definition.name);
+                              },
+                    );
 
-                this.registeredTools.push(tool.name);
-                this.logger.success(`已注册工具: ${tool.name} (来自 ${serverName})`);
+                    this.registeredTools.push(tool.name);
+                    this.logger.success(`已注册工具: ${tool.name} (来自 ${serverName})`);
+                } catch {
+                    this.logger.warn(`跳过无法注册的 MCP 工具: ${tool.name} (来自 ${serverName})`);
+                }
             }
         } catch (error) {
             this.logger.error(`注册工具失败: ${error.message}`);
@@ -306,28 +334,17 @@ export class MCPManager {
             // remote side effect cannot be recalled by this local cancellation.
             controller.signal.throwIfAborted();
 
-            // 处理返回内容
-            let content = "";
-            if (Array.isArray(result.content)) {
-                content = result.content
-                    .map((item) => {
-                        if (item.type === "text") return item.text;
-                        else if (item.type === "json") return JSON.stringify(item.json);
-                        else return JSON.stringify(item);
-                    })
-                    .join("");
-            } else {
-                content = typeof result.content === "string" ? result.content : JSON.stringify(result.content);
-            }
-
+            const payload = {
+                content: result.content ?? [],
+                ...(result.structuredContent !== undefined ? { structuredContent: result.structuredContent } : {}),
+                ...(result._meta !== undefined ? { _meta: result._meta } : {}),
+                isError: result.isError === true,
+            };
             if (result.isError) {
-                const errorMsg = (result.error as string) || content;
-                this.logger.error(`工具执行失败: ${errorMsg}`);
-                return Failed(errorMsg);
+                return { ...Failed({ name: "MCPToolError", message: "MCP 工具返回失败；副作用状态未知，请勿自动重试", retryable: false }), result: payload };
             }
-
             this.logger.success(`工具 ${toolName} 执行成功`);
-            return { status: "success", result: content as any };
+            return { status: "success", result: payload };
         } catch (error) {
             this.logger.error(`工具执行异常: ${error.message}`);
             return Failed(error.message);
@@ -386,84 +403,4 @@ export class MCPManager {
 
         this.logger.success("MCP 清理完成");
     }
-}
-
-/**
- * 将 JSON Schema 对象递归转换为 Schemastery 模式。
- *
- * @param {object} jsonSchema 要转换的 JSON Schema。
- * @returns {Schema} 对应的 Schemastery 模式实例。
- */
-function convertJsonSchemaToSchemastery(jsonSchema: any): Schema<any> {
-    let schema: Schema<any>;
-
-    // 1. 处理 `enum` - 它的优先级最高，直接转换为 union 类型
-    if (jsonSchema.enum) {
-        schema = Schema.union(jsonSchema.enum);
-    } else {
-        // 2. 根据 `type` 属性处理主要类型
-        switch (jsonSchema.type) {
-            case "string":
-                schema = Schema.string();
-                break;
-
-            case "integer":
-            case "number": {
-                schema = Schema.number();
-                const integer = jsonSchema.type === "integer";
-                if (integer) schema = schema.step(1);
-                const { minimum, maximum } = jsonSchema;
-                if (typeof minimum === "number") {
-                    // Schemastery measures steps from min, so keep integer bounds integral.
-                    schema = schema.min(integer ? Math.ceil(minimum) : minimum);
-                }
-                if (typeof maximum === "number") {
-                    schema = schema.max(integer ? Math.floor(maximum) : maximum);
-                }
-                break;
-            }
-
-            case "boolean":
-                schema = Schema.boolean();
-                break;
-
-            case "array":
-                // 递归转换 'items' 定义的子模式
-                const itemSchema = jsonSchema.items ? convertJsonSchemaToSchemastery(jsonSchema.items) : Schema.any();
-                schema = Schema.array(itemSchema);
-                break;
-
-            case "object":
-                const properties = jsonSchema.properties || {};
-                const requiredFields = new Set(jsonSchema.required || []);
-                const schemasteryProperties: Record<string, Schema> = {};
-
-                // 遍历所有属性，递归转换它们，并根据需要应用 .required()
-                for (const key in properties) {
-                    let propSchema = convertJsonSchemaToSchemastery(properties[key]);
-                    if (requiredFields.has(key)) {
-                        propSchema = propSchema.required();
-                    }
-                    schemasteryProperties[key] = propSchema;
-                }
-                schema = Schema.object(schemasteryProperties);
-                break;
-
-            default:
-                // 如果类型未指定或未知，默认为 any
-                schema = Schema.any();
-                break;
-        }
-    }
-
-    // 3. 应用通用修饰器（description 和 default）
-    if (jsonSchema.description) {
-        schema = schema.description(jsonSchema.description);
-    }
-
-    if (jsonSchema.default !== undefined) {
-        schema = schema.default(jsonSchema.default);
-    }
-
-    return schema;
 }

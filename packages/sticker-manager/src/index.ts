@@ -275,7 +275,7 @@ export default class StickerTools {
 👆 使用: sticker.get ${category} [1-${stickers.length}]`;
         });
 
-        ctx.command("sticker.cleanup", "清理未使用的表情包")
+        ctx.command("sticker.cleanup", "清理未使用的表情包", { authority: 3 })
             .alias("清理表情")
             .action(async ({ session }) => {
                 try {

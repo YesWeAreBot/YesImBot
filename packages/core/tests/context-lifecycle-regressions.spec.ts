@@ -499,3 +499,65 @@ it("preserves image captions and vision instructions in JSON fallback", async ()
         await f.close();
     }
 });
+
+it("preserves MCP JSON Schema in native requests without losing the built-in fallback", async () => {
+    const f = await fixture();
+    try {
+        f.config.nativeToolCalling = true;
+        const originalSchema = {
+            type: "object",
+            properties: { query: { type: "string", minLength: 1 }, limit: { type: "integer", minimum: 1, maximum: 20 } },
+            required: ["query"],
+            additionalProperties: false,
+        };
+        f.tool.getAvailableTools = () => [
+            {
+                name: "mcp_lookup",
+                description: "MCP search",
+                parameters: Schema.transform(Schema.any(), (value) => value),
+                parametersJSONSchema: originalSchema,
+            },
+            { name: "builtin_lookup", description: "Built-in search", parameters: Schema.object({ query: Schema.string().required() }) },
+        ];
+        const requests: any[] = [];
+        f.model.chat = async (request: any) => {
+            requests.push(request);
+            return { text: JSON.stringify({ thoughts: {}, actions: [], request_heartbeat: false }), usage: {} };
+        };
+        await (f.processor as any).performNativeHeartbeat("mcp-schema-turn", f.stimulus, () => {});
+        expect(requests).toHaveLength(1);
+        expect(requests[0].tools.find((tool: any) => tool.function.name === "mcp_lookup").function.parameters).toEqual(originalSchema);
+        expect(requests[0].tools.find((tool: any) => tool.function.name === "builtin_lookup").function.parameters).toMatchObject({
+            type: "object",
+            properties: { query: { type: "string" } },
+            required: ["query"],
+        });
+    } finally {
+        await f.close();
+    }
+});
+
+it("includes the preserved MCP JSON Schema in native context packing estimates", async () => {
+    const f = await fixture();
+    try {
+        f.config.nativeToolCalling = true;
+        f.config.contextInputBudgetTokens = 100000;
+        const schema = { type: "object", properties: { query: { type: "string", description: "" } }, required: ["query"] };
+        f.tool.getAvailableTools = () => [
+            { name: "mcp_lookup", description: "MCP search", parameters: Schema.transform(Schema.any(), (value) => value), parametersJSONSchema: schema },
+        ];
+        const estimates: number[] = [];
+        const build = f.builder.buildMultimodalUserMessage.bind(f.builder);
+        f.builder.buildMultimodalUserMessage = async (text, world, session) => {
+            estimates.push((world as any).memoryBudgetReport.originalInputTokens);
+            return build(text, world, session);
+        };
+        await (f.processor as any)._prepareLlmRequest(f.stimulus);
+        schema.properties.query.description = "MCP_SCHEMA_CONTRACT ".repeat(2000);
+        await (f.processor as any)._prepareLlmRequest(f.stimulus);
+        expect(estimates).toHaveLength(2);
+        expect(estimates[1] - estimates[0]).toBeGreaterThan(2000);
+    } finally {
+        await f.close();
+    }
+});

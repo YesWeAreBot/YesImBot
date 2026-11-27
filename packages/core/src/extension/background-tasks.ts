@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-export type BackgroundTaskState = "running" | "cancelling" | "succeeded" | "failed" | "cancelled";
+export type BackgroundTaskState = "queued" | "running" | "cancelling" | "succeeded" | "failed" | "cancelled";
 export type BackgroundTaskOutcome = "succeeded" | "failed" | "cancelled";
 export interface TaskSnapshot {
     id: string;
@@ -34,6 +34,7 @@ interface Task {
     controller: AbortController;
     valid?: () => boolean;
     hidden: boolean;
+    launch?: () => void;
     timeout?: ReturnType<typeof setTimeout>;
     cancellation?: { outcome: "failed" | "cancelled"; reason: string };
 }
@@ -44,7 +45,7 @@ interface RegistryOptions {
     settlement: "task" | "request";
 }
 function terminal(task: Task): boolean {
-    return task.snapshot.state !== "running" && task.snapshot.state !== "cancelling";
+    return task.snapshot.state !== "queued" && task.snapshot.state !== "running" && task.snapshot.state !== "cancelling";
 }
 function copyResult(value: unknown): unknown {
     try {
@@ -62,6 +63,7 @@ function copyResult(value: unknown): unknown {
 export class BackgroundTaskRegistry {
     private readonly tasks = new Map<string, Task>();
     private readonly groups = new Map<string, Map<string, RequestGroup>>();
+    private readonly waiting = new Map<string, Set<Task>>();
     private active = 0;
     private disposed = false;
 
@@ -83,7 +85,6 @@ export class BackgroundTaskRegistry {
         let group = this.groups.get(owner)?.get(requestId);
         if (group?.sealed) throw new Error("Background request is already sealed");
         if (valid && !this.checkValid(valid)) throw new Error("Background task authorization is no longer valid");
-        if (this.active >= this.options.maxConcurrent) throw new Error("Background task concurrency limit reached");
         this.makeRoom();
         // Pruning the last task may also have removed this request's group.
         group = this.groups.get(owner)?.get(requestId);
@@ -100,32 +101,57 @@ export class BackgroundTaskRegistry {
             controller: new AbortController(),
             valid,
             hidden: false,
-            snapshot: { id: randomUUID(), requestId, tool, state: "running", createdAt: now, updatedAt: now },
+            snapshot: { id: randomUUID(), requestId, tool, state: "queued", createdAt: now, updatedAt: now },
         };
         this.tasks.set(task.snapshot.id, task);
         group.tasks.add(task.snapshot.id);
-        this.active++;
         const timeoutMs =
             typeof toolTimeoutMs === "number" && Number.isFinite(toolTimeoutMs) && toolTimeoutMs > 0
                 ? Math.min(this.options.timeoutMs, toolTimeoutMs)
                 : this.options.timeoutMs;
         task.timeout = setTimeout(() => this.requestCancellation(task, `Background task timeout (${timeoutMs}ms)`, "failed"), timeoutMs);
         task.timeout.unref?.();
-        // Both synchronous execution errors and asynchronous rejections use the same settlement path.
-        void Promise.resolve()
-            .then(() => {
-                if (!this.current(task)) return undefined;
-                return execute(task.controller.signal, (progress) => {
-                    if (!this.current(task) || task.snapshot.state !== "running") return;
-                    task.snapshot.progress = String(progress).slice(0, 300);
-                    task.snapshot.updatedAt = Date.now();
+        task.launch = () => {
+            // Both synchronous execution errors and asynchronous rejections use the same settlement path.
+            void Promise.resolve()
+                .then(() => {
+                    if (!this.current(task)) return undefined;
+                    return execute(task.controller.signal, (progress) => {
+                        if (!this.current(task) || task.snapshot.state !== "running") return;
+                        task.snapshot.progress = String(progress).slice(0, 300);
+                        task.snapshot.updatedAt = Date.now();
+                    });
+                })
+                .then(
+                    (result) => this.finish(task, "succeeded", result),
+                    (error: unknown) => this.finish(task, "failed", undefined, error),
+                )
+                .finally(() => {
+                    this.active--;
+                    this.drain();
                 });
-            })
-            .then(
-                (result) => this.finish(task, "succeeded", result),
-                (error: unknown) => this.finish(task, "failed", undefined, error),
-            );
+        };
+        let queue = this.waiting.get(owner);
+        if (!queue) this.waiting.set(owner, (queue = new Set()));
+        queue.add(task);
+        this.drain();
         return this.snapshot(task);
+    }
+    private drain(): void {
+        while (!this.disposed && this.active < this.options.maxConcurrent && this.waiting.size) {
+            const [owner, queue] = this.waiting.entries().next().value!;
+            const task = queue.values().next().value!;
+            this.waiting.delete(owner);
+            queue.delete(task);
+            if (queue.size) this.waiting.set(owner, queue);
+            if (!this.current(task)) continue;
+            task.snapshot.state = "running";
+            task.snapshot.updatedAt = Date.now();
+            this.active++;
+            const launch = task.launch!;
+            delete task.launch;
+            launch();
+        }
     }
     sealRequest(owner: string, requestId: string): void {
         if (this.disposed) return;
@@ -168,6 +194,7 @@ export class BackgroundTaskRegistry {
         }
         this.tasks.clear();
         this.groups.clear();
+        this.waiting.clear();
     }
     isCurrent(owner: string, id: string): boolean {
         const task = this.tasks.get(id);
@@ -201,10 +228,18 @@ export class BackgroundTaskRegistry {
     private requestCancellation(task: Task, reason: string, outcome: "failed" | "cancelled"): void {
         if (terminal(task) || task.cancellation || this.disposed) return;
         task.cancellation = { outcome, reason };
+        const queued = task.snapshot.state === "queued";
         task.snapshot.state = "cancelling";
         task.snapshot.updatedAt = Date.now();
         clearTimeout(task.timeout);
         task.controller.abort(new Error(reason));
+        if (queued) {
+            const queue = this.waiting.get(task.owner);
+            queue?.delete(task);
+            if (!queue?.size) this.waiting.delete(task.owner);
+            delete task.launch;
+            this.finish(task, outcome, undefined, reason);
+        }
     }
     private hide(task: Task, reason: string): void {
         if (task.hidden) return;
@@ -213,8 +248,7 @@ export class BackgroundTaskRegistry {
         this.requestCancellation(task, reason, "cancelled");
         if (terminal(task)) this.remove(task);
     }
-    private finish(task: Task, outcome: "succeeded" | "failed", result?: unknown, error?: unknown): void {
-        this.active--;
+    private finish(task: Task, outcome: BackgroundTaskOutcome, result?: unknown, error?: unknown): void {
         clearTimeout(task.timeout);
         if (!this.current(task)) {
             this.remove(task);

@@ -36,6 +36,7 @@ function fixture(events: any[] = [], states: any[] = []) {
         Object.defineProperties(world, { ctx: { value: ctx }, logger: { value: logger } });
         Object.assign(world, {
             mutedChannels: new Map(),
+            diarySessions: new Map(),
             allMutedChannels: new Map(),
             l1_manager: { recordSystemEvent: async () => {} },
             l2_manager: {

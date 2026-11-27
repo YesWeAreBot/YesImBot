@@ -34,7 +34,7 @@ it("returns the persisted deduplicated ID from transformAsync", async () => {
     const { service } = fixture(async () => ({}));
     const prepare = vi.fn<(...args: any[]) => Promise<any>>(async () => ({ id: "existing-asset", persisted: Promise.resolve("existing-asset") }));
     Object.assign(service, { _prepareAsset: prepare });
-    const elements = h.parse(await service.transformAsync([h("img", { src: "https://example.com/image" })]));
+    const elements = h.parse(await service.transformAsync([h("img", { src: "data:image/png;base64,c2FtcGxl" })]));
     expect(elements[0].attrs.id).toBe("existing-asset");
 });
 
@@ -45,7 +45,7 @@ it("retains the original source when transformAsync preparation fails", async ()
             throw new Error("download failed");
         }),
     });
-    const original = h("img", { src: "https://example.com/image" });
+    const original = h("img", { src: "data:image/png;base64,c2FtcGxl" });
     expect(await service.transformAsync([original])).toBe(original.toString());
 });
 

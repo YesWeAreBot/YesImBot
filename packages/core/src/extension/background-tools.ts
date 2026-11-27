@@ -13,7 +13,10 @@ import type { ToolCallResult, ToolExecutionContext } from "./types";
 
 const completionToken = Symbol("background completion ownership");
 
+type TaskPurpose = "resume" | "prefetch";
+
 interface TaskContext {
+    purpose: TaskPurpose;
     manual: boolean;
     session: Session;
     owner: string;
@@ -29,7 +32,7 @@ export interface BackgroundCompletionPayload {
 export class BackgroundTools {
     private readonly registry: BackgroundTaskRegistry;
     private readonly contexts = new Map<string, TaskContext>();
-    private readonly completions = new WeakMap<object, { contexts: TaskContext[]; consumed: boolean; outcome: BackgroundCompletionPayload["outcome"] }>();
+    private readonly completions = new WeakMap<object, { contexts: TaskContext[]; consumed: boolean; taskIds: string[]; requestId: string }>();
     private stopped = false;
 
     constructor(
@@ -38,18 +41,19 @@ export class BackgroundTools {
         private readonly world: WorldStateService,
         private readonly tools: ToolService,
     ) {
-        this.registry = new BackgroundTaskRegistry(config, (event) => this.settle(event));
+        this.registry = new BackgroundTaskRegistry({ ...config, settlement: "request" }, (event) => this.settle(event));
         const parameters = Schema.object({
             tool: Schema.string().required().description("声明支持后台执行的工具名称"),
+            purpose: Schema.union(["resume", "prefetch"]).default("resume").description("resume：结果用于完成当前请求；prefetch：仅预取，完成后保持静默"),
             params: Schema.dict(Schema.any()).default({}).description("工具参数；依赖其结果的后续操作必须等待任务完成"),
         });
         this.tools.registerTool({
             name: "background_task_start",
             description:
-                "Submit an explicitly background-capable tool without waiting. Use only for independent work; dependent operations must wait. Query progress/results with background_task_query; cancel when no longer needed. Submission is not success of the underlying task.",
+                "Submit an explicitly background-capable tool without waiting. Use only for independent work; dependent operations must wait. Query progress/results with background_task_query; cancel when no longer needed. Use resume (default) to continue this request with its results, or prefetch for optional future reads. Submission is not success of the underlying task.",
             parameters,
-            execute: async ({ session, tool, params, toolContext }) =>
-                this.result(() => this.start(session, tool, params, toolContext?.requestId, toolContext)),
+            execute: async ({ session, tool, params, purpose, toolContext }) =>
+                this.result(() => this.start(session, tool, params, toolContext?.requestId, toolContext, purpose)),
         });
         this.tools.registerTool({
             name: "background_task_query",
@@ -123,7 +127,7 @@ export class BackgroundTools {
                 throw new Error("后台任务会话身份已改变");
             if (this.world.l2_manager.getHistoryGeneration(target) !== generation) throw new Error("后台任务来源历史已清除");
         };
-        return { owner, session, assertCurrent, manual: source.argv?.command?.name === "tool.invoke" };
+        return { owner, session, assertCurrent, purpose: "resume", manual: source.argv?.command?.name === "tool.invoke" };
     }
 
     private pruneContexts() {
@@ -141,7 +145,14 @@ export class BackgroundTools {
         return !toolName.startsWith("background_task_") && Array.isArray(selected) && selected.includes(toolName);
     }
 
-    public start(source: Session | undefined, toolName: string, params: Record<string, unknown>, requestId?: string, sourceContext?: ToolExecutionContext) {
+    public start(
+        source: Session | undefined,
+        toolName: string,
+        params: Record<string, unknown>,
+        requestId?: string,
+        sourceContext?: ToolExecutionContext,
+        purpose: TaskPurpose = "resume",
+    ) {
         if (!source) throw new Error("缺少来源会话");
         const context = this.capture(source),
             session = context.session;
@@ -162,7 +173,10 @@ export class BackgroundTools {
         const validated = definition.parameters(structuredClone(input));
         const timeoutMs = this.tools.getExecutionTimeout(definition, validated);
         this.pruneContexts();
-        const group = requestId ?? randomUUID();
+        context.manual ||= sourceContext?.invocationActor === "admin";
+        context.purpose = context.manual ? "prefetch" : purpose;
+        // A silent prefetch is independent of the foreground request's wait group.
+        const group = context.purpose === "prefetch" ? randomUUID() : (requestId ?? randomUUID());
         const valid = () => {
             try {
                 context.assertCurrent();
@@ -206,7 +220,7 @@ export class BackgroundTools {
             timeoutMs,
         );
         this.contexts.set(task.id, context);
-        if (!requestId) this.registry.sealRequest(context.owner, group);
+        if (!requestId || context.purpose === "prefetch") this.registry.sealRequest(context.owner, group);
         return task;
     }
 
@@ -261,10 +275,11 @@ export class BackgroundTools {
         } catch {
             return;
         }
+        if (owned.some((context) => context.purpose !== "resume")) return;
         const session = owned[0].session;
         const token = {};
         const payload = { taskIds: [...event.taskIds], requestId: event.requestId, outcome: event.outcome, [completionToken]: token };
-        this.completions.set(token, { contexts: owned, consumed: false, outcome: event.outcome });
+        this.completions.set(token, { contexts: owned, consumed: false, taskIds: [...event.taskIds], requestId: event.requestId });
         this.ctx.emit(
             session,
             "agent/stimulus",
@@ -291,7 +306,49 @@ export class BackgroundTools {
         const completion = this.completions.get((payload as { [completionToken]?: object })[completionToken] ?? payload)!;
         if (completion.consumed) return;
         completion.consumed = true;
-        return { gain: this.config.willingness[completion.outcome], wake: this.config.completion === "stimulus" };
+        return true;
+    }
+
+    public async readContinuation(session: Session, payload: BackgroundCompletionPayload) {
+        if (!this.isCompletionCurrent(session, payload)) throw new Error("后台任务续接已失效");
+        const completion = this.completions.get((payload as { [completionToken]?: object })[completionToken] ?? payload)!;
+        const source = completion.contexts[0].session;
+        const limit = Math.min(1500, Math.floor(6000 / completion.taskIds.length));
+        const tasks = await Promise.all(
+            completion.taskIds.map(async (id, index) => {
+                const context = completion.contexts[index];
+                const task = this.registry.query(context.owner, id);
+                const result = task.result as ToolCallResult | undefined;
+                const definition = this.tools.getTool(task.tool, context.session);
+                if (!definition || (result && definition.isResultCurrent && !(await definition.isResultCurrent(result, context.session)))) {
+                    return { id, tool: task.tool, state: "unavailable" };
+                }
+                let preview: string | undefined;
+                if (result?.result !== undefined) {
+                    try {
+                        const text = typeof result.result === "string" ? result.result : JSON.stringify(result.result);
+                        preview = text.length > limit ? text.slice(0, limit) + "…" : text;
+                    } catch {
+                        // Non-JSON values remain available via background_task_query.
+                    }
+                }
+                return {
+                    id,
+                    tool: task.tool,
+                    state: task.state,
+                    ...(preview === undefined ? {} : { resultPreview: preview }),
+                    ...(task.error ? { error: task.error.slice(0, limit) } : {}),
+                };
+            }),
+        );
+        if (!this.isCompletionCurrent(session, payload)) throw new Error("后台任务续接已失效");
+        return {
+            requestId: completion.requestId,
+            originalMessageId: source.messageId,
+            requesterId: source.userId,
+            originalMessage: source.content?.slice(0, 1200),
+            tasks,
+        };
     }
 
     public dispose() {

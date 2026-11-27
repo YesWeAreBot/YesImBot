@@ -34,6 +34,19 @@ export class MustacheRenderer implements IRenderer {
     public render(templateContent: string, scope: Record<string, any>, partials?: Record<string, string>, _options?: RenderOptions): string {
         // Templates and partials are trusted code; inserted values are terminal data.
         // Re-rendering the output would interpret user messages and tool results as templates.
-        return Mustache.render(templateContent, scope, partials, { escape: (text: string) => text });
+        return Mustache.render(
+            templateContent,
+            {
+                ...scope,
+                _hasToolResult(this: Record<string, unknown>) {
+                    return Object.hasOwn(this, "result") && this.result !== undefined;
+                },
+                _toolResultJson(this: Record<string, unknown>) {
+                    return JSON.stringify(this.result);
+                },
+            },
+            partials,
+            { escape: (text: string) => text },
+        );
     }
 }

@@ -7,6 +7,7 @@ import memory from "@koishijs/plugin-database-memory";
 import { Bot, Context, h } from "koishi";
 import { expect, it, onTestFinished, vi } from "vitest";
 
+import * as mediaDownload from "../src/asset/download";
 import { AssetService } from "../src/asset/service";
 import { Config } from "../src/config";
 import { TableName } from "../src/shared/constants";
@@ -133,14 +134,12 @@ for (const method of ["transform", "transformAsync"] as const) {
         const f = await fixture();
         const source = "https://files.slack.com/files-pri/T-team-F-file/download/private.txt";
         const body = Buffer.from("resolved by installed file handler");
-        f.ctx.on("http/file", (url) => {
-            if (url === source) return { type: "text/plain", mime: "text/plain", data: body, filename: "private.txt" };
-        });
-        vi.spyOn(f.ctx.http, "head").mockRejectedValue(new Error("HEAD unsupported"));
+        const download = vi.spyOn(mediaDownload, "downloadPublicMedia").mockResolvedValue({ data: body, type: "text/plain", filename: "private.txt" });
+        onTestFinished(() => download.mockRestore());
         const element = h.parse(await f.assets[method]([h("file", { src: source, id: "F-file", filename: "private.txt" })]))[0];
         expect(element.attrs.id).not.toBe("F-file");
         expect(element.attrs.src).toBeUndefined();
-        expect(await f.assets.create(source)).toBe(element.attrs.id);
+        expect(await f.assets.create(body)).toBe(element.attrs.id);
         expect(await f.assets.read(element.attrs.id)).toEqual(body);
         expect((await f.assets.encode([element]))[0].attrs.src).toBe(`data:text/plain;base64,${body.toString("base64")}`);
     });
@@ -179,15 +178,10 @@ it.each(["https://files.slack.com.evil.invalid/files-pri/file", "http://files.sl
     "never attaches a Slack token to %s",
     async (source) => {
         const f = await fixture();
-        const seen: any[] = [];
-        vi.spyOn(f.ctx.http, "head").mockResolvedValue(new Headers());
-        vi.spyOn(f.ctx.http, "file").mockImplementation(async (_url: any, options: any) => {
-            seen.push(options);
-            return { data: Buffer.from("public body"), type: "text/plain", filename: "public.txt" };
-        });
+        const download = vi.spyOn(mediaDownload, "downloadPublicMedia").mockResolvedValue({ data: Buffer.from("public body"), type: "text/plain" });
+        onTestFinished(() => download.mockRestore());
         await f.assets.transform([h("file", { src: source })], { session: { platform: "slack", bot: { config: { botToken: "private-fixture" } } } } as any);
-        expect(seen).toHaveLength(1);
-        expect(JSON.stringify(seen)).not.toContain("private-fixture");
+        expect(download).toHaveBeenCalledWith(source, expect.any(Number), expect.any(AbortSignal));
     },
 );
 
@@ -223,3 +217,70 @@ for (const method of ["transform", "transformAsync"] as const) {
         expect(download).toHaveBeenCalledTimes(1);
     });
 }
+
+it("confines session media to its owner even when another conversation has identical data", async () => {
+    const { assets, bot } = await fixture();
+    const first = { platform: "lark", bot, channelId: "first" };
+    const second = { ...first, channelId: "second" };
+    const source = h("img", { src: "data:text/plain;base64,c2hhcmVk" });
+    const asset = async (session: typeof first) => h.parse(await assets.transform([source], { session }))[0].attrs.id;
+    const firstId = await asset(first);
+    const secondId = await asset(second);
+    expect(firstId).toBeTruthy();
+    expect(secondId).not.toBe(firstId);
+    expect(await asset(first)).toBe(firstId);
+    await expect(assets.read(firstId, { session: second })).rejects.toThrow("当前会话");
+    expect(await assets.read(firstId, { session: first })).toEqual(Buffer.from("shared"));
+});
+
+it("inherits and sanitizes an incoming filename while honoring an explicit override", async () => {
+    const { assets } = await fixture();
+    const inherited = await assets.create({ data: Buffer.from("one"), type: "text/plain", filename: "../../private/note.txt" });
+    const explicit = await assets.create({ data: Buffer.from("two"), type: "text/plain", filename: "source.txt" }, { filename: "override.txt" });
+    expect((await assets.getInfo(inherited))?.metadata.filename).toBe("note.txt");
+    expect((await assets.getInfo(explicit))?.metadata.filename).toBe("override.txt");
+});
+
+it("ends media stream consumption as soon as its configured body budget is exceeded", async () => {
+    const consumed = vi.fn<() => void>();
+    const closed = vi.fn<() => void>();
+    async function* media() {
+        try {
+            yield Buffer.from("1234");
+            yield Buffer.from("5678");
+            consumed();
+            yield Buffer.from("90");
+        } finally {
+            closed();
+        }
+    }
+    await expect(mediaDownload.readMediaStream(media(), 5)).rejects.toThrow("大小限制");
+    expect(consumed).not.toHaveBeenCalled();
+    expect(closed).toHaveBeenCalledOnce();
+});
+
+it("requires a valid, unexpired signature before serving an asset over HTTP", async () => {
+    const { assets, bot } = await fixture();
+    const session = { platform: "lark", bot, channelId: "owned" };
+    const id = await assets.create(Buffer.from("scoped body"), {}, { session });
+    let route!: (request: any) => Promise<void>;
+    const exposed = Object.create(assets);
+    Object.defineProperty(exposed, "ctx", {
+        value: {
+            database: (assets as any).ctx.database,
+            server: { get: (_path: string, handler: typeof route) => (route = handler) },
+        },
+    });
+    exposed.assetEndpoint = "https://assets.example.test/media";
+    exposed.registerHttpEndpoint();
+    const url = new URL(await exposed.getPublicUrl(id, session));
+    const query = Object.fromEntries(url.searchParams);
+    const call = async (args: object) => {
+        const state: any = { query: args, params: { id }, set: () => {}, attachment: () => {} };
+        await route(state);
+        return state;
+    };
+    expect((await call({})).status).toBe(404);
+    expect((await call({ ...query, expires: Date.now() - 1 })).status).toBe(404);
+    expect((await call(query)).body).toEqual(Buffer.from("scoped body"));
+});

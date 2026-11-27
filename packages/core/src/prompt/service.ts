@@ -237,6 +237,7 @@ export class PromptService extends YesImBotService<Config> {
 
     private setNestedProperty(obj: Record<string, any>, path: string, value: any): void {
         const keys = path.split(".");
+        if (keys.some((key) => ["__proto__", "constructor", "prototype"].includes(key))) throw new Error("Unsafe prompt property path");
         let current = obj;
         for (let i = 0; i < keys.length - 1; i++) {
             const key = keys[i];
@@ -247,6 +248,10 @@ export class PromptService extends YesImBotService<Config> {
             if (typeof current[key] !== "object") {
                 return;
             }
+            const child = current[key];
+            const prototype = Object.getPrototypeOf(child);
+            if (!Array.isArray(child) && prototype !== Object.prototype && prototype !== null) return;
+            current[key] = Array.isArray(child) ? [...child] : { ...child };
             current = current[key];
         }
         current[keys[keys.length - 1]] = value;

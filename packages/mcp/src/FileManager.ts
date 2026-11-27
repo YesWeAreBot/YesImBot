@@ -1,8 +1,10 @@
 import { createWriteStream } from "fs";
 import fs from "fs/promises";
+import { createHash } from "node:crypto";
 import path from "path";
 import Stream from "stream";
 
+import { x as extractTar } from "tar";
 import * as yauzl from "yauzl";
 
 import { Logger } from "./Logger";
@@ -20,16 +22,29 @@ export class FileManager {
     /**
      * 下载文件
      */
-    async downloadFile(url: string, destPath: string, description: string): Promise<void> {
+    async downloadFile(url: string, destPath: string, description: string, sha256?: string): Promise<void> {
         this.logger.info(`正在下载 ${description}...`);
         this.logger.debug(`下载地址: ${url}`);
 
         try {
-            const response = await this.http.get(url, { responseType: "stream" });
+            const response = await this.http.get(url, { responseType: "stream", timeout: 60000 });
             await fs.mkdir(path.dirname(destPath), { recursive: true });
 
             const writer = createWriteStream(destPath);
-            await Stream.promises.pipeline(response, writer);
+            let size = 0;
+            const digest = createHash("sha256");
+            const limiter = new Stream.Transform({
+                transform(chunk, _encoding, callback) {
+                    size += chunk.length;
+                    if (size > 128 * 1024 * 1024) return callback(new Error("Runtime archive exceeds 128 MiB"));
+                    digest.update(chunk);
+                    callback(null, chunk);
+                },
+            });
+            const signal = AbortSignal.timeout(60000);
+            await Stream.promises.pipeline(response, limiter, writer, { signal });
+            const actual = digest.digest("hex");
+            if (sha256 && actual !== sha256.toLowerCase()) throw new Error("Runtime SHA-256 mismatch");
 
             this.logger.success(`${description} 下载完成`);
         } catch (error) {
@@ -53,12 +68,21 @@ export class FileManager {
                     this.logger.error(`打开 zip 文件失败: ${err.message}`);
                     return reject(err);
                 }
+                let entries = 0;
+                let expandedBytes = 0;
                 zipfile.readEntry();
                 zipfile.on("entry", (entry) => {
+                    entries++;
+                    expandedBytes += entry.uncompressedSize;
+                    if (entries > 1024 || expandedBytes > 256 * 1024 * 1024 || ((entry.externalFileAttributes >>> 16) & 0xf000) === 0xa000) {
+                        zipfile.close();
+                        reject(new Error("Unsafe or oversized runtime archive"));
+                        return;
+                    }
                     const entryPath = path.resolve(destDir, entry.fileName);
 
                     // 安全检查：防止路径遍历攻击
-                    if (!entryPath.startsWith(destDir)) {
+                    if (!entryPath.startsWith(path.resolve(destDir) + path.sep)) {
                         this.logger.warn(`跳过不安全的路径: ${entry.fileName}`);
                         zipfile.readEntry();
                         return;
@@ -80,6 +104,7 @@ export class FileManager {
                             fs.mkdir(path.dirname(entryPath), { recursive: true })
                                 .then(() => {
                                     const writeStream = createWriteStream(entryPath);
+                                    readStream.on("error", reject);
                                     readStream.pipe(writeStream);
                                     writeStream.on("close", () => {
                                         zipfile.readEntry();
@@ -105,6 +130,32 @@ export class FileManager {
     /**
      * 清理临时文件
      */
+    async extractTarGz(archive: string, destDir: string): Promise<void> {
+        await fs.mkdir(destDir, { recursive: true });
+        let entries = 0;
+        let expandedBytes = 0;
+        await extractTar({
+            file: archive,
+            cwd: destDir,
+            strict: true,
+            preservePaths: false,
+            filter(name, entry) {
+                entries++;
+                expandedBytes += entry.size ?? 0;
+                if (
+                    entries > 1024 ||
+                    expandedBytes > 256 * 1024 * 1024 ||
+                    path.isAbsolute(name) ||
+                    name.split("/").includes("..") ||
+                    !("type" in entry) ||
+                    !["File", "Directory"].includes(entry.type)
+                )
+                    throw new Error("Unsafe or oversized runtime archive");
+                return true;
+            },
+        });
+    }
+
     async cleanup(paths: string[]): Promise<void> {
         for (const filePath of paths) {
             try {

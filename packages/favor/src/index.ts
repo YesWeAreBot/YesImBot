@@ -159,14 +159,20 @@ export default class FavorExtension {
         if (this.disposed || !session?.platform) return Failed("好感度服务未运行或缺少平台信息。");
         try {
             const query = { platform: session.platform, user_id };
-            const rows = await this.ctx.database.get("favor_scoped", query);
-            if (this.disposed) return Failed("好感度服务已停止。");
-            const newAmount = this._clampFavor((rows[0]?.amount ?? this.config.initialFavor) + amount);
-            if (rows.length) {
-                await this.ctx.database.set("favor_scoped", query, { amount: newAmount });
-            } else {
-                await this.ctx.database.create("favor_scoped", { ...query, amount: newAmount });
+            if (!Number.isFinite(amount)) return Failed("amount 必须为有限数字");
+            let updated = false;
+            for (let attempt = 0; attempt < 32; attempt++) {
+                const current = await this._getOrCreateFavorEntry(session.platform, user_id);
+                if (this.disposed) return Failed("好感度服务已停止。");
+                const next = this._clampFavor(current.amount + amount);
+                const result = await this.ctx.database.set("favor_scoped", { ...query, amount: current.amount }, { amount: next });
+                if ((result.matched ?? result.modified ?? 0) > 0) {
+                    updated = true;
+                    break;
+                }
+                if (result.matched === undefined && result.modified === undefined) throw new Error("数据库未返回 CAS 更新回执，请勿自动重试");
             }
+            if (!updated) return Failed("并发冲突过多，请稍后重试");
             this.logger.info(`为用户 ${user_id} 调整了 ${amount} 点好感度。`);
             return Success(`成功为用户 ${user_id} 调整了 ${amount} 点好感度。`);
         } catch (error) {
@@ -189,6 +195,7 @@ export default class FavorExtension {
         if (!user_id) return Failed("必须提供 user_id。");
         if (this.disposed || !session?.platform) return Failed("好感度服务未运行或缺少平台信息。");
         try {
+            if (!Number.isFinite(amount)) return Failed("amount 必须为有限数字");
             const finalAmount = this._clampFavor(amount);
             await this.ctx.database.upsert("favor_scoped", [{ platform: session.platform, user_id, amount: finalAmount }]);
             this.logger.info(`将用户 ${user_id} 的好感度设置为 ${finalAmount}。`);
@@ -230,7 +237,13 @@ export default class FavorExtension {
         // 如果不存在，则创建并返回初始记录
         if (this.disposed) throw new Error("好感度服务已停止。");
         const newEntry: ScopedFavorTable = { platform, user_id, amount: this.config.initialFavor };
-        await this.ctx.database.create("favor_scoped", newEntry);
+        try {
+            await this.ctx.database.create("favor_scoped", newEntry);
+        } catch (error) {
+            const [concurrent] = await this.ctx.database.get("favor_scoped", { platform, user_id });
+            if (!concurrent) throw error;
+            return concurrent;
+        }
         this.logger.info(`为新用户 ${user_id} 创建了好感度记录，初始值为 ${this.config.initialFavor}。`);
         return newEntry;
     }

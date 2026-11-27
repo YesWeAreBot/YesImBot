@@ -48,17 +48,21 @@ function stimulus(id: string, type = "user_message", channelCid = "bot:group") {
     } as any;
 }
 
-it("retains and coalesces completion events while busy under skip", async () => {
+it("preserves each original completion in FIFO order and ignores repeated submission of its payload", async () => {
     const f = setup();
     f.scheduler.schedule(stimulus("active"));
     await vi.advanceTimersByTimeAsync(10);
     const first = stimulus("one", "background_task_completion");
     f.scheduler.schedule(first);
-    f.scheduler.schedule(stimulus("two", "background_task_completion"));
+    f.scheduler.schedule({ ...first });
+    const second = stimulus("two", "background_task_completion");
+    second.session.userId = "other-user";
+    f.scheduler.schedule(second);
     f.release();
     await vi.advanceTimersByTimeAsync(20);
-    expect(f.calls.map((s) => s.id)).toEqual(["active", "two"]);
-    expect(f.calls[1].payload.taskIds).toEqual(["one", "two"]);
+    expect(f.calls.map((s) => s.id)).toEqual(["active", "one", "two"]);
+    expect(f.calls[1]).toBe(first);
+    expect(f.calls[2]).toBe(second);
     expect(first.payload.taskIds).toEqual(["one"]);
     f.scheduler.dispose();
 });
@@ -94,8 +98,7 @@ it("bounds retained completion identifiers", async () => {
     for (let i = 0; i < 140; i++) f.scheduler.schedule(stimulus(`task-${i}`, "background_task_completion"));
     f.release();
     await vi.advanceTimersByTimeAsync(10);
-    expect(f.calls[1].payload.taskIds).toHaveLength(128);
-    expect(f.calls[1].payload.taskIds[0]).toBe("task-12");
+    expect(f.calls.slice(1).map((s) => s.id)).toEqual(Array.from({ length: 128 }, (_, i) => `task-${i}`));
     f.scheduler.dispose();
 });
 
@@ -151,16 +154,11 @@ it("defaults background execution off and validates bounded configuration", () =
     expect(config.backgroundTools).toEqual({
         enabled: false,
         allowedTools: ["web_search", "fetch_webpage", "get_image_description"],
-        completion: "next_cycle",
-        settlement: "request",
-        willingness: { succeeded: 0, failed: 0, cancelled: 0 },
         maxConcurrent: 4,
         maxRetained: 128,
         timeoutMs: 120000,
     });
-    expect(AgentBehaviorConfigSchema({ backgroundTools: { willingness: { succeeded: 0.5 } } }).backgroundTools.willingness.succeeded).toBe(0.5);
-    for (const value of [-1, Infinity, NaN, 1000001])
-        expect(() => AgentBehaviorConfigSchema({ backgroundTools: { willingness: { succeeded: value } } })).toThrow(/./);
+    expect(() => AgentBehaviorConfigSchema({ backgroundTools: { completion: "stimulus", settlement: "task", willingness: { succeeded: 25 } } })).not.toThrow();
     for (const value of [0, 33, 1.5]) expect(() => AgentBehaviorConfigSchema({ backgroundTools: { maxConcurrent: value } })).toThrow(/./);
     for (const value of [999, 3600001, 1000.5]) expect(() => AgentBehaviorConfigSchema({ backgroundTools: { timeoutMs: value } })).toThrow(/./);
 });
@@ -254,14 +252,10 @@ it("decays pending topic credit and preserves it across stopping the decay timer
     expect(willing.getCurrentWillingness("chat")).toBe(0);
 });
 
-it("exposes ordinary numeric willingness inputs in the serialized configuration", () => {
+it("omits obsolete willingness inputs in the serialized configuration", () => {
     const schema = new Schema(JSON.parse(JSON.stringify(AgentBehaviorConfigSchema)));
     const background = schema.list.find((branch: any) => branch.dict?.backgroundTools).dict.backgroundTools;
-    const willingness = background.dict.willingness;
-    const fields = willingness.dict ?? willingness.list?.find((branch: any) => branch.type === "object")?.dict;
-    for (const name of ["succeeded", "failed", "cancelled"]) {
-        expect({ type: fields?.[name]?.type, meta: fields?.[name]?.meta }).toMatchObject({ type: "number", meta: { default: 0, min: 0, max: 1000000 } });
-    }
+    expect(background.dict.willingness).toBeUndefined();
     expect({ type: background.dict.allowedTools?.type, meta: background.dict.allowedTools?.meta }).toMatchObject({
         type: "any",
         meta: { role: "dynamic", extra: { name: "toolService.backgroundEligibleTools" } },

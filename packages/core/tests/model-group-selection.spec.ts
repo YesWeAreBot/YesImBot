@@ -351,3 +351,12 @@ it("renders the system prompt for the actual candidate after failover", async ()
     expect(firstCall.mock.calls[0][0].messages[0].content).toBe("first/first/selection first=true second=false ");
     expect(secondCall.mock.calls[0][0].messages[0].content).toBe("second/second/selection first=false second=true ");
 });
+
+it("preserves the caller stream-start callback through the managed group", async () => {
+    const callback = vi.fn();
+    const attempts: string[] = [];
+    const models = [new ExternalModel("first", attempts)];
+    await group(models).chat({ ...input(), onStreamStart: callback });
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(attempts).toEqual(["first"]);
+});

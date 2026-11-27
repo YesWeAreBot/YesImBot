@@ -27,8 +27,12 @@ export class BinaryInstaller {
     /**
      * 安装 UV
      */
-    async installUV(version: string, githubMirror?: string): Promise<string | null> {
+    async installUV(version: string, githubMirror?: string, sha256?: string): Promise<string | null> {
         this.logger.info(`开始安装 UV (版本: ${version})`);
+        if (!sha256 || !/^[a-f0-9]{64}$/i.test(sha256) || version === "latest") {
+            this.logger.error("自动安装要求固定版本及管理员提供的 SHA-256；请优先使用预安装运行时");
+            return null;
+        }
 
         const platformMap = this.systemUtils.getPlatformMapping();
         if (!platformMap) return null;
@@ -36,13 +40,15 @@ export class BinaryInstaller {
         // 解析版本号
         let targetVersion = version;
         if (version === "latest") {
-            targetVersion = (await this.githubAPI.getLatestVersion("astral-sh", "uv")) ?? version;
+            targetVersion = (await this.githubAPI.getLatestVersion("astral-sh", "uv")) ?? "";
             if (!targetVersion) {
                 this.logger.error("无法获取 UV 最新版本");
                 return null;
             }
         }
 
+        targetVersion = targetVersion.replace(/^v/, "");
+        if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(targetVersion)) return null;
         const execName = process.platform === "win32" ? "uv.exe" : "uv";
         const binDir = path.join(this.dataDir, "mcp-ext", "bin");
         const finalPath = path.join(binDir, execName);
@@ -53,18 +59,21 @@ export class BinaryInstaller {
         }
 
         // 下载并安装
-        const filename = `uv-${platformMap.uvArch}-${platformMap.uvPlatform}.zip`;
+        const extension = process.platform === "win32" ? "zip" : "tar.gz";
+        const folder = `uv-${platformMap.uvArch}-${platformMap.uvPlatform}`;
+        const filename = `${folder}.${extension}`;
         const downloadUrl = this.githubAPI.buildDownloadUrl("astral-sh", "uv", targetVersion, filename, githubMirror);
 
-        const tempZip = path.join(this.cacheDir, `uv-${targetVersion}.zip`);
+        const tempZip = path.join(this.cacheDir, `uv-${targetVersion}.${extension}`);
         const tempDir = path.join(this.cacheDir, `uv-extract-${targetVersion}`);
 
         try {
-            await this.fileManager.downloadFile(downloadUrl, tempZip, `UV ${targetVersion}`);
-            await this.fileManager.extractZip(tempZip, tempDir);
+            await this.fileManager.downloadFile(downloadUrl, tempZip, `UV ${targetVersion}`, sha256);
+            if (extension === "zip") await this.fileManager.extractZip(tempZip, tempDir);
+            else await this.fileManager.extractTarGz(tempZip, tempDir);
 
             // 查找并复制可执行文件
-            const extractedPath = path.join(tempDir, execName);
+            const extractedPath = extension === "zip" ? path.join(tempDir, execName) : path.join(tempDir, folder, execName);
             await fs.mkdir(binDir, { recursive: true });
             await fs.copyFile(extractedPath, finalPath);
             await this.systemUtils.makeExecutable(finalPath);
@@ -82,8 +91,12 @@ export class BinaryInstaller {
     /**
      * 安装 Bun
      */
-    async installBun(version: string, githubMirror?: string): Promise<string | null> {
+    async installBun(version: string, githubMirror?: string, sha256?: string): Promise<string | null> {
         this.logger.info(`开始安装 Bun (版本: ${version})`);
+        if (!sha256 || !/^[a-f0-9]{64}$/i.test(sha256) || version === "latest") {
+            this.logger.error("自动安装要求固定版本及管理员提供的 SHA-256；请优先使用预安装运行时");
+            return null;
+        }
 
         const platformMap = this.systemUtils.getPlatformMapping();
         if (!platformMap) return null;
@@ -91,13 +104,16 @@ export class BinaryInstaller {
         // 解析版本号
         let targetVersion = version;
         if (version === "latest") {
-            targetVersion = (await this.githubAPI.getLatestVersion("oven-sh", "bun")) ?? version;
+            targetVersion = (await this.githubAPI.getLatestVersion("oven-sh", "bun")) ?? "";
             if (!targetVersion) {
                 this.logger.error("无法获取 Bun 最新版本");
                 return null;
             }
         }
 
+        const semver = targetVersion.replace(/^(?:bun-)?v/, "");
+        if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(semver)) return null;
+        targetVersion = `bun-v${semver}`;
         const execName = process.platform === "win32" ? "bun.exe" : "bun";
         const binDir = path.join(this.dataDir, "mcp-ext", "bin");
         const finalPath = path.join(binDir, execName);
@@ -115,7 +131,7 @@ export class BinaryInstaller {
         const tempDir = path.join(this.cacheDir, `bun-extract-${targetVersion}`);
 
         try {
-            await this.fileManager.downloadFile(downloadUrl, tempZip, `Bun ${targetVersion}`);
+            await this.fileManager.downloadFile(downloadUrl, tempZip, `Bun ${targetVersion}`, sha256);
             await this.fileManager.extractZip(tempZip, tempDir);
 
             // 查找并复制可执行文件

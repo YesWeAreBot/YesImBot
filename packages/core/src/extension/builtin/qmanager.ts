@@ -4,6 +4,7 @@ import { Extension, Tool, withInnerThoughts } from "../../extension/decorators";
 import { Failed, Success } from "../../extension/helpers";
 import { Infer } from "../../extension/types";
 import { isEmpty } from "../../shared/utils";
+import { assertCurrentMessage, assertGroupAction, groupPoliciesSchema } from "./group-policy";
 
 @Extension({
     name: "qmanager",
@@ -14,7 +15,7 @@ import { isEmpty } from "../../shared/utils";
     builtin: true,
 })
 export default class QManagerExtension {
-    static readonly Config = Schema.object({});
+    static readonly Config = Schema.object({ policies: groupPoliciesSchema });
 
     private get logger(): Logger {
         return this.ctx.yesimbot?.logging?.getLogger("[群管理]") ?? this.ctx.logger;
@@ -37,6 +38,9 @@ export default class QManagerExtension {
         if (!session) return Failed("session 不可用");
         const targetChannel = isEmpty(channel_id) ? session.channelId! : channel_id;
         try {
+            assertGroupAction(this.ctx, this.config.policies, session, "delmsg", targetChannel, true);
+            await assertCurrentMessage(session, message_id);
+            assertGroupAction(this.ctx, this.config.policies, session, "delmsg", targetChannel, true);
             await session.bot.deleteMessage(targetChannel, message_id);
             this.logger.info(`Bot[${session.selfId}]撤回了消息: ${message_id}`);
             return Success();
@@ -51,7 +55,7 @@ export default class QManagerExtension {
         description: `禁言用户。`,
         parameters: withInnerThoughts({
             user_id: Schema.string().required().description("要禁言的用户 ID"),
-            duration: Schema.union([String, Number]).required().description("禁言时长，单位为分钟。你不应该禁言他人超过 10 分钟。时长设为 0 表示解除禁言。"),
+            duration: Schema.natural().max(10).required().description("0–10 整数分钟；0 需要独立 unban 授权"),
             guild_id: Schema.string().description("目标群组 ID，省略时使用当前群组"),
             channel_id: Schema.string().hidden(),
         }),
@@ -63,7 +67,9 @@ export default class QManagerExtension {
         const targetGuild = [guild_id, channel_id, session.guildId].find((id) => !isEmpty(id));
         if (!targetGuild) return Failed("当前会话没有群组，请明确指定目标群组 ID");
         try {
-            await session.bot.muteGuildMember(targetGuild, user_id, Number(duration) * 60 * 1000);
+            if (!Number.isSafeInteger(duration) || duration < 0 || duration > 10) return Failed("duration 必须为 0–10 的整数分钟");
+            assertGroupAction(this.ctx, this.config.policies, session, duration === 0 ? "unban" : "ban", targetGuild);
+            await session.bot.muteGuildMember(targetGuild, user_id, duration * 60 * 1000);
             this.logger.info(`Bot[${session.selfId}]在群 ${targetGuild} 禁言用户: ${user_id}`);
             return Success();
         } catch (error) {
@@ -88,6 +94,7 @@ export default class QManagerExtension {
         const targetGuild = [guild_id, channel_id, session.guildId].find((id) => !isEmpty(id));
         if (!targetGuild) return Failed("当前会话没有群组，请明确指定目标群组 ID");
         try {
+            assertGroupAction(this.ctx, this.config.policies, session, "kick", targetGuild);
             await session.bot.kickGuildMember(targetGuild, user_id);
             this.logger.info(`Bot[${session.selfId}]在群 ${targetGuild} 踢出了用户: ${user_id}`);
             return Success();

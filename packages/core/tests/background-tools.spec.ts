@@ -7,7 +7,7 @@ import { CoreUtilConfigSchema } from "../src/extension/builtin/core-util/config"
 import { ToolService } from "../src/extension/service";
 import { loggingStub } from "./helpers/yesimbot";
 
-async function fixture(enabled = true) {
+async function fixture(enabled = true, maxConcurrent = 4) {
     const ctx = new Context();
     let allowed = true,
         generation = 0;
@@ -37,7 +37,7 @@ async function fixture(enabled = true) {
             completion: "next_cycle",
             settlement: "request",
             willingness: { succeeded: 2, failed: 0, cancelled: 0 },
-            maxConcurrent: 4,
+            maxConcurrent,
             maxRetained: 20,
             timeoutMs: 5000,
         },
@@ -257,7 +257,7 @@ it("seals one foreground request after all sibling submissions and emits one agg
     expect(f.completions).toHaveLength(1);
     expect(f.completions[0].s.payload.taskIds).toHaveLength(2);
 });
-it("preserves trusted completion ownership across scheduler payload copies and consumes the bonus once", async () => {
+it("preserves trusted completion ownership across scheduler payload copies and admits the continuation once", async () => {
     const f = await fixture();
     add(f, async () => ({ status: "success", result: "done" }));
     await f.tools.invoke("background_task_start", { tool: "read_slow", params: {} }, f.session);
@@ -265,7 +265,7 @@ it("preserves trusted completion ownership across scheduler payload copies and c
     const original = f.completions[0].s.payload;
     const copy = { ...original, taskIds: [...original.taskIds] };
     expect(f.tools.background!.isCompletionCurrent(f.session, copy)).toBe(true);
-    expect(f.tools.background!.consumeCompletion(f.session, copy)).toEqual({ gain: 2, wake: false });
+    expect(f.tools.background!.consumeCompletion(f.session, copy)).toBe(true);
     expect(f.tools.background!.consumeCompletion(f.session, original)).toBeUndefined();
     expect(f.tools.background!.isCompletionCurrent(f.session, JSON.parse(JSON.stringify(copy)))).toBe(false);
 });
@@ -351,6 +351,7 @@ it("retains administrator attribution for a manually submitted background tool",
     f.session.argv = { command: { name: "tool.invoke" } } as any;
     await f.tools.invoke("background_task_start", { tool: "read_slow", params: {} }, f.session);
     await drain();
+    expect(f.completions).toHaveLength(0);
     expect(f.receipts.find((receipt) => receipt.payload.operation === "read_slow").payload.actor).toBe("admin:telegram:u");
 });
 
@@ -584,11 +585,10 @@ it("cannot bypass a request-specific vision policy through background_task_start
 });
 
 it("applies a dedicated background budget while retaining the occupied execution slot", async () => {
-    const f = await fixture();
+    const f = await fixture(true, 1);
     vi.useFakeTimers();
     onTestFinished(() => vi.useRealTimers());
     f.config.advanced = { toolTimeouts: { read_slow: 15 } };
-    f.config.backgroundTools.maxConcurrent = 1;
     const job = deferred();
     let signal!: AbortSignal;
     add(f, async (args: any) => {
@@ -599,8 +599,31 @@ it("applies a dedicated background budget while retaining the occupied execution
     await vi.advanceTimersByTimeAsync(16);
     expect(signal.aborted).toBe(true);
     expect(f.tools.background!.query(f.session, receipt.result.id)).toMatchObject({ state: "cancelling" });
-    expect((await f.tools.invoke("background_task_start", { tool: "read_slow", params: {} }, f.session)).status).toBe("error");
+    expect((await f.tools.invoke("background_task_start", { tool: "read_slow", params: {} }, f.session)).result.state).toBe("queued");
     job.resolve({ status: "success", result: "late" });
     await vi.advanceTimersByTimeAsync(0);
     expect(f.tools.background!.query(f.session, receipt.result.id)).toMatchObject({ state: "failed", error: "Background task timeout (15ms)" });
+});
+
+it("resumes with the original caller and scoped results while an independent prefetch remains pending", async () => {
+    const f = await fixture();
+    const wait = deferred();
+    add(f, async ({ value }: { value: string }) => {
+        if (value === "prefetch") await wait.promise;
+        return { status: "success", result: value };
+    });
+    const context = { requestId: "turn" };
+    await f.tools.invoke("background_task_start", { tool: "read_slow", purpose: "prefetch", params: { value: "prefetch" } }, f.session, context);
+    await f.tools.invoke("background_task_start", { tool: "read_slow", params: { value: "answer" } }, f.session, context);
+    f.tools.background!.sealRequest(f.session, "turn");
+    await vi.waitFor(() => expect(f.completions).toHaveLength(1));
+    expect(await f.tools.background!.readContinuation(f.session, f.completions[0].s.payload)).toMatchObject({
+        requestId: "turn",
+        originalMessageId: "m",
+        requesterId: "u",
+        tasks: [{ tool: "read_slow", state: "succeeded", resultPreview: "answer" }],
+    });
+    wait.resolve();
+    await drain();
+    expect(f.completions).toHaveLength(1);
 });
