@@ -30,12 +30,16 @@ it("keeps offset steps exact when a numeric step is relative to a nonzero minimu
     expect(toolJSONSchema(Schema.number().min(1).step(2))).not.toHaveProperty("multipleOf");
 });
 
-function builtinTools() {
+function builtinTools(policies: any[] = []) {
     const logger = loggingStub();
     const ctx: any = { logger: Object.assign(() => logger.getLogger(), logger.getLogger()), on() {}, puppeteer: {} };
     const tools = new ToolService(ctx, {} as any, { logging: logger, world: {} } as any);
     ctx.yesimbot = { tool: tools };
-    for (const extension of [new SearchExtension(ctx, SearchExtension.Config({})), new InteractionsExtension(ctx, {}), new QManagerExtension(ctx, {})]) {
+    for (const extension of [
+        new SearchExtension(ctx, SearchExtension.Config({})),
+        new InteractionsExtension(ctx, { policies }),
+        new QManagerExtension(ctx, { policies }),
+    ]) {
         for (const definition of (extension as any).tools.values()) tools.registerTool(definition);
     }
     return { tools, ctx };
@@ -75,23 +79,33 @@ it("exposes one link-count option and accepts the legacy link opt-out", async ()
     }
 });
 
-it("uses a consistent guild selector and rejects conflicting aliases before calling the adapter", async () => {
-    const { tools } = builtinTools();
+it("uses a consistent guild selector and rejects cross-guild or conflicting aliases before calling the adapter", async () => {
+    const { tools } = builtinTools([{ platform: "onebot", selfId: "bot", guildId: "home", actions: ["poke", "ban"], userIds: ["owner"] }]);
     const muteGuildMember = vi.fn(async () => {});
     const request = vi.fn(async () => ({ status: "ok" }));
-    const session = { platform: "onebot", guildId: "home", channelId: "thread", bot: { muteGuildMember }, onebot: { _request: request } } as any;
+    const session = {
+        platform: "onebot",
+        selfId: "bot",
+        userId: "owner",
+        guildId: "home",
+        channelId: "thread",
+        bot: { muteGuildMember },
+        onebot: { _request: request },
+    } as any;
     for (const name of ["send_poke", "ban", "kick"]) {
         const schema = tools.getSchema(name)!;
         expect(schema.parametersJSONSchema.properties).toHaveProperty("guild_id");
         expect(schema.parametersJSONSchema.properties).not.toHaveProperty(name === "send_poke" ? "channel" : "channel_id");
     }
     expect(await tools.invoke("send_poke", { user_id: "123" }, session)).toMatchObject({ status: "success" });
-    expect((await tools.invoke("send_poke", { user_id: "123", channel: "legacy" }, session)).status).toBe("success");
+    expect((await tools.invoke("send_poke", { user_id: "123", channel: "home" }, session)).status).toBe("success");
+    expect((await tools.invoke("send_poke", { user_id: "123", channel: "legacy" }, session)).status).toBe("error");
     expect(request.mock.calls).toEqual([
         ["group_poke", { group_id: "home", user_id: 123 }],
-        ["group_poke", { group_id: "legacy", user_id: 123 }],
+        ["group_poke", { group_id: "home", user_id: 123 }],
     ]);
-    expect((await tools.invoke("ban", { user_id: "123", guild_id: "canonical", duration: 1 }, session)).status).toBe("success");
-    expect((await tools.invoke("ban", { user_id: "123", guild_id: "canonical", channel_id: "legacy", duration: 1 }, session)).status).toBe("error");
-    expect(muteGuildMember.mock.calls).toEqual([["canonical", "123", 60000]]);
+    expect((await tools.invoke("ban", { user_id: "123", guild_id: "home", duration: 1 }, session)).status).toBe("success");
+    expect((await tools.invoke("ban", { user_id: "123", guild_id: "canonical", duration: 1 }, session)).status).toBe("error");
+    expect((await tools.invoke("ban", { user_id: "123", guild_id: "home", channel_id: "legacy", duration: 1 }, session)).status).toBe("error");
+    expect(muteGuildMember.mock.calls).toEqual([["home", "123", 60000]]);
 });

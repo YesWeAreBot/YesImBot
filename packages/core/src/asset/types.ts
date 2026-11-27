@@ -54,7 +54,7 @@ export interface StorageDriver {
 export interface ImageProcessingOptions {
     /** 是否对图片进行处理 */
     process?: boolean;
-    /** 目标格式，如 'webp' 或 'jpeg' */
+    /** @deprecated 旧字段仅为兼容而保留；处理后图片统一编码为 JPEG，不支持选择 WebP。 */
     format?: "webp" | "jpeg";
 }
 

@@ -28,6 +28,8 @@
   "typings": "lib/index.d.ts",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.13.0",
+    "ajv": "8.20.0",
+    "tar": "7.5.22",
     "yauzl": "^3.2.0"
   },
   "devDependencies": {

@@ -101,6 +101,7 @@ export class FishAudioAdapter extends TTSAdapter<FishAudioConfig, FishAudioTTSPa
     public readonly name = "fish-audio";
     private references: ReferenceAudio[] = [];
     private baseURL: string;
+    private dispatcher?: ProxyAgent;
 
     constructor(ctx: Context, config: FishAudioConfig) {
         super(ctx, config);
@@ -121,7 +122,7 @@ export class FishAudioAdapter extends TTSAdapter<FishAudioConfig, FishAudioTTSPa
     }
 
     async synthesize(params: FishAudioTTSParams): Promise<SynthesisResult> {
-        this.controller.signal.throwIfAborted();
+        const signal = this.requestSignal(params);
         const request: ServerTTSRequest = {
             text: params.text,
             chunk_length: this.config.chunk_length,
@@ -133,20 +134,14 @@ export class FishAudioAdapter extends TTSAdapter<FishAudioConfig, FishAudioTTSPa
             temperature: this.config.temperature,
         };
 
-        let dispatcher;
-        if (this.config.proxy) {
-            try {
-                dispatcher = new ProxyAgent({ uri: this.config.proxy });
-                this.ctx.logger.info(`using proxy: ${this.config.proxy}`);
-            } catch {}
-        }
+        if (this.config.proxy) this.dispatcher ??= new ProxyAgent({ uri: this.config.proxy });
 
         const response = await fetch(`${this.baseURL}/v1/tts`, {
             method: "POST",
-            signal: this.controller.signal,
+            signal,
             headers: { "Content-Type": "application/msgpack", authorization: `Bearer ${this.config.apiKey}`, model: this.config.model },
             body: encode(request),
-            dispatcher,
+            dispatcher: this.dispatcher,
         });
 
         if (response.ok) {
@@ -159,6 +154,11 @@ export class FishAudioAdapter extends TTSAdapter<FishAudioConfig, FishAudioTTSPa
         } else {
             throw new Error(`${response.status} ${response.statusText}`);
         }
+    }
+
+    public override async stop(): Promise<void> {
+        super.stop();
+        await this.dispatcher?.destroy();
     }
 
     getToolSchema(): Schema {

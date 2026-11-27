@@ -225,21 +225,21 @@ export class DailyPlannerService {
     }
 
     public async overrideCurrentSchedule(content: string, duration: number) {
+        if (!Number.isSafeInteger(duration) || duration <= 0 || !content.trim()) throw new Error("Invalid override duration or content");
         const schedule = await this.getTodaysSchedule();
         const now = new Date();
         const end = new Date(now.getTime() + duration * 60000);
-
-        const currentSegment = {
-            start: formatTime(now),
-            end: formatTime(end),
-            content,
-        };
-
-        // 添加到今日日程
-        schedule.segments.unshift(currentSegment);
-        await this.saveSchedule(schedule);
+        if (end.toDateString() !== now.toDateString()) throw new Error("跨日日程覆盖暂不支持，请分别安排两天");
+        const startTime = formatTime(now);
+        const endTime = formatTime(end);
+        const segments = schedule.segments.flatMap((segment) => {
+            if (segment.end <= startTime || segment.start >= endTime) return [{ ...segment }];
+            return [...(segment.start < startTime ? [{ ...segment, end: startTime }] : []), ...(segment.end > endTime ? [{ ...segment, start: endTime }] : [])];
+        });
+        segments.push({ start: startTime, end: endTime, content });
+        segments.sort((a, b) => a.start.localeCompare(b.start));
+        await this.saveSchedule({ ...schedule, segments });
     }
-
     public async addCustomTimeSegment(start: string, end: string, content: string) {
         const schedule = await this.getTodaysSchedule();
         schedule.segments.push({ start, end, content });
@@ -276,7 +276,7 @@ export class DailyPlannerService {
         prompt += "1. 将一天划分为6-10个时间段，每个时间段应有明确的开始和结束时间（HH:mm格式）\n";
         prompt += "2. 每个时间段安排1-2个主要活动，活动内容应具体且有可执行性\n";
         prompt += "3. 合理安排休息时间，避免长时间连续工作\n";
-        prompt += "4. 考虑${this.config.characterName}的习惯和偏好，让日程更人性化\n";
+        prompt += `4. 考虑${this.config.characterName}的习惯和偏好，让日程更人性化\n`;
         prompt += "5. 预留一定的缓冲时间应对突发事件\n\n";
 
         prompt += "## 输出格式要求:\n";

@@ -3,6 +3,18 @@ import { Schema } from "koishi";
 import type { ModelDescriptor } from "../../../model";
 
 export interface CoreUtilConfig {
+    destinationGrants?: Array<{
+        sourcePlatform: string;
+        sourceSelfId: string;
+        sourceChannelId: string;
+        sourceDirect: boolean;
+        sourceGuildId?: string;
+        platform: string;
+        selfId: string;
+        channelId: string;
+        direct: boolean;
+        guildId?: string;
+    }>;
     deliveryTimeoutMs?: number;
     typing: {
         baseDelay: number;
@@ -19,6 +31,22 @@ export interface CoreUtilConfig {
 }
 
 export const CoreUtilConfigSchema: Schema<CoreUtilConfig> = Schema.object({
+    destinationGrants: Schema.array(
+        Schema.object({
+            sourcePlatform: Schema.string().required(),
+            sourceSelfId: Schema.string().required(),
+            sourceChannelId: Schema.string().required(),
+            sourceDirect: Schema.boolean().default(false),
+            sourceGuildId: Schema.string(),
+            platform: Schema.string().required(),
+            selfId: Schema.string().required(),
+            channelId: Schema.string().required(),
+            direct: Schema.boolean().default(false),
+            guildId: Schema.string(),
+        }),
+    )
+        .default([])
+        .description("跨会话发送的明确授权；默认只允许原 Bot 的当前会话"),
     deliveryTimeoutMs: Schema.number().min(0).default(0).description("发送总超时（毫秒），0按分段数、打字延迟与传输预算自动计算"),
     typing: Schema.object({
         baseDelay: Schema.number().default(500).description("基础延迟 (毫秒)"),

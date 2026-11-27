@@ -26,6 +26,18 @@ export abstract class TTSAdapter<C extends BaseTTSConfig = BaseTTSConfig, P exte
 
     protected readonly controller = new AbortController();
 
+    protected requestSignal(params: BaseTTSParams): AbortSignal {
+        const signals = [this.controller.signal];
+        if (params.signal) signals.push(params.signal);
+        if (params.deadline !== undefined) {
+            if (!Number.isFinite(params.deadline)) throw new Error("Invalid TTS deadline");
+            signals.push(AbortSignal.timeout(Math.max(0, Math.min(2_147_483_647, Math.ceil(params.deadline - Date.now())))));
+        }
+        const signal = AbortSignal.any(signals);
+        signal.throwIfAborted();
+        return signal;
+    }
+
     public stop(): Awaitable<void> {
         this.controller.abort(new Error("TTS adapter stopped"));
     }

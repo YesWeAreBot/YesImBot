@@ -6,7 +6,7 @@ import { CosyVoiceAdapter, CosyVoiceConfig } from "./adapters/cosyvoice";
 import { FishAudioAdapter, FishAudioConfig } from "./adapters/fish-audio";
 import { IndexTTS2Adapter, IndexTTS2Config } from "./adapters/index-tts2";
 import { OpenAudioAdapter, OpenAudioConfig } from "./adapters/open-audio";
-import { BaseTTSParams } from "./types";
+import { BaseTTSParams, SynthesisResult } from "./types";
 
 export const Config = Schema.intersect([
     Schema.object({
@@ -96,32 +96,41 @@ export class TTSService {
     }
 
     private async execute(args: Infer<BaseTTSParams>) {
-        const { session, text } = args;
+        const { session, text, toolContext } = args;
         if (!session) return Failed("session 不可用");
-        if (this.stopped) return Failed("TTS service stopped");
+        const signal = toolContext?.signal ?? args.signal;
+        const deadline = toolContext?.deadline ?? args.deadline;
+        const allowed = () =>
+            !this.stopped &&
+            !signal?.aborted &&
+            (deadline === undefined || (Number.isFinite(deadline) && Date.now() < deadline)) &&
+            (typeof this.ctx.filter !== "function" || this.ctx.filter(session));
+        if (!allowed()) return Failed({ name: "TTSUnavailable", message: "TTS 已停止、取消或不在授权范围", retryable: false });
+        if (!text?.trim()) return Failed("text is required");
 
-        if (!text?.trim()) {
-            return Failed("text is required");
-        }
-
+        let result: SynthesisResult | undefined;
         try {
-            const result = await this.adapter.synthesize(args);
-            // if (result && result.audio) {
-            //     writeFileSync(path.join(this.ctx.baseDir, "cache", `${Random.id(6)}.wav`), result.audio);
-            // }
-            if (this.stopped) return Failed("TTS service stopped");
-            await session.send(h.audio(result.audio, result.mimeType));
-            return Success();
-        } catch (error) {
-            this.ctx.logger.error("[TTS] 语音合成或发送失败", error);
-            if (this.stopped) return Failed("TTS service stopped");
-            try {
-                await session.send(h.text(text));
-                return Success({ fallback: "text", message: "语音不可用，已发送文字。" });
-            } catch (fallbackError) {
-                this.ctx.logger.error(fallbackError);
-                return Failed({ name: "Error", message: "语音及文字发送均失败，请重试。" });
+            result = await this.adapter.synthesize({ ...args, signal, deadline });
+        } catch {
+            // Only synthesis failures may fall back. A send exception does not
+            // prove that the platform did not deliver the original message.
+            this.ctx.logger.warn("[TTS] 合成失败；未记录文本、凭据或上游错误正文");
+        }
+        if (!allowed()) return Failed({ name: "TTSUnavailable", message: "TTS 已停止、取消或不在授权范围", retryable: false });
+        try {
+            const receipt = await session.send(result ? h.audio(result.audio, result.mimeType) : h.text(text));
+            if (!Array.isArray(receipt) || !receipt.length || receipt.some((id) => typeof id !== "string" || !id.trim())) {
+                return {
+                    ...Failed({ name: "DeliveryUnknown", message: "平台未返回有效回执；请核实，勿自动重发", retryable: false }),
+                    metadata: { deliveryUnknown: true },
+                };
             }
+            return Success(result ? { messageIds: receipt } : { fallback: "text", messageIds: receipt, message: "语音不可用，已发送文字。" });
+        } catch {
+            return {
+                ...Failed({ name: "DeliveryUnknown", message: "发送结果不确定；请核实，勿自动重发", retryable: false }),
+                metadata: { deliveryUnknown: true },
+            };
         }
     }
 }

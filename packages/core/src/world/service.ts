@@ -618,6 +618,10 @@ export class WorldStateService extends YesImBotService<Config> {
     }
 
     private async clear() {
+        if (this.config.allowGlobalRetention !== true) {
+            this.logger.debug("未授权全库保留清理，跳过删除；共享数据库请先完成所有权迁移");
+            return;
+        }
         try {
             const expiresAt = Date.now() - this.config.dataRetentionDays * 24 * 60 * 60 * 1000;
 

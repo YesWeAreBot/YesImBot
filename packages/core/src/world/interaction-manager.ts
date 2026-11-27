@@ -388,6 +388,7 @@ export class InteractionManager {
                     function: entry.function,
                     status: entry.status,
                     result: entry.result,
+                    metadata: entry.metadata,
                     manualRecall: entry.manualRecall,
                     error: entry.error ? escapeEventData(entry.error) : undefined,
                 };

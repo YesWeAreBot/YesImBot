@@ -322,10 +322,19 @@ export function applySharedMemory(ctx: Context, config: Config) {
                 }
             })(),
         );
+    let cachedModelService: typeof deps.yesimbot.model | undefined;
+    let cachedGroup: ReturnType<NonNullable<typeof deps.yesimbot.model>["useChatGroup"]>;
+    let cachedGroupName: string | undefined;
     let model: SummaryModel | undefined;
     if (config.modelGroup)
         model = async (messages, signal, attribution) => {
-            const group = deps.yesimbot.model?.useChatGroup(config.modelGroup);
+            const currentModels = deps.yesimbot.model;
+            if (cachedModelService !== currentModels || cachedGroupName !== config.modelGroup || !cachedGroup) {
+                cachedModelService = currentModels;
+                cachedGroupName = config.modelGroup;
+                cachedGroup = currentModels?.useChatGroup(config.modelGroup);
+            }
+            const group = cachedGroup;
             if (!group) throw new Error("总结模型组不存在");
             const request = () =>
                 group.chat({

@@ -60,6 +60,13 @@ async function fixture(platform: string) {
     });
     await ctx.start();
     onTestFinished(() => ctx.stop());
+    tool.config.destinationGrants = [
+        { sourceChannelId: "7", sourceGuildId: "-100001", channelId: "7", guildId: "-100002", direct: false },
+        { sourceChannelId: "channel", sourceGuildId: "guild", channelId: "9", guildId: "-100002", direct: false },
+        { sourceChannelId: "channel", sourceGuildId: "guild", channelId: "other", direct: false },
+        { sourceChannelId: "channel", sourceGuildId: "guild", channelId: "native-thread", guildId: "server", direct: false },
+        { sourceChannelId: "channel", sourceGuildId: "guild", channelId: `${platform}-dm-user`, direct: true },
+    ].map((grant) => ({ sourcePlatform: platform, sourceSelfId: "bot", sourceDirect: false, platform, selfId: "bot", ...grant }));
     return { bot, session, tool, requests, receipts };
 }
 

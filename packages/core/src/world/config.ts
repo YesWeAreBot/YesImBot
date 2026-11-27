@@ -44,6 +44,7 @@ export interface HistoryConfig {
 
     /* === 清理 === */
     logLengthLimit?: number;
+    allowGlobalRetention?: boolean;
     dataRetentionDays: number;
     cleanupIntervalSec: number;
 }
@@ -90,6 +91,7 @@ export const HistoryConfigSchema: Schema<HistoryConfig> = Schema.intersect([
     }).description("历史记录与上下文"),
     Schema.object({
         logLengthLimit: Schema.number().default(100).description("Agent 内部日志的最大长度"),
+        allowGlobalRetention: Schema.boolean().default(false).description("明确授权全库过期删除；仅限独占数据库或所有实例统一保留策略，默认关闭"),
         dataRetentionDays: Schema.number().default(30).description("历史数据在被永久删除前的最大保留天数"),
         cleanupIntervalSec: Schema.number().default(1800).description("后台清理任务的执行频率（秒）"),
     })

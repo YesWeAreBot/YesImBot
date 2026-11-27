@@ -176,7 +176,20 @@ export class AssetService extends YesImBotService<Config> {
         signal?.throwIfAborted();
         // A cancellable writer only owns freshly generated IDs for rollback.
         if (signal && options.id !== undefined) throw new Error("Asset create options.signal cannot be combined with options.id");
-        const { data, type } = await this._getSourceBuffer(source);
+        const { data, type, filename } = await this._getSourceBuffer(source);
+        const providedName = metadata.filename ?? filename;
+        if (typeof providedName === "string") {
+            const cleanName = providedName
+                .split(String.fromCharCode(92))
+                .pop()!
+                .split("/")
+                .pop()!
+                .split("")
+                .filter((c) => c.charCodeAt(0) >= 32 && c.charCodeAt(0) !== 127)
+                .join("")
+                .slice(0, 255);
+            metadata = { ...metadata, filename: cleanName || undefined };
+        }
         signal?.throwIfAborted();
         if (!data || data.length === 0) throw new Error("资源内容为空");
         const hash = createHash("sha256").update(data).digest("hex");
@@ -409,6 +422,9 @@ export class AssetService extends YesImBotService<Config> {
         const originalUrl = element.attrs.src || element.attrs.url || element.attrs.file;
         const filename = element.attrs.filename || element.attrs.name || element.attrs.fileName;
         if (!originalUrl) return element;
+        if (!/^(https?:|data:|internal:)/i.test(String(originalUrl))) {
+            return h("text", { content: "[已拒绝不可信的本地媒体来源]" });
+        }
         // Adapters may attach their own file IDs alongside a source URL.
         if (element.attrs.id && (await this.getInfo(element.attrs.id))) return element;
 
@@ -771,7 +787,13 @@ export class AssetService extends YesImBotService<Config> {
                 ctx.status = 200;
                 ctx.set("Content-Type", info.mime);
                 ctx.set("Content-Length", info.size.toString());
-                ctx.set("Cache-Control", "public, max-age=31536000, immutable"); // 长期缓存
+                ctx.set("Cache-Control", "private, no-store");
+                ctx.set("X-Content-Type-Options", "nosniff");
+                ctx.set("Content-Security-Policy", "sandbox; default-src 'none'; frame-ancestors 'none'");
+                if (!["image/png", "image/jpeg", "image/gif", "image/webp", "audio/mpeg", "audio/wav", "video/mp4"].includes(info.mime)) {
+                    ctx.set("Content-Type", "application/octet-stream");
+                    ctx.set("Content-Disposition", "attachment");
+                }
                 ctx.body = buffer;
             } catch (error) {
                 // 如果是文件找不到，返回404，否则可能为其他服务器错误，但为简单起见统一返回404

@@ -1,5 +1,5 @@
 import { createHash } from "crypto";
-import { mkdir, readdir, readFile, rename, rmdir, unlink, writeFile } from "fs/promises";
+import { mkdir, readdir, readFile, copyFile, rmdir, unlink, writeFile } from "fs/promises";
 import path from "path";
 import { pathToFileURL } from "url";
 
@@ -540,9 +540,11 @@ export class StickerService {
         // 目标文件路径
         const destPath = path.resolve(this.config.storagePath, `${fileHash}${extension}`);
 
-        // 移动文件到表情包目录
+        // 复制文件到表情包目录；不删除用户提供的源文件
         this.controller.signal.throwIfAborted();
-        await rename(filePath, destPath);
+        if (path.resolve(filePath) !== destPath) await copyFile(filePath, destPath);
+        // Keep the original even when database creation fails; an orphan copy is
+        // recoverable on retry, unlike a source moved before the commit.
 
         // 创建数据库记录
         const record: StickerRecord = {

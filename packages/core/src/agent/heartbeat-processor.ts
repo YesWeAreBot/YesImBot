@@ -7,9 +7,10 @@ import { Context, Schema, h, Logger, Session } from "koishi";
 import { v4 as uuidv4 } from "uuid";
 
 import { assertReplyTurn, guardReplySession, isReplyTurnCancelled, replyTurnSignal, withReplyTurnGuard } from "../agent/reply-turn";
-import { Properties, ToolSchema, ToolService } from "../extension";
+import { ToolSchema, ToolService } from "../extension";
 import { isReadOnlyTool } from "../extension/helpers";
 import { toolJSONSchema } from "../extension/json-schema";
+import { processParams } from "../extension/parameter-view";
 import type { LoggerService } from "../logger";
 import { withConversationLog } from "../logger/conversation";
 import { isConversationReportEnabled, recordConversationReport } from "../logger/conversation-report";
@@ -1078,26 +1079,6 @@ export class HeartbeatProcessor {
 function _toString(obj: any) {
     if (typeof obj === "string") return obj;
     return JSON.stringify(obj);
-}
-
-function processParams(params: Properties, indent = ""): any[] {
-    return Object.entries(params).map(([key, param]) => {
-        const processedParam: any = { ...param, key, indent };
-        if (param.properties) {
-            processedParam.properties = processParams(param.properties, indent + "    ");
-        }
-        if (param.items?.properties) {
-            processedParam.items = [
-                {
-                    ...param.items,
-                    key: "item",
-                    indent: indent + "    ",
-                    properties: processParams(param.items.properties, indent + "        "),
-                },
-            ];
-        }
-        return processedParam;
-    });
 }
 
 function prepareDataForTemplate(tools: ToolSchema[]) {

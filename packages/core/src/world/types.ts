@@ -131,6 +131,7 @@ export interface AgentObservationLog {
     function: string;
     status: "success" | "failed" | string;
     result?: any;
+    metadata?: Record<string, unknown>;
     error?: any;
     /** Administrator recall input; consumption is acknowledged by its request snapshot. */
     manualRecall?: true;
@@ -266,6 +267,7 @@ export interface ContextualAgentObservation {
     function: string;
     status: "success" | "failed" | string;
     result?: any;
+    metadata?: Record<string, unknown>;
     manualRecall?: true;
     is_new?: boolean;
 }

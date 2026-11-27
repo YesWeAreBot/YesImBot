@@ -25,7 +25,7 @@ const SearchConfigSchema: Schema<SearchConfig> = Schema.object({
     endpoint: Schema.string().default("https://search.yesimbot.chat/search").role("link").description("搜索服务的 API Endpoint"),
     limit: Schema.number().default(5).description("默认搜索结果数量"),
     sources: Schema.array(Schema.string()).default(["baidu", "github", "bing", "presearch"]).role("table").description("默认搜索源"),
-    format: Schema.union(["json", "html"]).default("json").description("默认搜索结果格式"),
+    format: Schema.union(["json", "html"]).default("json").hidden().description("旧格式字段已废弃；请求统一使用 JSON"),
     customUA: Schema.string().default("YesImBot/1.0.0 (Web Fetcher Tool)").description("自定义User-Agent字符串，用于网页请求"),
     usePuppeteer: Schema.boolean().default(false).description("是否使用无头浏览器获取动态网页(需要安装puppeteer服务)"),
     httpTimeout: Schema.number().default(10000).description("HTTP请求超时时间(毫秒)"),
@@ -224,7 +224,12 @@ export default class SearchExtension {
                     timeout: this.config.httpTimeout,
                     responseType: "text",
                 });
-                // 使用 setContent 将静态HTML加载到Puppeteer中进行解析
+                await page.setJavaScriptEnabled(false);
+                await page.setRequestInterception(true);
+                page.on("request", (request) => {
+                    void request.abort().catch(() => {});
+                });
+                // Parse static markup with scripts and all subresource requests disabled.
                 await page.setContent(html, {
                     waitUntil: "domcontentloaded",
                     timeout: this.config.puppeteerTimeout,
@@ -336,9 +341,12 @@ export default class SearchExtension {
         try {
             const endpoint = this.config.endpoint;
             const engines = this.config.sources.join(",");
-            const format = this.config.format;
+            const format = "json"; // Legacy HTML configuration is migrated to the supported JSON contract.
             const limit = args.limit ?? this.config.limit;
-            const searchUrl = `${endpoint}?q=${encodeURIComponent(query)}&engines=${engines}&format=${format}&limit=${limit}`;
+            const searchURL = new URL(endpoint);
+            searchURL.hash = "";
+            for (const [key, value] of Object.entries({ q: query, engines, format, limit: String(limit) })) searchURL.searchParams.set(key, value);
+            const searchUrl = searchURL.toString();
 
             this.logger.debug("请求搜索服务");
 

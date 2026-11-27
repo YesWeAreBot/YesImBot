@@ -95,6 +95,8 @@ export interface ToolDefinition<TParams = any> {
     name: string;
     description: string;
     parameters: Schema<TParams>;
+    /** Original schema supplied by validated bridges such as MCP. */
+    parametersJSONSchema?: Record<string, any>;
     isSupported?: (session: Session) => boolean;
     /** False or an explanatory string hides/rejects this tool for the request. */
     isAvailable?: (context?: ToolExecutionContext) => boolean | string;

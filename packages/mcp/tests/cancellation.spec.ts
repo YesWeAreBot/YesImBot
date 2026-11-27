@@ -43,7 +43,7 @@ it("removes turn listeners after a successful remote response", async () => {
     const turn = new AbortController();
     const add = vi.spyOn(turn.signal, "addEventListener");
     const remove = vi.spyOn(turn.signal, "removeEventListener");
-    expect(await withReplyTurn(() => true, execute, turn.signal)).toMatchObject({ status: "success", result: "done" });
+    expect(await withReplyTurn(() => true, execute, turn.signal)).toMatchObject({ status: "success", result: { content: [{ type: "text", text: "done" }] } });
     expect(add).toHaveBeenCalled();
     expect(remove.mock.calls.some(([event, listener]) => event === "abort" && listener === add.mock.calls[0][1])).toBe(true);
 });

@@ -409,6 +409,18 @@ for (const mode of ["search", "static", "dynamic"] as const) {
                 setUserAgent: async () => {},
                 setViewport: async () => {},
                 setDefaultNavigationTimeout: async () => {},
+                setJavaScriptEnabled: async (enabled: boolean) => {
+                    expect(enabled).toBe(false);
+                },
+                setRequestInterception: async (enabled: boolean) => {
+                    expect(enabled).toBe(true);
+                },
+                on: (event: string, handler: (request: any) => void) => {
+                    expect(event).toBe("request");
+                    const abort = vi.fn(async () => {});
+                    handler({ abort });
+                    expect(abort).toHaveBeenCalledOnce();
+                },
                 goto: async () => new Promise((resolve) => setTimeout(() => resolve({ ok: () => true }), 25000)),
                 setContent: async () => new Promise((resolve) => setTimeout(resolve, 25000)),
                 evaluate: async () => ({ title: "Page", content: "<p>Body</p>", textContent: "Body", links: [] }),

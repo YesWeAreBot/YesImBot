@@ -40,12 +40,14 @@ export interface Config {
     mcpServers: Record<string, Server>;
     uvSettings?: {
         autoDownload?: boolean;
+        sha256?: string;
         uvVersion?: string;
         pypiMirror: string;
         args?: string[];
     };
     bunSettings?: {
         autoDownload?: boolean;
+        sha256?: string;
         bunVersion?: string;
         args?: string[];
     };
@@ -73,13 +75,15 @@ export const Config: Schema<Config> = Schema.object({
         }).collapse(),
     ).description("📡 MCP 服务器配置列表"),
     uvSettings: Schema.object({
-        autoDownload: Schema.boolean().description("📥 自动下载并安装 UV").default(true),
+        autoDownload: Schema.boolean().description("📥 自动下载并安装 UV（须固定版本及 SHA-256）").default(false),
+        sha256: Schema.string().description("可信渠道提供的运行时归档 SHA-256；自动安装必填"),
         uvVersion: Schema.string().description("🏷️ UV 版本号 (如: 0.1.25, latest)").default("latest"),
         pypiMirror: Schema.string().description("🐍 PyPI 镜像源地址").default("https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"),
         args: Schema.array(Schema.string()).role("table").description("⚙️ UV 启动附加参数").default([]),
     }).description("🚀 UV 配置"),
     bunSettings: Schema.object({
-        autoDownload: Schema.boolean().description("📥 自动下载并安装 Bun").default(true),
+        autoDownload: Schema.boolean().description("📥 自动下载并安装 Bun（须固定版本及 SHA-256）").default(false),
+        sha256: Schema.string().description("可信渠道提供的运行时归档 SHA-256；自动安装必填"),
         bunVersion: Schema.string().description("🏷️ Bun 版本号 (如: 1.0.0, latest)").default("latest"),
         args: Schema.array(Schema.string()).role("table").description("⚙️ Bun 启动附加参数").default([]),
     }).description("🥖 Bun 运行时配置"),

@@ -7,6 +7,8 @@ import {} from "koishi-plugin-puppeteer";
 import { Extension, Failed, Infer, Success, Tool, withInnerThoughts } from "koishi-plugin-yesimbot";
 import type { BuiltinLanguage, BuiltinTheme, HighlighterCore } from "shiki";
 
+import { cssString, boundedPixels } from "./css-safety";
+
 // 使用 Logger 创建一个独立的日志记录器，便于区分插件日志
 const logger = new Logger("code2image");
 
@@ -312,8 +314,8 @@ export default class CodeToImage {
         const fontFaceStyles = Array.from(this.localFonts.entries())
             .map(
                 ([name, url]) => `@font-face {
-                    font-family: "${name}";
-                    src: url("file://${url}");
+                    font-family: "${cssString(name)}";
+                    src: url("${cssString(`file://${url}`)}");
                 }`,
             )
             .join("\n");
@@ -332,12 +334,12 @@ export default class CodeToImage {
             height: fit-content;
         }
         .container {
-            padding: ${padding}px;
+            padding: ${boundedPixels(padding, 0, 512)}px;
         }
         pre {
             margin: 0;
-            font-family: "${fontFamily}", monospace; /* 添加 monospace 作为备用 */
-            font-size: ${fontSize}px;
+            font-family: "${cssString(fontFamily)}", monospace; /* 添加 monospace 作为备用 */
+            font-size: ${boundedPixels(fontSize, 1, 256)}px;
             line-height: 1.6;
         }
     </style>

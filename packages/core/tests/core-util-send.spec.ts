@@ -37,6 +37,22 @@ function setup(send: (...args: any[]) => Promise<string[]> = async () => ["sent"
         channelId: "group",
         event: { channel: { id: "group" }, referrer: { source: "original" } },
     };
+    tool.config.destinationGrants = [
+        ["qq", "bot", "other", false],
+        ["onebot", "bot", "group", false],
+        ["qq", "second-bot", "group", false],
+        ["qq", "bot", "recipient", true],
+        ["qq", "bot", "private:recipient", true],
+    ].map(([platform, selfId, channelId, direct]) => ({
+        sourcePlatform: "qq",
+        sourceSelfId: "bot",
+        sourceChannelId: "group",
+        sourceDirect: false,
+        platform,
+        selfId,
+        channelId,
+        direct,
+    })) as any;
     return { tool, session, bot, ctx, events, dispose: () => disposers.forEach((callback) => callback()) };
 }
 
@@ -478,4 +494,23 @@ it("leaves split receipt content unknown when an adapter returns only IDs", asyn
     const f = setup(async () => ["text", "image"]);
     expect((await f.tool.sendMessage({ session: f.session, message: 'hello<img src="https://test.invalid/a.png"/>' } as any)).status).toBe("success");
     expect(f.events.map((event) => event[2].event.message.content)).toEqual(["", ""]);
+});
+
+it("requires an exact destination grant and rechecks it after media preparation", async () => {
+    let sends = 0;
+    const f = setup(async () => {
+        sends++;
+        return ["sent"];
+    });
+    const grants = f.tool.config.destinationGrants;
+    f.tool.config.destinationGrants = [];
+    expect((await f.tool.sendMessage({ session: f.session, target: "qq:other", message: "hello" } as any)).status).toBe("error");
+    expect(sends).toBe(0);
+    f.tool.config.destinationGrants = grants;
+    f.ctx.yesimbot.asset.encode = async (value: string) => {
+        f.tool.config.destinationGrants = [];
+        return value;
+    };
+    expect((await f.tool.sendMessage({ session: f.session, target: "qq:other", message: "hello" } as any)).status).toBe("error");
+    expect(sends).toBe(0);
 });
