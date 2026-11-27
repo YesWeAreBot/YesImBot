@@ -330,7 +330,11 @@ export class HeartbeatProcessor {
         const nativeTools = this.config.nativeToolCalling
             ? this.toolService.getAvailableTools(stimulus.session, undefined, "model").map((definition) => ({
                   type: "function",
-                  function: { name: definition.name, description: definition.description, parameters: toolJSONSchema(definition.parameters) },
+                  function: {
+                      name: definition.name,
+                      description: definition.description,
+                      parameters: definition.parametersJSONSchema ?? toolJSONSchema(definition.parameters),
+                  },
               }))
             : undefined;
         const estimateRendered = (rendered: Awaited<ReturnType<typeof render>>, messages: Message[], tools?: typeof nativeTools) => {
@@ -736,7 +740,11 @@ export class HeartbeatProcessor {
             .filter((definition) => definition.name !== NATIVE_SILENCE_TOOL);
         const tools: Tool[] = definitions.map((definition) => ({
             type: "function",
-            function: { name: definition.name, description: definition.description, parameters: toolJSONSchema(definition.parameters) },
+            function: {
+                name: definition.name,
+                description: definition.description,
+                parameters: definition.parametersJSONSchema ?? toolJSONSchema(definition.parameters),
+            },
             // SDK 阶段不执行任何真实工具，失败重试不会重放消息。
             execute: () => ({}),
         }));

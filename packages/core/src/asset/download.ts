@@ -1,7 +1,10 @@
 import { lookup } from "node:dns/promises";
-import { request as httpRequest } from "node:http";
+import { request as httpRequest, type IncomingMessage } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { BlockList, isIP } from "node:net";
+import { Transform, Writable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
 
 import { getMimeType } from "../shared/utils";
 import type { FileResponse } from "./types";
@@ -44,6 +47,51 @@ export async function readMediaStream(body: AsyncIterable<Uint8Array>, limit: nu
         if (size > limit) throw new Error("资源超过大小限制");
         chunks.push(Buffer.from(chunk));
     }
+    return Buffer.concat(chunks, size);
+}
+
+async function readMediaResponse(response: IncomingMessage, limit: number, signal: AbortSignal): Promise<Buffer> {
+    const declaredLength = response.headers["content-length"];
+    if (declaredLength && Number(declaredLength) > limit) throw new Error("资源超过大小限制");
+    const encoding = response.headers["content-encoding"];
+    const encodings = encoding === undefined ? [] : encoding.split(",").map((value) => value.trim().toLowerCase());
+    // Bound decoder depth as well as wire, intermediate and final byte counts.
+    if (encodings.length > 4 || encodings.some((value) => !["identity", "gzip", "deflate", "br"].includes(value))) {
+        throw new Error("不支持的资源内容编码");
+    }
+    const boundedStream = () => {
+        let size = 0;
+        return new Transform({
+            transform(chunk: Buffer, _encoding, callback) {
+                size += chunk.byteLength;
+                if (size > limit) callback(new Error("资源超过大小限制"));
+                else callback(null, chunk);
+            },
+        });
+    };
+    const stages: Transform[] = [boundedStream()];
+    // Content-Encoding lists the order of application; decode in reverse.
+    for (const value of encodings.reverse()) {
+        if (value === "identity") continue;
+        const decoder = value === "gzip" ? createGunzip() : value === "deflate" ? createInflate() : createBrotliDecompress();
+        stages.push(decoder, boundedStream());
+    }
+    const chunks: Buffer[] = [];
+    let size = 0;
+    await pipeline(
+        [
+            response,
+            ...stages,
+            new Writable({
+                write(chunk: Buffer, _encoding, callback) {
+                    chunks.push(Buffer.from(chunk));
+                    size += chunk.byteLength;
+                    callback();
+                },
+            }),
+        ],
+        { signal },
+    );
     return Buffer.concat(chunks, size);
 }
 
@@ -92,7 +140,7 @@ export async function downloadPublicMedia(input: string, limit: number, signal: 
                 continue;
             }
             if (status < 200 || status >= 300) throw new Error(`资源下载失败（HTTP ${status}）`);
-            const data = await readMediaStream(response, limit, response.headers["content-length"]);
+            const data = await readMediaResponse(response, limit, signal);
             const type = response.headers["content-type"]?.split(";")[0].trim().toLowerCase() || getMimeType(data);
             const filename = safeMediaFilename(
                 /(?:^|;)\s*filename\s*=\s*(?:"([^"]+)"|([^;]+))/i
