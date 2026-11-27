@@ -184,7 +184,7 @@ export default class RR3 {
                 }
                 const imageBuffer = Buffer.from(finalTask.image, "base64");
                 this.ensureActive();
-                const assetId = await this.assetService.create(imageBuffer, { filename: `rr3-${submission.task_id}.png` });
+                const assetId = await this.assetService.create(imageBuffer, { filename: `rr3-${submission.task_id}.png` }, { session: args.session });
                 this.ctx.logger.info(`图片资源创建成功, Asset ID: ${assetId}`);
                 return Success(assetId);
             } else {

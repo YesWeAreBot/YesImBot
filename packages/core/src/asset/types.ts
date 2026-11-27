@@ -1,3 +1,11 @@
+export interface AssetSession {
+    platform: string;
+    channelId?: string;
+    guildId?: string;
+    isDirect?: boolean;
+    bot: { selfId?: string; config: unknown };
+}
+
 /**
  * 数据库中存储的资源元数据模型
  */
@@ -19,7 +27,8 @@ export interface AssetMetadata {
     src?: string; // 原始 URL, 用于恢复
     summary?: string;
     width?: number; // 原始图片宽度
-    height?: number; // 原始图片高度
+    height?: number;
+    scope?: string; // 原始图片高度
 }
 
 /**
@@ -54,7 +63,7 @@ export interface StorageDriver {
 export interface ImageProcessingOptions {
     /** 是否对图片进行处理 */
     process?: boolean;
-    /** 目标格式，如 'webp' 或 'jpeg' */
+    /** @deprecated 处理成功的图片统一输出 JPEG。旧的 WebP 选项仅为源码兼容保留。 */
     format?: "webp" | "jpeg";
 }
 
@@ -62,6 +71,8 @@ export interface ImageProcessingOptions {
  * 读取资源时的选项
  */
 export interface ReadAssetOptions {
+    /** 限制模型和工具只能读取当前会话的媒体。 */
+    session?: AssetSession;
     /** 输出格式 */
     format?: "buffer" | "base64" | "data-url";
     /** 针对图片资源的特定处理选项 */

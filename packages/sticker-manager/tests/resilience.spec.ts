@@ -121,7 +121,7 @@ it("aborts a pending image import download on disposal", async () => {
         expect(signal?.aborted).toBe(true);
         await expect(pending).rejects.toThrow("停止");
         expect(f.records).toEqual([]);
-        expect(await readdir(f.storagePath)).toEqual(["temp", "urls.txt"]);
+        expect(await readdir(f.storagePath)).toEqual(["urls.txt"]);
     } finally {
         vi.unstubAllGlobals();
     }

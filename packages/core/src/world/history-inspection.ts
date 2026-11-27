@@ -281,7 +281,8 @@ async function contextLines(ctx: Context, options: InspectionOptions, deps?: His
             let omittedUntyped = 0;
             let omittedScope = 0;
             for (let offset = 0; ; offset += 500) {
-                const rows: any[] = await ctx.database.get(table as any, query, { fields, limit: 500, offset, sort: { id: "asc" } } as any);
+                const sort = table === TableName.Messages ? { platform: "asc", channelId: "asc", id: "asc" } : { id: "asc" };
+                const rows: any[] = await ctx.database.get(table as any, query, { fields, limit: 500, offset, sort } as any);
                 for (const row of rows) {
                     if (table === TableName.SystemEvents && ["bot", "mind", "global"].includes(row.eventScope)) {
                         omittedScope++;

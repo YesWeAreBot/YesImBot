@@ -236,12 +236,17 @@ describe("typed tool invocation", () => {
 
 function moderationFixture(overrides = {}) {
     const extension = Object.create(QManagerExtension.prototype) as QManagerExtension;
-    extension.ctx = { logger: { info() {}, error() {} } } as any;
+    extension.ctx = { filter: () => true, logger: { info() {}, error() {} } } as any;
+    extension.config = { policies: [{ platform: "test", selfId: "bot", guildId: "server", actions: ["ban", "kick"], userIds: ["admin"] }] };
     const bot = {
         muteGuildMember: vi.fn<(...args: any[]) => Promise<void>>(async () => {}),
         kickGuildMember: vi.fn<(...args: any[]) => Promise<void>>(async () => {}),
     };
-    return { extension, bot, session: { channelId: "text-channel", guildId: "server", selfId: "bot", bot, ...overrides } as any };
+    return {
+        extension,
+        bot,
+        session: { platform: "test", userId: "admin", channelId: "text-channel", guildId: "server", selfId: "bot", bot, ...overrides } as any,
+    };
 }
 describe("guild moderation targets", () => {
     it("defaults guild moderation to the current guild", async () => {
@@ -256,10 +261,10 @@ describe("guild moderation targets", () => {
         expect((await f.extension.kick({ session: f.session, user_id: "alice" } as any)).status).toBe("error");
         expect(f.bot.kickGuildMember).not.toHaveBeenCalled();
     });
-    it("retains explicit guild targeting", async () => {
+    it("rejects explicit cross-guild targeting", async () => {
         const f = moderationFixture();
         await f.extension.kick({ session: f.session, user_id: "alice", channel_id: "other-server" } as any);
-        expect(f.bot.kickGuildMember).toHaveBeenCalledWith("other-server", "alice");
+        expect(f.bot.kickGuildMember).not.toHaveBeenCalled();
     });
 });
 
@@ -398,4 +403,12 @@ it("validates conf paths and model references and masks credentials before displ
     expect(await run(ctx, "conf.set", 'providers[0].models [{"modelId":"old"},{"modelId":"another"}]')).toBe("设置成功");
     expect(await run(ctx, "conf.set", "providers[0].models[1].modelId 123")).toBe("设置成功");
     expect(live!.providers[0].models[1].modelId).toBe("123");
+});
+
+it("accepts exact JSON property names and keeps long IDs as strings in tool.invoke", async () => {
+    const { ctx, probe } = await invocationFixture(
+        Schema.object({ "x-key": Schema.string().required(), "a.b": Schema.number().required(), id: Schema.string().required() }),
+    );
+    await run(ctx, "tool.invoke", 'probe {"x-key":"ok","a.b":2,"id":"9223372036854775807"}');
+    expect(probe.execute).toHaveBeenCalledWith(expect.objectContaining({ "x-key": "ok", "a.b": 2, id: "9223372036854775807" }));
 });

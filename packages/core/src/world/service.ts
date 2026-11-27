@@ -75,6 +75,9 @@ export class WorldStateService extends YesImBotService<Config> {
     private muteWrites?: Promise<void>;
     private conversationState?: ConversationStateManager;
 
+    private readonly diarySessions = new Map<string, Session>();
+    private retentionConflictLogged = false;
+    private unregisterRetention?: () => void;
     private clearTimer: ReturnType<Context["setInterval"]> | null = null;
 
     constructor(ctx: Context, config: Config, deps: { logging: LoggerService; asset: AssetService; model: ModelService; memory?: MemoryService }) {
@@ -84,7 +87,15 @@ export class WorldStateService extends YesImBotService<Config> {
         // Initialize all managers
         this.l1_manager = new InteractionManager(ctx, config, deps.logging);
         this.l2_manager = new SemanticMemoryManager(ctx, config, deps.logging, deps.model);
-        this.l3_manager = new ArchivalMemoryManager(ctx, config, this.l1_manager, deps.logging, deps.model, this.l2_manager);
+        this.l3_manager = new ArchivalMemoryManager(ctx, config, this.l1_manager, deps.logging, deps.model, this.l2_manager, (target) => {
+            const session = this.diarySessions.get(JSON.stringify([target.platform, target.channelId]));
+            return (
+                !!session &&
+                this.ctx.bots.some((bot) => bot.platform === session.platform && bot.selfId === session.selfId && bot.ctx.scope === session.bot.ctx.scope) &&
+                this.ctx.filter(session) &&
+                this.isChannelAllowed(session)
+            );
+        });
         this.contextBuilder = new ContextBuilder(ctx, config, this.l1_manager, this.l2_manager, this.l3_manager, deps.logging);
         this.eventListenerManager = new EventListenerManager(ctx, this, config, deps.logging, deps.asset);
         this.oneBotHistory = new OneBotHistoryBackfill(ctx, config.onebotHistory, this, deps.asset, this.logger);
@@ -93,6 +104,20 @@ export class WorldStateService extends YesImBotService<Config> {
 
     public async start(): Promise<void> {
         this.registerModels();
+        const coordination = historyCoordinator(this.ctx.database);
+        coordination.retentionPolicies.set(this, () => this.config.dataRetentionDays);
+        this.unregisterRetention = () => {
+            coordination.retentionPolicies.delete(this);
+        };
+        try {
+            await this.startWorld();
+        } catch (error) {
+            this.unregisterRetention();
+            throw error;
+        }
+    }
+
+    private async startWorld(): Promise<void> {
         await this.migrateMessagePrimaryKey();
         for (const channel of await this.ctx.database.get(HISTORY_CHANNELS, {})) {
             if (channel.channelType) this.l2_manager.observeChannel({ platform: channel.platform, channelId: channel.channelId }, channel.channelType);
@@ -114,6 +139,8 @@ export class WorldStateService extends YesImBotService<Config> {
         this.conversationState?.dispose();
         this.oneBotHistory?.stop();
         this.eventListenerManager.stop();
+        this.diarySessions.clear();
+        this.unregisterRetention?.();
         const stoppingDiaries = this.l3_manager.stop();
         if (this.clearTimer) {
             this.clearTimer();
@@ -327,6 +354,9 @@ export class WorldStateService extends YesImBotService<Config> {
         if (!channelType || !session.platform || !session.channelId) return;
         const target = { platform: session.platform, channelId: conversationChannelId(session)! };
         this.l2_manager.observeChannel(target, channelType);
+        if (this.config.l3_memory?.enabled && this.ctx.filter(session) && this.isChannelAllowed(session)) {
+            this.diarySessions.set(JSON.stringify([target.platform, target.channelId]), session);
+        }
         await this.ctx.database.upsert(HISTORY_CHANNELS, [{ ...target, channelType }]);
     }
 
@@ -608,33 +638,47 @@ export class WorldStateService extends YesImBotService<Config> {
     }
 
     private scheduleClearTask() {
-        if (this.clearTimer) return; // 已经有定时任务在运行
+        const seconds = this.config.cleanupIntervalSec;
+        if (this.config.allowGlobalRetention !== true || this.clearTimer || !Number.isSafeInteger(seconds) || seconds <= 0 || seconds > 2147483) return;
 
         this.clearTimer = this.ctx.setInterval(() => {
             this.clear();
-        }, this.config.cleanupIntervalSec * 1000);
+        }, seconds * 1000);
 
         this.logger.info(`数据清理任务已启动，间隔 ${this.config.cleanupIntervalSec} 秒`);
     }
 
     private async clear() {
+        if (this.config.allowGlobalRetention !== true) return;
         try {
-            const expiresAt = Date.now() - this.config.dataRetentionDays * 24 * 60 * 60 * 1000;
-
-            // Retention shares the physical-database barrier with export, restore and clear.
-            await withHistoryBarrier(historyCoordinator(this.ctx.database), { type: "all" }, async () => {
-                this.l2_manager.pruneExpiredBuffers(expiresAt);
-                await pruneConversationStates(this.ctx.database, new Date(expiresAt));
-                // Each retention deletion is idempotent and retried next run on
-                // failure. A shared SQLite transaction could roll back unrelated
-                // ordinary writes accepted while cleanup awaits its next deletion.
-                await this.ctx.database.remove(TableName.Messages, { timestamp: { $lt: new Date(expiresAt) } });
-                await this.ctx.database.remove(TableName.SystemEvents, { timestamp: { $lt: new Date(expiresAt) } });
-                await this.ctx.database.remove(TableName.L2Chunks, { endTimestamp: { $lt: new Date(expiresAt) } });
-
+            const days = this.config.dataRetentionDays;
+            if (!Number.isSafeInteger(days) || days < 0) return;
+            const coordination = historyCoordinator(this.ctx.database);
+            const cleared = await withHistoryBarrier(coordination, { type: "all" }, async () => {
+                const canPrune = () => {
+                    const conflict = [...coordination.retentionPolicies.values()].some((policy) => policy() !== days);
+                    if (conflict && !this.retentionConflictLogged)
+                        this.logger.warn("共用历史数据库的实例保留天数不一致，已暂停自动清理。请统一配置，或使用独立数据库。");
+                    this.retentionConflictLogged = conflict;
+                    return !conflict;
+                };
+                if (!canPrune()) return false;
+                const expiresAt = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+                // Recheck before each deletion. A second instance may register
+                // its policy while a previous database operation is in flight.
+                await this.ctx.database.remove(TableName.Messages, { timestamp: { $lt: expiresAt } });
+                this.l2_manager.pruneExpiredBuffers(expiresAt.getTime());
+                if (!canPrune()) return false;
+                await pruneConversationStates(this.ctx.database, expiresAt);
+                if (!canPrune()) return false;
+                await this.ctx.database.remove(TableName.SystemEvents, { timestamp: { $lt: expiresAt } });
+                if (!canPrune()) return false;
+                await this.ctx.database.remove(TableName.L2Chunks, { endTimestamp: { $lt: expiresAt } });
+                if (!canPrune()) return false;
                 await this.l1_manager.pruneOldData();
+                return true;
             });
-            this.logger.info("历史数据清理完成");
+            if (cleared) this.logger.info("历史数据清理完成");
         } catch (error) {
             this.logger.error("历史数据清理失败", error);
         }

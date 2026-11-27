@@ -97,6 +97,46 @@ export default class CoreUtilExtension {
         try {
             const { bot, channelId, channel, userId, guild } = await this.determineTarget(session, target, self_id, target_type, guild_id);
 
+            const binding = () => JSON.stringify([session.platform, session.selfId, session.channelId, session.guildId, session.isDirect, session.userId]);
+            const originalBinding = binding();
+            const authorize = () => {
+                assertReplyTurn();
+                if (
+                    this.disposed ||
+                    binding() !== originalBinding ||
+                    (typeof this.ctx.filter === "function" && !this.ctx.filter(session)) ||
+                    (this.ctx.yesimbot.world?.isChannelAllowed && !this.ctx.yesimbot.world.isChannelAllowed(session))
+                )
+                    throw new Error("发送会话或权限已失效");
+                const direct =
+                    channel?.type === Universal.Channel.Type.DIRECT ||
+                    (bot.platform === session.platform && bot.selfId === session.selfId && channelId === session.channelId && !!session.isDirect);
+                const same =
+                    bot.platform === session.platform &&
+                    bot.selfId === session.selfId &&
+                    channelId === session.channelId &&
+                    direct === !!session.isDirect &&
+                    (!guild?.id || guild.id === session.guildId);
+                if (
+                    !same &&
+                    !this.config.destinationGrants?.some(
+                        (grant) =>
+                            grant.sourcePlatform === session.platform &&
+                            grant.sourceSelfId === session.selfId &&
+                            grant.sourceChannelId === session.channelId &&
+                            grant.sourceDirect === !!session.isDirect &&
+                            (grant.sourceGuildId ?? "") === (session.guildId ?? "") &&
+                            grant.platform === bot.platform &&
+                            grant.selfId === bot.selfId &&
+                            grant.channelId === channelId &&
+                            grant.direct === direct &&
+                            (grant.guildId ?? "") === (guild?.id ?? ""),
+                    )
+                ) {
+                    throw new Error("跨会话或跨 Bot 发送未获管理员授权");
+                }
+            };
+            authorize();
             destination = formatLogTarget({
                 platform: bot.platform,
                 selfId: bot.selfId,
@@ -104,7 +144,7 @@ export default class CoreUtilExtension {
                 guildId: guild?.id ?? (bot === session.bot && channelId === session.channelId ? session.guildId : undefined),
                 isDirect: channel?.type === Universal.Channel.Type.DIRECT || (bot === session.bot && channelId === session.channelId && session.isDirect),
             });
-            await this.sendMessagesWithHumanLikeDelay(messages, bot, channelId, session, channel, userId, guild, delivery, publish);
+            await this.sendMessagesWithHumanLikeDelay(messages, bot, channelId, session, channel, userId, guild, delivery, publish, authorize);
 
             publish();
             this.logger.info(`发送目标 ${destination} · 适配器已确认 ${delivery.messageIds.length} 条消息`);
@@ -166,7 +206,7 @@ export default class CoreUtilExtension {
         }
 
         args.toolContext?.reportProgress?.("正在读取图片资源");
-        const imageInfo = await this.assetService.getInfo(image_id).catch((error) => {
+        const imageInfo = await this.assetService.getInfo(image_id, session).catch((error) => {
             assertReplyTurn();
             throw new AppError(ErrorDefinitions.RESOURCE.IMAGE_READ_FAILED, { cause: error, context: { imageId: image_id, stage: "metadata" } });
         });
@@ -179,7 +219,7 @@ export default class CoreUtilExtension {
             return Failed(`资源不是图片`);
         }
 
-        const image = await this.assetService.read(image_id, { format: "data-url", image: { process: true, format: "jpeg" } }).catch((error) => {
+        const image = await this.assetService.read(image_id, { session, format: "data-url", image: { process: true, format: "jpeg" } }).catch((error) => {
             assertReplyTurn();
             throw new AppError(ErrorDefinitions.RESOURCE.IMAGE_READ_FAILED, {
                 cause: error,
@@ -394,6 +434,7 @@ export default class CoreUtilExtension {
         guild?: Universal.Guild,
         delivery = { messageIds: [] as string[], sentMessages: 0, totalMessages: messages.length, inFlight: false, deliveryUnknown: false },
         publish: () => void = () => {},
+        authorize: () => void = () => {},
     ): Promise<void> {
         const sameSession =
             bot === originalSession.bot &&
@@ -425,7 +466,7 @@ export default class CoreUtilExtension {
                 sameSession && bot.platform === "slack" && originalSession.quote?.id && !h.select(h.parse(msg), "quote").length
                     ? h("quote", { id: originalSession.quote.id }).toString() + msg
                     : msg;
-            const content = await this.assetService.encode(quoted);
+            const content = await this.assetService.encode(quoted, originalSession);
 
             this.logger.debug(`发送第 ${i + 1}/${messages.length} 段 · 等待 ${Math.round(delay)}ms`);
 
@@ -440,6 +481,7 @@ export default class CoreUtilExtension {
                 isDirect: channel?.type === Universal.Channel.Type.DIRECT || (sameSession && originalSession.isDirect),
             });
 
+            authorize();
             // --- 发送消息 ---
             let messageIds: string[];
             let receipts: ConfirmedMessage[] | undefined;

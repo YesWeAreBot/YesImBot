@@ -1,0 +1,27 @@
+name: Review dependency advisories
+
+on:
+  pull_request:
+    paths:
+      - "yarn.lock"
+      - "**/package.json"
+      - ".github/workflows/dependency-audit.yml"
+  schedule:
+    - cron: "21 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: corepack enable
+      - run: yarn install --immutable --mode=skip-build
+      - run: yarn npm audit --all --recursive --severity high

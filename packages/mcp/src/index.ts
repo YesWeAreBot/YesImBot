@@ -60,13 +60,21 @@ export async function apply(ctx: Context, config: Config) {
             // 安装二进制文件
             if (config.uvSettings?.autoDownload) {
                 logger.info("开始安装 UV...");
-                installedUVPath = await binaryInstaller.installUV(config.uvSettings.uvVersion || "latest", config.globalSettings?.githubMirror);
+                installedUVPath = await binaryInstaller.installUV(
+                    config.uvSettings.uvVersion || "latest",
+                    config.globalSettings?.githubMirror,
+                    config.uvSettings.sha256,
+                );
             }
             if (disposed) return;
 
             if (config.bunSettings?.autoDownload) {
                 logger.info("开始安装 Bun...");
-                installedBunPath = await binaryInstaller.installBun(config.bunSettings.bunVersion || "latest", config.globalSettings?.githubMirror);
+                installedBunPath = await binaryInstaller.installBun(
+                    config.bunSettings.bunVersion || "latest",
+                    config.globalSettings?.githubMirror,
+                    config.bunSettings.sha256,
+                );
             }
             if (disposed) return;
 

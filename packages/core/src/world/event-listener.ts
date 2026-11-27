@@ -358,7 +358,7 @@ export class EventListenerManager {
         });
         await this.service.observeChannel(session);
         /* prettier-ignore */
-        this.logger.info(`用户消息 | ${session.author.name} | 频道: ${conversationCid(session)} | 内容: ${truncate(session.content ?? "").replace(/\n/g, " ")}`);
+        this.logger.info(`用户消息 | 字符数: ${(session.content ?? "").length}`);
 
         if (session.guildId) {
             await this.updateMemberInfo(session);

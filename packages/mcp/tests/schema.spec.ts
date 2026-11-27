@@ -45,19 +45,19 @@ async function registeredParameters(t: TestContext, property: { type: "integer" 
 it("validates MCP integer parameters and their inclusive bounds after registration", async (t) => {
     const parameters = await registeredParameters(t, { type: "integer", minimum: 1, maximum: 3 });
     for (const value of [1, 2, 3]) expect(parameters({ value })).toEqual({ value });
-    for (const value of ["2", 1.5, 0, 4]) expect(() => parameters({ value })).toThrow(/expected number/);
+    for (const value of ["2", 1.5, 0, 4]) expect(() => parameters({ value })).toThrow(/JSON Schema/);
 });
 
 it("keeps integer values valid when MCP integer bounds are fractional", async (t) => {
     const parameters = await registeredParameters(t, { type: "integer", minimum: -1.5, maximum: 3.5 });
     for (const value of [-1, 0, 3]) expect(parameters({ value })).toEqual({ value });
-    for (const value of [-2, -1.5, 0.5, 3.5, 4]) expect(() => parameters({ value })).toThrow(/expected number/);
+    for (const value of [-2, -1.5, 0.5, 3.5, 4]) expect(() => parameters({ value })).toThrow(/JSON Schema/);
 });
 
 it("preserves fractional MCP number parameters and their inclusive bounds", async (t) => {
     const parameters = await registeredParameters(t, { type: "number", minimum: 0.5, maximum: 2.5 });
     for (const value of [0.5, 1.25, 2.5]) expect(parameters({ value })).toEqual({ value });
-    for (const value of ["1.25", 0.25, 2.75]) expect(() => parameters({ value })).toThrow(/expected number/);
+    for (const value of ["1.25", 0.25, 2.75]) expect(() => parameters({ value })).toThrow(/JSON Schema/);
 });
 
 it("keeps internal tool execution context out of real MCP protocol calls", async (t) => {

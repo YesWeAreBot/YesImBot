@@ -29,7 +29,7 @@ export const AssetServiceConfigSchema: Schema<AssetServiceConfig> = Schema.objec
 
     driver: Schema.union(["local"]).default("local").description("存储驱动类型"),
 
-    assetEndpoint: Schema.string().role("link").description("公开访问端点 URL (可选)"),
+    assetEndpoint: Schema.string().role("link").description("资源下载端点 URL（可选，通过 5 分钟签名链接访问）"),
 
     maxFileSize: Schema.number().min(1).default(100).description("允许存储的单个文件的最大大小（MB）"),
     downloadTimeout: Schema.number().min(1000).default(30000).description("下载外部资源的超时时间（毫秒）"),

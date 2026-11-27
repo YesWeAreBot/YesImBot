@@ -257,6 +257,7 @@ it("retention removes unread working states whose sources expire while preservin
     const restarted = f.restart();
     Object.assign(restarted, { logger, l1_manager: { pruneOldData: async () => {} } });
     restarted.config.dataRetentionDays = 30;
+    restarted.config.allowGlobalRetention = true;
     await restarted.clear();
     expect(await f.app.database.get("worldstate.conversation_state", {})).toHaveLength(1);
     await f.add(source("a"));
@@ -416,3 +417,25 @@ it("expires follow-up-only projections without renewing their fixed deadline", a
         vi.restoreAllMocks();
     }
 });
+
+for (const allowGlobalRetention of [undefined, false]) {
+    it(`leaves shared historical records untouched unless global retention is explicitly authorized (${allowGlobalRetention})`, async () => {
+        const f = await fixture();
+        await f.add(source("a"));
+        await f.world.updateConversationState(f.session(), update);
+        Object.assign(f.world, {
+            logger,
+            l1_manager: {
+                pruneOldData: async () => {
+                    throw new Error("must not prune");
+                },
+            },
+        });
+        f.world.config.dataRetentionDays = 0;
+        f.world.config.allowGlobalRetention = allowGlobalRetention;
+        await f.world.clear();
+        expect(await f.app.database.get(TableName.Messages, {})).toHaveLength(1);
+        expect(await f.app.database.get("worldstate.conversation_state", {})).toHaveLength(1);
+        expect((await f.world.getConversationState(f.session())).state?.topic).toBe(update.topic);
+    });
+}

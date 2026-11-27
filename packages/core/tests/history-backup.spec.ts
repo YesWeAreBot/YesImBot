@@ -420,7 +420,7 @@ it("coordinates retention deletion with an active backup snapshot", async () => 
     await entered.promise;
     const cleaning = (WorldStateService.prototype as any).clear.call({
         ctx: f.ctx,
-        config: { dataRetentionDays: 0 },
+        config: { dataRetentionDays: 0, allowGlobalRetention: true },
         logger: log,
         l2_manager: f.world.l2_manager,
         l1_manager: { pruneOldData: async () => {} },

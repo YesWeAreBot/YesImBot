@@ -52,7 +52,33 @@ async function fixture(family: "legacy" | "current" | "crack") {
     const bot = new QQBot();
     const logger = { debug() {}, info() {}, warn() {}, error() {} };
     ctx.set("yesimbot", { logging: { getLogger: () => logger }, asset: { encode: async (text: string) => text } } as any);
-    const tool = new CoreUtilExtension(ctx, { typing: { baseDelay: 0, minDelay: 0, maxDelay: 0, charPerSecond: 5 } } as any);
+    const tool = new CoreUtilExtension(ctx, {
+        typing: { baseDelay: 0, minDelay: 0, maxDelay: 0, charPerSecond: 5 },
+        destinationGrants: [
+            {
+                sourcePlatform: "qq",
+                sourceSelfId: "bot",
+                sourceChannelId: "origin",
+                sourceGuildId: "origin",
+                sourceDirect: false,
+                platform: "qq",
+                selfId: "bot",
+                channelId: family === "crack" ? "private:recipient" : "recipient",
+                direct: true,
+            },
+            {
+                sourcePlatform: "qq",
+                sourceSelfId: "bot",
+                sourceChannelId: "origin",
+                sourceGuildId: "origin",
+                sourceDirect: true,
+                platform: "qq",
+                selfId: "bot",
+                channelId: "other-group",
+                direct: false,
+            },
+        ],
+    } as any);
     const session = bot.session({
         type: "message",
         channel: { id: "origin", type: Universal.Channel.Type.TEXT },

@@ -45,7 +45,7 @@ async function fixture(embed: (content: string) => Promise<{ embedding: number[]
         { logging: { getLogger: () => log }, model: { useEmbeddingGroup: () => ({ getModels: () => [{ embed }] }) } },
         { database: app.database, baseDir: root, scope: { key: "audit" } },
     );
-    const config: any = { l2_memory: { enabled: true, messagesPerChunk: 2 }, dataRetentionDays: 1 };
+    const config: any = { l2_memory: { enabled: true, messagesPerChunk: 2 }, dataRetentionDays: 1, allowGlobalRetention: true };
     const l1_manager = new InteractionManager(ctx, config, ctx.yesimbot.logging);
     const l2_manager = new SemanticMemoryManager(ctx, config, ctx.yesimbot.logging, ctx.yesimbot.model);
     l2_manager.start();

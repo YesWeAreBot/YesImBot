@@ -111,3 +111,17 @@ it("rebuilds a truncated converted cache file from the original image", async ()
     await writeFile(path.join(processed, cacheFile), Buffer.from([0xff, 0xd8, 0xff, 0xe0]));
     await expect(assets.read(id, options)).resolves.toBe(before);
 });
+
+it("persists safe source filenames and preserves explicit metadata precedence", async () => {
+    const { assets } = await fixture();
+    const first = await assets.create({ data: Buffer.from("a"), type: "text/plain", filename: "../../secret/report.txt" });
+    expect((await assets.getInfo(first))?.metadata.filename).toBe("report.txt");
+    const second = await assets.create({ data: Buffer.from("b"), type: "text/plain", filename: "source.txt" }, { filename: "chosen.txt" });
+    expect((await assets.getInfo(second))?.metadata.filename).toBe("chosen.txt");
+});
+it("rejects a local-file URL from an incoming media element before reading it", async () => {
+    const { assets } = await fixture();
+    const result = await (assets as any)._processTransformElement(h("img", { src: "file:///etc/hosts" }), false, {});
+    expect(String(result)).toContain("已拒绝");
+    expect(String(result)).not.toContain("localhost");
+});

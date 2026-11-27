@@ -323,7 +323,7 @@ it("fills an image slot with a valid lower-priority candidate when the first ass
     f.photo.elements = h.parse('<img id="missing"/><img id="pixels"/>');
     f.asset.getInfo.mockResolvedValueOnce(undefined);
     const { messages } = await (f.processor as any)._prepareLlmRequest(f.stimulus("photo"));
-    expect(f.asset.getInfo.mock.calls).toEqual([["missing"], ["pixels"]]);
+    expect(f.asset.getInfo.mock.calls.map(([id]) => id)).toEqual(["missing", "pixels"]);
     expect(f.builder.getAttachedImageIds(messages)).toEqual(["pixels"]);
 });
 

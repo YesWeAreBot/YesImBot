@@ -276,14 +276,14 @@ function retentionService(db) {
     const service = Object.create(WorldStateService.prototype);
     Object.assign(service, {
         ctx: { database: db },
-        config: { dataRetentionDays: 1 },
+        config: { dataRetentionDays: 1, allowGlobalRetention: true },
         l2_manager: { pruneExpiredBuffers() {} },
         l1_manager: {
             pruneOldData: async () => {
                 pruned++;
             },
         },
-        logger: { info() {}, error: (...args) => errors.push(args) },
+        logger: { debug() {}, info() {}, error: (...args) => errors.push(args) },
     });
     return { service, errors, pruned: () => pruned };
 }

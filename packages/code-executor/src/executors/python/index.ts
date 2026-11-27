@@ -1,6 +1,6 @@
 import { realpath, stat } from "node:fs/promises";
 
-import { Context, Logger, Schema } from "koishi";
+import { Context, Logger, Schema, type Session } from "koishi";
 import { AssetService, replyTurnSignal, ToolDefinition, withInnerThoughts } from "koishi-plugin-yesimbot";
 
 import { SharedConfig } from "../../config";
@@ -195,10 +195,10 @@ export class PythonExecutor implements CodeExecutor {
                 this.config.customToolDescription ||
                 `Executes Python in a fresh Linux OS sandbox without network access. Installed libraries depend on the administrator-provided root filesystem. Use print() or a final expression for output. Files in /workspace are temporary. Use __create_artifact__(fileName, text_or_bytes, type=None) to return files. Matplotlib figures are returned automatically.`,
             parameters: withInnerThoughts({ code: Schema.string().required().description("The Python code to execute.") }),
-            execute: async ({ code }) => this.execute(code),
+            execute: async ({ code, session }) => this.execute(code, session),
         };
     }
-    async execute(code: string): Promise<CodeExecutionResult> {
+    async execute(code: string, session?: Session): Promise<CodeExecutionResult> {
         if (!this.isReady) return { status: "error", error: { name: "EnvironmentError", message: this.initializationError } };
         const deadline = new AbortController();
         const turn = replyTurnSignal();
@@ -230,7 +230,11 @@ export class PythonExecutor implements CodeExecutor {
                         typeof artifact.content !== "string"
                     )
                         throw new Error("Invalid sandbox artifact");
-                    const assetId = await this.assetService.create(Buffer.from(artifact.content, "base64"), { filename: artifact.fileName }, { signal });
+                    const assetId = await this.assetService.create(
+                        Buffer.from(artifact.content, "base64"),
+                        { filename: artifact.fileName },
+                        { signal, session },
+                    );
                     signal.throwIfAborted();
                     artifacts.push({ assetId, fileName: artifact.fileName });
                 }

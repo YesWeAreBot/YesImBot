@@ -10,10 +10,13 @@ import { assertReplyTurn, formatDate, isEmpty } from "../../shared";
 import { conversationChannelId } from "../../shared/utils/conversation-scope";
 import { oneBotFaceElement, recoverNativeFaces } from "../../world/onebot-faces";
 import { ForwardLayerCache, forwardMessageList } from "../forward-layer";
+import { assertCurrentMessage, assertGroupAction, groupPoliciesSchema, GroupPolicy } from "./group-policy";
 
-interface InteractionsConfig {}
+interface InteractionsConfig {
+    policies?: GroupPolicy[];
+}
 
-const InteractionsConfigSchema: Schema<InteractionsConfig> = Schema.object({});
+const InteractionsConfigSchema: Schema<InteractionsConfig> = Schema.object({ policies: groupPoliciesSchema });
 
 @Extension({
     name: "interactions",
@@ -77,6 +80,9 @@ export default class InteractionsExtension {
         if (!session) return Failed("session 不可用");
         if (isEmpty(message_id)) return Failed("message_id is required");
         try {
+            assertGroupAction(this.ctx, this.config.policies, session, "essence", session.guildId!);
+            await assertCurrentMessage(session, message_id);
+            assertGroupAction(this.ctx, this.config.policies, session, "essence", session.guildId!);
             await session.onebot!.setEssenceMsg(message_id);
             this.logger.info(`Bot[${session.selfId}]将消息 ${message_id} 设置为精华`);
             return Success();
@@ -99,6 +105,9 @@ export default class InteractionsExtension {
         if (!session) return Failed("session 不可用");
         if (isEmpty(message_id)) return Failed("message_id is required");
         try {
+            assertGroupAction(this.ctx, this.config.policies, session, "essence", session.guildId!);
+            await assertCurrentMessage(session, message_id);
+            assertGroupAction(this.ctx, this.config.policies, session, "essence", session.guildId!);
             const result = await session.onebot!.deleteEssenceMsg(message_id);
             this.logger.info(`Bot[${session.selfId}]将消息 ${message_id} 从精华中移除`);
             return Success();
@@ -140,6 +149,7 @@ export default class InteractionsExtension {
         const targetGuild = [guild_id, channel, session.guildId, session.isDirect ? undefined : session.channelId].find((id) => !isEmpty(id));
         if (!targetGuild) return Failed("当前会话没有群组，请明确指定 guild_id");
         try {
+            assertGroupAction(this.ctx, this.config.policies, session, "poke", targetGuild);
             const result = await session.onebot!._request!("group_poke", {
                 group_id: targetGuild,
                 user_id: Number(user_id),
@@ -226,6 +236,7 @@ export default class InteractionsExtension {
                     const content = selected.length
                         ? await formatForwardMessage(
                               this.ctx,
+                              session,
                               selected,
                               async () => {
                                   throw new Error("当前层不自动获取子包");
@@ -275,7 +286,7 @@ export default class InteractionsExtension {
                 return request;
             };
             const forwardMessages = await load(id);
-            const formattedResult = await formatForwardMessage(this.ctx, forwardMessageList(forwardMessages), load, new Set([id]));
+            const formattedResult = await formatForwardMessage(this.ctx, session, forwardMessageList(forwardMessages), load, new Set([id]));
 
             return Success(formattedResult);
         } catch (error) {
@@ -310,6 +321,7 @@ const MAX_FORWARD_LEVEL = 2;
 
 async function formatForwardMessage(
     ctx: Context,
+    session: import("koishi").Session,
     messages: unknown,
     load: (id: string) => Promise<unknown>,
     ancestors: Set<string>,
@@ -358,7 +370,7 @@ async function formatForwardMessage(
                         case "image": {
                             const src = element.attrs.url || element.attrs.file;
                             if (typeof src !== "string" || !src.trim()) throw new Error("转发消息的 image.url/file 缺失或无效");
-                            append(await ctx.yesimbot.asset.transform([h("img", { src })]));
+                            append(await ctx.yesimbot.asset.transform([h("img", { src })], { session }));
                             break;
                         }
                         case "at": {

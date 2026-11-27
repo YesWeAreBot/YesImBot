@@ -1,11 +1,11 @@
-import { createHash } from "crypto";
-import { readFileSync } from "fs";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "crypto";
+import { readFileSync, statSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
 import { GifUtil } from "@miaowfish/gifwrap";
 import { defaultFormats, Jimp } from "jimp";
-import { Context, Element, Logger, h, type Session } from "koishi";
+import { Context, Element, Logger, h } from "koishi";
 import { v4 as uuidv4 } from "uuid";
 
 import { Config } from "../config";
@@ -14,8 +14,10 @@ import { TableName } from "../shared/constants";
 import { AppError, ErrorDefinitions } from "../shared/errors";
 import { YesImBotService } from "../shared/service";
 import { formatSize, getMimeType, truncate } from "../shared/utils";
+import { downloadPublicMedia, readMediaStream, safeMediaFilename } from "./download";
 import { LocalStorageDriver } from "./drivers/local";
-import { AssetData, AssetInfo, AssetMetadata, FileResponse, ReadAssetOptions, StorageDriver } from "./types";
+import { assertImageBudget } from "./image-budget";
+import { AssetData, AssetInfo, AssetMetadata, AssetSession, FileResponse, ReadAssetOptions, StorageDriver } from "./types";
 
 const ELEMENT_TO_PROCESS = ["img", "image", "audio", "video", "file", "mface"];
 const decodableImages = new Set<string>(defaultFormats.map((format) => format().mime));
@@ -25,7 +27,12 @@ export function isImageDataUrl(value: unknown): value is string {
 }
 
 interface AssetTransformOptions {
-    session?: Pick<Session, "platform" | "bot">;
+    session?: AssetSession;
+}
+
+function assetScope(session?: AssetSession): string | undefined {
+    if (!session?.bot?.selfId || !session.channelId) return;
+    return JSON.stringify([session.platform, session.bot.selfId, session.isDirect ? "private" : "channel", session.channelId]);
 }
 
 type PreparedAsset = { id: string; persisted: Promise<string> };
@@ -77,6 +84,7 @@ export class AssetService extends YesImBotService<Config> {
     private cacheStorage!: StorageDriver;
 
     private assetEndpoint: string;
+    private readonly publicSigningKey = randomBytes(32);
     private readonly maxFileSizeBytes: number;
     private pendingAssets?: Map<string, PendingAsset>;
 
@@ -159,8 +167,13 @@ export class AssetService extends YesImBotService<Config> {
      * @param options - 内部选项，如预设的ID
      * @returns 资源的唯一 ID
      */
-    async create(source: string | Buffer | FileResponse, metadata: AssetMetadata = {}, options: { id?: string; signal?: AbortSignal } = {}): Promise<string> {
-        const prepared = await this._prepareAsset(source, metadata, options);
+    async create(
+        source: string | Buffer | FileResponse,
+        metadata: AssetMetadata = {},
+        options: { id?: string; signal?: AbortSignal; session?: AssetSession } = {},
+    ): Promise<string> {
+        const scope = assetScope(options.session);
+        const prepared = await this._prepareAsset(source, scope ? { ...metadata, scope } : metadata, options);
         const id = await prepared.persisted;
         options.signal?.throwIfAborted();
         return id;
@@ -176,10 +189,13 @@ export class AssetService extends YesImBotService<Config> {
         signal?.throwIfAborted();
         // A cancellable writer only owns freshly generated IDs for rollback.
         if (signal && options.id !== undefined) throw new Error("Asset create options.signal cannot be combined with options.id");
-        const { data, type } = await this._getSourceBuffer(source);
+        const { data, type, filename } = await this._getSourceBuffer(source);
+        metadata = { ...metadata, filename: safeMediaFilename(metadata.filename ?? filename) };
         signal?.throwIfAborted();
         if (!data || data.length === 0) throw new Error("资源内容为空");
-        const hash = createHash("sha256").update(data).digest("hex");
+        const digest = createHash("sha256");
+        if (metadata.scope) digest.update(metadata.scope).update("\0");
+        const hash = digest.update(data).digest("hex");
         const pending = (this.pendingAssets ??= new Map());
         while (true) {
             signal?.throwIfAborted();
@@ -243,10 +259,12 @@ export class AssetService extends YesImBotService<Config> {
 
     private async _imageDimensions(data: Buffer, mime: string): Promise<{ width: number; height: number }> {
         try {
+            assertImageBudget(data, mime);
             const { width, height } = await Jimp.read(data);
             return { width, height };
         } catch (error) {
             if (mime === "image/gif") {
+                assertImageBudget(data, mime);
                 const gif = await GifUtil.read(data).catch(() => undefined);
                 if (gif) return { width: gif.width, height: gif.height };
             }
@@ -306,6 +324,8 @@ export class AssetService extends YesImBotService<Config> {
         const asset = await this._getAssetWithUpdate(id);
         if (!asset) throw new Error(`数据库中找不到资源: ${id}`);
 
+        this.assertScope(asset, options.session);
+
         const shouldProcess = options.image?.process && asset.mime.startsWith("image/");
         let finalBuffer: Buffer | undefined;
         let outputMime = asset.mime;
@@ -346,9 +366,10 @@ export class AssetService extends YesImBotService<Config> {
      * @param id - 资源 ID
      * @returns 资源的元信息，若不存在则返回 null
      */
-    async getInfo(id: string): Promise<AssetInfo | null> {
+    async getInfo(id: string, session?: AssetSession): Promise<AssetInfo | null> {
         const asset = await this._getAssetWithUpdate(id);
         if (!asset) return null;
+        this.assertScope(asset, session);
         const { hash, ...info } = asset; // 移除不应公开的 hash 字段
         return info;
     }
@@ -358,15 +379,29 @@ export class AssetService extends YesImBotService<Config> {
      * @param id - 资源 ID
      * @returns 资源的公开链接，若未配置 endpoint 则回退到 data URL
      */
-    async getPublicUrl(id: string): Promise<string> {
+    private assertScope(asset: Pick<AssetData, "metadata">, session?: AssetSession): void {
+        const scope = assetScope(session);
+        if (scope && asset.metadata.scope !== scope) throw new Error("当前会话无法访问该资源");
+    }
+
+    private signAsset(id: string, expires: number): Buffer {
+        return createHmac("sha256", this.publicSigningKey)
+            .update(JSON.stringify([id, expires]))
+            .digest();
+    }
+
+    async getPublicUrl(id: string, session?: AssetSession): Promise<string> {
+        const asset = await this._getAssetWithUpdate(id);
+        if (!asset) throw new Error("找不到资源");
+        this.assertScope(asset, session);
         if (!this.assetEndpoint) {
             this.logger.warn(`未配置公开访问端点，为资源 ${id} 回退到 Base64 Data URL`);
-            return (await this.read(id, { format: "data-url" })) as string;
+            return (await this.read(id, { format: "data-url", session })) as string;
         }
 
-        await this._updateLastUsed(id); // 确保访问时更新使用时间
         const endpoint = this.assetEndpoint.endsWith("/") ? this.assetEndpoint : `${this.assetEndpoint}/`;
-        return `${endpoint}${id}`;
+        const expires = Date.now() + 5 * 60 * 1000;
+        return `${endpoint}${encodeURIComponent(id)}?expires=${expires}&signature=${this.signAsset(id, expires).toString("hex")}`;
     }
 
     /**
@@ -374,7 +409,7 @@ export class AssetService extends YesImBotService<Config> {
      * @param source - 消息字符串或元素数组
      * @returns 编码后的元素数组
      */
-    async encode(source: string | Element[]): Promise<Element[]> {
+    async encode(source: string | Element[], session?: AssetSession): Promise<Element[]> {
         const elements = typeof source === "string" ? h.parse(source) : source;
         return h.transformAsync(elements, async (element) => {
             if (!element.attrs.id) return element;
@@ -388,13 +423,13 @@ export class AssetService extends YesImBotService<Config> {
 
             try {
                 // 使用 getPublicUrl 确保逻辑统一
-                const src = await this.getPublicUrl(element.attrs.id);
+                const src = await this.getPublicUrl(element.attrs.id, session);
                 const tagName = getTagNameFromMime(info.mime);
                 const { id, ...restAttrs } = element.attrs;
                 return h(tagName, { ...restAttrs, src });
             } catch (error) {
                 this.logger.error(`获取资源 "${element.attrs.id}" 的公开链接失败: ${error.message}`);
-                return element;
+                return session ? h.text("[资源不可访问]") : element;
             }
         });
     }
@@ -408,9 +443,17 @@ export class AssetService extends YesImBotService<Config> {
         if (!ELEMENT_TO_PROCESS.includes(element.type)) return element;
         const originalUrl = element.attrs.src || element.attrs.url || element.attrs.file;
         const filename = element.attrs.filename || element.attrs.name || element.attrs.fileName;
-        if (!originalUrl) return element;
+        const scope = assetScope(options.session);
+        if (!originalUrl) {
+            if (scope && element.attrs.id && (await this.getInfo(element.attrs.id))?.metadata.scope !== scope) return h.text("[资源不可访问]");
+            return element;
+        }
+        if (!/^(?:https?:|data:|internal:)/i.test(String(originalUrl))) return h.text("[已拒绝不可信的本地媒体来源]");
         // Adapters may attach their own file IDs alongside a source URL.
-        if (element.attrs.id && (await this.getInfo(element.attrs.id))) return element;
+        if (element.attrs.id) {
+            const existing = await this.getInfo(element.attrs.id);
+            if (existing && (!scope || existing.metadata.scope === scope)) return element;
+        }
 
         // 根据元素类型和URL协议决定是否处理
         let tagName = element.type;
@@ -420,16 +463,17 @@ export class AssetService extends YesImBotService<Config> {
         }
 
         if (tagName === "file" && !String(originalUrl).startsWith("http") && !String(originalUrl).startsWith("internal:")) {
-            return element; // 只处理网络或适配器文件资源
+            return options.session ? h.text("[不支持的文件来源]") : element; // 只处理网络或适配器文件资源
         }
 
         const metadata: AssetMetadata = {
             filename,
+            scope,
             src: originalUrl,
             summary: element.attrs.summary,
         };
 
-        const { src, ...displayAttrs } = metadata;
+        const { src, scope: _scope, ...displayAttrs } = metadata;
 
         if (tagName === "img") {
             delete displayAttrs["filename"];
@@ -437,6 +481,15 @@ export class AssetService extends YesImBotService<Config> {
 
         try {
             let source: string | Buffer | FileResponse = originalUrl;
+            if (options.session && /^internal:/i.test(originalUrl)) {
+                const url = new URL(originalUrl);
+                if (!options.session.bot.selfId || !url.pathname.startsWith(`${options.session.platform}/${options.session.bot.selfId}/`))
+                    return h.text("[资源不可访问]");
+                const response = await this.ctx.satori.handleInternalRoute("GET", url);
+                if (response.status < 200 || response.status >= 300 || !response.body) throw new Error("适配器媒体返回非成功响应");
+                source = { data: Buffer.from(response.body), type: response.headers?.get("content-type") || "application/octet-stream" };
+                delete metadata.src;
+            }
             if (options.session?.platform === "slack") {
                 const url = new URL(originalUrl);
                 if (
@@ -450,17 +503,27 @@ export class AssetService extends YesImBotService<Config> {
                     const token = (options.session.bot.config as { botToken?: string }).botToken;
                     if (!token) throw new Error("Slack 私有附件缺少当前机器人鉴权");
                     const response = await this.ctx.http(originalUrl, {
-                        responseType: "arraybuffer",
+                        responseType: (raw: Response) => raw,
                         headers: { Authorization: `Bearer ${token}` },
                         redirect: "error",
                         timeout: this.config.downloadTimeout,
                     });
-                    const data = Buffer.from(response.data);
+                    const data = response.data.body
+                        ? await readMediaStream(
+                              response.data.body as ReadableStream<Uint8Array> & AsyncIterable<Uint8Array>,
+                              this.maxFileSizeBytes,
+                              response.headers.get("content-length"),
+                          )
+                        : Buffer.alloc(0);
                     const type = response.headers.get("content-type")?.split(";")[0].trim().toLowerCase();
                     source = { data, type: type || getMimeType(data) };
                     // Private downloads cannot be recovered later without their originating authorization.
                     delete metadata.src;
                 }
+            }
+            if (typeof source === "string" && /^https?:/i.test(source)) {
+                source = await downloadPublicMedia(source, this.maxFileSizeBytes, AbortSignal.timeout(this.config.downloadTimeout));
+                delete metadata.src;
             }
             if (isAsync) {
                 const { id, persisted } = await this._prepareAsset(source, metadata);
@@ -473,7 +536,7 @@ export class AssetService extends YesImBotService<Config> {
             return h(tagName, { ...displayAttrs, id });
         } catch (error) {
             this.logger.error(`资源持久化失败 (源: ${truncate(originalUrl, 100)}): ${error.message}`);
-            return element; // 失败时返回原始元素
+            return options.session ? h.text("[媒体读取失败]") : element;
         }
     }
 
@@ -497,6 +560,7 @@ export class AssetService extends YesImBotService<Config> {
         if (source.startsWith("data:")) {
             const match = source.match(/^data:.+;base64,(.*)$/);
             if (!match) throw new Error("无效的 data: URL 格式");
+            if (Buffer.byteLength(match[1], "base64") > this.maxFileSizeBytes) throw new Error("资源超出限制");
             return {
                 type: match[0].slice("data:".length).split(";")[0],
                 data: Buffer.from(match[1], "base64"),
@@ -504,6 +568,7 @@ export class AssetService extends YesImBotService<Config> {
         }
         if (source.startsWith("file://")) {
             const filepath = fileURLToPath(source);
+            if (!statSync(filepath).isFile() || statSync(filepath).size > this.maxFileSizeBytes) throw new Error("本地资源超出限制");
             const data = readFileSync(filepath);
             return {
                 type: getMimeType(data),
@@ -571,6 +636,7 @@ export class AssetService extends YesImBotService<Config> {
     }
 
     private async _processImage(buffer: Buffer, mime: string): Promise<Buffer> {
+        assertImageBudget(buffer, mime);
         if (mime === "image/gif") {
             try {
                 const gif = await GifUtil.read(buffer);
@@ -763,15 +829,40 @@ export class AssetService extends YesImBotService<Config> {
 
         this.ctx.server.get(finalRoute, async (ctx) => {
             const { id } = ctx.params;
+            ctx.set("Cache-Control", "private, no-store");
+            ctx.set("X-Content-Type-Options", "nosniff");
+            ctx.set("Content-Security-Policy", "default-src 'none'; sandbox");
             try {
+                const expires = Number(ctx.query.expires);
+                const signature = ctx.query.signature;
+                if (
+                    !Number.isSafeInteger(expires) ||
+                    expires <= Date.now() ||
+                    typeof signature !== "string" ||
+                    !/^[a-f0-9]{64}$/.test(signature) ||
+                    !timingSafeEqual(Buffer.from(signature, "hex"), this.signAsset(id, expires))
+                )
+                    throw new Error("链接无效或已过期");
                 const info = await this.getInfo(id);
                 if (!info) throw new Error("Asset not found in database");
 
                 const buffer = await this.storage.read(id);
                 ctx.status = 200;
-                ctx.set("Content-Type", info.mime);
-                ctx.set("Content-Length", info.size.toString());
-                ctx.set("Cache-Control", "public, max-age=31536000, immutable"); // 长期缓存
+                const mime = getMimeType(buffer);
+                const inline = [
+                    "image/jpeg",
+                    "image/png",
+                    "image/gif",
+                    "image/webp",
+                    "image/bmp",
+                    "image/avif",
+                    "video/mp4",
+                    "audio/mpeg",
+                    "audio/wav",
+                ].includes(mime);
+                if (!inline) ctx.attachment(safeMediaFilename(info.metadata.filename) ?? "download");
+                ctx.set("Content-Type", inline ? mime : "application/octet-stream");
+                ctx.set("Content-Length", buffer.length.toString());
                 ctx.body = buffer;
             } catch (error) {
                 // 如果是文件找不到，返回404，否则可能为其他服务器错误，但为简单起见统一返回404

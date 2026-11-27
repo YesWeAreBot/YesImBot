@@ -34,6 +34,7 @@ export class ArchivalMemoryManager {
         logging: LoggerService,
         private readonly model: ModelService,
         private semanticMemory?: SemanticMemoryManager,
+        private readonly allowsAutomatic: (target: MemoryTarget) => boolean = () => true,
     ) {
         this.logger = logging.getLogger("[L3-长期记忆]");
         registerHistoryResetParticipant(ctx, {
@@ -84,7 +85,7 @@ export class ArchivalMemoryManager {
 
     public async observeMessage(message: MessageData) {
         const threshold = this.config.l3_memory.messageThreshold ?? 0;
-        if (!threshold || this.stopped || !this.config.l3_memory.enabled || !this.chatModel) return;
+        if (!threshold || this.stopped || !this.config.l3_memory.enabled || !this.chatModel || !this.allowsAutomatic(message)) return;
         const date = new Date(message.timestamp);
         const generation = this.semanticMemory?.getHistoryGeneration(message);
         const lifecycle = this.lifecycle;
@@ -114,7 +115,10 @@ export class ArchivalMemoryManager {
     ) {
         const { start, end } = diaryDayRange(date);
         const active = () =>
-            !this.stopped && this.lifecycle === lifecycle && (!this.semanticMemory || this.semanticMemory.getHistoryGeneration(message) === generation);
+            !this.stopped &&
+            this.lifecycle === lifecycle &&
+            this.allowsAutomatic(message) &&
+            (!this.semanticMemory || this.semanticMemory.getHistoryGeneration(message) === generation);
         try {
             while (check.dirty && active()) {
                 check.dirty = false;
@@ -205,6 +209,7 @@ export class ArchivalMemoryManager {
     ): Promise<DiaryEntryData | undefined> {
         if (this.stopped || !this.config.l3_memory.enabled || !this.chatModel) return Promise.resolve(undefined);
         const target = { platform, channelId };
+        if (automatic && !this.allowsAutomatic(target)) return Promise.resolve(undefined);
         const generation = this.semanticMemory?.getHistoryGeneration(target);
         const lifecycle = this.lifecycle;
         const diaryDate = new Date(date);
@@ -248,7 +253,10 @@ export class ArchivalMemoryManager {
         const { platform, channelId } = target;
         const dateKey = diaryDateKey(date);
         const active = () =>
-            !this.stopped && this.lifecycle === lifecycle && (!this.semanticMemory || this.semanticMemory.getHistoryGeneration(target) === generation);
+            !this.stopped &&
+            this.lifecycle === lifecycle &&
+            (!automatic || this.allowsAutomatic(target)) &&
+            (!this.semanticMemory || this.semanticMemory.getHistoryGeneration(target) === generation);
         const controller = new AbortController();
         this.controllers.add(controller);
         const unwatch = this.semanticMemory?.watchHistory(target, () => {

@@ -18,9 +18,9 @@
 <observation>
   <function>{{function}}</function>
   <status>{{status}}</status>
-  {{#result}}
-  <result>{{#.}}{{_toString}}{{/.}}</result>
-  {{/result}}
+  {{#_hasToolResult}}
+  <result>{{_toolResultJson}}</result>
+  {{/_hasToolResult}}
   {{#error}}
   <error>{{.}}</error>
   {{/error}}

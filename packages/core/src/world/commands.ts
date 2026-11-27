@@ -5,7 +5,7 @@ import { Context, h, Logger, Query, Session } from "koishi";
 import type { LoggerService } from "../logger";
 import { TableName } from "../shared/constants";
 import { conversationChannelId } from "../shared/utils/conversation-scope";
-import { HISTORY_CHANNELS } from "./channel-metadata";
+import { HISTORY_CHANNELS, sessionChannelType } from "./channel-metadata";
 import { HistoryConfig } from "./config";
 import { registerHistoryBackup } from "./history-backup-commands";
 import { registerHistoryInspection, type HistoryInspectionDependencies } from "./history-inspection";
@@ -195,14 +195,16 @@ export class HistoryCommandManager {
                             id: randomUUID(),
                             platform: session!.platform,
                             channelId: conversationChannelId(session!)!,
-                            eventScope: options!.all ? "global" : "channel",
+                            eventScope: "channel",
+                            botKey: JSON.stringify([session!.platform, session!.selfId]),
+                            channelType: sessionChannelType(session!),
                             type: "history-cleared",
                             timestamp: new Date(),
                             payload: {
                                 actor: `admin:${session!.platform}:${session!.userId}`,
                                 operation: "history.clear",
                                 status,
-                                scope: options!.all ? "global" : "channel",
+                                scope: "channel",
                                 origin: {
                                     platform: session!.platform,
                                     selfId: session!.selfId,
@@ -340,8 +342,12 @@ export class HistoryCommandManager {
                         if (options.platform) {
                             addTarget(options.platform, channelId);
                         } else {
-                            const messages = await this.ctx.database.get(TableName.Messages, { channelId }, { fields: ["platform"] });
-                            const platforms = [...new Set(messages.map((d) => d.platform))];
+                            const matching = await Promise.all(
+                                ([HISTORY_CHANNELS, TableName.Messages, TableName.SystemEvents, TableName.L2Chunks, TableName.L3Diaries] as const).map(
+                                    (table) => this.ctx.database.get(table, { channelId }, { fields: ["platform"] }),
+                                ),
+                            );
+                            const platforms = [...new Set(matching.flat().map((row) => row.platform))];
                             if (platforms.length === 0) results.push(`🟡 频道 "${channelId}" 未找到`);
                             else if (platforms.length === 1) addTarget(platforms[0], channelId);
                             else ambiguousChannels.push(`频道 "${channelId}" 存在于多个平台: ${platforms.join(", ")}`);

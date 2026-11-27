@@ -19,7 +19,11 @@ export function apply(ctx: Context, config: Config) {
         const tool = ttsService.getTool();
         if (tool) {
             const toolService: ToolService = ctx.yesimbot.tool;
-            const unregisterTool: unknown = toolService.registerTool(tool);
+            if (toolService.getTool(tool.name)) {
+                logger.warn("send_voice 已被其他实例注册，拒绝覆盖；请只启用一个 TTS 实例");
+                return;
+            }
+            const unregisterTool: unknown = toolService.registerTool(tool, ctx);
             ctx.on("dispose", () => {
                 if (typeof unregisterTool === "function") unregisterTool();
                 else if (toolService.getTool(tool.name) === tool) toolService.unregisterTool(tool.name);

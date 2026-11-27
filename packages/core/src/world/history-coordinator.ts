@@ -9,9 +9,12 @@ interface HistoryCoordination {
     buffers: Set<WeakRef<Map<string, MessageData[]>>>;
     invalidations: Set<{ target: MemoryTarget; invalidate: () => void }>;
     retentionCutoff: number;
+    retentionPolicies: Map<object, () => number>;
 }
 
-const coordinators = new WeakMap<object, HistoryCoordination>();
+const key = Symbol.for("yesimbot.historyCoordination.v2");
+const processState = globalThis as typeof globalThis & { [key]?: WeakMap<object, HistoryCoordination> };
+const coordinators = (processState[key] ??= new WeakMap());
 
 /** Coordinate the same physical service across Cordis' caller-specific proxies. */
 export function historyCoordinator(database: object): HistoryCoordination {
@@ -33,6 +36,7 @@ export function historyCoordinator(database: object): HistoryCoordination {
             buffers: new Set(),
             invalidations: new Set(),
             retentionCutoff: -Infinity,
+            retentionPolicies: new Map(),
         };
         coordinators.set(database, state);
     }

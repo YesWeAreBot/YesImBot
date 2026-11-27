@@ -18,6 +18,7 @@ export interface Config {
 
 export const SharedConfig: Schema<SharedConfig> = Schema.object({
     dependenciesPath: Schema.path({ filters: ["directory"], allowCreate: true })
+        .hidden()
         .default("data/code-executor/deps")
         .description("JS/Python等引擎动态安装依赖的存放路径"),
     // artifactsPath: Schema.path({ filters: ["directory"], allowCreate: true })

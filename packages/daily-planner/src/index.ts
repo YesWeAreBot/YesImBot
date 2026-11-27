@@ -24,7 +24,10 @@ export default class DailyPlannerExtension {
     static readonly inject = ["cron", "database", "yesimbot"];
 
     static readonly Config: Schema<DailyPlannerConfig> = Schema.object({
-        scheduleGenerationTime: Schema.string().default("03:00").description("每日生成日程的时间 (HH:mm 格式)"),
+        scheduleGenerationTime: Schema.string()
+            .pattern(/^(?:[01]\d|2[0-3]):[0-5]\d$/)
+            .default("03:00")
+            .description("每日生成日程的时间 (HH:mm 格式)"),
         characterName: Schema.string().required().description("日程的主体，也就是 Bot 的名称"),
         coreMemoryLabel: Schema.array(String).default(["persona"]).description("用于生成日程的描述 Bot 的核心记忆"),
         memorySources: Schema.array(
@@ -40,7 +43,7 @@ export default class DailyPlannerExtension {
             .default([])
             .description("允许日程读取的会话来源；留空时只使用核心记忆。仅添加可向所有日程读者公开的来源。"),
         model: Schema.dynamic("modelService.selectableModels").description("用于生成日程表的模型"),
-        coreMemoryWeight: Schema.number().default(0.7).min(0).max(1).description("核心记忆在日程生成中的权重"),
+        coreMemoryWeight: Schema.number().default(0.7).min(0).max(1).hidden().description("已废弃：此旧字段不参与日程生成；使用 coreMemoryLabel 选择记忆"),
     });
 
     private disposed = false;
@@ -55,6 +58,7 @@ export default class DailyPlannerExtension {
             this.disposed = true;
         });
 
+        if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(config.scheduleGenerationTime)) throw new Error("scheduleGenerationTime 必须为有效的 HH:mm");
         // 将 HH:mm 格式转换为 cron 表达式
         const [hours, minutes] = config.scheduleGenerationTime.split(":").map(Number);
         const cronExpression = `${minutes} ${hours} * * *`;

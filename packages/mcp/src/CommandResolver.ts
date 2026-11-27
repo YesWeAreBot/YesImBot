@@ -30,7 +30,12 @@ export class CommandResolver {
         let finalCommand = command;
         let finalArgs = [...args];
         const finalEnv: Record<string, string> = {};
-        for (const [key, value] of Object.entries({ ...process.env, ...additionalEnv })) {
+        const inherited = Object.fromEntries(
+            ["PATH", "HOME", "USERPROFILE", "SYSTEMROOT", "SystemRoot", "COMSPEC", "PATHEXT", "TEMP", "TMP", "TMPDIR", "LANG", "LC_ALL"]
+                .filter((key) => process.env[key] !== undefined)
+                .map((key) => [key, process.env[key]]),
+        );
+        for (const [key, value] of Object.entries({ ...inherited, ...additionalEnv })) {
             if (value !== undefined) finalEnv[key] = value;
         }
 
@@ -44,7 +49,7 @@ export class CommandResolver {
             finalArgs = transformed.args;
         }
 
-        this.logger.debug(`最终命令: ${finalCommand} ${finalArgs.join(" ")}`);
+        this.logger.debug(`最终命令: ${finalCommand} (参数不记录)`);
         return [finalCommand, finalArgs, finalEnv];
     }
 
@@ -58,13 +63,13 @@ export class CommandResolver {
                 this.logger.info("转换: uvx → uv tool run");
                 return {
                     command: this.installedUVPath,
-                    args: ["tool", "run", ...args],
+                    args: [...(this.config.uvSettings?.args || []), "tool", "run", ...args],
                 };
             } else if (this.systemUtils.checkCommand("uv")) {
                 this.logger.info("转换: uvx → uv tool run (系统版本)");
                 return {
                     command: "uv",
-                    args: ["tool", "run", ...args],
+                    args: [...(this.config.uvSettings?.args || []), "tool", "run", ...args],
                 };
             } else {
                 this.logger.warn("uvx 转换失败：未找到 uv");
@@ -78,13 +83,13 @@ export class CommandResolver {
                 this.logger.info("转换: npx → bun x");
                 return {
                     command: this.installedBunPath,
-                    args: ["x", ...args],
+                    args: [...(this.config.bunSettings?.args || []), "x", ...args],
                 };
             } else if (this.systemUtils.checkCommand("bun")) {
                 this.logger.info("转换: npx → bun x (系统版本)");
                 return {
                     command: "bun",
-                    args: ["x", ...args],
+                    args: [...(this.config.bunSettings?.args || []), "x", ...args],
                 };
             } else {
                 this.logger.warn("npx 转换失败：未找到 bun");
@@ -93,17 +98,17 @@ export class CommandResolver {
         }
 
         // 处理 uv 命令
-        if (command === "uv" && this.installedUVPath) {
+        if (command === "uv") {
             return {
-                command: this.installedUVPath,
+                command: this.installedUVPath ?? command,
                 args: [...(this.config.uvSettings?.args || []), ...args],
             };
         }
 
         // 处理 bun 命令
-        if (command === "bun" && this.installedBunPath) {
+        if (command === "bun") {
             return {
-                command: this.installedBunPath,
+                command: this.installedBunPath ?? command,
                 args: [...(this.config.bunSettings?.args || []), ...args],
             };
         }

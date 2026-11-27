@@ -27,8 +27,9 @@ import QManagerExtension from "./builtin/qmanager";
 import SearchExtension from "./builtin/search";
 import { extractMetaFromSchema, Failed, isReadOnlyTool } from "./helpers";
 import { toolJSONSchema } from "./json-schema";
+import { processParams } from "./parameter-view";
 import { ToolOutputStore, TOOL_OUTPUT_THRESHOLD, ToolOutputOwner } from "./tool-output-store";
-import { IExtension, Properties, ToolCallResult, ToolDefinition, ToolSchema, ToolExecutionContext } from "./types";
+import { IExtension, ToolCallResult, ToolDefinition, ToolSchema, ToolExecutionContext } from "./types";
 
 const backgroundToolChoices = new WeakMap<object, Map<ToolService, ToolDefinition[]>>();
 
@@ -117,28 +118,6 @@ function convertCommandParams(schema: Schema | undefined, params: Record<string,
             return [name, value];
         }),
     );
-}
-
-function processParams(params: Properties, indent = ""): any[] {
-    return Object.entries(params).map(([key, param]) => {
-        const processedParam: any = { ...param, key, indent };
-        if (param.properties) {
-            processedParam.properties = processParams(param.properties, indent + "    ");
-        }
-        if (param.items) {
-            processedParam.items = [
-                {
-                    ...param.items,
-                    key: "item",
-                    indent: indent + "    ",
-                    ...(param.items.properties && {
-                        properties: processParams(param.items.properties, indent + "        "),
-                    }),
-                },
-            ];
-        }
-        return processedParam;
-    });
 }
 
 /**
@@ -322,19 +301,23 @@ export class ToolService extends YesImBotService<Config> {
             .usage(
                 [
                     "调用指定的工具并传递参数",
-                    '参数格式为 "key=value"，多个参数用空格分隔。',
+                    '参数可为完整 JSON 对象，或 "key=value"（空格分隔）。包含点、连字符等的属性名请使用 JSON 对象。',
                     '字符串可写为 key="some value"；数字、布尔和 JSON 按工具参数类型校验。',
                     '例如 payload={"items": [1, 2], "label": "hello world"}；字符串 ID 不会转为数字。',
                 ].join("\n"),
             )
-            .example(["tool.invoke search_web keyword=koishi"].join("\n"))
+            .example(["tool.invoke web_search query=koishi"].join("\n"))
             .action(async ({ session }, name, params = "") => {
                 if (!name) return "错误：未指定要调用的工具名称";
                 const tool = this.getTool(name, session);
                 if (!tool) return `未找到工具 "${name}"，或该工具在当前会话不可用。`;
                 let parsedParams: Record<string, unknown>;
                 try {
-                    parsedParams = convertCommandParams(tool.parameters, parseCommandParams(params));
+                    if (params.trimStart().startsWith("{")) {
+                        const value: unknown = JSON.parse(params);
+                        if (!value || Array.isArray(value) || typeof value !== "object") throw new Error("参数必须为 JSON 对象");
+                        parsedParams = value as Record<string, unknown>;
+                    } else parsedParams = convertCommandParams(tool.parameters, parseCommandParams(params));
                 } catch (error) {
                     return `参数解析失败：${error.message}\n请检查您的参数格式是否正确（key=value）。`;
                 }
@@ -593,6 +576,10 @@ export class ToolService extends YesImBotService<Config> {
                 .role("checkbox")
                 .default([...DEFAULT_BACKGROUND_TOOLS]),
         );
+    }
+
+    public hasRegisteredTool(name: string): boolean {
+        return this.tools.has(name);
     }
 
     public registerTool(definition: ToolDefinition, ownerContext: Context = this.ctx) {
@@ -1117,7 +1104,7 @@ export class ToolService extends YesImBotService<Config> {
             name: tool.name,
             description: tool.description,
             parameters: extractMetaFromSchema(tool.parameters),
-            parametersJSONSchema: toolJSONSchema(tool.parameters),
+            parametersJSONSchema: tool.parametersJSONSchema ?? toolJSONSchema(tool.parameters),
         };
     }
 }

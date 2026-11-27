@@ -490,10 +490,25 @@ for (const mode of ["before-send", "chunks", "upload", "explicit-target"] as con
             });
         }
         f.stimulus.session = bot.session({ type: "message", channel: { id: "g" }, user: { id: "user" } });
+        f.world.config = { allowedChannels: [{ platform: "onebot", type: "guild", id: "g" }] };
         Object.assign(f.ctx.yesimbot, { asset: { encode: async (value: string) => value } });
         const tool =
             mode === "explicit-target"
-                ? new CoreUtilExtension(f.ctx, { typing: { minDelay: 0, maxDelay: 0, baseDelay: 0, charPerSecond: 5 } } as any)
+                ? new CoreUtilExtension(f.ctx, {
+                      typing: { minDelay: 0, maxDelay: 0, baseDelay: 0, charPerSecond: 5 },
+                      destinationGrants: [
+                          {
+                              sourcePlatform: "onebot",
+                              sourceSelfId: "a",
+                              sourceChannelId: "g",
+                              sourceDirect: false,
+                              platform: "onebot",
+                              selfId: "a",
+                              channelId: "destination",
+                              direct: false,
+                          },
+                      ],
+                  } as any)
                 : undefined;
         f.core.processor.runCycle = async (stimulus: any) => {
             if (mode === "explicit-target") {
@@ -503,7 +518,12 @@ for (const mode of ["before-send", "chunks", "upload", "explicit-target"] as con
             return true;
         };
         const result = f.core.scheduler.taskCallback(f.stimulus).catch(() => {});
-        await started;
+        await Promise.race([
+            started,
+            result.then(() => {
+                throw new Error("reply finished before entering the adapter");
+            }),
+        ]);
         f.world.updateMuteStatus(`onebot:${mode === "explicit-target" ? "destination" : "g"}`, Date.now() + 60000, "a");
         release();
         await result;

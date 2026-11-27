@@ -48,7 +48,7 @@ function matches(row: any, query: any): boolean {
         return row[key] === value;
     });
 }
-async function fixture() {
+async function fixture(allowsAutomatic?: (target: { platform: string; channelId: string }) => boolean) {
     const baseDir = await fs.mkdtemp(path.join(os.tmpdir(), "yib-l3-"));
     directories.push(baseDir);
     const rows = new Map<string, any[]>(
@@ -121,7 +121,7 @@ async function fixture() {
     Object.assign(interaction, { ctx, config, logger: log });
     Object.defineProperty(interaction, "basePath", { value: path.join(baseDir, "data", "yesimbot", "interactions") });
     const semantic = new SemanticMemoryManager(ctx, config, ctx.yesimbot.logging, ctx.yesimbot.model);
-    const memory: any = new ArchivalMemoryManager(ctx, config, interaction, ctx.yesimbot.logging, ctx.yesimbot.model, semantic);
+    const memory: any = new ArchivalMemoryManager(ctx, config, interaction, ctx.yesimbot.logging, ctx.yesimbot.model, semantic, allowsAutomatic);
     memory.chatModel = model;
     const service: any = { l2_manager: semantic, l3_manager: memory, l1_manager: interaction };
     new HistoryCommandManager(ctx, service, config, ctx.yesimbot.logging).register();
@@ -668,4 +668,16 @@ it("does not advance the diary after a truncated response", async () => {
     f.model(async () => ({ text: "complete diary" }));
     await f.memory.generateOnDemand("onebot", "same", day());
     expect(f.diaries().map((entry) => entry.content)).toEqual(["complete diary"]);
+});
+
+it("only sends current, authorized targets from shared history to the automatic diary model", async () => {
+    const f = await fixture((target) => target.platform === "onebot" && target.channelId === "own-room");
+    f.seedMessages("onebot", "own-room");
+    f.seedMessages("onebot", "other-room");
+    f.seedMessages("discord", "own-room");
+    await f.memory.generateDiariesForAllChannels(day());
+    expect(f.diaries().map(({ platform, channelId }) => [platform, channelId])).toEqual([["onebot", "own-room"]]);
+    expect(f.prompts).toHaveLength(1);
+    const messageReads = f.queries.filter(({ table, query }) => table === TableName.Messages && query.timestamp);
+    expect(messageReads.map(({ query }) => query.channelId)).toEqual(["own-room"]);
 });

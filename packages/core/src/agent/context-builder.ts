@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { ImagePart, TextPart } from "@xsai/shared-chat";
-import { Context, Logger, h } from "koishi";
+import { Context, Logger, type Session, h } from "koishi";
 
 import { AssetService, isImageDataUrl } from "../asset";
 import { Config } from "../config";
@@ -495,14 +495,14 @@ export class PromptContextBuilder {
      * 构建多模态消息内容，如果模型和配置支持。
      * @returns 包含图片和文本的消息内容数组，或纯文本字符串。
      */
-    public async buildMultimodalUserMessage(userPromptText: string, worldState: WorldState): Promise<string | Array<ImagePart | TextPart>> {
+    public async buildMultimodalUserMessage(userPromptText: string, worldState: WorldState, session?: Session): Promise<string | Array<ImagePart | TextPart>> {
         const canUseVision = this.modelSwitcher.hasVisionCapability() && this.config.enableVision;
         if (!canUseVision) {
             this.visualDiagnostic(this.config.enableVision ? "no_vision_model" : "vision_disabled");
             return userPromptText;
         }
 
-        const multiModalData = await this.buildMultimodalImages(worldState);
+        const multiModalData = await this.buildMultimodalImages(worldState, session);
         if (multiModalData.images.length > 0) {
             this.logger.debug(`上下文包含 ${multiModalData.images.length / 2} 张图片，将构建多模态消息。`);
             const content = [
@@ -528,7 +528,7 @@ export class PromptContextBuilder {
      * @param worldState 当前的世界状态
      * @returns 包含筛选后的图片内容的对象
      */
-    private async buildMultimodalImages(worldState: WorldState): Promise<{ images: Array<ImagePart | TextPart>; usageKeys: string[] }> {
+    private async buildMultimodalImages(worldState: WorldState, session?: Session): Promise<{ images: Array<ImagePart | TextPart>; usageKeys: string[] }> {
         // 1. 将所有消息扁平化并建立索引
         const allMessages = [...(worldState.l1_working_memory.processed_events || []), ...(worldState.l1_working_memory.new_events || [])].filter(
             (item): item is { type: "message" } & ContextualMessage => item.type === "message",
@@ -637,7 +637,7 @@ export class PromptContextBuilder {
             }
             let result: Awaited<ReturnType<AssetService["getInfo"]>>;
             try {
-                result = await this.assetService.getInfo(candidate.id);
+                result = await this.assetService.getInfo(candidate.id, session);
             } catch {
                 assertReplyTurn();
                 diagnostics.asset_metadata_failed++;
@@ -657,7 +657,7 @@ export class PromptContextBuilder {
             }
             let imageBuffer: Awaited<ReturnType<AssetService["read"]>>;
             try {
-                imageBuffer = await this.assetService.read(result.id, { format: "data-url", image: { process: true, format: "jpeg" } });
+                imageBuffer = await this.assetService.read(result.id, { session, format: "data-url", image: { process: true, format: "jpeg" } });
             } catch {
                 assertReplyTurn();
                 diagnostics.asset_read_failed++;

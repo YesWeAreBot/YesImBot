@@ -258,3 +258,27 @@ for (const change of ["world permission", "extension permission", "source config
         expect(f.rows).toEqual(saved);
     });
 }
+
+it("clips overlapping schedule intervals without mutating the stored schedule", async () => {
+    const { vi } = await import("vitest");
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 0, 1, 10, 0, 0));
+    try {
+        const schedule = { date: "2026-01-01", segments: [{ start: "09:00", end: "12:00", content: "old" }] };
+        const service: any = Object.assign(Object.create(DailyPlannerService.prototype), {
+            getTodaysSchedule: async () => schedule,
+            saveSchedule: vi.fn(async () => {}),
+        });
+        await service.overrideCurrentSchedule("new", 60);
+        expect(service.saveSchedule.mock.calls[0][0].segments).toEqual([
+            { start: "09:00", end: "10:00", content: "old" },
+            { start: "10:00", end: "11:00", content: "new" },
+            { start: "11:00", end: "12:00", content: "old" },
+        ]);
+        expect(schedule.segments).toHaveLength(1);
+        await expect(service.overrideCurrentSchedule("invalid", -1)).rejects.toThrow("Invalid");
+        await expect(service.overrideCurrentSchedule("next day", 900)).rejects.toThrow("跨日");
+    } finally {
+        vi.useRealTimers();
+    }
+});

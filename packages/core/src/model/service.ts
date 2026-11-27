@@ -546,8 +546,12 @@ class RequestExecutor {
 
             options_copy.abortSignal = options.abortSignal ? AbortSignal.any([controller.signal, options.abortSignal]) : controller.signal;
 
+            let streamStarted = false;
             options_copy.onStreamStart = () => {
+                if (streamStarted) return;
+                streamStarted = true;
                 clearTimeout(firstTokenTimeoutId);
+                options.onStreamStart?.();
             };
 
             try {
